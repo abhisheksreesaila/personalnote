@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.sesskey
 data/*.db
 data/*.db-shm
 data/*.db-wal

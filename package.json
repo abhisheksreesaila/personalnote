@@ -3,23 +3,36 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "overrides": {
+    "posthog-node": "5.20.0"
+  },
   "scripts": {
-    "dev": "concurrently -k -n ui,api -c cyan,yellow \"vite\" \"node --watch server.js\"",
+    "dev": "concurrently -k -n ui,api,ai -c cyan,yellow,magenta \"vite\" \"npm:dev:api\" \"npm:dev:intelligence\"",
     "dev:ui": "vite",
-    "dev:api": "node --watch server.js",
-    "start": "node server.js",
+    "dev:api": ".venv\\Scripts\\python.exe -m uvicorn main:app --host 127.0.0.1 --port 3137",
+    "dev:intelligence": "tsx watch intelligence/server.ts",
+    "start": "concurrently -k -n api,ai -c yellow,magenta \"npm:start:api\" \"npm:start:intelligence\"",
+    "start:api": ".venv\\Scripts\\python.exe main.py",
+    "start:intelligence": "tsx intelligence/server.ts",
+    "test:api": ".venv\\Scripts\\python.exe -m unittest tests.test_api -v",
+    "test:intelligence": "tsx --test intelligence/ambient-agent.test.ts",
+    "typecheck:intelligence": "tsc -p tsconfig.intelligence.json",
     "build": "vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "concurrently": "^10.0.3",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
     "vite": "^8.1.1"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.16",
     "@chenglou/pretext": "^0.0.8",
-    "better-sqlite3": "^12.11.1",
-    "express": "^5.2.1",
+    "@mastra/core": "^1.51.0",
     "fabric": "^7.4.0",
-    "lucide": "^1.24.0"
+    "lucide": "^1.24.0",
+    "zod": "^3.25.76"
   }
 }

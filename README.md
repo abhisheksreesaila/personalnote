@@ -6,10 +6,12 @@ A local-first note canvas that behaves like a page until your content reaches an
 
 ```bash
 npm install
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
 npm run dev
 ```
 
-Open `http://localhost:5173` for the landing page. Its prototype actions enter the notepad directly at `http://localhost:5173/notes`; authentication is intentionally deferred. The Vite client proxies `/api` to the Express server on port `3137`.
+Open `http://localhost:5173` for the landing page. Its prototype actions enter the notepad directly at `http://localhost:5173/notes`; authentication is intentionally deferred. The Vite client proxies `/api` to the FastHTML server on port `3137`.
 
 ## Current capabilities
 
@@ -43,11 +45,26 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - Responsive notes drawer and compact mobile tool dock
 - Notebook typography using Source Serif 4 and IBM Plex Sans
 - Shared soft-flat design language: circular actions, Gmail-style half-pill navigation, and unified typography
+- Ambient related-note listening after a meaningful writing pause
+- Source-grounded related-note cards that collapse into a quiet presence marker
+- Local deterministic retrieval with optional Mastra reranking through any OpenAI-compatible model
 
 ## Architecture
 
-The browser stores Fabric.js canvas JSON through a small REST interface in `server.js`. Keeping persistence behind `/api/notes` makes the SQLite service replaceable with FH.SAS routes later without coupling server concerns to the canvas interaction model.
+The browser stores Fabric.js canvas JSON through a FastHTML REST interface. `main.py` is the runtime entrypoint, `routes.py` owns the application factory and API registration, `services.py` owns note persistence rules, and `app_schema.py` owns idempotent SQLite setup. `fh-saas` is pinned as the production SaaS toolkit for later authentication, tenant isolation, jobs, and billing without coupling those concerns to the canvas interaction model.
+
+Ambient intelligence is split deliberately. FastHTML performs immediate source-grounded retrieval locally. A restricted Mastra worker on port `4112` may rerank and phrase a connection with one bounded model step; it has no shell, filesystem, browser, or mutation tools. Without a configured model, the same feature remains available in deterministic `local-retrieval` mode.
+
+To use a local OpenAI-compatible endpoint such as Ollama or LM Studio, set:
+
+```text
+PERSONAL_NOTE_MODEL=<served-model-name>
+PERSONAL_NOTE_MODEL_URL=http://127.0.0.1:11434/v1
+PERSONAL_NOTE_MODEL_KEY=local
+```
+
+The product roadmap is maintained in `docs/ROADMAP.md`.
 
 `@chenglou/pretext` is installed as the future variable-width text layout engine. The reference implementation in `spatial-docs.html` demonstrates `prepareWithSegments()` and `layoutNextLine()` to flow prose around diagram nodes. The production notepad remains Fabric-based for direct manipulation; Pretext should be introduced as a dedicated spatial text object rather than replacing Fabric's canvas runtime wholesale.
 
-Create a production bundle with `npm run build`; `npm start` serves the API and an existing `dist` build.
+Create a production bundle with `npm run build`; `npm start` serves the FastHTML API and an existing `dist` build.

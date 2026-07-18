@@ -564,6 +564,62 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .voice-pulse { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--terracotta); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; transform: scale(.72); } }
 
+.intelligence-presence {
+  position: fixed;
+  top: 72px;
+  right: 18px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(118,102,154,.34);
+  border-radius: 50%;
+  color: var(--violet);
+  background: rgba(250,249,246,.96);
+  box-shadow: 0 7px 22px rgba(45,41,34,.16);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: intelligence-arrive 320ms cubic-bezier(.2,.9,.2,1.12) both;
+  z-index: 22;
+}
+.intelligence-presence svg { width: 17px; }
+.intelligence-presence:hover { color: white; background: var(--violet); transform: scale(1.12); }
+.intelligence-card {
+  position: fixed;
+  top: 72px;
+  right: 18px;
+  width: min(310px, calc(100vw - var(--rail-width) - 28px));
+  padding: 14px 15px 13px;
+  border: 1px solid rgba(118,102,154,.25);
+  border-left: 3px solid var(--violet);
+  border-radius: 7px;
+  color: var(--ink);
+  background: rgba(250,249,246,.97);
+  box-shadow: 0 14px 38px rgba(31,41,39,.18);
+  backdrop-filter: blur(18px);
+  opacity: 0;
+  transform: translateX(14px) scale(.98);
+  transform-origin: right top;
+  transition: opacity 180ms ease, transform 180ms cubic-bezier(.2,.9,.2,1.08);
+  z-index: 22;
+}
+.intelligence-card.open { opacity: 1; transform: translateX(0) scale(1); }
+.intelligence-card header { display: flex; align-items: center; margin-bottom: 10px; }
+.intelligence-card header > span { display: flex; align-items: center; gap: 6px; color: var(--violet); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.intelligence-card header svg { width: 13px; }
+.intelligence-card header button { width: 26px; height: 26px; display: grid; place-items: center; margin-left: auto; padding: 0; border: 0; border-radius: 50%; color: #7e776d; background: transparent; cursor: pointer; }
+.intelligence-card header button:hover { background: rgba(80,70,65,.08); }
+.intelligence-card > strong { display: block; font: 600 17px/1.25 "Source Serif 4", serif; }
+.intelligence-card > p { max-height: 4.6em; margin: 7px 0 8px; overflow: hidden; color: #5e574e; font-size: 11px; line-height: 1.52; }
+.intelligence-reason { padding-top: 8px; border-top: 1px solid rgba(99,86,67,.12); color: #776a8f; font: italic 11px/1.4 "Source Serif 4", serif; }
+.intelligence-card footer { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.intelligence-card footer > span { min-width: 0; overflow: hidden; color: #928a7f; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.intelligence-card footer button { height: 30px; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 0 10px; border: 1px solid rgba(118,102,154,.25); border-radius: var(--radius-pill); color: #655582; background: rgba(118,102,154,.08); cursor: pointer; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.intelligence-card footer button:hover { color: white; background: var(--violet); }
+.intelligence-card footer button svg { width: 13px; }
+@keyframes intelligence-arrive { from { opacity: 0; transform: translateX(8px) scale(.86); } }
+
 @media (min-width: 801px) {
   .search-button:focus-visible,
   .voice-button:focus-visible,
@@ -920,6 +976,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   }
   .workspace.is-object-dragging .search-button { transform: translateY(5px); }
   .voice-caption { left: auto; right: 12px; bottom: 112px; max-width: calc(100vw - var(--rail-width) - 24px); transform: none; }
+  .intelligence-presence { top: 58px; right: 10px; width: 36px; height: 36px; }
+  .intelligence-card { top: 58px; right: 10px; width: calc(100vw - var(--rail-width) - 20px); }
+  .intelligence-card:not(.open) { transform: translateY(-6px) scale(.98); }
   .page-count { top: 58px; right: 10px; bottom: auto; }
   .save-state { display: none; }
   .properties-panel, .settings-panel { width: calc(100vw - var(--rail-width)); max-width: 320px; }
@@ -945,6 +1004,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .paper { transition-duration: 1ms; animation: none; }
   .sidebar { transition-duration: 1ms; }
   .paper.voice-listening::after, .voice-button.active { animation: none; }
+  .intelligence-card, .intelligence-presence { transition: none; animation: none; }
   .spotlight, .search-backdrop { transition-duration: 1ms; }
 }
 

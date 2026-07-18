@@ -95,6 +95,20 @@ document.querySelector('#app').innerHTML = `
         <button class="voice-button" id="voice-button" title="Voice dictation" aria-label="Start voice dictation" aria-pressed="false"><i data-lucide="mic"></i></button>
         <div class="voice-caption" id="voice-caption" role="status" hidden><span class="voice-pulse"></span><span id="voice-status">Listening</span></div>
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
+        <button class="intelligence-presence" id="intelligence-presence" title="Related note available" aria-label="Show related note" hidden><i data-lucide="sparkles"></i></button>
+        <aside class="intelligence-card" id="intelligence-card" aria-live="polite" hidden>
+          <header>
+            <span><i data-lucide="sparkles"></i>Related thought</span>
+            <button id="dismiss-intelligence" title="Dismiss" aria-label="Dismiss related note"><i data-lucide="x"></i></button>
+          </header>
+          <strong id="intelligence-title"></strong>
+          <p id="intelligence-excerpt"></p>
+          <div class="intelligence-reason" id="intelligence-reason"></div>
+          <footer>
+            <span id="intelligence-source"></span>
+            <button id="open-intelligence-source"><span>Open note</span><i data-lucide="arrow-up-right"></i></button>
+          </footer>
+        </aside>
 
         <div class="paper" id="paper">
           <canvas id="note-canvas"></canvas>
@@ -266,6 +280,12 @@ const elements = {
   voiceCaption: document.querySelector('#voice-caption'),
   voiceStatus: document.querySelector('#voice-status'),
   eraserCursor: document.querySelector('#eraser-cursor'),
+  intelligenceCard: document.querySelector('#intelligence-card'),
+  intelligencePresence: document.querySelector('#intelligence-presence'),
+  intelligenceTitle: document.querySelector('#intelligence-title'),
+  intelligenceExcerpt: document.querySelector('#intelligence-excerpt'),
+  intelligenceReason: document.querySelector('#intelligence-reason'),
+  intelligenceSource: document.querySelector('#intelligence-source'),
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
@@ -293,6 +313,8 @@ const state = {
   loading: false,
   history: [],
   historyIndex: -1,
+  relatedSuggestion: null,
+  dismissedRelated: new Set(),
 }
 
 const canvas = new Canvas('note-canvas', {
@@ -314,6 +336,78 @@ function api(path, options = {}) {
     if (!response.ok) throw new Error((await response.json()).error || 'Request failed')
     return response.status === 204 ? null : response.json()
   })
+}
+
+let ambientTimer
+let ambientCollapseTimer
+let ambientRequest
+let ambientSequence = 0
+
+function activeTextSnapshot() {
+  const canvasText = canvas.getObjects()
+    .map((object) => typeof object.text === 'string' ? object.text : '')
+    .filter(Boolean)
+    .join(' ')
+  return `${elements.title.value.trim()} ${canvasText}`.trim()
+}
+
+function clearRelatedNote({ keepPresence = false } = {}) {
+  clearTimeout(ambientCollapseTimer)
+  elements.intelligenceCard.classList.remove('open')
+  elements.intelligenceCard.hidden = true
+  elements.intelligencePresence.hidden = !keepPresence || !state.relatedSuggestion
+}
+
+function collapseRelatedNote() {
+  if (!state.relatedSuggestion) return clearRelatedNote()
+  elements.intelligenceCard.classList.remove('open')
+  setTimeout(() => {
+    if (!elements.intelligenceCard.classList.contains('open')) {
+      elements.intelligenceCard.hidden = true
+      elements.intelligencePresence.hidden = false
+    }
+  }, 180)
+}
+
+function showRelatedNote(suggestion) {
+  state.relatedSuggestion = suggestion
+  elements.intelligenceTitle.textContent = suggestion.title
+  elements.intelligenceExcerpt.textContent = suggestion.excerpt || 'A previous note touches the same thought.'
+  elements.intelligenceReason.textContent = suggestion.reason
+  elements.intelligenceSource.textContent = suggestion.notebookName
+  elements.intelligencePresence.hidden = true
+  elements.intelligenceCard.hidden = false
+  requestAnimationFrame(() => elements.intelligenceCard.classList.add('open'))
+  clearTimeout(ambientCollapseTimer)
+  ambientCollapseTimer = setTimeout(collapseRelatedNote, 8500)
+}
+
+async function refreshRelatedNote() {
+  const noteId = state.activeNoteId
+  const text = activeTextSnapshot()
+  if (!noteId || state.notes.length < 2 || text.length < 24) return clearRelatedNote()
+  ambientRequest?.abort()
+  ambientRequest = new AbortController()
+  const sequence = ++ambientSequence
+  try {
+    const result = await api('/intelligence/related', {
+      method: 'POST',
+      body: JSON.stringify({ noteId, text }),
+      signal: ambientRequest.signal,
+    })
+    if (sequence !== ambientSequence || noteId !== state.activeNoteId) return
+    const suggestion = result.suggestion
+    const dismissalKey = suggestion ? `${noteId}:${suggestion.noteId}` : ''
+    if (!suggestion || state.dismissedRelated.has(dismissalKey)) return clearRelatedNote()
+    showRelatedNote(suggestion)
+  } catch (error) {
+    if (error.name !== 'AbortError') console.debug('Related-note listener stayed quiet.', error)
+  }
+}
+
+function queueAmbientCheck() {
+  clearTimeout(ambientTimer)
+  ambientTimer = setTimeout(refreshRelatedNote, 1100)
 }
 
 function setupRailMagnification() {
@@ -999,6 +1093,7 @@ async function saveActiveNote() {
     if (note) note.title = title
     renderNoteList()
     setSaveState('Saved')
+    queueAmbientCheck()
   } catch (error) {
     console.error(error)
     setSaveState('Could not save', true)
@@ -1047,6 +1142,10 @@ async function restoreHistory(index) {
 async function selectNote(id) {
   if (id === state.activeNoteId) return
   clearTimeout(saveTimer)
+  clearTimeout(ambientTimer)
+  ambientRequest?.abort()
+  state.relatedSuggestion = null
+  clearRelatedNote()
   state.activeNoteId = id
   renderNoteList()
   state.loading = true
@@ -1659,6 +1758,21 @@ document.addEventListener('pointerdown', (event) => {
   ) setSettingsOpen(false)
 })
 elements.title.addEventListener('input', queueSave)
+elements.intelligencePresence.addEventListener('click', () => {
+  if (state.relatedSuggestion) showRelatedNote(state.relatedSuggestion)
+})
+document.querySelector('#dismiss-intelligence').addEventListener('click', () => {
+  const suggestion = state.relatedSuggestion
+  if (suggestion) state.dismissedRelated.add(`${state.activeNoteId}:${suggestion.noteId}`)
+  state.relatedSuggestion = null
+  clearRelatedNote()
+})
+document.querySelector('#open-intelligence-source').addEventListener('click', () => {
+  const sourceId = state.relatedSuggestion?.noteId
+  state.relatedSuggestion = null
+  clearRelatedNote()
+  if (sourceId) selectNote(sourceId)
+})
 elements.list.addEventListener('click', (event) => {
   const item = event.target.closest('[data-note-id]')
   if (item) {
