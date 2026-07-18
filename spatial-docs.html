@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spatial Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: #07131d; overflow-x: auto; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 20px 80px;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(45, 133, 173, 0.14), transparent 30%),
+        radial-gradient(circle at 80% 10%, rgba(125, 83, 201, 0.14), transparent 28%),
+        linear-gradient(180deg, #0a1621 0%, #07131d 44%, #050d15 100%);
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    }
+
+    #toolbar {
+      position: sticky;
+      top: 14px;
+      z-index: 40;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 14px;
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 16px;
+      background: rgba(7, 19, 29, 0.84);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 10px 34px rgba(0,0,0,0.38);
+    }
+    .tb-btn {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.05);
+      color: rgba(255,255,255,0.68);
+      border-radius: 9px;
+      padding: 7px 13px;
+      font: 500 12.5px 'IBM Plex Sans', system-ui, sans-serif;
+      cursor: pointer;
+      transition: background .14s, border-color .14s, color .14s;
+      white-space: nowrap;
+    }
+    .tb-btn:hover {
+      background: rgba(255,255,255,0.10);
+      border-color: rgba(255,255,255,0.16);
+      color: rgba(255,255,255,0.94);
+    }
+    .tb-btn.active {
+      background: rgba(45, 133, 173, 0.22);
+      border-color: rgba(45, 133, 173, 0.48);
+      color: #9ed8ef;
+    }
+    .tb-btn.warn:hover {
+      background: rgba(205, 67, 67, 0.20);
+      border-color: rgba(205, 67, 67, 0.36);
+      color: #ffb3b3;
+    }
+    .tb-sep {
+      width: 1px;
+      height: 22px;
+      background: rgba(255,255,255,0.10);
+      margin: 0 4px;
+    }
+    #tb-info {
+      min-width: 112px;
+      color: rgba(255,255,255,0.26);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    #cvs-page {
+      display: block;
+      width: auto;
+      max-width: none;
+      height: auto;
+      border-radius: 4px;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.04),
+        0 44px 110px rgba(0,0,0,0.70),
+        0 16px 42px rgba(0,0,0,0.48);
+      touch-action: none;
+      user-select: none;
+    }
+
+    #ghost-input {
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      border: none;
+      outline: none;
+      resize: none;
+    }
+
+    #prop-panel {
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 14px;
+      background: rgba(7, 19, 29, 0.94);
+      backdrop-filter: blur(22px);
+      box-shadow: 0 14px 32px rgba(0,0,0,0.44);
+      z-index: 60;
+    }
+    #prop-panel.show { display: flex; }
+    .ph-lbl {
+      color: rgba(255,255,255,0.30);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    #prop-kind {
+      color: rgba(255,255,255,0.80);
+      font-size: 12.5px;
+      font-weight: 600;
+      min-width: 88px;
+    }
+    #prop-label {
+      width: 180px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.88);
+      font: 500 12.5px 'IBM Plex Sans', system-ui, sans-serif;
+      outline: none;
+    }
+    #prop-label:focus { border-color: rgba(45, 133, 173, 0.46); }
+    #btn-delete {
+      appearance: none;
+      border: 1px solid rgba(205, 67, 67, 0.32);
+      background: rgba(205, 67, 67, 0.16);
+      color: #ffb3b3;
+      border-radius: 8px;
+      padding: 7px 11px;
+      font: 600 12px 'IBM Plex Sans', system-ui, sans-serif;
+      cursor: pointer;
+    }
+    #btn-delete:hover { background: rgba(205, 67, 67, 0.26); }
+
+    .hint {
+      max-width: 840px;
+      text-align: center;
+      color: rgba(255,255,255,0.20);
+      font-size: 11.5px;
+      line-height: 1.7;
+    }
+    .hint strong { color: rgba(255,255,255,0.38); }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <button class="tb-btn" id="btn-service">Service</button>
+    <button class="tb-btn" id="btn-db">Database</button>
+    <button class="tb-btn" id="btn-queue">Queue</button>
+    <button class="tb-btn" id="btn-note">Callout</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" id="btn-link">Link</button>
+    <button class="tb-btn warn" id="btn-clear-links">Clear Links</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn warn" id="btn-clear">Clear All</button>
+    <div class="tb-sep"></div>
+    <span id="tb-info">ready</span>
+  </div>
+
+  <canvas id="cvs-page"></canvas>
+  <textarea id="ghost-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+
+  <p class="hint">
+    <strong>Spatial Docs MVP</strong> - architecture prose and diagrams share one surface. Click empty space to type into the document.
+    Drag nodes to move the diagram. Use <strong>Link</strong>, then click one node followed by another to connect them.
+    The prose reflows around the nodes in real time.
+  </p>
+
+  <div id="prop-panel">
+    <span class="ph-lbl">Node</span>
+    <span id="prop-kind">Service</span>
+    <div class="tb-sep" style="height:16px"></div>
+    <span class="ph-lbl">Label</span>
+    <input id="prop-label" type="text" maxlength="60" spellcheck="false" />
+    <button id="btn-delete" type="button">Delete</button>
+  </div>
+
+  <script type="module">
+    import * as pretext from 'https://esm.sh/@chenglou/pretext?bundle';
+
+    const PAGE_MIN_W = 980;
+    const PAGE_MIN_H = 1260;
+    const PRINT_PAGE_W = PAGE_MIN_W;
+    const PRINT_PAGE_H = PAGE_MIN_H;
+    const PAGE_PAD_EDGE = 100;
+    const MX = 68;
+    const HEADER_H = 166;
+    const LINE_H = 31;
+    const PARA_GAP = 22;
+    const CLEARANCE = 18;
+    const MIN_COL_W = 78;
+    const CARET_BLINK = 530;
+    const BODY_FONT = '400 18px "Source Serif 4", Georgia, serif';
+    const LABEL_FONT = '600 12.5px "IBM Plex Sans", system-ui, sans-serif';
+    const META_FONT = '700 11px "IBM Plex Sans", system-ui, sans-serif';
+    const TITLE_FONT = '700 40px "IBM Plex Sans", system-ui, sans-serif';
+
+    const NODE_STYLES = {
+      service: {
+        fill: 'rgba(58, 123, 213, 0.12)',
+        stroke: 'rgba(58, 123, 213, 0.56)',
+        text: '#17447b',
+        title: 'Service',
+        w: 164,
+        h: 72,
+      },
+      db: {
+        fill: 'rgba(17, 163, 120, 0.12)',
+        stroke: 'rgba(17, 163, 120, 0.56)',
+        text: '#0e6549',
+        title: 'Database',
+        w: 156,
+        h: 86,
+      },
+      queue: {
+        fill: 'rgba(210, 133, 41, 0.12)',
+        stroke: 'rgba(210, 133, 41, 0.56)',
+        text: '#8d4e0a',
+        title: 'Queue',
+        w: 148,
+        h: 64,
+      },
+      note: {
+        fill: 'rgba(149, 108, 208, 0.12)',
+        stroke: 'rgba(149, 108, 208, 0.48)',
+        text: '#5d3899',
+        title: 'Callout',
+        w: 176,
+        h: 82,
+      },
+    };
+
+    const C = {
+      page: '#f4f0e7',
+      grid: 'rgba(99, 86, 67, 0.055)',
+      rule: 'rgba(99, 86, 67, 0.14)',
+      ink: '#1b1711',
+      muted: '#7c6b53',
+      faint: '#b19f85',
+      caret: '#2d85ad',
+      selection: 'rgba(45, 133, 173, 0.16)',
+      link: 'rgba(31, 59, 94, 0.46)',
+      linkActive: 'rgba(45, 133, 173, 0.84)',
+      linkGhost: 'rgba(45, 133, 173, 0.24)',
+      nodeShadow: 'rgba(24, 22, 18, 0.09)',
+    };
+
+    const seedText = [
+      'This architecture note describes the event-driven checkout system for a modern commerce platform. Instead of treating the diagram as an attachment, the prose and the system map share a single surface. As you move components around, the document recomposes itself so the explanation stays in dialogue with the architecture.',
+      'A browser client sends authenticated requests to an API gateway. The gateway performs request shaping, policy checks, and fan-out to downstream domain services. Checkout writes an order intent, publishes a domain event, and hands control to a payment worker that completes provider authorization asynchronously. The event bus exists so fulfillment, notifications, and analytics can subscribe without creating a brittle chain of synchronous dependencies.',
+      'The storage layer is deliberately split. Postgres owns transactional truth for customers, carts, and orders. Redis handles low-latency session and rate-limit state. That separation keeps the critical path predictable while still allowing the read-heavy edges of the system to remain fast. The database node should sit close to the prose that explains durability and consistency because that is where reviewers usually stop to ask the hardest questions.',
+      'Callouts in the document can capture operational concerns directly in the flow. A note beside the queue can explain retry semantics, dead-letter policy, or back-pressure strategy. Another near the API gateway can outline where zero-trust controls belong. The aim is not to produce prettier diagrams. The aim is to make architecture reviews readable again.',
+    ].join('\n\n');
+
+    const cvs = document.getElementById('cvs-page');
+    const ctx = cvs.getContext('2d');
+    const ghost = document.getElementById('ghost-input');
+    const propPanel = document.getElementById('prop-panel');
+    const propKind = document.getElementById('prop-kind');
+    const propLabel = document.getElementById('prop-label');
+    const infoEl = document.getElementById('tb-info');
+
+    let pageW = PAGE_MIN_W;
+    let pageH = PAGE_MIN_H;
+    let targetW = PAGE_MIN_W;
+    let targetH = PAGE_MIN_H;
+
+    let docText = seedText;
+    let cursorIdx = docText.length;
+    let selAnchor = -1;
+    let textFocused = false;
+    let lineRecs = [];
+    let docTextH = 0;
+    let caretTX = MX;
+    let caretTY = HEADER_H;
+    let caretAX = MX;
+    let caretAY = HEADER_H;
+    let lastEditAt = 0;
+
+    let nextId = 1;
+    let nodes = [];
+    let links = [];
+    let selectedNode = null;
+    let hoveredNode = null;
+    let dragNode = null;
+    let linkMode = false;
+    let linkStartNode = null;
+    let pointerPos = null;
+
+    function makeNode(kind, x, y, label) {
+      const style = NODE_STYLES[kind];
+      return {
+        id: nextId++,
+        kind,
+        x,
+        y,
+        w: style.w,
+        h: style.h,
+        label: label || style.title,
+      };
+    }
+
+    function seedNodes() {
+      nodes = [
+        makeNode('service', 584, 282, 'Browser Client'),
+        makeNode('service', 590, 394, 'API Gateway'),
+        makeNode('service', 394, 520, 'Auth Service'),
+        makeNode('service', 602, 538, 'Checkout Service'),
+        makeNode('queue',   612, 662, 'Event Bus'),
+        makeNode('service', 820, 548, 'Payment Worker'),
+        makeNode('db',      804, 760, 'Orders Postgres'),
+        makeNode('service', 428, 732, 'Notification Service'),
+        makeNode('note',    352, 865, 'Retry policy: exponential backoff and dead-letter after 5 attempts'),
+      ];
+      links = [
+        [1,2],[2,3],[2,4],[4,5],[5,6],[5,7],[4,8],[7,8],
+      ];
+    }
+    seedNodes();
+
+    function roundedRect(x, y, w, h, r) {
+      const rr = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + rr, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rr);
+      ctx.arcTo(x + w, y + h, x, y + h, rr);
+      ctx.arcTo(x, y + h, x, y, rr);
+      ctx.arcTo(x, y, x + w, y, rr);
+      ctx.closePath();
+    }
+
+    function animatePage() {
+      const ease = 0.13;
+      pageW += (targetW - pageW) * ease;
+      pageH += (targetH - pageH) * ease;
+      if (Math.abs(pageW - targetW) < 0.6) pageW = targetW;
+      if (Math.abs(pageH - targetH) < 0.6) pageH = targetH;
+      const w = Math.ceil(pageW);
+      const h = Math.ceil(pageH);
+      if (cvs.width !== w || cvs.height !== h) {
+        cvs.width = w;
+        cvs.height = h;
+      }
+      document.body.style.minWidth = `${w + 40}px`;
+    }
+
+    function animateCaret() {
+      const ease = 0.16;
+      caretAX += (caretTX - caretAX) * ease;
+      caretAY += (caretTY - caretAY) * ease;
+      if (Math.abs(caretAX - caretTX) < 0.5) caretAX = caretTX;
+      if (Math.abs(caretAY - caretTY) < 0.5) caretAY = caretTY;
+    }
+
+    function freeSegments(lineY, left, width) {
+      const rowMid = lineY + LINE_H / 2;
+      const right = left + width;
+      const blocked = [];
+
+      for (const node of nodes) {
+        if (rowMid > node.y - CLEARANCE && rowMid < node.y + node.h + CLEARANCE) {
+          blocked.push([node.x - CLEARANCE, node.x + node.w + CLEARANCE]);
+        }
+      }
+
+      if (blocked.length > 1) {
+        blocked.sort((a, b) => a[0] - b[0]);
+        const merged = [blocked[0].slice()];
+        for (let i = 1; i < blocked.length; i += 1) {
+          const prev = merged[merged.length - 1];
+          if (blocked[i][0] <= prev[1]) prev[1] = Math.max(prev[1], blocked[i][1]);
+          else merged.push(blocked[i].slice());
+        }
+        blocked.length = 0;
+        blocked.push(...merged);
+      }
+
+      const free = [];
+      let cursor = left;
+      for (const [lo, hi] of blocked) {
+        const start = Math.max(left, lo);
+        const end = Math.min(right, hi);
+        if (start - cursor >= MIN_COL_W) free.push({ x: cursor, w: start - cursor });
+        cursor = Math.max(cursor, end);
+      }
+      if (right - cursor >= MIN_COL_W) free.push({ x: cursor, w: right - cursor });
+      return free.length ? free : [{ x: left, w: width }];
+    }
+
+    function layoutDocument() {
+      const recs = [];
+      const textLeft = MX;
+      const textW = Math.max(320, Math.ceil(pageW) - 2 * MX);
+      const paras = docText.split('\n');
+      let charOff = 0;
+      let y = HEADER_H;
+      let newTX = caretTX;
+      let newTY = caretTY;
+      ctx.font = BODY_FONT;
+
+      for (let pi = 0; pi < paras.length; pi += 1) {
+        const raw = paras[pi];
+        if (raw === '') {
+          recs.push({ para: pi, x: textLeft, y, startChar: charOff, endChar: charOff, text: '' });
+          if (cursorIdx === charOff) { newTX = textLeft; newTY = y; }
+          charOff += 1;
+          y += LINE_H;
+          continue;
+        }
+
+        const prepared = pretext.prepareWithSegments(raw, BODY_FONT, { whiteSpace: 'normal' });
+        let ptCursor = { segmentIndex: 0, graphemeIndex: 0 };
+        let paraPos = 0;
+
+        while (true) {
+          const segments = freeSegments(y, textLeft, textW);
+          if (!segments.length) {
+            y += LINE_H;
+            continue;
+          }
+
+          let rowDone = false;
+          for (const segment of segments) {
+            const line = pretext.layoutNextLine(prepared, ptCursor, segment.w);
+            if (!line) {
+              rowDone = true;
+              break;
+            }
+            const sc = charOff + paraPos;
+            const ec = sc + line.text.length;
+            recs.push({ para: pi, x: segment.x, y, startChar: sc, endChar: ec, text: line.text });
+            if (cursorIdx >= sc && cursorIdx <= ec) {
+              const sub = line.text.slice(0, cursorIdx - sc);
+              newTX = segment.x + ctx.measureText(sub).width;
+              newTY = y;
+            }
+            paraPos += line.text.length;
+            ptCursor = line.end;
+          }
+          if (rowDone) break;
+
+          let exhausted = true;
+          for (const segment of segments) {
+            if (pretext.layoutNextLine(prepared, ptCursor, segment.w)) {
+              exhausted = false;
+              break;
+            }
+          }
+          if (exhausted) break;
+          y += LINE_H;
+        }
+
+        y += LINE_H;
+        if (cursorIdx === charOff + raw.length) {
+          const last = recs.filter(r => r.para === pi).pop();
+          if (last) {
+            newTX = last.x + ctx.measureText(last.text).width;
+            newTY = last.y;
+          } else {
+            newTX = textLeft;
+            newTY = y - LINE_H;
+          }
+        }
+        charOff += raw.length + 1;
+        y += PARA_GAP;
+      }
+
+      if (docText === '' || (cursorIdx === 0 && recs.length === 0)) {
+        newTX = textLeft;
+        newTY = HEADER_H;
+      }
+
+      docTextH = y;
+      caretTX = newTX;
+      caretTY = newTY;
+      return recs;
+    }
+
+    function hitTestText(px, py) {
+      if (!lineRecs.length) return 0;
+      ctx.font = BODY_FONT;
+      let best = null;
+      let bestDy = Infinity;
+      for (const rec of lineRecs) {
+        const dy = Math.abs(py - (rec.y + LINE_H / 2));
+        if (dy < bestDy) { bestDy = dy; best = rec; }
+      }
+      if (!best) return docText.length;
+      const relX = px - best.x;
+      let bestI = 0;
+      let bestDx = Infinity;
+      for (let i = 0; i <= best.text.length; i += 1) {
+        const dx = Math.abs(ctx.measureText(best.text.slice(0, i)).width - relX);
+        if (dx < bestDx) { bestDx = dx; bestI = i; }
+      }
+      return best.startChar + bestI;
+    }
+
+    function deleteSelection() {
+      const lo = Math.min(selAnchor, cursorIdx);
+      const hi = Math.max(selAnchor, cursorIdx);
+      docText = docText.slice(0, lo) + docText.slice(hi);
+      cursorIdx = lo;
+      selAnchor = -1;
+      lastEditAt = performance.now();
+    }
+
+    function insertText(text) {
+      if (selAnchor >= 0 && selAnchor !== cursorIdx) deleteSelection();
+      docText = docText.slice(0, cursorIdx) + text + docText.slice(cursorIdx);
+      cursorIdx += text.length;
+      selAnchor = -1;
+      lastEditAt = performance.now();
+    }
+
+    function deleteBack() {
+      if (selAnchor >= 0 && selAnchor !== cursorIdx) { deleteSelection(); return; }
+      if (cursorIdx === 0) return;
+      docText = docText.slice(0, cursorIdx - 1) + docText.slice(cursorIdx);
+      cursorIdx -= 1;
+      selAnchor = -1;
+      lastEditAt = performance.now();
+    }
+
+    function deleteForward() {
+      if (selAnchor >= 0 && selAnchor !== cursorIdx) { deleteSelection(); return; }
+      if (cursorIdx >= docText.length) return;
+      docText = docText.slice(0, cursorIdx) + docText.slice(cursorIdx + 1);
+      selAnchor = -1;
+      lastEditAt = performance.now();
+    }
+
+    function moveCursor(delta, shift) {
+      const old = cursorIdx;
+      cursorIdx = Math.max(0, Math.min(docText.length, cursorIdx + delta));
+      if (shift) {
+        if (selAnchor < 0) selAnchor = old;
+      } else {
+        selAnchor = -1;
+      }
+    }
+
+    function moveLineV(dir, shift) {
+      const cur = lineRecs.find(r => r.startChar <= cursorIdx && r.endChar >= cursorIdx);
+      if (!cur) return;
+      const others = lineRecs.filter(r => dir < 0 ? r.y < cur.y : r.y > cur.y)
+        .sort((a, b) => dir < 0 ? b.y - a.y : a.y - b.y);
+      if (!others.length) return;
+      const old = cursorIdx;
+      cursorIdx = hitTestText(caretAX, others[0].y + LINE_H / 2);
+      if (shift) {
+        if (selAnchor < 0) selAnchor = old;
+      } else {
+        selAnchor = -1;
+      }
+    }
+
+    ghost.addEventListener('focus', () => { textFocused = true; });
+    ghost.addEventListener('blur', () => { textFocused = false; });
+    ghost.addEventListener('input', () => {
+      const value = ghost.value;
+      if (!value) return;
+      insertText(value);
+      ghost.value = '';
+    });
+    ghost.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const value = e.clipboardData.getData('text/plain');
+      if (value) insertText(value);
+    });
+    ghost.addEventListener('keydown', (e) => {
+      const shift = e.shiftKey;
+      switch (e.key) {
+        case 'Backspace': e.preventDefault(); deleteBack(); break;
+        case 'Delete': e.preventDefault(); deleteForward(); break;
+        case 'Enter': e.preventDefault(); insertText('\n'); break;
+        case 'ArrowLeft': e.preventDefault(); moveCursor(-1, shift); break;
+        case 'ArrowRight': e.preventDefault(); moveCursor(1, shift); break;
+        case 'ArrowUp': e.preventDefault(); moveLineV(-1, shift); break;
+        case 'ArrowDown': e.preventDefault(); moveLineV(1, shift); break;
+        case 'a':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            selAnchor = 0;
+            cursorIdx = docText.length;
+          }
+          break;
+      }
+    });
+
+    function nodeAt(px, py) {
+      for (let i = nodes.length - 1; i >= 0; i -= 1) {
+        const node = nodes[i];
+        if (px >= node.x && px <= node.x + node.w && py >= node.y && py <= node.y + node.h) return node;
+      }
+      return null;
+    }
+
+    function center(node) {
+      return { x: node.x + node.w / 2, y: node.y + node.h / 2 };
+    }
+
+    function linkExists(aId, bId) {
+      return links.some(([a, b]) => (a === aId && b === bId) || (a === bId && b === aId));
+    }
+
+    function addLink(aId, bId) {
+      if (aId === bId || linkExists(aId, bId)) return;
+      links.push([aId, bId]);
+      updateInfo();
+    }
+
+    function removeNode(node) {
+      nodes = nodes.filter(n => n !== node);
+      links = links.filter(([a, b]) => a !== node.id && b !== node.id);
+      if (selectedNode === node) selectedNode = null;
+      if (linkStartNode === node) linkStartNode = null;
+      syncPanel();
+      updateInfo();
+    }
+
+    function drawBackground() {
+      ctx.fillStyle = C.page;
+      ctx.fillRect(0, 0, cvs.width, cvs.height);
+      ctx.fillStyle = C.grid;
+      for (let gx = MX - 18; gx < cvs.width - MX + 10; gx += 26) {
+        for (let gy = 22; gy < cvs.height - 28; gy += 26) {
+          ctx.fillRect(gx, gy, 1.25, 1.25);
+        }
+      }
+      const vignette = ctx.createRadialGradient(cvs.width * 0.5, cvs.height * 0.45, 70, cvs.width * 0.5, cvs.height * 0.45, cvs.width * 0.75);
+      vignette.addColorStop(0, 'rgba(0,0,0,0)');
+      vignette.addColorStop(1, 'rgba(65, 45, 18, 0.09)');
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, cvs.width, cvs.height);
+
+      drawPrintPageGuides();
+    }
+
+    function drawPrintPageGuides() {
+      const inset = 16;
+      const cols = Math.max(1, Math.ceil(cvs.width / PRINT_PAGE_W));
+      const rows = Math.max(1, Math.ceil(cvs.height / PRINT_PAGE_H));
+
+      ctx.save();
+      ctx.font = META_FONT;
+      ctx.textBaseline = 'middle';
+
+      for (let row = 0; row < rows; row += 1) {
+        for (let col = 0; col < cols; col += 1) {
+          const left = col * PRINT_PAGE_W;
+          const top = row * PRINT_PAGE_H;
+          const width = Math.min(PRINT_PAGE_W, cvs.width - left);
+          const height = Math.min(PRINT_PAGE_H, cvs.height - top);
+          const bottom = top + height;
+          const right = left + width;
+          const sheetLabel = `${String.fromCharCode(65 + col)}${row + 1}`;
+
+          ctx.strokeStyle = 'rgba(96, 82, 60, 0.13)';
+          ctx.lineWidth = 1;
+          roundedRect(left + inset, top + inset, Math.max(0, width - inset * 2), Math.max(0, height - inset * 2), 3);
+          ctx.stroke();
+
+          if (row > 0) {
+            ctx.strokeStyle = 'rgba(96, 82, 60, 0.20)';
+            ctx.lineWidth = 1.1;
+            ctx.setLineDash([10, 8]);
+            ctx.beginPath();
+            ctx.moveTo(left + Math.min(MX, width * 0.18), top);
+            ctx.lineTo(right - Math.min(MX, width * 0.18), top);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          if (col > 0) {
+            ctx.strokeStyle = 'rgba(96, 82, 60, 0.16)';
+            ctx.lineWidth = 1.1;
+            ctx.setLineDash([10, 8]);
+            ctx.beginPath();
+            ctx.moveTo(left, top + Math.min(56, height * 0.12));
+            ctx.lineTo(left, bottom - Math.min(56, height * 0.12));
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          if (row > 0 || col > 0) {
+            ctx.fillStyle = 'rgba(124, 107, 83, 0.72)';
+            ctx.fillRect(left + width / 2 - 34, top - 10, 68, 20);
+            ctx.fillStyle = '#f4f0e7';
+            ctx.textAlign = 'center';
+            ctx.fillText(`PAGE ${sheetLabel}`, left + width / 2, top);
+          }
+
+          ctx.fillStyle = 'rgba(124, 107, 83, 0.34)';
+          ctx.textAlign = 'right';
+          ctx.fillText(`Sheet ${sheetLabel}`, right - Math.min(MX, width * 0.18), bottom - 18);
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function drawHeader() {
+      ctx.save();
+      ctx.fillStyle = '#111722';
+      ctx.font = TITLE_FONT;
+      ctx.textBaseline = 'top';
+      ctx.fillText('Spatial Docs', MX, 28);
+      ctx.font = '400 16px "IBM Plex Sans", system-ui, sans-serif';
+      ctx.fillStyle = C.muted;
+      ctx.fillText('Architecture narrative and system diagram sharing one layout engine', MX, 74);
+      ctx.font = META_FONT;
+      ctx.fillStyle = C.faint;
+      ctx.fillText('RFC 014  -  Checkout Event Pipeline', MX, 110);
+      ctx.textAlign = 'right';
+      ctx.fillText('status: design review', cvs.width - MX, 110);
+      ctx.textAlign = 'left';
+      ctx.strokeStyle = C.rule;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(MX, 136);
+      ctx.lineTo(cvs.width - MX, 136);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSelection() {
+      if (!textFocused || selAnchor < 0 || selAnchor === cursorIdx) return;
+      const lo = Math.min(selAnchor, cursorIdx);
+      const hi = Math.max(selAnchor, cursorIdx);
+      ctx.save();
+      ctx.font = BODY_FONT;
+      ctx.fillStyle = C.selection;
+      for (const rec of lineRecs) {
+        if (rec.endChar < lo || rec.startChar > hi) continue;
+        const a = Math.max(0, lo - rec.startChar);
+        const b = Math.min(rec.text.length, hi - rec.startChar);
+        const x1 = rec.x + ctx.measureText(rec.text.slice(0, a)).width;
+        const x2 = rec.x + ctx.measureText(rec.text.slice(0, b)).width;
+        ctx.fillRect(x1, rec.y, x2 - x1, LINE_H);
+      }
+      ctx.restore();
+    }
+
+    function drawText() {
+      ctx.save();
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      ctx.font = BODY_FONT;
+      if (docText === '') {
+        ctx.fillStyle = 'rgba(121, 96, 62, 0.30)';
+        ctx.fillText('Click anywhere and start writing architecture prose...', MX, HEADER_H);
+      } else {
+        drawSelection();
+        ctx.fillStyle = C.ink;
+        for (const rec of lineRecs) {
+          if (rec.text) ctx.fillText(rec.text, rec.x, rec.y);
+        }
+      }
+
+      if (textFocused) {
+        const now = performance.now();
+        const show = (now - lastEditAt) < 300 || Math.floor(now / CARET_BLINK) % 2 === 0;
+        if (show) {
+          ctx.strokeStyle = C.caret;
+          ctx.lineWidth = 2;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(caretAX, caretAY + 3);
+          ctx.lineTo(caretAX, caretAY + LINE_H - 3);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    function edgePoint(node, toward) {
+      const c = center(node);
+      const dx = toward.x - c.x;
+      const dy = toward.y - c.y;
+      const sx = node.w / 2;
+      const sy = node.h / 2;
+      if (Math.abs(dx) * sy > Math.abs(dy) * sx) {
+        return {
+          x: c.x + Math.sign(dx || 1) * sx,
+          y: c.y + dy / Math.max(Math.abs(dx), 0.001) * sx,
+        };
+      }
+      return {
+        x: c.x + dx / Math.max(Math.abs(dy), 0.001) * sy,
+        y: c.y + Math.sign(dy || 1) * sy,
+      };
+    }
+
+    function arrowHead(from, to, color) {
+      const angle = Math.atan2(to.y - from.y, to.x - from.x);
+      const size = 8;
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(to.x, to.y);
+      ctx.lineTo(to.x - Math.cos(angle - Math.PI / 6) * size, to.y - Math.sin(angle - Math.PI / 6) * size);
+      ctx.lineTo(to.x - Math.cos(angle + Math.PI / 6) * size, to.y - Math.sin(angle + Math.PI / 6) * size);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawLinks() {
+      for (const [aId, bId] of links) {
+        const a = nodes.find(n => n.id === aId);
+        const b = nodes.find(n => n.id === bId);
+        if (!a || !b) continue;
+        const ac = center(a);
+        const bc = center(b);
+        const start = edgePoint(a, bc);
+        const end = edgePoint(b, ac);
+        const midX = (start.x + end.x) / 2;
+        const color = selectedNode && (selectedNode.id === aId || selectedNode.id === bId) ? C.linkActive : C.link;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.7;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(midX, start.y);
+        ctx.lineTo(midX, end.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.stroke();
+        ctx.restore();
+        arrowHead({ x: midX, y: end.y }, end, color);
+      }
+
+      if (linkMode && linkStartNode && pointerPos) {
+        const start = center(linkStartNode);
+        const midX = (start.x + pointerPos.x) / 2;
+        ctx.save();
+        ctx.strokeStyle = C.linkGhost;
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([7, 6]);
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(midX, start.y);
+        ctx.lineTo(midX, pointerPos.y);
+        ctx.lineTo(pointerPos.x, pointerPos.y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    function drawNodeShape(node, selected, hovered) {
+      const style = NODE_STYLES[node.kind];
+      ctx.save();
+      ctx.shadowColor = C.nodeShadow;
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 6;
+
+      if (node.kind === 'db') {
+        const rx = node.w / 2;
+        const ry = 11;
+        ctx.fillStyle = style.fill;
+        ctx.strokeStyle = selected ? 'rgba(17, 163, 120, 0.84)' : hovered ? 'rgba(17, 163, 120, 0.70)' : style.stroke;
+        ctx.lineWidth = selected ? 2.2 : hovered ? 1.6 : 1.2;
+        ctx.beginPath();
+        ctx.moveTo(node.x, node.y + 12);
+        ctx.lineTo(node.x, node.y + node.h - 12);
+        ctx.bezierCurveTo(node.x, node.y + node.h - 2, node.x + node.w, node.y + node.h - 2, node.x + node.w, node.y + node.h - 12);
+        ctx.lineTo(node.x + node.w, node.y + 12);
+        ctx.bezierCurveTo(node.x + node.w, node.y + 2, node.x, node.y + 2, node.x, node.y + 12);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(node.x + rx, node.y + 12, rx, ry, 0, Math.PI, 0, true);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(node.x + rx, node.y + node.h - 12, rx, ry, 0, 0, Math.PI, false);
+        ctx.stroke();
+      } else if (node.kind === 'queue') {
+        ctx.fillStyle = style.fill;
+        ctx.strokeStyle = selected ? 'rgba(210, 133, 41, 0.84)' : hovered ? 'rgba(210, 133, 41, 0.72)' : style.stroke;
+        ctx.lineWidth = selected ? 2.2 : hovered ? 1.6 : 1.2;
+        roundedRect(node.x, node.y, node.w, node.h, 28);
+        ctx.fill();
+        ctx.stroke();
+      } else if (node.kind === 'note') {
+        ctx.fillStyle = style.fill;
+        ctx.strokeStyle = selected ? 'rgba(149, 108, 208, 0.82)' : hovered ? 'rgba(149, 108, 208, 0.66)' : style.stroke;
+        ctx.lineWidth = selected ? 2.2 : hovered ? 1.6 : 1.2;
+        roundedRect(node.x, node.y, node.w, node.h, 10);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath();
+        ctx.moveTo(node.x + 14, node.y + 23);
+        ctx.lineTo(node.x + node.w - 14, node.y + 23);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.fillStyle = style.fill;
+        ctx.strokeStyle = selected ? 'rgba(58, 123, 213, 0.84)' : hovered ? 'rgba(58, 123, 213, 0.70)' : style.stroke;
+        ctx.lineWidth = selected ? 2.2 : hovered ? 1.6 : 1.2;
+        roundedRect(node.x, node.y, node.w, node.h, 14);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function wrapNodeLabel(text, maxW) {
+      ctx.font = LABEL_FONT;
+      const words = text.split(' ');
+      const lines = [];
+      let current = '';
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (ctx.measureText(candidate).width > maxW && current) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) lines.push(current);
+      return lines.slice(0, 3);
+    }
+
+    function drawNodes() {
+      for (const node of nodes) {
+        const style = NODE_STYLES[node.kind];
+        drawNodeShape(node, node === selectedNode, node === hoveredNode);
+        ctx.save();
+        ctx.font = META_FONT;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = style.text;
+        ctx.fillText(style.title.toUpperCase(), node.x + 12, node.y + 10);
+        ctx.font = LABEL_FONT;
+        ctx.fillStyle = '#18232d';
+        const lines = wrapNodeLabel(node.label, node.w - 24);
+        lines.forEach((line, i) => {
+          ctx.fillText(line, node.x + 12, node.y + 30 + i * 15);
+        });
+        ctx.restore();
+      }
+    }
+
+    function drawFooter() {
+      const words = docText.trim() ? docText.trim().split(/\s+/).length : 0;
+      const cols = Math.max(1, Math.ceil(cvs.width / PRINT_PAGE_W));
+      const rows = Math.max(1, Math.ceil(cvs.height / PRINT_PAGE_H));
+      ctx.save();
+      ctx.font = META_FONT;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = C.faint;
+      ctx.fillText(`${words} words  -  ${nodes.length} nodes  -  ${links.length} links  -  ${cols} x ${rows} sheets`, cvs.width - MX, cvs.height - 20);
+      ctx.strokeStyle = C.rule;
+      ctx.lineWidth = 0.75;
+      ctx.beginPath();
+      ctx.moveTo(MX, cvs.height - 34);
+      ctx.lineTo(cvs.width - MX, cvs.height - 34);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function refreshTargetSize() {
+      let maxX = 0;
+      let maxY = 0;
+      for (const node of nodes) {
+        maxX = Math.max(maxX, node.x + node.w);
+        maxY = Math.max(maxY, node.y + node.h);
+      }
+      maxY = Math.max(maxY, docTextH + 40);
+      const contentW = Math.max(PAGE_MIN_W, maxX + PAGE_PAD_EDGE);
+      targetW = Math.ceil(contentW / PRINT_PAGE_W) * PRINT_PAGE_W;
+      const contentH = Math.max(PAGE_MIN_H, maxY + PAGE_PAD_EDGE);
+      targetH = Math.ceil(contentH / PRINT_PAGE_H) * PRINT_PAGE_H;
+    }
+
+    function updateInfo() {
+      if (linkMode) {
+        infoEl.textContent = linkStartNode ? 'select target' : 'select source';
+        return;
+      }
+      infoEl.textContent = `${nodes.length} nodes  ${links.length ? '- ' + links.length + ' links' : ''}`.trim();
+    }
+
+    function syncPanel() {
+      const show = !!selectedNode;
+      propPanel.classList.toggle('show', show);
+      if (!show) return;
+      propKind.textContent = NODE_STYLES[selectedNode.kind].title;
+      propLabel.value = selectedNode.label;
+    }
+
+    function addNode(kind) {
+      const style = NODE_STYLES[kind];
+      const node = makeNode(
+        kind,
+        Math.max(MX, pageW * 0.56 + (Math.random() - 0.5) * 110),
+        Math.max(HEADER_H + 20, pageH * 0.40 + (Math.random() - 0.5) * 140),
+        style.title,
+      );
+      nodes.push(node);
+      selectedNode = node;
+      syncPanel();
+      updateInfo();
+    }
+
+    function setLinkMode(on) {
+      linkMode = on;
+      linkStartNode = null;
+      document.getElementById('btn-link').classList.toggle('active', on);
+      updateInfo();
+    }
+
+    function clickCanvas(pt) {
+      const hit = nodeAt(pt.x, pt.y);
+      if (linkMode) {
+        if (!hit) return;
+        if (!linkStartNode) {
+          linkStartNode = hit;
+          selectedNode = hit;
+          syncPanel();
+          updateInfo();
+          return;
+        }
+        addLink(linkStartNode.id, hit.id);
+        linkStartNode = hit;
+        selectedNode = hit;
+        syncPanel();
+        updateInfo();
+        return;
+      }
+
+      if (hit) {
+        selectedNode = hit;
+        syncPanel();
+        return;
+      }
+
+      selectedNode = null;
+      syncPanel();
+      cursorIdx = hitTestText(pt.x, pt.y);
+      selAnchor = -1;
+      ghost.focus();
+    }
+
+    function ppos(e) {
+      const r = cvs.getBoundingClientRect();
+      return {
+        x: (e.clientX - r.left) * (cvs.width / r.width),
+        y: (e.clientY - r.top) * (cvs.height / r.height),
+      };
+    }
+
+    cvs.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const pt = ppos(e);
+      pointerPos = pt;
+      const hit = nodeAt(pt.x, pt.y);
+      if (!linkMode && hit) {
+        selectedNode = hit;
+        dragNode = { node: hit, ox: pt.x - hit.x, oy: pt.y - hit.y };
+        syncPanel();
+        cvs.setPointerCapture(e.pointerId);
+        return;
+      }
+      clickCanvas(pt);
+    });
+
+    cvs.addEventListener('pointermove', (e) => {
+      const pt = ppos(e);
+      pointerPos = pt;
+      if (dragNode) {
+        dragNode.node.x = pt.x - dragNode.ox;
+        dragNode.node.y = pt.y - dragNode.oy;
+        return;
+      }
+      hoveredNode = nodeAt(pt.x, pt.y);
+      if (linkMode) cvs.style.cursor = 'crosshair';
+      else cvs.style.cursor = hoveredNode ? 'move' : 'text';
+    });
+
+    cvs.addEventListener('pointerup', () => {
+      dragNode = null;
+    });
+
+    cvs.addEventListener('dblclick', (e) => {
+      const hit = nodeAt(ppos(e).x, ppos(e).y);
+      if (hit) {
+        selectedNode = hit;
+        syncPanel();
+        propLabel.focus();
+        propLabel.select();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (document.activeElement === propLabel) return;
+      if (document.activeElement === ghost) return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNode) {
+        e.preventDefault();
+        removeNode(selectedNode);
+      }
+      if (e.key === 'Escape' && linkMode) setLinkMode(false);
+    });
+
+    propLabel.addEventListener('input', () => {
+      if (selectedNode) selectedNode.label = propLabel.value;
+    });
+    document.getElementById('btn-delete').addEventListener('click', () => {
+      if (selectedNode) removeNode(selectedNode);
+    });
+
+    document.getElementById('btn-service').addEventListener('click', () => addNode('service'));
+    document.getElementById('btn-db').addEventListener('click', () => addNode('db'));
+    document.getElementById('btn-queue').addEventListener('click', () => addNode('queue'));
+    document.getElementById('btn-note').addEventListener('click', () => addNode('note'));
+    document.getElementById('btn-link').addEventListener('click', () => setLinkMode(!linkMode));
+    document.getElementById('btn-clear-links').addEventListener('click', () => { links = []; updateInfo(); });
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      docText = seedText;
+      cursorIdx = docText.length;
+      selAnchor = -1;
+      seedNodes();
+      selectedNode = null;
+      setLinkMode(false);
+      syncPanel();
+      updateInfo();
+    });
+
+    function render() {
+      refreshTargetSize();
+      animatePage();
+      lineRecs = layoutDocument();
+      animateCaret();
+      drawBackground();
+      drawHeader();
+      drawLinks();
+      drawText();
+      drawNodes();
+      drawFooter();
+      requestAnimationFrame(render);
+    }
+
+    async function init() {
+      updateInfo();
+      syncPanel();
+      await document.fonts.ready;
+      ghost.focus();
+      render();
+    }
+
+    init();
+  </script>
+</body>
+</html>

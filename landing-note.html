@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Personal Note — Your Mind Is Infinite. Your Workspace Shouldn't Be a Cage.</title>
+  <meta name="description" content="The first breathing canvas for thinkers. Local-first, zero-knowledge, E2EE encrypted. A private sanctuary where pages snap for structure and dissolve for dreaming."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400;1,8..60,600;1,8..60,700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0A0A0F;
+      --surface:     #0F0F1A;
+      --surface-2:   #14141F;
+      --border:      #1E1E30;
+      --border-hi:   #2A2A48;
+      --accent:      #D4A837;
+      --accent-dim:  rgba(212,168,55,0.10);
+      --accent-glow: rgba(212,168,55,0.22);
+      --green:       #4F7942;
+      --green-hi:    #6DBF67;
+      --text:        #E8E8F2;
+      --text-dim:    #55556A;
+      --text-muted:  #1A1A2E;
+      --font-mono:   'JetBrains Mono','Courier New',monospace;
+      --font-sans:   'IBM Plex Sans','Helvetica Neue',sans-serif;
+      --font-serif:  'Source Serif 4','Georgia',serif;
+      --max:         1120px;
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-sans); font-size: 16px; line-height: 1.65;
+      overflow-x: hidden;
+    }
+
+    /* scanline */
+    body::before {
+      content:''; position:fixed; inset:0; z-index:9998; pointer-events:none;
+      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.05) 2px,rgba(0,0,0,.05) 4px);
+    }
+
+    /* noise */
+    body::after {
+      content:''; position:fixed; inset:0; z-index:9997; pointer-events:none; opacity:.02;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 24px; font-family: var(--font-mono);
+      font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+      border: 1px solid; cursor: pointer; transition: all 150ms ease;
+    }
+    .btn-primary  { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover  { background: transparent; color: var(--accent); }
+    .btn-outline  { background: transparent; color: var(--accent); border-color: var(--accent); }
+    .btn-outline:hover  { background: var(--accent); color: #fff; }
+    .btn-ghost    { background: transparent; color: var(--text-dim); border-color: var(--border-hi); }
+    .btn-ghost:hover    { border-color: var(--accent); color: var(--accent); }
+
+    /* ── NAV ─────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(10,10,15,.95); backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      height: 56px; padding: 0 28px;
+    }
+    .nav-logo {
+      font-family: var(--font-serif); font-size: 17px; font-weight: 700;
+      color: var(--accent); font-style: italic; margin-right: 8px;
+    }
+    .nav-slash  { font-family: var(--font-mono); color: var(--text-dim); margin: 0 8px; }
+    .nav-sub    { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: .14em; text-transform: uppercase; margin-right: auto; }
+    .nl {
+      padding: 0 14px; height: 56px; line-height: 56px;
+      font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase;
+      color: var(--text-dim); transition: color 140ms;
+    }
+    .nl:hover { color: var(--accent); }
+
+    /* ── PHILOSOPHY BAR ──────────────────── */
+    .phil-bar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 9px 28px; display: flex; align-items: center;
+      justify-content: center; gap: 20px; overflow: hidden;
+    }
+    .phil-bar span {
+      font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+      letter-spacing: .09em; white-space: nowrap;
+    }
+    .phil-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green-hi); flex-shrink:0; }
+
+    /* ── HERO ────────────────────────────── */
+    .hero-wrap { max-width: var(--max); margin: 0 auto; padding: 80px 28px 70px; }
+    .hero {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
+    }
+    @media (max-width: 860px) { .hero { grid-template-columns: 1fr; gap: 40px; } }
+
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 1px solid var(--border-hi); padding: 5px 12px;
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em;
+      color: var(--text-dim); margin-bottom: 24px;
+    }
+    .hb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.75)} }
+
+    .hero-h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(30px, 4.2vw, 56px);
+      line-height: 1.13; font-weight: 700;
+      color: var(--text); margin-bottom: 20px;
+    }
+    .hero-h1 .blu  { color: var(--accent); font-style: italic; }
+    .hero-h1 .grn  { color: var(--green-hi); font-style: normal; }
+
+    .hero-p {
+      font-size: 15px; color: var(--text-dim); line-height: 1.75;
+      margin-bottom: 32px; max-width: 480px;
+    }
+    .hero-btns { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 40px; }
+
+    .hero-stats { display: flex; gap: 32px; flex-wrap: wrap; }
+    .hs { display: flex; flex-direction: column; gap: 2px; }
+    .hs-val   { font-family: var(--font-mono); font-size: 19px; font-weight: 800; color: var(--accent); }
+    .hs-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-dim); }
+
+    /* ── TERMINAL DEMO ───────────────────── */
+    .demo-wrap {
+      background: var(--surface); border: 1px solid var(--border);
+      overflow: hidden; position: relative;
+    }
+    .demo-bar {
+      background: var(--surface-2); border-bottom: 1px solid var(--border);
+      padding: 9px 14px; display: flex; align-items: center; gap: 6px;
+    }
+    .db-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .db-r { background: #FF5F56; } .db-y { background: #FFBD2E; } .db-g { background: #27C93F; }
+    .db-title {
+      font-family: var(--font-mono); font-size: 11px;
+      color: var(--text-dim); margin-left: 8px; letter-spacing: .07em;
+    }
+
+    .boot-body { padding: 18px 20px; min-height: 190px; }
+    .boot-line {
+      font-family: var(--font-mono); font-size: 12px; line-height: 1.9;
+      color: var(--text-dim); opacity: 0; transition: opacity 200ms;
+    }
+    .boot-line.show { opacity: 1; }
+    .boot-line.acc  { color: var(--green-hi); }
+    .boot-line.blu  { color: var(--accent); }
+    .cursor::after  { content:'█'; animation: blink 1s step-end infinite; color: var(--accent); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    .note-editor {
+      border-top: 1px solid var(--border); padding: 20px 22px;
+      opacity: 0; transition: opacity 700ms 400ms;
+    }
+    .note-editor.show { opacity: 1; }
+    .ne-mode  { font-family: var(--font-mono); font-size: 10px; letter-spacing: .15em; color: var(--accent); margin-bottom: 12px; text-transform: uppercase; }
+    .ne-title { font-family: var(--font-serif); font-size: 19px; font-weight: 700; color: var(--text); margin-bottom: 8px; font-style: italic; line-height: 1.3; }
+    .ne-body  { font-size: 13px; color: var(--text-dim); line-height: 1.7; }
+    .ne-cursor { display: inline-block; width: 7px; height: 13px; background: var(--accent); animation: blink 1s step-end infinite; vertical-align: middle; margin-left: 2px; }
+    .ne-chips { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    .ne-chip {
+      font-family: var(--font-mono); font-size: 10px; padding: 3px 9px;
+      border: 1px solid var(--border-hi); color: var(--text-dim); letter-spacing: .08em;
+    }
+    .ne-chip.g { border-color: var(--green); color: var(--green-hi); }
+    .ne-chip.b { border-color: var(--accent); color: var(--accent); }
+
+    /* ── SECTION COMMON ─────────────────── */
+    section { padding: 88px 28px; }
+    .section-inner { max-width: var(--max); margin: 0 auto; }
+    .section-label {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .18em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+    }
+    .section-h2 {
+      font-family: var(--font-serif); font-size: clamp(24px,3.5vw,44px);
+      line-height: 1.18; color: var(--text); margin-bottom: 14px; font-weight: 700;
+    }
+    .section-h2 span { color: var(--accent); font-style: italic; }
+    .section-sub {
+      font-size: 14px; color: var(--text-dim); max-width: 600px; line-height: 1.75;
+      margin-bottom: 48px;
+    }
+
+    /* ── ZERO-KNOWLEDGE ─────────────────── */
+    #zero { background: var(--surface); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+    .zk-grid {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 2px;
+    }
+    @media (max-width: 720px) { .zk-grid { grid-template-columns: 1fr; } }
+    .zk-card { background: var(--bg); border: 1px solid var(--border); padding: 32px 28px; }
+    .zk-icon  { font-size: 28px; margin-bottom: 14px; display: block; }
+    .zk-title {
+      font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+      letter-spacing: .11em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px;
+    }
+    .zk-desc  { font-size: 13px; color: var(--text-dim); line-height: 1.72; }
+    .zk-badge {
+      display: inline-block; margin-top: 16px;
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+      padding: 3px 9px; border: 1px solid var(--green); color: var(--green-hi);
+      text-transform: uppercase;
+    }
+
+    /* ── BENEFITS ───────────────────────── */
+    .benefit-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 32px; }
+    @media (max-width: 760px) { .benefit-grid { grid-template-columns: 1fr; } }
+    .benefit-card {
+      padding: 28px; border-left: 2px solid var(--border-hi);
+      transition: border-left-color 200ms;
+    }
+    .benefit-card:hover { border-left-color: var(--accent); }
+    .bc-num   { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: .1em; margin-bottom: 12px; }
+    .bc-title { font-family: var(--font-serif); font-size: 21px; font-weight: 700; color: var(--text); margin-bottom: 10px; line-height: 1.2; }
+    .bc-desc  { font-size: 13px; color: var(--text-dim); line-height: 1.72; }
+
+    /* ── VESSELS ────────────────────────── */
+    #vessels { background: var(--surface); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+    .vessel-list { display: flex; flex-direction: column; }
+    .vessel-row {
+      display: grid; grid-template-columns: 200px 1fr auto;
+      align-items: center; gap: 24px;
+      padding: 20px 24px;
+      border: 1px solid var(--border); margin-top: -1px;
+      background: var(--bg); transition: background 140ms;
+    }
+    .vessel-row:hover { background: var(--surface-2); }
+    @media (max-width: 680px) { .vessel-row { grid-template-columns: 1fr; gap: 8px; } }
+    .vr-name { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: .05em; }
+    .vr-desc { font-size: 13px; color: var(--text-dim); line-height: 1.55; }
+    .vr-tag {
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+      padding: 4px 11px; border: 1px solid var(--border-hi);
+      color: var(--text-dim); white-space: nowrap; text-transform: uppercase;
+    }
+    .vr-tag.b { border-color: var(--accent); color: var(--accent); }
+    .vr-tag.g { border-color: var(--green); color: var(--green-hi); }
+
+    /* ── TECH MOAT ──────────────────────── */
+    .moat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
+    @media (max-width: 760px) { .moat-grid { grid-template-columns: 1fr; } }
+    .moat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 26px; position: relative; overflow: hidden;
+    }
+    .moat-card::before {
+      content:''; position:absolute; top:0; left:0; right:0; height:2px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+    .moat-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em; color: var(--accent); text-transform: uppercase; margin-bottom: 10px; }
+    .moat-title { font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .moat-desc  { font-size: 13px; color: var(--text-dim); line-height: 1.65; }
+
+    /* ── WAITLIST ───────────────────────── */
+    #waitlist {
+      background: var(--surface); border-top: 1px solid var(--border);
+      padding: 100px 28px; text-align: center;
+    }
+    #waitlist .section-inner { max-width: 560px; }
+    #waitlist .section-h2 { margin-bottom: 10px; }
+    .wl-form {
+      display: flex; gap: 0; max-width: 440px; margin: 0 auto 16px;
+    }
+    .wl-input {
+      flex: 1; padding: 12px 16px;
+      background: var(--bg); border: 1px solid var(--border-hi); border-right: none;
+      color: var(--text); font-family: var(--font-mono); font-size: 13px;
+      outline: none; transition: border-color 150ms;
+    }
+    .wl-input:focus { border-color: var(--accent); }
+    .wl-input::placeholder { color: var(--text-dim); }
+    .wl-btn {
+      padding: 12px 20px; background: var(--accent); color: #fff;
+      border: 1px solid var(--accent); font-family: var(--font-mono);
+      font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      cursor: pointer; transition: all 150ms;
+    }
+    .wl-btn:hover { background: transparent; color: var(--accent); }
+    .wl-note { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); letter-spacing: .08em; }
+    .wl-note .hi { color: var(--green-hi); }
+
+    /* ── PHILOSOPHY QUOTE ───────────────── */
+    .phil-quote {
+      background: var(--surface-2);
+      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      padding: 48px 28px; text-align: center;
+    }
+    .pq-inner { max-width: 640px; margin: 0 auto; }
+    .pq-text {
+      font-family: var(--font-serif);
+      font-size: clamp(18px, 2.5vw, 27px);
+      font-style: italic; color: var(--text); line-height: 1.55; font-weight: 400;
+    }
+    .pq-source {
+      font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
+      letter-spacing: .14em; margin-top: 18px; text-transform: uppercase;
+    }
+
+    /* ── FOOTER ─────────────────────────── */
+    footer { background: var(--bg); border-top: 1px solid var(--border); padding: 28px; }
+    .footer-inner {
+      max-width: var(--max); margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 14px;
+    }
+    .footer-logo  { font-family: var(--font-serif); font-size: 15px; font-weight: 700; color: var(--accent); font-style: italic; }
+    .footer-links { display: flex; gap: 18px; }
+    .footer-link  { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: .1em; text-transform: uppercase; transition: color 140ms; }
+    .footer-link:hover { color: var(--accent); }
+    .footer-copy  { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); letter-spacing: .1em; }
+
+    /* ── FADE UP ────────────────────────── */
+    .fade-up { opacity: 0; transform: translateY(20px); transition: opacity 500ms ease, transform 500ms ease; }
+    .fade-up.visible { opacity: 1; transform: none; }
+
+    @media (max-width: 680px) {
+      nav { height: 58px; padding: 0 16px; }
+      .nav-logo { margin-right: auto; white-space: nowrap; }
+      .nav-slash, .nav-sub, .nl { display: none; }
+      nav .btn { min-height: 34px; margin-left: 10px !important; padding: 8px 10px; font-size: 8px; letter-spacing: .10em; white-space: nowrap; }
+      .phil-bar { padding-inline: 16px; }
+      .phil-bar span { overflow: hidden; text-overflow: ellipsis; }
+      .hero-wrap { padding: 48px 20px 58px; }
+      .hero-badge { max-width: 100%; font-size: 9px; letter-spacing: .1em; }
+      .hero-btns { display: grid; grid-template-columns: 1fr; }
+      .hero-btns .btn { justify-content: center; }
+      .hero-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 20px; }
+      section { padding: 68px 20px; }
+      .boot-body, .note-editor { padding-inline: 16px; }
+      .boot-line { font-size: 10px; overflow-wrap: anywhere; }
+      .wl-form { flex-direction: column; }
+      .wl-input { width: 100%; border-right: 1px solid var(--border-hi); }
+      .wl-btn { width: 100%; }
+      .footer-inner { align-items: flex-start; flex-direction: column; }
+      .footer-links { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ════ NAV ════ -->
+  <nav>
+    <div class="nav-logo">Personal Note</div>
+    <div class="nav-slash">//</div>
+    <div class="nav-sub">LOCAL·FIRST &nbsp;·&nbsp; ZERO·KNOWLEDGE &nbsp;·&nbsp; PRIVATE BETA</div>
+    <a class="nl" href="#zero">WHY US</a>
+    <a class="nl" href="#vessels">VESSELS</a>
+    <a class="nl" href="#tech">TECH</a>
+    <a href="/notes" class="btn btn-primary" style="margin-left:12px">⊹ OPEN THE PROTOTYPE</a>
+  </nav>
+
+  <!-- ════ PHILOSOPHY BAR ════ -->
+  <div class="phil-bar">
+    <div class="phil-dot"></div>
+    <span>STRUCTURE WHEN YOU WANT IT &nbsp;·&nbsp; SPACE WHEN YOU DON'T &nbsp;·&nbsp; WRITER WHEN YOU NEED A PAGE &nbsp;·&nbsp; PAINTER WHEN YOU NEED A CANVAS</span>
+    <div class="phil-dot"></div>
+  </div>
+
+  <!-- ════ HERO ════ -->
+  <div class="hero-wrap">
+    <div class="hero">
+
+      <div class="hero-left">
+        <div class="hero-badge"><div class="hb-dot"></div>PRIVATE BETA — LIMITED SANCTUARIES</div>
+        <h1 class="hero-h1">
+          Your mind<br/>
+          is <span class="blu">infinite.</span><br/>
+          Your workspace<br/>
+          shouldn't be a <span class="grn">cage.</span>
+        </h1>
+        <p class="hero-p">
+          The first breathing canvas for thinkers. A private, local-first sanctuary where pages snap for structure and dissolve for dreaming. Built for the way your mind actually works.
+        </p>
+        <div class="hero-btns">
+          <a href="/notes" class="btn btn-primary">⊹ Enter The Workspace →</a>
+          <a href="#tech" class="btn btn-outline">▶ See The Spatial Stack</a>
+        </div>
+        <div class="hero-stats">
+          <div class="hs">
+            <div class="hs-val">0ms</div>
+            <div class="hs-label">Local Latency</div>
+          </div>
+          <div class="hs">
+            <div class="hs-val">E2EE</div>
+            <div class="hs-label">Zero Knowledge</div>
+          </div>
+          <div class="hs">
+            <div class="hs-val">∞</div>
+            <div class="hs-label">Canvas Size</div>
+          </div>
+          <div class="hs">
+            <div class="hs-val">.md</div>
+            <div class="hs-label">Open Standard</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="demo-wrap">
+          <div class="demo-bar">
+            <div class="db-dot db-r"></div>
+            <div class="db-dot db-y"></div>
+            <div class="db-dot db-g"></div>
+            <div class="db-title">personal-note — sanctuary v1.0.0</div>
+          </div>
+          <div class="boot-body">
+            <div class="boot-line" id="n0">&gt; INITIALIZING LOCAL VAULT...</div>
+            <div class="boot-line blu" id="n1">&gt; SQLITE ENGINE: READY [0ms latency]</div>
+            <div class="boot-line" id="n2">&gt; E2EE: ACTIVE — ZERO KNOWLEDGE CONFIRMED</div>
+            <div class="boot-line" id="n3">&gt; LOADING 間 (MA) INTERFACE... PAGE MODE</div>
+            <div class="boot-line blu" id="n4">&gt; BREATH SYNC: ████████████ STABLE</div>
+            <div class="boot-line acc cursor" id="n5">&gt; YOUR SANCTUARY IS READY.</div>
+          </div>
+          <div class="note-editor" id="note-demo">
+            <div class="ne-mode">// PAGE MODE — "The Manifesto"</div>
+            <div class="ne-title">The Last Breakthrough I Almost Lost</div>
+            <div class="ne-body">
+              We were three hours deep when the insight landed. The kind that rewires everything. I grabbed my phone, opened a notes app, and watched the idea die inside a cluttered sidebar at 9pt font.<span class="ne-cursor"></span>
+            </div>
+            <div class="ne-chips">
+              <div class="ne-chip g">● E2EE ENCRYPTED</div>
+              <div class="ne-chip">LOCAL · SQLite</div>
+              <div class="ne-chip b">TEMPORAL ECHO ON</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ════ ZERO-KNOWLEDGE INTELLIGENCE ════ -->
+  <section id="zero">
+    <div class="section-inner">
+      <div class="section-label">// ZERO-KNOWLEDGE INTELLIGENCE™</div>
+      <h2 class="section-h2">Most tools treat you<br/>like a <span>filing clerk.</span></h2>
+      <p class="section-sub">We treat you like a creator. Local-first speed meets a cloud vault that even we can't open. That's not a feature — that's the architecture.</p>
+
+      <div class="zk-grid">
+        <div class="zk-card fade-up">
+          <span class="zk-icon">⚡</span>
+          <div class="zk-title">Local-First · Cloud-Durable</div>
+          <div class="zk-desc">Work at the speed of thought. SQLite on your device means zero network dependency. Sync to the cloud on your schedule — with E2EE so your thoughts stay yours forever.</div>
+          <div class="zk-badge">0ms offline latency</div>
+        </div>
+        <div class="zk-card fade-up">
+          <span class="zk-icon">🔐</span>
+          <div class="zk-title">E2EE — We Can't Read It</div>
+          <div class="zk-desc">End-to-End Encryption isn't a checkbox. It's the architecture. Your cloud backup is a sealed vault. We hold no keys. Your private thoughts are private — permanently.</div>
+          <div class="zk-badge">zero-knowledge by design</div>
+        </div>
+        <div class="zk-card fade-up">
+          <span class="zk-icon">間</span>
+          <div class="zk-title">The 間 (Ma) Interface</div>
+          <div class="zk-desc">A UI that understands intent. Page mode snaps in when you're writing a manifesto. Canvas mode opens when you're connecting the dots. The switch is automatic — no button, no toggle.</div>
+          <div class="zk-badge">intent-aware interface</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════ BENEFITS ════ -->
+  <section id="benefits">
+    <div class="section-inner">
+      <div class="section-label">// THE HUMAN IMPACT</div>
+      <h2 class="section-h2">Stop fighting your tools.<br/><span>Start thinking.</span></h2>
+      <p class="section-sub">Three things that happen when your workspace finally gets out of the way.</p>
+
+      <div class="benefit-grid">
+        <div class="benefit-card fade-up">
+          <div class="bc-num">// 01 — FLOW</div>
+          <div class="bc-title">Achieve Flow,<br/>Not Friction</div>
+          <div class="bc-desc">Ghost Overlay editing shows you beautiful typography as you write. Touch the text — it becomes raw Markdown. Release — it breathes back into clean layout. The tool disappears.</div>
+        </div>
+        <div class="benefit-card fade-up">
+          <div class="bc-num">// 02 — RETAIN</div>
+          <div class="bc-title">Make Thinking<br/>Fun Again</div>
+          <div class="bc-desc">Head First Vessel turns dry research into visual, high-retention knowledge assets automatically. Your notes stop being an archive and start being a teacher.</div>
+        </div>
+        <div class="benefit-card fade-up">
+          <div class="bc-num">// 03 — RECALL</div>
+          <div class="bc-title">Total Mental<br/>Recall</div>
+          <div class="bc-desc">Hybrid Storage films the evolution of your ideas. Travel back in time and see exactly how a breakthrough was born — the mental trail, not just the destination.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════ VESSELS ════ -->
+  <section id="vessels">
+    <div class="section-inner">
+      <div class="section-label">// THE VESSELS</div>
+      <h2 class="section-h2">Five ways to<br/><span>think differently.</span></h2>
+      <p class="section-sub">Each Vessel is a distinct cognitive gear — not a tab, not a plugin. A different way of being in your ideas.</p>
+
+      <div class="vessel-list">
+        <div class="vessel-row fade-up">
+          <div class="vr-name">Jarvis "Jam"</div>
+          <div class="vr-desc">A hands-free, voice-to-voice session that transcribes and maps your brainstorm in real-time. Talk to your ideas before they're fully formed. Capture everything. Miss nothing.</div>
+          <div class="vr-tag b">VOICE · AI</div>
+        </div>
+        <div class="vessel-row fade-up">
+          <div class="vr-name">Temporal Echo</div>
+          <div class="vr-desc">A 3D "Time Machine" tunnel. Scrub through your Git-based idea history like a movie. See how your thinking evolved — not just what you concluded, but how you got there.</div>
+          <div class="vr-tag g">TIME TRAVEL</div>
+        </div>
+        <div class="vessel-row fade-up">
+          <div class="vr-name">The Web Siphon</div>
+          <div class="vr-desc">A one-click bridge from the internet to your vault. Clip any article, thread, or page into your encrypted inbox. No more 50 open tabs. No more "I'll read this later."</div>
+          <div class="vr-tag">WEB · CAPTURE</div>
+        </div>
+        <div class="vessel-row fade-up">
+          <div class="vr-name">Auto-Vessel</div>
+          <div class="vr-desc">Draw shaky doodles, rough sketches, messy flowcharts. We convert them into clean professional diagrams and icons instantly. Sketch at the speed of thought.</div>
+          <div class="vr-tag b">SKETCH · AI</div>
+        </div>
+        <div class="vessel-row fade-up">
+          <div class="vr-name">DeepTutor Research</div>
+          <div class="vr-desc">An autonomous multi-agent engine that performs PhD-level research with full citations while you sleep. Wake to a structured knowledge report ready to annotate and connect.</div>
+          <div class="vr-tag g">AUTONOMOUS</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════ TECH MOAT ════ -->
+  <section id="tech">
+    <div class="section-inner">
+      <div class="section-label">// THE TECH MOAT</div>
+      <h2 class="section-h2">Built for<br/>the <span>savvy mind.</span></h2>
+      <p class="section-sub">The infrastructure decisions that make Personal Note structurally different from every tool you've tried before.</p>
+
+      <div class="moat-grid">
+        <div class="moat-card fade-up">
+          <div class="moat-label">// OPEN FORMAT</div>
+          <div class="moat-title">Markdown-Native Storage</div>
+          <div class="moat-desc">Your data lives in plain <code style="color:var(--accent);font-family:var(--font-mono);font-size:12px;">.md</code> files on your device. No proprietary database. No vendor lock-in. Export everything, anytime. Your thoughts belong to you — forever.</div>
+        </div>
+        <div class="moat-card fade-up">
+          <div class="moat-label">// COMPRESSION</div>
+          <div class="moat-title">Memvid Subconscious</div>
+          <div class="moat-desc">We compress millions of reasoning traces into a single portable video frame. 15× higher density than traditional databases. Your entire idea history — every revision, every branch — fits in your pocket.</div>
+        </div>
+        <div class="moat-card fade-up">
+          <div class="moat-label">// PRIVACY</div>
+          <div class="moat-title">Blind Indexing</div>
+          <div class="moat-desc">Search your encrypted cloud archive without the provider ever "seeing" a word. Your queries are private. Your results are private. Even the search index is sealed. Blind by design.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════ WAITLIST ════ -->
+  <section id="waitlist">
+    <div class="section-inner">
+      <div class="section-label" style="text-align:center">// ENTER THE PROTOTYPE</div>
+      <h2 class="section-h2" style="text-align:center">
+        The workspace is ready.<br/><span>Start thinking.</span>
+      </h2>
+      <p class="section-sub" style="text-align:center; margin:0 auto 36px;">
+        Enter the current prototype directly. It already includes notebooks, note organization, themes, and the spatial writing surface.
+      </p>
+      <div class="wl-form">
+        <input class="wl-input" type="text" id="wl-email" value="Prototype ready" readonly/>
+        <button class="wl-btn" onclick="joinWaitlist()">Open Prototype →</button>
+      </div>
+      <div class="wl-note" id="wl-note">
+        Local-first backbone. <span class="hi">Spatial editor is live in the prototype.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════ PHILOSOPHY QUOTE ════ -->
+  <div class="phil-quote">
+    <div class="pq-inner">
+      <div class="pq-text">
+        "Structure when you want it, space when you don't.<br/>
+        Writer when you need a page, painter when you need a canvas."
+      </div>
+      <div class="pq-source">Personal Note — Core Philosophy</div>
+    </div>
+  </div>
+
+  <!-- ════ FOOTER ════ -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-logo">Personal Note</div>
+      <div class="footer-links">
+        <a class="footer-link" href="#">Privacy</a>
+        <a class="footer-link" href="#">Security</a>
+        <a class="footer-link" href="#">Open Source</a>
+        <a class="footer-link" href="#">Contact</a>
+      </div>
+      <div class="footer-copy">© 2026 PERSONAL NOTE. LOCAL-FIRST. ZERO-KNOWLEDGE. FOREVER YOURS.</div>
+    </div>
+  </footer>
+
+  <script>
+    // ── BOOT SEQUENCE ──
+    const seq = [
+      { id: 'n0', delay: 300  },
+      { id: 'n1', delay: 800  },
+      { id: 'n2', delay: 1400 },
+      { id: 'n3', delay: 1950 },
+      { id: 'n4', delay: 2550 },
+      { id: 'n5', delay: 3100 },
+    ];
+    seq.forEach(({ id, delay }) => {
+      setTimeout(() => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('show');
+      }, delay);
+    });
+
+    // Show note editor after boot completes
+    setTimeout(() => {
+      const editor = document.getElementById('note-demo');
+      if (editor) editor.classList.add('show');
+    }, 3700);
+
+    // ── FADE UP OBSERVER ──
+    const obs = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+
+    // ── WAITLIST ──
+    function joinWaitlist() {
+      window.location.href = '/notes';
+    }
+
+    // Allow Enter key on waitlist input
+    document.getElementById('wl-email').addEventListener('keydown', e => {
+      if (e.key === 'Enter') joinWaitlist();
+    });
+  </script>
+
+</body>
+</html>
