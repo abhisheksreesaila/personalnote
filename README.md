@@ -57,6 +57,7 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - FTS5-backed note search and related-context retrieval
 - Fast local person recognition with source-linked person peeks
 - Natural-language calendar drafts with explicit `.ics` export
+- Opt-in rough box, circle, and connector assistance with Trace and undoable Refine actions
 - Source-grounded related-note cards that collapse into a quiet presence marker
 - Local deterministic retrieval with optional Mastra reranking through any OpenAI-compatible model
 
@@ -69,6 +70,8 @@ Ambient intelligence is split deliberately. FastHTML returns immediate source-gr
 The runtime stack is intentionally modular: FastHTML owns HTTP delivery, `fh-saas` supplies the future authentication/session/tenant primitives, SQLite owns local persistence, app JavaScript owns interaction state, Fabric.js owns the spatial canvas, and Mastra sits behind a narrow optional intelligence boundary. Mastra was selected as a lightweight TypeScript agent runtime for this boundary; the product does not depend on Mastra-specific types outside the worker, so another runtime can replace it.
 
 The settings drawer stores default typography locally and reads safe runtime capability metadata from `/api/settings/capabilities`. Provider keys remain server-side environment values and are never returned to browser code. `fh-saas` includes Google OAuth, session, and tenant provisioning primitives, but authentication is deliberately bypassed in the current single-user development build; setting Google credentials alone does not activate access control.
+
+Drawing guides are local, deterministic, and off by default. Fabric pen strokes retain their original points. After a short ink pause, a recognized rough box, ellipse, or connector can produce a temporary non-exported Trace guide or an undoable Refine operation. Neither path invokes Mastra, and the raw sketch remains canonical unless the user explicitly refines it.
 
 The root `.env` is loaded by both FastHTML and the Mastra worker and is ignored by Git. Start from `.env.example`:
 

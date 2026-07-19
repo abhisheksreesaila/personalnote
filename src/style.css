@@ -682,6 +682,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .calendar-card header > span { color: #a75d2d; }
 .calendar-card footer button { color: #925025; border-color: rgba(167,93,45,.25); background: rgba(167,93,45,.08); }
 .calendar-card footer button:hover { color: white; background: #a75d2d; }
+.diagram-presence { color: #3c6f91; border-color: rgba(60,111,145,.34); }
+.diagram-presence:hover { color: white; background: #3c6f91; }
+.diagram-card { border-color: rgba(60,111,145,.25); border-left-color: #3c6f91; }
+.diagram-card header > span { color: #3c6f91; }
+.diagram-card .diagram-actions { justify-content: flex-end; }
+.diagram-card .diagram-actions button { margin-left: 0; color: #315f7d; border-color: rgba(60,111,145,.25); background: rgba(60,111,145,.08); }
+.diagram-card .diagram-actions button:hover { color: white; background: #3c6f91; }
 @keyframes intelligence-arrive { from { opacity: 0; transform: translateX(8px) scale(.86); } }
 
 @media (min-width: 801px) {
@@ -748,6 +755,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   z-index: 23;
 }
 .properties-panel.open, .settings-panel.open { transform: translateX(0); }
+.settings-panel { overflow-y: auto; }
 .properties-heading { height: 50px; display: flex; align-items: flex-start; padding: 2px 2px 10px 6px; border-bottom: 1px solid rgba(99,86,67,.14); }
 .properties-heading > div { flex: 1; display: grid; gap: 2px; }
 .properties-heading span { color: #91887d; font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
@@ -790,6 +798,17 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .setting-row span { display: flex; align-items: center; gap: 8px; }
 .setting-row svg { width: 14px; color: #81786D; }
 .setting-row small { color: #9A9185; font-size: 9px; text-align: right; }
+.setting-toggle-row { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #5f584f; cursor: pointer; font-size: 11px; }
+.setting-toggle-row > span:first-child { display: flex; align-items: center; gap: 8px; }
+.setting-toggle-row svg { width: 14px; color: #81786d; }
+.setting-toggle-control { display: flex; align-items: center; gap: 7px; }
+.setting-toggle-control small { color: #9a9185; font-size: 9px; }
+.setting-toggle-control input { position: absolute; opacity: 0; pointer-events: none; }
+.setting-switch { position: relative; width: 30px; height: 18px; border: 1px solid rgba(95,88,79,.2); border-radius: 9px; background: rgba(95,88,79,.14); transition: background 150ms ease; }
+.setting-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgba(40,36,31,.24); transition: transform 150ms ease; }
+.setting-toggle-control input:checked + .setting-switch { background: #3c6f91; }
+.setting-toggle-control input:checked + .setting-switch::after { transform: translateX(12px); }
+.setting-toggle-control input:focus-visible + .setting-switch { outline: 2px solid #3c6f91; outline-offset: 2px; }
 .settings-font-control { margin-top: 2px; }
 .settings-font-size-row { margin-top: 14px; }
 .settings-footer-status { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 12px 4px 2px; color: #9a9287; font-size: 9px; }

@@ -49,6 +49,17 @@ The local person listener is a separate fast lane: it prefetches after 250 ms an
 
 Calendar detection is also local and framework-independent. `chrono-node` parses the actively edited phrase, the browser waits for the same 850 ms presentation gate, and the result remains a draft. The only consequential action is an explicit `.ics` download; detection alone never writes to a calendar or database.
 
+## Drawing Intelligence
+
+`src/intelligence/diagram-assist.js` analyzes only local Fabric stroke points. The first bounded vocabulary is rough boxes, ellipses, and open connectors. Small scribbles remain silent, the feature is off by default, and no stroke or image leaves the browser.
+
+Two proposal actions preserve different intents:
+
+- **Trace** keeps the raw stroke and overlays a temporary dashed guide excluded from serialization, search, print, and export.
+- **Refine** replaces one recognized stroke with a softly irregular path and records the change in normal undo history.
+
+This geometry layer does not depend on Mastra. Later multimodal recognition may propose labels, multi-stroke grouping, icons, or child-friendly tracing references through a separate consented adapter, but it must return product-owned proposals rather than mutate Fabric directly.
+
 ## How To Add Capabilities
 
 Add product capabilities as narrow read or proposal tools. Tools should call authenticated FastHTML APIs, not SQLite directly. Separate retrieval from action, and keep every write reversible.
@@ -121,6 +132,7 @@ intelligence/
 - No consequential write occurs without an explicit proposal or user-granted policy.
 - Saved webpages and note text are untrusted input, never agent instructions.
 - Tools are replaceable; the editor and note database do not depend on Mastra internals.
+- Raw ink remains canonical until the user accepts a reversible refinement.
 
 ## AG-UI Compatibility
 
