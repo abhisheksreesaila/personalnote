@@ -58,6 +58,7 @@ class ApiContractTests(unittest.TestCase):
         delete_response = self.client.delete(f"/api/notes/{note['id']}")
         self.assertEqual(delete_response.status_code, 204)
         self.assertEqual(self.client.get(f"/api/notes/{note['id']}").status_code, 404)
+        self.assertEqual(self.client.get("/api/search", params={"q": "partner event"}).json(), [])
 
     def test_settings_capabilities_never_expose_secrets(self):
         configured_environment = {
@@ -120,6 +121,15 @@ class ApiContractTests(unittest.TestCase):
         self.assertGreaterEqual(timing["serverMs"], timing["retrievalMs"])
         self.assertEqual(timing["mode"], "local-retrieval")
         self.assertIn("retrieval;dur=", response.headers["server-timing"])
+
+        entities = self.client.post(
+            "/api/intelligence/entities",
+            json={"noteId": active["id"], "text": "Talk to Maya about moving the launch."},
+        ).json()
+        self.assertEqual(entities["people"][0]["name"], "Maya")
+        self.assertEqual(entities["people"][0]["sourceCount"], 1)
+        self.assertEqual(entities["people"][0]["sources"][0]["noteId"], source["id"])
+        self.assertIn("Maya preferred", entities["people"][0]["sources"][0]["context"])
 
 
 if __name__ == "__main__":

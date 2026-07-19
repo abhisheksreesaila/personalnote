@@ -17,6 +17,20 @@ CREATE TABLE IF NOT EXISTS notebooks (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE VIRTUAL TABLE IF NOT EXISTS note_search USING fts5(
+    note_id UNINDEXED,
+    title,
+    body,
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+CREATE TABLE IF NOT EXISTS note_people (
+    note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    context TEXT NOT NULL,
+    PRIMARY KEY (note_id, normalized_name)
+);
+CREATE INDEX IF NOT EXISTS idx_note_people_name ON note_people(normalized_name);
 """
 
 

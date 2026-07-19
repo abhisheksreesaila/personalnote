@@ -12,6 +12,14 @@ DEFAULT_PAGE_STATE = {"columns": 1, "rows": 1}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
+PERSON_TOKEN = r"[A-Z][A-Za-zÀ-ÖØ-öø-ÿ'-]{1,40}"
+PERSON_CUE_PATTERN = re.compile(
+    rf"\b(?i:talk(?:ed|ing)? to|meet(?:ing)? with|met with|call|email|ask|tell|spoke with|follow up with)\s+({PERSON_TOKEN}(?:\s+{PERSON_TOKEN}){{0,2}})"
+)
+PERSON_SUBJECT_PATTERN = re.compile(
+    rf"\b({PERSON_TOKEN}(?:\s+{PERSON_TOKEN})?)\s+(?i:said|says|asked|preferred|mentioned|agreed|decided|wants|needs|will|has|was)\b"
+)
+PERSON_TRAILING_WORDS = {"About", "At", "For", "Next", "On", "The", "Today", "Tomorrow", "With"}
 RELATED_STOP_WORDS = {
     "about", "after", "again", "also", "because", "before", "being", "could",
     "from", "have", "into", "just", "more", "note", "only", "other", "should",
@@ -31,6 +39,7 @@ class NoteService:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as connection:
             self.default_notebook_id = initialize_schema(connection)
+            self.ensure_derived_indexes(connection)
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=10)
@@ -74,6 +83,81 @@ class NoteService:
             for item in document.get("objects", [])
             if isinstance(item, dict) and isinstance(item.get("text"), str)
         )
+
+    @staticmethod
+    def extract_people(text: str) -> list[str]:
+        people = []
+        seen = set()
+        for pattern in (PERSON_CUE_PATTERN, PERSON_SUBJECT_PATTERN):
+            for match in pattern.finditer(text):
+                parts = match.group(1).strip().split()
+                while len(parts) > 1 and parts[-1] in PERSON_TRAILING_WORDS:
+                    parts.pop()
+                name = " ".join(parts)
+                normalized = name.casefold()
+                if name and normalized not in seen:
+                    people.append(name)
+                    seen.add(normalized)
+        return people
+
+    @staticmethod
+    def person_context(text: str, name: str, length: int = 180) -> str:
+        position = text.casefold().find(name.casefold())
+        start = max(0, position - 44)
+        excerpt = text[start:start + length].strip()
+        if start > 0:
+            excerpt = f"...{excerpt}"
+        if start + length < len(text):
+            excerpt = f"{excerpt}..."
+        return excerpt
+
+    @staticmethod
+    def fts_query(terms, operator: str = "AND") -> str:
+        escaped = [f'"{str(term).replace(chr(34), chr(34) * 2)}"' for term in terms]
+        return f" {operator} ".join(escaped)
+
+    @classmethod
+    def index_note(
+        cls,
+        connection: sqlite3.Connection,
+        note_id: int,
+        title: str,
+        content: str,
+    ) -> None:
+        body = cls.canvas_text(content)
+        connection.execute("DELETE FROM note_search WHERE note_id = ?", (note_id,))
+        connection.execute(
+            "INSERT INTO note_search (note_id, title, body) VALUES (?, ?, ?)",
+            (note_id, title, body),
+        )
+        connection.execute("DELETE FROM note_people WHERE note_id = ?", (note_id,))
+        combined_text = f"{title}. {body}".strip()
+        for person in cls.extract_people(combined_text):
+            connection.execute(
+                """
+                INSERT INTO note_people (note_id, name, normalized_name, context)
+                VALUES (?, ?, ?, ?)
+                """,
+                (note_id, person, person.casefold(), cls.person_context(combined_text, person)),
+            )
+
+    @classmethod
+    def rebuild_derived_indexes(cls, connection: sqlite3.Connection) -> None:
+        connection.execute("DELETE FROM note_search")
+        connection.execute("DELETE FROM note_people")
+        notes = connection.execute("SELECT id, title, content FROM notes").fetchall()
+        for note in notes:
+            cls.index_note(connection, note["id"], note["title"], note["content"])
+        connection.commit()
+
+    @classmethod
+    def ensure_derived_indexes(cls, connection: sqlite3.Connection) -> None:
+        note_ids = {row[0] for row in connection.execute("SELECT id FROM notes")}
+        indexed_ids = {
+            int(row[0]) for row in connection.execute("SELECT note_id FROM note_search")
+        }
+        if note_ids != indexed_ids:
+            cls.rebuild_derived_indexes(connection)
 
     @staticmethod
     def related_terms(text: str) -> set[str]:
@@ -219,6 +303,7 @@ class NoteService:
             note = connection.execute(
                 "SELECT * FROM notes WHERE id = ?", (cursor.lastrowid,)
             ).fetchone()
+            self.index_note(connection, note["id"], note["title"], note["content"])
             connection.commit()
         return self.serialize_note(note)
 
@@ -246,6 +331,7 @@ class NoteService:
                     "UPDATE notes SET notebook_id = ? WHERE id = ?",
                     (notebook_id, note_id),
                 )
+            self.index_note(connection, note_id, title, content)
             connection.commit()
         return {"ok": True}
 
@@ -268,64 +354,110 @@ class NoteService:
 
     def delete_note(self, note_id: int) -> None:
         with self.connection() as connection:
+            connection.execute("DELETE FROM note_search WHERE note_id = ?", (note_id,))
             cursor = connection.execute("DELETE FROM notes WHERE id = ?", (note_id,))
             if cursor.rowcount == 0:
                 raise NotFoundError("Note not found")
             connection.commit()
 
     def search(self, query: str) -> list[dict]:
-        normalized_query = query.strip().casefold()
-        if not normalized_query:
+        terms = WORD_PATTERN.findall(query.strip())
+        if not terms:
             return []
+        match_query = self.fts_query(terms)
         with self.connection() as connection:
             rows = connection.execute(
                 """
-                SELECT notes.*, notebooks.name AS notebook_name, notebooks.color AS notebook_color
-                FROM notes
+                SELECT notes.*, notebooks.name AS notebook_name, notebooks.color AS notebook_color,
+                  snippet(note_search, 2, '', '', ' … ', 18) AS search_excerpt
+                FROM note_search
+                JOIN notes ON notes.id = CAST(note_search.note_id AS INTEGER)
                 JOIN notebooks ON notebooks.id = notes.notebook_id
-                ORDER BY notes.updated_at DESC
-                """
+                WHERE note_search MATCH ?
+                ORDER BY bm25(note_search), notes.updated_at DESC
+                LIMIT 30
+                """,
+                (match_query,),
             ).fetchall()
+        return [
+            {
+                "id": note["id"],
+                "title": note["title"],
+                "notebookId": note["notebook_id"],
+                "notebookName": note["notebook_name"],
+                "notebookColor": note["notebook_color"],
+                "excerpt": note["search_excerpt"] or "",
+                "updatedAt": note["updated_at"],
+            }
+            for note in rows
+        ]
+
+    def find_people(self, text: str, exclude_note_id: int | None = None) -> list[dict]:
+        people = self.extract_people(text)[:4]
+        if not people:
+            return []
         matches = []
-        for note in rows:
-            body = self.canvas_text(note["content"])
-            title_match = normalized_query in note["title"].casefold()
-            body_index = body.casefold().find(normalized_query)
-            if not title_match and body_index < 0:
-                continue
-            start = max(0, body_index - 42)
-            matches.append(
-                {
-                    "id": note["id"],
-                    "title": note["title"],
-                    "notebookId": note["notebook_id"],
-                    "notebookName": note["notebook_name"],
-                    "notebookColor": note["notebook_color"],
-                    "excerpt": body[start:start + 120].strip() if body_index >= 0 else "",
-                    "updatedAt": note["updated_at"],
-                }
-            )
-        return matches[:30]
+        with self.connection() as connection:
+            for person in people:
+                rows = connection.execute(
+                    """
+                    SELECT note_people.name, note_people.context, notes.id, notes.title,
+                      notes.updated_at, notebooks.name AS notebook_name,
+                      notebooks.color AS notebook_color
+                    FROM note_people
+                    JOIN notes ON notes.id = note_people.note_id
+                    JOIN notebooks ON notebooks.id = notes.notebook_id
+                    WHERE note_people.normalized_name = ?
+                      AND (? IS NULL OR notes.id != ?)
+                    ORDER BY notes.updated_at DESC, notes.id DESC
+                    LIMIT 4
+                    """,
+                    (person.casefold(), exclude_note_id, exclude_note_id),
+                ).fetchall()
+                if not rows:
+                    continue
+                matches.append(
+                    {
+                        "name": rows[0]["name"],
+                        "sourceCount": len(rows),
+                        "sources": [
+                            {
+                                "noteId": row["id"],
+                                "title": row["title"],
+                                "context": row["context"],
+                                "notebookName": row["notebook_name"],
+                                "notebookColor": row["notebook_color"],
+                                "sourceUpdatedAt": row["updated_at"],
+                            }
+                            for row in rows
+                        ],
+                    }
+                )
+        return matches
 
     def related_candidates(self, note_id: int, current_text: str) -> list[dict]:
         current_terms = self.related_terms(current_text)
         if len(current_terms) < 2:
             return []
+        match_query = self.fts_query(sorted(current_terms), "OR")
         with self.connection() as connection:
             rows = connection.execute(
                 """
-                SELECT notes.*, notebooks.name AS notebook_name, notebooks.color AS notebook_color
-                FROM notes
+                SELECT notes.*, notebooks.name AS notebook_name, notebooks.color AS notebook_color,
+                  note_search.body AS indexed_body
+                FROM note_search
+                JOIN notes ON notes.id = CAST(note_search.note_id AS INTEGER)
                 JOIN notebooks ON notebooks.id = notes.notebook_id
-                WHERE notes.id != ?
-                ORDER BY notes.updated_at DESC
+                WHERE note_search MATCH ? AND notes.id != ?
+                ORDER BY bm25(note_search), notes.updated_at DESC
+                LIMIT 40
                 """,
-                (note_id,),
+                (match_query, note_id),
             ).fetchall()
 
         candidates = []
         for note in rows:
-            body = self.canvas_text(note["content"])
+            body = note["indexed_body"]
             body_terms = self.related_terms(body)
             title_terms = self.related_terms(note["title"])
             shared_body = current_terms & body_terms

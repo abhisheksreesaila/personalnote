@@ -136,6 +136,19 @@ document.querySelector('#app').innerHTML = `
             <button id="open-intelligence-source"><span>Open note</span><i data-lucide="arrow-up-right"></i></button>
           </footer>
         </aside>
+        <button class="intelligence-presence entity-presence" id="entity-presence" title="Person context available" aria-label="Show person context" hidden><i data-lucide="user-round"></i></button>
+        <aside class="intelligence-card entity-card" id="entity-card" aria-live="polite" hidden>
+          <header>
+            <span><i data-lucide="user-round"></i>Person</span>
+            <button id="dismiss-entity" title="Dismiss" aria-label="Dismiss person context"><i data-lucide="x"></i></button>
+          </header>
+          <strong id="entity-name"></strong>
+          <p id="entity-context"></p>
+          <footer>
+            <span id="entity-source"></span>
+            <button id="open-entity-source"><span>Open note</span><i data-lucide="arrow-up-right"></i></button>
+          </footer>
+        </aside>
 
         <div class="paper" id="paper">
           <canvas id="note-canvas"></canvas>
@@ -353,6 +366,11 @@ const elements = {
   intelligenceExcerpt: document.querySelector('#intelligence-excerpt'),
   intelligenceReason: document.querySelector('#intelligence-reason'),
   intelligenceSource: document.querySelector('#intelligence-source'),
+  entityCard: document.querySelector('#entity-card'),
+  entityPresence: document.querySelector('#entity-presence'),
+  entityName: document.querySelector('#entity-name'),
+  entityContext: document.querySelector('#entity-context'),
+  entitySource: document.querySelector('#entity-source'),
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
@@ -385,6 +403,8 @@ const state = {
   historyIndex: -1,
   relatedSuggestion: null,
   dismissedRelated: new Set(),
+  entitySuggestion: null,
+  dismissedEntities: new Set(),
 }
 
 const PREFERENCES_KEY = 'personal-note.preferences.v1'
@@ -436,6 +456,13 @@ let ambientCollapseTimer
 let ambientRequest
 let ambientSequence = 0
 const ambientTelemetry = new AmbientTelemetry()
+let entityPrefetchTimer
+let entityPresentTimer
+let entityCollapseTimer
+let entityRequest
+let entitySequence = 0
+let entityQueuedAt = 0
+let entityCandidate = null
 
 function publishAmbientTelemetry(event, snapshot = ambientTelemetry.snapshot()) {
   const sample = snapshot.last
@@ -454,6 +481,82 @@ function cancelAmbientWork() {
   ambientRequest = null
   ambientSequence += 1
   if (hadPendingWork) publishAmbientTelemetry('cancelled', ambientTelemetry.cancel())
+}
+
+function clearEntityPeek({ keepPresence = false } = {}) {
+  clearTimeout(entityCollapseTimer)
+  elements.entityCard.classList.remove('open')
+  elements.entityCard.hidden = true
+  elements.entityPresence.hidden = !keepPresence || !state.entitySuggestion
+}
+
+function collapseEntityPeek() {
+  if (!state.entitySuggestion) return clearEntityPeek()
+  elements.entityCard.classList.remove('open')
+  setTimeout(() => {
+    if (!elements.entityCard.classList.contains('open')) {
+      elements.entityCard.hidden = true
+      elements.entityPresence.hidden = false
+    }
+  }, 180)
+}
+
+function showEntityPeek(person) {
+  const source = person.sources[0]
+  if (!source) return
+  state.entitySuggestion = { ...person, source }
+  elements.entityName.textContent = person.name
+  elements.entityContext.textContent = source.context
+  elements.entitySource.textContent = `${source.notebookName} · ${person.sourceCount} source${person.sourceCount === 1 ? '' : 's'}`
+  clearRelatedNote()
+  elements.entityPresence.hidden = true
+  elements.entityCard.hidden = false
+  requestAnimationFrame(() => elements.entityCard.classList.add('open'))
+  clearTimeout(entityCollapseTimer)
+  entityCollapseTimer = setTimeout(collapseEntityPeek, 8500)
+}
+
+function presentEntityCandidate(sequence) {
+  if (sequence !== entitySequence || !entityCandidate) return
+  const source = entityCandidate.sources[0]
+  const dismissalKey = source ? `${state.activeNoteId}:${entityCandidate.name.toLocaleLowerCase()}:${source.noteId}` : ''
+  if (!source || state.dismissedEntities.has(dismissalKey)) return
+  showEntityPeek(entityCandidate)
+}
+
+async function prefetchEntityContext(sequence) {
+  const noteId = state.activeNoteId
+  const text = activeTextSnapshot()
+  if (sequence !== entitySequence || !noteId || text.length < 4) return
+  entityRequest = new AbortController()
+  const request = entityRequest
+  try {
+    const result = await api('/intelligence/entities', {
+      method: 'POST',
+      body: JSON.stringify({ noteId, text }),
+      signal: request.signal,
+    })
+    if (sequence !== entitySequence || noteId !== state.activeNoteId) return
+    entityCandidate = result.people?.[0] || null
+    if (entityCandidate && performance.now() - entityQueuedAt >= 850) presentEntityCandidate(sequence)
+  } catch (error) {
+    if (error.name !== 'AbortError') console.debug('Person listener stayed quiet.', error)
+  } finally {
+    if (entityRequest === request) entityRequest = null
+  }
+}
+
+function queueEntityCheck() {
+  clearTimeout(entityPrefetchTimer)
+  clearTimeout(entityPresentTimer)
+  entityRequest?.abort()
+  entityCandidate = null
+  state.entitySuggestion = null
+  clearEntityPeek()
+  const sequence = ++entitySequence
+  entityQueuedAt = performance.now()
+  entityPrefetchTimer = setTimeout(() => prefetchEntityContext(sequence), 250)
+  entityPresentTimer = setTimeout(() => presentEntityCandidate(sequence), 850)
 }
 
 function activeTextSnapshot() {
@@ -524,6 +627,10 @@ async function refreshRelatedNote() {
     if (!suggestion || state.dismissedRelated.has(dismissalKey)) {
       publishAmbientTelemetry('silent', ambientTelemetry.silent())
       return clearRelatedNote()
+    }
+    if (state.entitySuggestion) {
+      publishAmbientTelemetry('silent', ambientTelemetry.silent())
+      return
     }
     showRelatedNote(suggestion)
     publishAmbientTelemetry('presented', ambientTelemetry.presented())
@@ -1327,6 +1434,7 @@ async function saveActiveNote() {
 function queueSave() {
   if (state.loading) return
   cancelAmbientWork()
+  queueEntityCheck()
   setSaveState('Saving')
   clearTimeout(saveTimer)
   saveTimer = setTimeout(saveActiveNote, 650)
@@ -1371,8 +1479,15 @@ async function restoreHistory(index) {
 async function selectNote(id) {
   if (id === state.activeNoteId) return
   clearTimeout(saveTimer)
-  clearTimeout(ambientTimer)
-  ambientRequest?.abort()
+  cancelAmbientWork()
+  clearTimeout(entityPrefetchTimer)
+  clearTimeout(entityPresentTimer)
+  entityRequest?.abort()
+  entityRequest = null
+  entityCandidate = null
+  entitySequence += 1
+  state.entitySuggestion = null
+  clearEntityPeek()
   state.relatedSuggestion = null
   clearRelatedNote()
   state.activeNoteId = id
@@ -2113,6 +2228,23 @@ document.querySelector('#open-intelligence-source').addEventListener('click', ()
   publishAmbientTelemetry('opened', ambientTelemetry.interaction('open'))
   state.relatedSuggestion = null
   clearRelatedNote()
+  if (sourceId) selectNote(sourceId)
+})
+elements.entityPresence.addEventListener('click', () => {
+  if (state.entitySuggestion) showEntityPeek(state.entitySuggestion)
+})
+document.querySelector('#dismiss-entity').addEventListener('click', () => {
+  const suggestion = state.entitySuggestion
+  if (suggestion) {
+    state.dismissedEntities.add(`${state.activeNoteId}:${suggestion.name.toLocaleLowerCase()}:${suggestion.source.noteId}`)
+  }
+  state.entitySuggestion = null
+  clearEntityPeek()
+})
+document.querySelector('#open-entity-source').addEventListener('click', () => {
+  const sourceId = state.entitySuggestion?.source.noteId
+  state.entitySuggestion = null
+  clearEntityPeek()
   if (sourceId) selectNote(sourceId)
 })
 elements.list.addEventListener('click', (event) => {

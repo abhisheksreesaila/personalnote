@@ -670,6 +670,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .intelligence-card footer button { height: 30px; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 0 10px; border: 1px solid rgba(118,102,154,.25); border-radius: var(--radius-pill); color: #655582; background: rgba(118,102,154,.08); cursor: pointer; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .intelligence-card footer button:hover { color: white; background: var(--violet); }
 .intelligence-card footer button svg { width: 13px; }
+.entity-presence { color: #267a6b; border-color: rgba(38,122,107,.34); }
+.entity-presence:hover { color: white; background: #267a6b; }
+.entity-card { border-color: rgba(38,122,107,.25); border-left-color: #267a6b; }
+.entity-card header > span { color: #267a6b; }
+.entity-card footer button { color: #226d61; border-color: rgba(38,122,107,.25); background: rgba(38,122,107,.08); }
+.entity-card footer button:hover { color: white; background: #267a6b; }
 @keyframes intelligence-arrive { from { opacity: 0; transform: translateX(8px) scale(.86); } }
 
 @media (min-width: 801px) {

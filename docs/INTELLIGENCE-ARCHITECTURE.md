@@ -25,7 +25,7 @@ flowchart LR
 
 ### Product Retrieval
 
-`services.py` extracts useful terms, excludes the active note, ranks overlap, and returns at most five candidates with note ID, title, excerpt, notebook, score, confidence, and source timestamp. This layer remains useful without any model.
+`services.py` maintains an FTS5 index derived from Fabric text, excludes the active note, ranks grounded overlap, and returns at most five candidates with note ID, title, excerpt, notebook, score, confidence, and source timestamp. It also maintains deterministic person mentions in `note_people`. These indexes update in the same SQLite transaction as note writes and remain useful without any model.
 
 ### FastHTML Bridge
 
@@ -42,6 +42,8 @@ flowchart LR
 The related-context path records separate retrieval, enrichment, request, and queue-to-presentation timings. The FastHTML response includes safe timing metadata and a `Server-Timing` header; the browser records the latest completed sample, cancellation count, and Open or Dismiss interaction without storing note text.
 
 Typing cancels queued or in-flight ambient work immediately. Timing belongs to the product shell rather than Mastra, so swapping the worker does not change the measurement contract. The settings drawer shows the latest response mode and latency for development evaluation.
+
+The local person listener is a separate fast lane: it prefetches after 250 ms and presents after an 850 ms quiet gate. It calls the product-owned entity API directly and never invokes Mastra. Person results cite indexed note context and defer all navigation and presentation decisions to the browser shell.
 
 ## How To Add Capabilities
 

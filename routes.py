@@ -179,6 +179,16 @@ def create_app(
             },
         )
 
+    @app.post("/api/intelligence/entities")
+    async def intelligence_entities(request):
+        request_payload = await payload(request)
+        current_text = str(request_payload.get("text") or "")[:24_000]
+        try:
+            note_id = int(request_payload.get("noteId"))
+        except (TypeError, ValueError):
+            note_id = None
+        return JSONResponse({"people": service.find_people(current_text, note_id)})
+
     dist_path = ROOT / "dist"
     if dist_path.exists():
         assets_path = dist_path / "assets"
