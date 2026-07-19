@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from starlette.testclient import TestClient
 
@@ -57,6 +58,30 @@ class ApiContractTests(unittest.TestCase):
         delete_response = self.client.delete(f"/api/notes/{note['id']}")
         self.assertEqual(delete_response.status_code, 204)
         self.assertEqual(self.client.get(f"/api/notes/{note['id']}").status_code, 404)
+
+    def test_settings_capabilities_never_expose_secrets(self):
+        configured_environment = {
+            "GOOGLE_CLIENT_ID": "google-client-id",
+            "GOOGLE_CLIENT_SECRET": "google-client-secret",
+            "SESSION_SECRET": "session-secret",
+            "PERSONAL_NOTE_MODEL": "small-model",
+            "PERSONAL_NOTE_MODEL_KEY": "provider-secret",
+        }
+        with patch.dict("os.environ", configured_environment, clear=False):
+            response = self.client.get("/api/settings/capabilities")
+
+        self.assertEqual(response.status_code, 200)
+        capabilities = response.json()
+        self.assertEqual(capabilities["authentication"]["mode"], "development-bypass")
+        self.assertTrue(capabilities["authentication"]["configured"])
+        self.assertEqual(capabilities["intelligence"]["framework"], "mastra")
+        self.assertEqual(capabilities["intelligence"]["provider"], "openai-compatible")
+        self.assertTrue(capabilities["intelligence"]["credentialsConfigured"])
+        self.assertEqual(capabilities["storage"]["engine"], "sqlite")
+        serialized = response.text
+        self.assertNotIn("google-client-secret", serialized)
+        self.assertNotIn("session-secret", serialized)
+        self.assertNotIn("provider-secret", serialized)
 
     def test_related_note_is_grounded_and_excludes_active_note(self):
         notebook = self.client.get("/api/notebooks").json()[0]

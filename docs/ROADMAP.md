@@ -65,6 +65,15 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 - Expose safe notebook capabilities through MCP for Hermes and other community agents.
 - Keep local capture, search, organization, and basic contextual listening available without a subscription.
 
+## Security Track: Identity And Encryption
+
+- Enable `fh-saas` Google OAuth only when every note and notebook query is tenant-scoped.
+- Keep authentication bypassed for the current single-user development workflow.
+- Treat SQLite as storage, not encryption; evaluate SQLCipher only for local at-rest protection.
+- Design E2EE around client-held content keys, encrypted payloads and attachments, recovery, rotation, and device enrollment.
+- Define separate consent boundaries for local inference and cloud inference because cloud models cannot process ciphertext directly.
+- Decide which metadata and search indexes may remain plaintext, be deterministically encrypted, or stay device-local.
+
 ## Current Next Step
 
 Evaluate the ambient prototype with real notes before adding more behavior. The next implementation should be FTS5 plus an attention-quality test set, not another visible AI control.

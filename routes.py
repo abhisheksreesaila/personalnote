@@ -14,6 +14,44 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent
 
 
+def runtime_capabilities() -> dict:
+    deployment_name = os.getenv("PERSONAL_NOTE_DEPLOYMENT_NAME", "").strip()
+    model_name = os.getenv("PERSONAL_NOTE_MODEL", "").strip()
+    model_key = os.getenv("PERSONAL_NOTE_MODEL_KEY", "").strip()
+    intelligence_provider = (
+        "azure-openai"
+        if deployment_name
+        else "openai-compatible"
+        if model_name
+        else "local-retrieval"
+    )
+    auth_configured = all(
+        os.getenv(name, "").strip()
+        for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "SESSION_SECRET")
+    )
+    return {
+        "authentication": {
+            "provider": "google",
+            "available": True,
+            "enabled": False,
+            "configured": auth_configured,
+            "mode": "development-bypass",
+        },
+        "intelligence": {
+            "framework": "mastra",
+            "provider": intelligence_provider,
+            "connectionConfigured": intelligence_provider != "local-retrieval",
+            "credentialsConfigured": bool(model_key),
+            "settingsSource": "server-environment",
+        },
+        "storage": {
+            "engine": "sqlite",
+            "location": "this-device",
+            "encryption": "not-enabled",
+        },
+    }
+
+
 def create_app(
     database_path: Path | str | None = None,
     intelligence_url: str | None = None,
@@ -40,6 +78,10 @@ def create_app(
     @app.get("/health")
     def health():
         return JSONResponse({"status": "ok", "app": "personal-note", "backend": "fasthtml", "fhSaas": "0.9.14"})
+
+    @app.get("/api/settings/capabilities")
+    def settings_capabilities():
+        return JSONResponse(runtime_capabilities())
 
     @app.get("/api/notebooks")
     def list_notebooks():

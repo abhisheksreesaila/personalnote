@@ -63,6 +63,10 @@ The browser stores Fabric.js canvas JSON through a FastHTML REST interface. `mai
 
 Ambient intelligence is split deliberately. FastHTML performs immediate source-grounded retrieval locally. A restricted Mastra worker on port `4112` may rerank and phrase a connection with one bounded model step; it has no shell, filesystem, browser, or mutation tools. Without a configured model, the same feature remains available in deterministic `local-retrieval` mode.
 
+The runtime stack is intentionally modular: FastHTML owns HTTP delivery, `fh-saas` supplies the future authentication/session/tenant primitives, SQLite owns local persistence, app JavaScript owns interaction state, Fabric.js owns the spatial canvas, and Mastra sits behind a narrow optional intelligence boundary. Mastra was selected as a lightweight TypeScript agent runtime for this boundary; the product does not depend on Mastra-specific types outside the worker, so another runtime can replace it.
+
+The settings drawer stores default typography locally and reads safe runtime capability metadata from `/api/settings/capabilities`. Provider keys remain server-side environment values and are never returned to browser code. `fh-saas` includes Google OAuth, session, and tenant provisioning primitives, but authentication is deliberately bypassed in the current single-user development build; setting Google credentials alone does not activate access control.
+
 The root `.env` is loaded by both FastHTML and the Mastra worker and is ignored by Git. Start from `.env.example`:
 
 ```powershell
@@ -83,6 +87,8 @@ Azure OpenAI and Microsoft Foundry deployments use the official Azure provider. 
 
 The product roadmap is maintained in `docs/ROADMAP.md`.
 The current Mastra boundaries and proposed capability modules are documented in `docs/INTELLIGENCE-ARCHITECTURE.md`.
+
+End-to-end encryption is not implemented. SQLite is a persistence engine, not an E2EE boundary. Before sync or multi-user hosting, the design must define client-held keys, encrypted note payloads and attachments, key recovery and rotation, encrypted search/index tradeoffs, and what plaintext may be disclosed to local or cloud intelligence providers.
 
 `@chenglou/pretext` is installed as the future variable-width text layout engine. The reference implementation in `spatial-docs.html` demonstrates `prepareWithSegments()` and `layoutNextLine()` to flow prose around diagram nodes. The production notepad remains Fabric-based for direct manipulation; Pretext should be introduced as a dedicated spatial text object rather than replacing Fabric's canvas runtime wholesale.
 

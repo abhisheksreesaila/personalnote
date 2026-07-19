@@ -183,21 +183,31 @@ document.querySelector('#app').innerHTML = `
         <button class="icon-button" id="close-settings" title="Close settings" aria-label="Close settings"><i data-lucide="x"></i></button>
       </div>
       <section class="settings-section">
-        <p class="settings-section-label">General</p>
-        <div class="setting-row"><span><i data-lucide="sun-moon"></i>Appearance</span><small>System</small></div>
-        <div class="setting-row"><span><i data-lucide="languages"></i>Language</span><small>English</small></div>
+        <p class="settings-section-label">Writing</p>
+        <div class="setting-field-heading"><span>Default text</span><small>New objects</small></div>
+        <div class="font-family-control settings-font-control" aria-label="Default font family">
+          <button data-default-font-family="Source Serif 4" class="active" title="Serif" aria-label="Serif">Ag</button>
+          <button data-default-font-family="IBM Plex Sans" title="Sans serif" aria-label="Sans serif">Ag</button>
+          <button data-default-font-family="monospace" title="Monospace" aria-label="Monospace">Ag</button>
+        </div>
+        <label class="font-size-row settings-font-size-row" for="settings-font-size">
+          <span>Size</span><output id="settings-font-size-value">24</output>
+          <input id="settings-font-size" type="range" min="12" max="72" step="1" value="24" />
+        </label>
       </section>
       <section class="settings-section">
-        <p class="settings-section-label">Voice & input</p>
-        <div class="setting-row"><span><i data-lucide="mic"></i>Dictation</span><small>Click to speak</small></div>
-        <div class="setting-row"><span><i data-lucide="audio-lines"></i>"Hey Note" wake phrase</span><small>Native app</small></div>
+        <p class="settings-section-label">Intelligence</p>
+        <div class="setting-row"><span><i data-lucide="sparkles"></i>Framework</span><small>Mastra</small></div>
+        <div class="setting-row"><span><i data-lucide="cpu"></i>Provider</span><small id="settings-intelligence-provider">Checking</small></div>
+        <div class="setting-row"><span><i data-lucide="key-round"></i>Bring your own key</span><small id="settings-intelligence-key">Checking</small></div>
       </section>
       <section class="settings-section">
-        <p class="settings-section-label">Data</p>
-        <div class="setting-row"><span><i data-lucide="hard-drive"></i>Storage</span><small>On this device</small></div>
-        <div class="setting-row"><span><i data-lucide="refresh-cw"></i>Sync</span><small>Planned</small></div>
+        <p class="settings-section-label">Privacy & access</p>
+        <div class="setting-row"><span><i data-lucide="log-in"></i>Google sign-in</span><small id="settings-auth-mode">Checking</small></div>
+        <div class="setting-row"><span><i data-lucide="hard-drive"></i>Storage</span><small id="settings-storage">SQLite</small></div>
+        <div class="setting-row"><span><i data-lucide="lock-keyhole"></i>Encryption</span><small id="settings-encryption">Checking</small></div>
       </section>
-      <div class="settings-placeholder"><i data-lucide="plus"></i><span>New preferences will live here.</span></div>
+      <div class="settings-footer-status" id="settings-footer-status"><span></span>Configuration stays on the server</div>
     </aside>
   </div>
 
@@ -322,6 +332,8 @@ const elements = {
   settings: document.querySelector('#settings-panel'),
   fontSize: document.querySelector('#font-size-control'),
   fontSizeValue: document.querySelector('#font-size-value'),
+  settingsFontSize: document.querySelector('#settings-font-size'),
+  settingsFontSizeValue: document.querySelector('#settings-font-size-value'),
   voiceButton: document.querySelector('#voice-button'),
   voiceCaption: document.querySelector('#voice-caption'),
   voiceStatus: document.querySelector('#voice-status'),
@@ -372,6 +384,29 @@ const state = {
   relatedSuggestion: null,
   dismissedRelated: new Set(),
 }
+
+const PREFERENCES_KEY = 'personal-note.preferences.v1'
+const FONT_FAMILIES = new Set(['Source Serif 4', 'IBM Plex Sans', 'monospace'])
+
+function loadPreferences() {
+  try {
+    const preferences = JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}')
+    if (FONT_FAMILIES.has(preferences.fontFamily)) state.fontFamily = preferences.fontFamily
+    const fontSize = Number(preferences.fontSize)
+    if (Number.isFinite(fontSize)) state.fontSize = Math.min(72, Math.max(12, Math.round(fontSize)))
+  } catch {
+    localStorage.removeItem(PREFERENCES_KEY)
+  }
+}
+
+function savePreferences() {
+  localStorage.setItem(PREFERENCES_KEY, JSON.stringify({
+    fontFamily: state.fontFamily,
+    fontSize: state.fontSize,
+  }))
+}
+
+loadPreferences()
 
 const canvas = new Canvas('note-canvas', {
   width: PAGE_WIDTH,
@@ -1442,6 +1477,45 @@ function setSettingsOpen(open) {
   document.querySelector('#rail-settings').classList.toggle('active', open)
 }
 
+function syncDefaultTypographySettings() {
+  document.querySelectorAll('[data-default-font-family]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.defaultFontFamily === state.fontFamily)
+  })
+  elements.settingsFontSize.value = state.fontSize
+  elements.settingsFontSizeValue.value = state.fontSize
+}
+
+function updateCapabilitySettings(capabilities) {
+  const providerNames = {
+    'azure-openai': 'Azure OpenAI',
+    'openai-compatible': 'OpenAI compatible',
+    'local-retrieval': 'Local retrieval',
+  }
+  const intelligence = capabilities.intelligence || {}
+  const authentication = capabilities.authentication || {}
+  const storage = capabilities.storage || {}
+  document.querySelector('#settings-intelligence-provider').textContent = providerNames[intelligence.provider] || 'Unavailable'
+  document.querySelector('#settings-intelligence-key').textContent = intelligence.provider === 'local-retrieval'
+    ? 'Not required'
+    : intelligence.credentialsConfigured ? 'Configured' : 'Needs setup'
+  document.querySelector('#settings-auth-mode').textContent = authentication.enabled
+    ? authentication.configured ? 'Google OAuth' : 'Needs setup'
+    : 'Off in development'
+  document.querySelector('#settings-storage').textContent = storage.engine === 'sqlite' ? 'SQLite · This device' : 'Unavailable'
+  document.querySelector('#settings-encryption').textContent = storage.encryption === 'not-enabled' ? 'Not enabled' : 'Enabled'
+}
+
+async function loadCapabilitySettings() {
+  try {
+    updateCapabilitySettings(await api('/settings/capabilities'))
+  } catch {
+    document.querySelector('#settings-intelligence-provider').textContent = 'Unavailable'
+    document.querySelector('#settings-intelligence-key').textContent = 'Unavailable'
+    document.querySelector('#settings-auth-mode').textContent = 'Unavailable'
+    document.querySelector('#settings-encryption').textContent = 'Unavailable'
+  }
+}
+
 function selectedTextObject() {
   const active = canvas.getActiveObject()
   return isEditableText(active) ? active : null
@@ -1929,6 +2003,20 @@ document.querySelectorAll('[data-font-family]').forEach((button) => {
   button.addEventListener('click', () => applyTypography('fontFamily', button.dataset.fontFamily))
 })
 elements.fontSize.addEventListener('input', () => applyTypography('fontSize', Number(elements.fontSize.value)))
+document.querySelectorAll('[data-default-font-family]').forEach((button) => {
+  button.addEventListener('click', () => {
+    state.fontFamily = button.dataset.defaultFontFamily
+    savePreferences()
+    syncDefaultTypographySettings()
+    syncTypographyControls()
+  })
+})
+elements.settingsFontSize.addEventListener('input', () => {
+  state.fontSize = Number(elements.settingsFontSize.value)
+  savePreferences()
+  syncDefaultTypographySettings()
+  syncTypographyControls()
+})
 elements.notebookPicker.addEventListener('click', () => {
   const willOpen = elements.notebookPickerMenu.hidden
   elements.notebookPickerMenu.hidden = !willOpen
@@ -2122,6 +2210,8 @@ document.addEventListener('keydown', (event) => {
 
 async function initialize() {
   resizePaper()
+  syncDefaultTypographySettings()
+  loadCapabilitySettings()
   try {
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
     state.selectedNotebookId = state.notes[0]?.notebookId || state.notebooks[0]?.id || null

@@ -772,12 +772,16 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .delete-note-action svg { width: 15px; }
 .settings-section { padding: 18px 6px; border-bottom: 1px solid rgba(99,86,67,.13); }
 .settings-section-label { margin: 0 0 9px; color: #766e63; font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.setting-field-heading { min-height: 28px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; color: #5f584f; font-size: 11px; }
+.setting-field-heading small { color: #9a9185; font-size: 9px; }
 .setting-row { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #5F584F; font-size: 11px; }
 .setting-row span { display: flex; align-items: center; gap: 8px; }
 .setting-row svg { width: 14px; color: #81786D; }
 .setting-row small { color: #9A9185; font-size: 9px; text-align: right; }
-.settings-placeholder { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 12px; color: #9A9287; font: italic 11px/1.4 "Source Serif 4", serif; }
-.settings-placeholder svg { width: 13px; }
+.settings-font-control { margin-top: 2px; }
+.settings-font-size-row { margin-top: 14px; }
+.settings-footer-status { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 12px 4px 2px; color: #9a9287; font-size: 9px; }
+.settings-footer-status > span { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: #6f8c63; box-shadow: 0 0 0 3px rgba(111,140,99,.12); }
 
 .print-preview {
   position: fixed;
