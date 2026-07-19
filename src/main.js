@@ -8,9 +8,27 @@ const CANVAS_OVERSCAN = 48
 const EDGE_OVERFLOW = 6
 const EDGE_SHRINK = 0
 const TRANSFORM_EDGE_MARGIN = 24
-const PAGE_RESIZE_DURATION = 380
 const PAGE_EXPAND_DURATION = 560
+const PAGE_RESIZE_DURATION = 560
 const ERASER_RADIUS = 13
+const INK_COLORS = [
+  ['Charcoal', '#20201e'],
+  ['Graphite', '#5f6368'],
+  ['Red', '#d14b3f'],
+  ['Coral', '#e56b5d'],
+  ['Orange', '#df8437'],
+  ['Gold', '#d0a12e'],
+  ['Green', '#3a7d5a'],
+  ['Mint', '#4f9c78'],
+  ['Blue', '#1c70a8'],
+  ['Cyan', '#2d91a8'],
+  ['Violet', '#76669a'],
+  ['Magenta', '#b45f8c'],
+]
+const STROKE_WIDTHS = {
+  pen: [1, 3, 6, 10],
+  highlight: [10, 20, 32, 48],
+}
 
 FabricObject.customProperties = Array.from(new Set([
   ...FabricObject.customProperties,
@@ -71,25 +89,33 @@ document.querySelector('#app').innerHTML = `
       <section class="workspace" id="workspace">
         <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
           <div class="tool-group">
-            <button class="tool-button active" data-tool="select" title="Select (V)" aria-label="Select"><i data-lucide="mouse-pointer-2"></i></button>
-            <button class="tool-button" data-tool="text" title="Text (T) - click once to place" aria-label="Text"><i data-lucide="type"></i></button>
-            <button class="tool-button" data-tool="pen" title="Pen (D or P)" aria-label="Pen"><i data-lucide="pencil"></i></button>
-            <button class="tool-button" data-tool="highlight" title="Highlighter (H)" aria-label="Highlighter"><i data-lucide="highlighter"></i></button>
+            <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select"><i data-lucide="mouse-pointer-2"></i></button>
+            <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text"><i data-lucide="type"></i></button>
+            <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen"><i data-lucide="pencil"></i></button>
+            <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (H) - hold for color and width" aria-label="Highlighter"><i data-lucide="highlighter"></i></button>
             <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser"><i data-lucide="eraser"></i></button>
           </div>
           <div class="dock-divider"></div>
-          <div class="color-menu" id="color-menu" aria-label="Ink color">
-            <button class="color-swatch active" data-color="#20201e" style="--swatch:#20201e" title="Charcoal" aria-label="Charcoal"></button>
-            <button class="color-swatch" data-color="#d14b3f" style="--swatch:#d14b3f" title="Red" aria-label="Red"></button>
-            <button class="color-swatch" data-color="#1c70a8" style="--swatch:#1c70a8" title="Blue" aria-label="Blue"></button>
-            <button class="color-swatch" data-color="#3a7d5a" style="--swatch:#3a7d5a" title="Green" aria-label="Green"></button>
-          </div>
+          <button class="tool-button ink-options-trigger" id="ink-options-trigger" title="Ink options" aria-label="Open ink options" aria-haspopup="dialog" aria-expanded="false"><span class="ink-options-dot" id="ink-options-dot"></span></button>
           <div class="dock-divider"></div>
           <div class="tool-group">
             <button class="tool-button" id="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
             <button class="tool-button" id="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
           </div>
         </div>
+        <section class="ink-options-popover" id="ink-options-popover" role="dialog" aria-label="Ink options" hidden>
+          <div class="ink-options-heading">
+            <span id="ink-color-label">Text color</span>
+            <button id="close-ink-options" aria-label="Close ink options"><i data-lucide="x"></i></button>
+          </div>
+          <div class="ink-palette" id="ink-palette" aria-label="Common colors">
+            ${INK_COLORS.map(([name, color]) => `<button class="palette-swatch ${color === '#20201e' ? 'active' : ''}" data-color="${color}" style="--swatch:${color}" title="${name}" aria-label="${name}"></button>`).join('')}
+          </div>
+          <div class="stroke-options" id="stroke-options" hidden>
+            <span id="stroke-options-label">Pen width</span>
+            <div class="stroke-widths" id="stroke-widths"></div>
+          </div>
+        </section>
 
         <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i></button>
         <button class="voice-button" id="voice-button" title="Voice dictation" aria-label="Start voice dictation" aria-pressed="false"><i data-lucide="mic"></i></button>
@@ -146,6 +172,7 @@ document.querySelector('#app').innerHTML = `
         <div><span>Storage</span><strong>On this device</strong></div>
       </section>
       <div class="properties-footer">
+        <button class="clear-note-action" id="clear-note"><i data-lucide="eraser"></i><span>Clear all</span></button>
         <button class="delete-note-action" id="delete-note"><i data-lucide="trash-2"></i><span>Delete note</span></button>
       </div>
     </aside>
@@ -248,6 +275,24 @@ document.querySelector('#app').innerHTML = `
       </div>
     </form>
   </dialog>
+
+  <dialog class="notebook-dialog clear-note-dialog" id="clear-note-dialog" aria-labelledby="clear-note-title">
+    <form method="dialog">
+      <div class="dialog-heading-row">
+        <div>
+          <p class="dialog-eyebrow">Current note</p>
+          <h2 id="clear-note-title">Clear all content?</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Close"><i data-lucide="x"></i></button>
+      </div>
+      <p class="clear-note-copy">This removes every text and ink object and returns the canvas to one page. The note title and notebook stay in place.</p>
+      <p class="dialog-note">You can undo this immediately from the writing dock.</p>
+      <div class="dialog-actions">
+        <button class="dialog-cancel" value="cancel">Cancel</button>
+        <button class="dialog-danger" id="confirm-clear-note" value="default">Clear all</button>
+      </div>
+    </form>
+  </dialog>
 `
 
 createIcons({ icons })
@@ -269,6 +314,7 @@ const elements = {
   searchInput: document.querySelector('#search-input'),
   searchResults: document.querySelector('#search-results'),
   notebookDialog: document.querySelector('#notebook-dialog'),
+  clearNoteDialog: document.querySelector('#clear-note-dialog'),
   notebookForm: document.querySelector('#notebook-form'),
   notebookName: document.querySelector('#notebook-name'),
   sidebarToggle: document.querySelector('#toggle-sidebar'),
@@ -280,6 +326,13 @@ const elements = {
   voiceCaption: document.querySelector('#voice-caption'),
   voiceStatus: document.querySelector('#voice-status'),
   eraserCursor: document.querySelector('#eraser-cursor'),
+  inkOptionsTrigger: document.querySelector('#ink-options-trigger'),
+  inkOptionsDot: document.querySelector('#ink-options-dot'),
+  inkOptionsPopover: document.querySelector('#ink-options-popover'),
+  inkColorLabel: document.querySelector('#ink-color-label'),
+  strokeOptions: document.querySelector('#stroke-options'),
+  strokeOptionsLabel: document.querySelector('#stroke-options-label'),
+  strokeWidths: document.querySelector('#stroke-widths'),
   intelligenceCard: document.querySelector('#intelligence-card'),
   intelligencePresence: document.querySelector('#intelligence-presence'),
   intelligenceTitle: document.querySelector('#intelligence-title'),
@@ -297,8 +350,10 @@ const state = {
   activeNoteId: null,
   selectedNotebookId: null,
   pages: { columns: 1, rows: 1 },
-  tool: 'select',
+  tool: 'text',
   color: '#20201e',
+  penWidth: 3,
+  highlightWidth: 20,
   fontFamily: 'Source Serif 4',
   fontSize: 24,
   displayScale: 1,
@@ -310,6 +365,7 @@ const state = {
   eraserActive: false,
   eraserChanged: false,
   eraserLastPoint: null,
+  creatingNote: false,
   loading: false,
   history: [],
   historyIndex: -1,
@@ -410,85 +466,112 @@ function queueAmbientCheck() {
   ambientTimer = setTimeout(refreshRelatedNote, 1100)
 }
 
-function setupRailMagnification() {
-  const rail = document.querySelector('.side-rail')
-  const buttons = [...rail.querySelectorAll('.rail-brand, .rail-button')]
-  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)')
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-  let frame
-  let restingRects = []
+let inkOptionsCloseTimer
 
-  const reset = () => {
-    cancelAnimationFrame(frame)
-    rail.classList.remove('is-magnifying')
-    restingRects = []
-    buttons.forEach((button) => {
-      button.classList.remove('is-rail-magnified', 'is-rail-peak')
-      button.style.removeProperty('--dock-scale')
-      button.style.removeProperty('--dock-shift')
-      button.style.removeProperty('--dock-layer')
-    })
-  }
+function closeInkOptions() {
+  clearTimeout(inkOptionsCloseTimer)
+  elements.inkOptionsPopover.hidden = true
+  elements.inkOptionsTrigger.setAttribute('aria-expanded', 'false')
+  document.querySelectorAll('[data-tool-options]').forEach((button) => button.setAttribute('aria-expanded', 'false'))
+}
 
-  const magnifyAt = (pointerY) => {
-    if (window.innerWidth <= 800 || !finePointer.matches || reducedMotion.matches) return reset()
-    if (!restingRects.length) {
-      restingRects = buttons.map((button) => {
-        const rect = button.getBoundingClientRect()
-        return { center: rect.top + rect.height / 2, height: rect.height }
-      })
+function scheduleInkOptionsClose(delay = 750) {
+  clearTimeout(inkOptionsCloseTimer)
+  inkOptionsCloseTimer = setTimeout(closeInkOptions, delay)
+}
+
+function updateInkOptions() {
+  elements.inkOptionsDot.style.setProperty('--active-ink', state.color)
+  elements.inkColorLabel.textContent = state.tool === 'text' ? 'Text color' : 'Ink color'
+  document.querySelectorAll('.palette-swatch').forEach((swatch) => {
+    swatch.classList.toggle('active', swatch.dataset.color === state.color)
+  })
+
+  const drawingTool = state.tool === 'pen' || state.tool === 'highlight' ? state.tool : null
+  elements.strokeOptions.hidden = !drawingTool
+  if (!drawingTool) return
+  const widthKey = drawingTool === 'pen' ? 'penWidth' : 'highlightWidth'
+  elements.strokeOptionsLabel.textContent = drawingTool === 'pen' ? 'Pen width' : 'Highlighter width'
+  elements.strokeWidths.innerHTML = STROKE_WIDTHS[drawingTool].map((width) => `
+    <button class="stroke-width-button ${state[widthKey] === width ? 'active' : ''}" data-stroke-width="${width}" aria-label="${width} pixel ${drawingTool} width" title="${width} px">
+      <span style="--stroke-preview:${Math.min(width, 12)}px"></span>
+    </button>
+  `).join('')
+}
+
+function positionInkOptions(anchor) {
+  const anchorRect = anchor.getBoundingClientRect()
+  const popoverWidth = elements.inkOptionsPopover.offsetWidth
+  const railWidth = Number.parseFloat(getComputedStyle(elements.shell).getPropertyValue('--rail-width')) || 0
+  const minimum = railWidth + 8 + popoverWidth / 2
+  const maximum = window.innerWidth - 8 - popoverWidth / 2
+  const center = anchorRect.left + anchorRect.width / 2
+  elements.inkOptionsPopover.style.left = `${Math.max(minimum, Math.min(maximum, center))}px`
+}
+
+function openInkOptions(anchor = elements.inkOptionsTrigger) {
+  clearTimeout(inkOptionsCloseTimer)
+  updateInkOptions()
+  elements.inkOptionsPopover.hidden = false
+  elements.inkOptionsTrigger.setAttribute('aria-expanded', String(anchor === elements.inkOptionsTrigger))
+  document.querySelectorAll('[data-tool-options]').forEach((button) => {
+    button.setAttribute('aria-expanded', String(button === anchor))
+  })
+  positionInkOptions(anchor)
+}
+
+function toggleInkOptions() {
+  if (!elements.inkOptionsPopover.hidden) return closeInkOptions()
+  openInkOptions(elements.inkOptionsTrigger)
+}
+
+const suppressedToolClicks = new WeakSet()
+
+function setupToolOptionGestures() {
+  document.querySelectorAll('[data-tool-options]').forEach((button) => {
+    let holdTimer
+    let startPoint
+    let held = false
+
+    const cancelHold = () => {
+      clearTimeout(holdTimer)
+      button.classList.remove('is-holding')
     }
-    cancelAnimationFrame(frame)
-    frame = requestAnimationFrame(() => {
-      rail.classList.add('is-magnifying')
-      const influences = restingRects.map(({ center }) => {
-        const distance = Math.abs(pointerY - center)
-        return distance < 82 ? (1 + Math.cos(Math.PI * distance / 82)) / 2 : 0
-      })
-      const scales = influences.map((influence) => 1 + influence * 0.32)
-      const peakIndex = influences.indexOf(Math.max(...influences))
-      const centers = restingRects.map(({ center }) => center)
 
-      for (let index = peakIndex - 1; index >= 0; index -= 1) {
-        const baseGap = restingRects[index + 1].center - restingRects[index].center
-          - (restingRects[index].height + restingRects[index + 1].height) / 2
-        const requiredDistance = restingRects[index].height * scales[index] / 2
-          + restingRects[index + 1].height * scales[index + 1] / 2
-          + Math.max(2, baseGap)
-        centers[index] = Math.min(restingRects[index].center, centers[index + 1] - requiredDistance)
-      }
-      for (let index = peakIndex + 1; index < buttons.length; index += 1) {
-        const baseGap = restingRects[index].center - restingRects[index - 1].center
-          - (restingRects[index].height + restingRects[index - 1].height) / 2
-        const requiredDistance = restingRects[index].height * scales[index] / 2
-          + restingRects[index - 1].height * scales[index - 1] / 2
-          + Math.max(2, baseGap)
-        centers[index] = Math.max(restingRects[index].center, centers[index - 1] + requiredDistance)
-      }
-
-      buttons.forEach((button, index) => {
-        const influence = influences[index]
-        button.style.setProperty('--dock-scale', scales[index].toFixed(3))
-        button.style.setProperty('--dock-shift', `${(centers[index] - restingRects[index].center).toFixed(2)}px`)
-        button.style.setProperty('--dock-layer', String(Math.round(10 + influence * 90)))
-        button.classList.toggle('is-rail-magnified', influence > 0.08)
-        button.classList.toggle('is-rail-peak', influence > 0.78)
-      })
+    button.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return
+      held = false
+      startPoint = { x: event.clientX, y: event.clientY }
+      button.classList.add('is-holding')
+      try { button.setPointerCapture?.(event.pointerId) } catch {}
+      holdTimer = setTimeout(() => {
+        held = true
+        suppressedToolClicks.add(button)
+        setTool(button.dataset.tool)
+        openInkOptions(button)
+        navigator.vibrate?.(8)
+        button.classList.remove('is-holding')
+      }, 420)
     })
-  }
 
-  rail.addEventListener('pointermove', (event) => magnifyAt(event.clientY))
-  rail.addEventListener('pointerleave', reset)
-  rail.addEventListener('focusin', (event) => {
-    const button = event.target.closest('.rail-brand, .rail-button')
-    if (button) magnifyAt(button.getBoundingClientRect().top + button.getBoundingClientRect().height / 2)
+    button.addEventListener('pointermove', (event) => {
+      if (!startPoint || Math.hypot(event.clientX - startPoint.x, event.clientY - startPoint.y) <= 10) return
+      startPoint = null
+      cancelHold()
+    })
+
+    button.addEventListener('pointerup', (event) => {
+      startPoint = null
+      cancelHold()
+      try { button.releasePointerCapture?.(event.pointerId) } catch {}
+      if (held) event.preventDefault()
+    })
+    button.addEventListener('pointercancel', () => {
+      startPoint = null
+      cancelHold()
+    })
+    button.addEventListener('contextmenu', (event) => event.preventDefault())
   })
-  rail.addEventListener('focusout', (event) => {
-    if (!rail.contains(event.relatedTarget)) reset()
-  })
-  finePointer.addEventListener('change', reset)
-  reducedMotion.addEventListener('change', reset)
-  window.addEventListener('resize', reset)
 }
 
 function setupToolDockMagnification() {
@@ -639,6 +722,9 @@ function setSaveState(status, isError = false) {
 }
 
 let resizeTimer
+let viewportMotionFrame
+let viewportOffsetX = 0
+let viewportOffsetY = 0
 let renderedPaperWidth = PAGE_WIDTH
 let renderedPaperHeight = PAGE_HEIGHT
 function getDisplayScale() {
@@ -650,7 +736,55 @@ function setCanvasDisplaySize(width, height) {
   const scaledWidth = (width + CANVAS_OVERSCAN) * state.displayScale
   const scaledHeight = (height + CANVAS_OVERSCAN) * state.displayScale
   canvas.setDimensions({ width: scaledWidth, height: scaledHeight })
-  canvas.setZoom(state.displayScale)
+  canvas.setViewportTransform([
+    state.displayScale, 0, 0, state.displayScale,
+    viewportOffsetX, viewportOffsetY,
+  ])
+}
+
+function setCanvasViewportOffset(offsetX = 0, offsetY = 0) {
+  viewportOffsetX = offsetX
+  viewportOffsetY = offsetY
+  const zoom = state.displayScale
+  canvas.setViewportTransform([zoom, 0, 0, zoom, offsetX, offsetY])
+  canvas.requestRenderAll()
+}
+
+function animateViewportCompensation(deltaX, deltaY, duration = PAGE_EXPAND_DURATION) {
+  cancelAnimationFrame(viewportMotionFrame)
+  const scaledDeltaX = deltaX * state.displayScale
+  const scaledDeltaY = deltaY * state.displayScale
+  if (!scaledDeltaX && !scaledDeltaY) return setCanvasViewportOffset()
+
+  const startScrollLeft = elements.workspace.scrollLeft
+  const startScrollTop = elements.workspace.scrollTop
+  const startOffsetX = viewportOffsetX - scaledDeltaX
+  const startOffsetY = viewportOffsetY - scaledDeltaY
+  const targetScrollLeft = Math.max(0, startScrollLeft + scaledDeltaX - viewportOffsetX)
+  const targetScrollTop = Math.max(0, startScrollTop + scaledDeltaY - viewportOffsetY)
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    setCanvasViewportOffset()
+    elements.workspace.scrollLeft = targetScrollLeft
+    elements.workspace.scrollTop = targetScrollTop
+    return
+  }
+  const startedAt = performance.now()
+
+  setCanvasViewportOffset(startOffsetX, startOffsetY)
+  const frame = (now) => {
+    const progress = Math.min(1, (now - startedAt) / duration)
+    const eased = progress * progress * (3 - 2 * progress)
+    setCanvasViewportOffset(startOffsetX * (1 - eased), startOffsetY * (1 - eased))
+    elements.workspace.scrollLeft = startScrollLeft + (targetScrollLeft - startScrollLeft) * eased
+    elements.workspace.scrollTop = startScrollTop + (targetScrollTop - startScrollTop) * eased
+    if (progress < 1) viewportMotionFrame = requestAnimationFrame(frame)
+    else {
+      setCanvasViewportOffset()
+      elements.workspace.scrollLeft = targetScrollLeft
+      elements.workspace.scrollTop = targetScrollTop
+    }
+  }
+  viewportMotionFrame = requestAnimationFrame(frame)
 }
 
 function resizePaper(animate = false) {
@@ -711,15 +845,25 @@ function getContentBounds() {
   }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
 }
 
+function isEditableText(object) {
+  return Boolean(object && typeof object.text === 'string' && typeof object.enterEditing === 'function')
+}
+
+function findEditableTextAt(point) {
+  return [...canvas.getObjects()].reverse().find((object) => (
+    isEditableText(object) && object.containsPoint(point)
+  ))
+}
+
 function normalizeNotebookFonts() {
   let changed = false
   canvas.getObjects().forEach((object) => {
-    if (object instanceof IText && object.text === 'Start typing') {
+    if (isEditableText(object) && object.text === 'Start typing') {
       canvas.remove(object)
       changed = true
       return
     }
-    if (object instanceof IText && object.fontFamily === 'Georgia') {
+    if (isEditableText(object) && object.fontFamily === 'Georgia') {
       object.set('fontFamily', 'Source Serif 4')
       object.setCoords()
       changed = true
@@ -739,6 +883,8 @@ function reconcilePages(force = false) {
   }
 
   let changed = false
+  let viewportDeltaX = 0
+  let viewportDeltaY = 0
   const prependColumns = bounds.left < -EDGE_OVERFLOW
     ? Math.ceil((-EDGE_OVERFLOW - bounds.left) / PAGE_WIDTH)
     : 0
@@ -749,6 +895,8 @@ function reconcilePages(force = false) {
     state.pages.columns += prependColumns
     state.pages.rows += prependRows
     moveAllObjects(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
+    viewportDeltaX += prependColumns * PAGE_WIDTH
+    viewportDeltaY += prependRows * PAGE_HEIGHT
     changed = true
   }
 
@@ -772,7 +920,7 @@ function reconcilePages(force = false) {
   if (state.pages.columns > 1 && bounds.left > PAGE_WIDTH + EDGE_SHRINK) {
     state.pages.columns -= 1
     moveAllObjects(-PAGE_WIDTH, 0)
-    elements.workspace.scrollLeft = Math.max(0, elements.workspace.scrollLeft - PAGE_WIDTH * state.displayScale)
+    viewportDeltaX -= PAGE_WIDTH
     changed = true
   } else if (state.pages.columns > 1 && bounds.right < (state.pages.columns - 1) * PAGE_WIDTH - EDGE_SHRINK) {
     state.pages.columns -= 1
@@ -782,7 +930,7 @@ function reconcilePages(force = false) {
   if (state.pages.rows > 1 && bounds.top > PAGE_HEIGHT + EDGE_SHRINK) {
     state.pages.rows -= 1
     moveAllObjects(0, -PAGE_HEIGHT)
-    elements.workspace.scrollTop = Math.max(0, elements.workspace.scrollTop - PAGE_HEIGHT * state.displayScale)
+    viewportDeltaY -= PAGE_HEIGHT
     changed = true
   } else if (state.pages.rows > 1 && bounds.bottom < (state.pages.rows - 1) * PAGE_HEIGHT - EDGE_SHRINK) {
     state.pages.rows -= 1
@@ -791,8 +939,7 @@ function reconcilePages(force = false) {
 
   if (changed) {
     resizePaper(true)
-    elements.workspace.scrollLeft += prependColumns * PAGE_WIDTH * state.displayScale
-    elements.workspace.scrollTop += prependRows * PAGE_HEIGHT * state.displayScale
+    animateViewportCompensation(viewportDeltaX, viewportDeltaY)
   }
   canvas.requestRenderAll()
   return changed
@@ -809,7 +956,6 @@ function expandPagesDuringTransform() {
   const prependRows = Math.max(0, Math.ceil((TRANSFORM_EDGE_MARGIN - bounds.top) / PAGE_HEIGHT))
 
   if (prependColumns || prependRows) {
-    elements.paper.classList.add('is-prepending')
     state.pages.columns += prependColumns
     state.pages.rows += prependRows
     moveAllObjects(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
@@ -833,8 +979,7 @@ function expandPagesDuringTransform() {
 
   if (changed) {
     resizePaper(true)
-    elements.workspace.scrollLeft += prependColumns * PAGE_WIDTH * state.displayScale
-    elements.workspace.scrollTop += prependRows * PAGE_HEIGHT * state.displayScale
+    animateViewportCompensation(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
   }
   elements.paper.classList.add('is-dragging')
   canvas.requestRenderAll()
@@ -1039,7 +1184,7 @@ function eraseBetween(start, end) {
 }
 
 function createInkDot(point, tool) {
-  const width = tool === 'highlight' ? 20 : 3
+  const width = tool === 'highlight' ? state.highlightWidth : state.penWidth
   const dot = new Circle({
     left: point.x - width / 2,
     top: point.y - width / 2,
@@ -1061,14 +1206,16 @@ function setTool(tool) {
   canvas.selection = tool === 'select'
   canvas.defaultCursor = tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : 'default'
   canvas.forEachObject((object) => {
-    object.selectable = tool === 'select'
-    object.evented = tool === 'select'
+    const textEditable = tool === 'text' && isEditableText(object)
+    object.selectable = tool === 'select' || textEditable
+    object.evented = tool === 'select' || textEditable
   })
   if (canvas.isDrawingMode) {
     canvas.freeDrawingBrush.color = tool === 'highlight' ? `${state.color}55` : state.color
-    canvas.freeDrawingBrush.width = tool === 'highlight' ? 20 : 3
+    canvas.freeDrawingBrush.width = tool === 'highlight' ? state.highlightWidth : state.penWidth
     canvas.freeDrawingBrush.decimate = 0.8
   }
+  updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
   canvas.discardActiveObject()
   canvas.requestRenderAll()
@@ -1112,16 +1259,20 @@ function snapshot() {
   return JSON.stringify({ content: canvas.toJSON(), pages: state.pages })
 }
 
+function commitHistorySnapshot() {
+  const next = snapshot()
+  if (state.history[state.historyIndex] === next) return false
+  state.history = state.history.slice(0, state.historyIndex + 1)
+  state.history.push(next)
+  state.historyIndex = state.history.length - 1
+  return true
+}
+
 function recordHistory() {
   if (state.loading) return
   clearTimeout(historyTimer)
   historyTimer = setTimeout(() => {
-    const next = snapshot()
-    if (state.history[state.historyIndex] === next) return
-    state.history = state.history.slice(0, state.historyIndex + 1)
-    state.history.push(next)
-    state.historyIndex = state.history.length - 1
-    queueSave()
+    if (commitHistorySnapshot()) queueSave()
   }, 180)
 }
 
@@ -1133,7 +1284,7 @@ async function restoreHistory(index) {
   state.pages = entry.pages
   resizePaper(true)
   await canvas.loadFromJSON(entry.content)
-  setTool('select')
+  setTool('text')
   state.loading = false
   canvas.requestRenderAll()
   queueSave()
@@ -1163,7 +1314,7 @@ async function selectNote(id) {
     normalizedNote = reconcilePages(true) || normalizedNote
     state.history = [snapshot()]
     state.historyIndex = 0
-    setTool('select')
+    setTool('text')
     setSaveState('Saved')
     renderNoteList()
     requestAnimationFrame(() => {
@@ -1182,17 +1333,24 @@ async function selectNote(id) {
 }
 
 async function createNote(notebookId) {
+  if (state.creatingNote) return
+  state.creatingNote = true
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
   const destinationId = Number(notebookId) || state.selectedNotebookId || activeNote?.notebookId || state.notebooks[0]?.id
-  const note = await api('/notes', {
-    method: 'POST',
-    body: JSON.stringify({ title: 'Untitled note', notebookId: destinationId }),
-  })
-  state.notes.unshift(note)
-  state.selectedNotebookId = note.notebookId
-  state.activeNoteId = null
-  await selectNote(note.id)
-  elements.title.select()
+  try {
+    const note = await api('/notes', {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Untitled note', notebookId: destinationId }),
+    })
+    state.notes.unshift(note)
+    state.selectedNotebookId = note.notebookId
+    state.activeNoteId = null
+    await selectNote(note.id)
+    setSidebarOpen(false)
+    addText({ x: 72, y: 72 })
+  } finally {
+    state.creatingNote = false
+  }
 }
 
 async function moveNote(noteId, notebookId) {
@@ -1286,7 +1444,7 @@ function setSettingsOpen(open) {
 
 function selectedTextObject() {
   const active = canvas.getActiveObject()
-  return active instanceof IText ? active : null
+  return isEditableText(active) ? active : null
 }
 
 function syncTypographyControls() {
@@ -1564,6 +1722,19 @@ async function deleteActiveNote() {
   else await selectNote(state.notes[0].id)
 }
 
+function clearActiveNote() {
+  if (!state.activeNoteId || !canvas.getObjects().length) return elements.clearNoteDialog.close()
+  clearTimeout(historyTimer)
+  canvas.discardActiveObject()
+  canvas.clear()
+  state.pages = { columns: 1, rows: 1 }
+  resizePaper(true)
+  setTool('text')
+  clearRelatedNote()
+  if (commitHistorySnapshot()) queueSave()
+  elements.clearNoteDialog.close()
+}
+
 function updateEraserCursor(event) {
   if (state.tool !== 'eraser' || !event.e) return
   elements.eraserCursor.hidden = false
@@ -1606,8 +1777,15 @@ canvas.on('mouse:down', (event) => {
     state.eraserActive = true
     state.eraserLastPoint = { x: event.scenePoint.x, y: event.scenePoint.y }
     state.eraserChanged = eraseAt(state.eraserLastPoint)
-  } else if (state.tool === 'text' && !event.target) {
-    addText(event.scenePoint)
+  } else if (state.tool === 'text') {
+    const textTarget = isEditableText(event.target) ? event.target : findEditableTextAt(event.scenePoint)
+    if (textTarget) {
+      canvas.setActiveObject(textTarget)
+      if (!textTarget.isEditing) textTarget.enterEditing()
+      canvas.requestRenderAll()
+    } else {
+      addText(event.scenePoint)
+    }
   }
 })
 
@@ -1642,7 +1820,7 @@ canvas.on('mouse:move', (event) => {
 
 ;['object:modified', 'path:created', 'text:changed'].forEach((eventName) => {
   canvas.on(eventName, () => {
-    elements.paper.classList.remove('is-dragging', 'is-prepending')
+    elements.paper.classList.remove('is-dragging')
     elements.workspace.classList.remove('is-object-dragging')
     reconcilePages()
     recordHistory()
@@ -1652,7 +1830,7 @@ canvas.on('mouse:move', (event) => {
   canvas.on(eventName, expandPagesDuringTransform)
 })
 canvas.on('mouse:up', () => {
-  elements.paper.classList.remove('is-dragging', 'is-prepending')
+  elements.paper.classList.remove('is-dragging')
   elements.workspace.classList.remove('is-object-dragging')
   finishErasing()
   if (state.drawingGesture) {
@@ -1675,10 +1853,18 @@ document.addEventListener('pointerup', finishErasing)
   canvas.on(eventName, syncTypographyControls)
 })
 
-document.querySelectorAll('[data-tool]').forEach((button) => button.addEventListener('click', () => setTool(button.dataset.tool)))
+document.querySelectorAll('[data-tool]').forEach((button) => button.addEventListener('click', () => {
+  if (suppressedToolClicks.has(button)) {
+    suppressedToolClicks.delete(button)
+    return
+  }
+  const wasActive = state.tool === button.dataset.tool
+  setTool(button.dataset.tool)
+  if (button.hasAttribute('data-tool-options') && wasActive) openInkOptions(button)
+  else closeInkOptions()
+}))
 document.querySelectorAll('[data-color]').forEach((button) => button.addEventListener('click', () => {
   state.color = button.dataset.color
-  document.querySelectorAll('[data-color]').forEach((swatch) => swatch.classList.toggle('active', swatch === button))
   const active = canvas.getActiveObject()
   if (active) {
     active.set('fill', state.color)
@@ -1686,10 +1872,32 @@ document.querySelectorAll('[data-color]').forEach((button) => button.addEventLis
     recordHistory()
   }
   setTool(state.tool)
+  updateInkOptions()
+  if (state.tool === 'text') closeInkOptions()
+  else scheduleInkOptionsClose()
 }))
+elements.inkOptionsTrigger.addEventListener('click', toggleInkOptions)
+document.querySelector('#close-ink-options').addEventListener('click', closeInkOptions)
+elements.strokeWidths.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-stroke-width]')
+  if (!button || !['pen', 'highlight'].includes(state.tool)) return
+  const width = Number(button.dataset.strokeWidth)
+  if (state.tool === 'pen') state.penWidth = width
+  else state.highlightWidth = width
+  setTool(state.tool)
+  closeInkOptions()
+})
 
 document.querySelector('#new-note').addEventListener('click', () => createNote())
 document.querySelector('#new-notebook').addEventListener('click', () => openNotebookDialog())
+document.querySelector('#clear-note').addEventListener('click', () => {
+  elements.clearNoteDialog.showModal()
+  requestAnimationFrame(() => elements.clearNoteDialog.querySelector('.dialog-cancel').focus())
+})
+document.querySelector('#confirm-clear-note').addEventListener('click', (event) => {
+  event.preventDefault()
+  clearActiveNote()
+})
 document.querySelector('#delete-note').addEventListener('click', deleteActiveNote)
 document.querySelector('#undo').addEventListener('click', () => restoreHistory(state.historyIndex - 1))
 document.querySelector('#redo').addEventListener('click', () => restoreHistory(state.historyIndex + 1))
@@ -1739,6 +1947,7 @@ document.addEventListener('click', (event) => {
     elements.notebookPickerMenu.hidden = true
     elements.notebookPicker.setAttribute('aria-expanded', 'false')
   }
+  if (!event.target.closest('.ink-options-popover, #ink-options-trigger, [data-tool-options]')) closeInkOptions()
 })
 document.addEventListener('pointerdown', (event) => {
   const target = event.target
@@ -1777,7 +1986,7 @@ elements.list.addEventListener('click', (event) => {
   const item = event.target.closest('[data-note-id]')
   if (item) {
     selectNote(Number(item.dataset.noteId))
-    if (window.innerWidth <= 800) setSidebarOpen(false)
+    setSidebarOpen(false)
     return
   }
   const notebook = event.target.closest('[data-notebook-select]')
@@ -1844,7 +2053,7 @@ elements.searchResults.addEventListener('keydown', (event) => {
 
 document.addEventListener('keydown', (event) => {
   const activeText = canvas.getActiveObject()
-  if (event.key === 'Escape' && activeText instanceof IText && activeText.isEditing) {
+  if (event.key === 'Escape' && isEditableText(activeText) && activeText.isEditing) {
     event.preventDefault()
     event.stopImmediatePropagation()
     activeText.exitEditing()
@@ -1854,7 +2063,7 @@ document.addEventListener('keydown', (event) => {
 
 document.addEventListener('keydown', (event) => {
   const activeElement = document.activeElement
-  const activeText = canvas.getActiveObject() instanceof IText ? canvas.getActiveObject() : null
+  const activeText = isEditableText(canvas.getActiveObject()) ? canvas.getActiveObject() : null
   const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement?.tagName)
     || activeElement?.isContentEditable
     || activeText?.isEditing
@@ -1879,6 +2088,8 @@ document.addEventListener('keydown', (event) => {
     setPropertiesOpen(false)
   } else if (event.key === 'Escape' && elements.settings.classList.contains('open')) {
     setSettingsOpen(false)
+  } else if (event.key === 'Escape' && !elements.inkOptionsPopover.hidden) {
+    closeInkOptions()
   } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open')) {
     setSidebarOpen(false)
   } else if (event.key === 'Escape' && activeText?.isEditing) {
@@ -1925,6 +2136,6 @@ async function initialize() {
 document.fonts.ready.then(() => canvas.requestRenderAll())
 window.addEventListener('resize', () => resizePaper())
 setupVoiceInput()
-setupRailMagnification()
+setupToolOptionGestures()
 setupToolDockMagnification()
 initialize()

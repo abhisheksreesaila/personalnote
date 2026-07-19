@@ -39,7 +39,7 @@ def create_app(
 
     @app.get("/health")
     def health():
-        return JSONResponse({"status": "ok", "backend": "fasthtml", "fhSaas": "0.9.14"})
+        return JSONResponse({"status": "ok", "app": "personal-note", "backend": "fasthtml", "fhSaas": "0.9.14"})
 
     @app.get("/api/notebooks")
     def list_notebooks():

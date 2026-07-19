@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { rankCandidates } from './ambient-agent.js'
+process.env.PERSONAL_NOTE_DISABLE_MODEL = '1'
+
+const { rankCandidates, resolveAzureProviderSettings } = await import('./ambient-agent.js')
 
 
 test('returns the grounded first candidate without a configured model', async () => {
@@ -26,4 +28,15 @@ test('returns the grounded first candidate without a configured model', async ()
     observation: 'Connected through launch and maya.',
     mode: 'local-retrieval',
   })
+})
+
+test('derives an Azure OpenAI resource from a Foundry project endpoint', () => {
+  const settings = resolveAzureProviderSettings(
+    'https://personal-note.services.ai.azure.com/api/projects/notebook',
+    'secret',
+  )
+
+  assert.equal(settings.resourceName, 'personal-note')
+  assert.equal(settings.apiKey, 'secret')
+  assert.equal(settings.baseURL, undefined)
 })

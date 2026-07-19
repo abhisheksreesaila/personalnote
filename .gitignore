@@ -15,6 +15,7 @@ dist-ssr
 __pycache__/
 *.py[cod]
 .env
+!.env.example
 .sesskey
 data/*.db
 data/*.db-shm

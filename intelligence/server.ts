@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http'
 
-import { rankCandidates, workerMode } from './ambient-agent.js'
+import { rankCandidates, workerMode, workerProvider } from './ambient-agent.js'
 
 
 const port = Number(process.env.INTELLIGENCE_PORT || 4112)
@@ -12,7 +12,12 @@ function send(response: ServerResponse, status: number, body: unknown) {
 
 const server = createServer(async (request, response) => {
   if (request.method === 'GET' && request.url === '/health') {
-    return send(response, 200, { status: 'ok', framework: 'mastra', mode: workerMode() })
+    return send(response, 200, {
+      status: 'ok',
+      framework: 'mastra',
+      mode: workerMode(),
+      provider: workerProvider(),
+    })
   }
   if (request.method !== 'POST' || request.url !== '/rank') {
     return send(response, 404, { error: 'Not found' })
