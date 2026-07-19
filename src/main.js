@@ -2,6 +2,7 @@ import './style.css'
 import { Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { AmbientTelemetry } from './intelligence/ambient-telemetry.js'
+import { calendarDraftToIcs, parseCalendarDraft } from './intelligence/calendar-draft.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
@@ -147,6 +148,19 @@ document.querySelector('#app').innerHTML = `
           <footer>
             <span id="entity-source"></span>
             <button id="open-entity-source"><span>Open note</span><i data-lucide="arrow-up-right"></i></button>
+          </footer>
+        </aside>
+        <button class="intelligence-presence calendar-presence" id="calendar-presence" title="Calendar draft available" aria-label="Show calendar draft" hidden><i data-lucide="calendar-clock"></i></button>
+        <aside class="intelligence-card calendar-card" id="calendar-card" aria-live="polite" hidden>
+          <header>
+            <span><i data-lucide="calendar-clock"></i>Calendar draft</span>
+            <button id="dismiss-calendar" title="Dismiss" aria-label="Dismiss calendar draft"><i data-lucide="x"></i></button>
+          </header>
+          <strong id="calendar-title"></strong>
+          <p id="calendar-when"></p>
+          <footer>
+            <span>Draft · Not added</span>
+            <button id="download-calendar"><span>Download .ics</span><i data-lucide="download"></i></button>
           </footer>
         </aside>
 
@@ -371,6 +385,10 @@ const elements = {
   entityName: document.querySelector('#entity-name'),
   entityContext: document.querySelector('#entity-context'),
   entitySource: document.querySelector('#entity-source'),
+  calendarCard: document.querySelector('#calendar-card'),
+  calendarPresence: document.querySelector('#calendar-presence'),
+  calendarTitle: document.querySelector('#calendar-title'),
+  calendarWhen: document.querySelector('#calendar-when'),
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
@@ -405,6 +423,8 @@ const state = {
   dismissedRelated: new Set(),
   entitySuggestion: null,
   dismissedEntities: new Set(),
+  calendarDraft: null,
+  dismissedCalendarDrafts: new Set(),
 }
 
 const PREFERENCES_KEY = 'personal-note.preferences.v1'
@@ -463,6 +483,8 @@ let entityRequest
 let entitySequence = 0
 let entityQueuedAt = 0
 let entityCandidate = null
+let calendarPresentTimer
+let calendarCollapseTimer
 
 function publishAmbientTelemetry(event, snapshot = ambientTelemetry.snapshot()) {
   const sample = snapshot.last
@@ -488,6 +510,59 @@ function clearEntityPeek({ keepPresence = false } = {}) {
   elements.entityCard.classList.remove('open')
   elements.entityCard.hidden = true
   elements.entityPresence.hidden = !keepPresence || !state.entitySuggestion
+}
+
+function calendarDraftKey(draft) {
+  return draft ? `${draft.title}:${draft.startAt}` : ''
+}
+
+function clearCalendarDraft({ keepPresence = false } = {}) {
+  clearTimeout(calendarCollapseTimer)
+  elements.calendarCard.classList.remove('open')
+  elements.calendarCard.hidden = true
+  elements.calendarPresence.hidden = !keepPresence || !state.calendarDraft
+}
+
+function collapseCalendarDraft() {
+  if (!state.calendarDraft) return clearCalendarDraft()
+  elements.calendarCard.classList.remove('open')
+  setTimeout(() => {
+    if (!elements.calendarCard.classList.contains('open')) {
+      elements.calendarCard.hidden = true
+      elements.calendarPresence.hidden = false
+    }
+  }, 180)
+}
+
+function showCalendarDraft(draft) {
+  const date = new Date(draft.startAt)
+  const dateOptions = draft.hasExplicitTime
+    ? { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
+    : { weekday: 'short', month: 'short', day: 'numeric' }
+  elements.calendarTitle.textContent = draft.title
+  elements.calendarWhen.textContent = new Intl.DateTimeFormat(undefined, dateOptions).format(date)
+  state.entitySuggestion = null
+  entityCandidate = null
+  entitySequence += 1
+  clearTimeout(entityPresentTimer)
+  entityRequest?.abort()
+  clearEntityPeek()
+  clearRelatedNote()
+  elements.calendarPresence.hidden = true
+  elements.calendarCard.hidden = false
+  requestAnimationFrame(() => elements.calendarCard.classList.add('open'))
+  clearTimeout(calendarCollapseTimer)
+  calendarCollapseTimer = setTimeout(collapseCalendarDraft, 8500)
+}
+
+function queueCalendarCheck() {
+  clearTimeout(calendarPresentTimer)
+  clearCalendarDraft()
+  const draft = parseCalendarDraft(activePhraseSnapshot())
+  state.calendarDraft = draft && !state.dismissedCalendarDrafts.has(calendarDraftKey(draft)) ? draft : null
+  if (state.calendarDraft) {
+    calendarPresentTimer = setTimeout(() => showCalendarDraft(state.calendarDraft), 850)
+  }
 }
 
 function collapseEntityPeek() {
@@ -517,7 +592,7 @@ function showEntityPeek(person) {
 }
 
 function presentEntityCandidate(sequence) {
-  if (sequence !== entitySequence || !entityCandidate) return
+  if (sequence !== entitySequence || !entityCandidate || state.calendarDraft) return
   const source = entityCandidate.sources[0]
   const dismissalKey = source ? `${state.activeNoteId}:${entityCandidate.name.toLocaleLowerCase()}:${source.noteId}` : ''
   if (!source || state.dismissedEntities.has(dismissalKey)) return
@@ -526,7 +601,7 @@ function presentEntityCandidate(sequence) {
 
 async function prefetchEntityContext(sequence) {
   const noteId = state.activeNoteId
-  const text = activeTextSnapshot()
+  const text = activePhraseSnapshot()
   if (sequence !== entitySequence || !noteId || text.length < 4) return
   entityRequest = new AbortController()
   const request = entityRequest
@@ -565,6 +640,13 @@ function activeTextSnapshot() {
     .filter(Boolean)
     .join(' ')
   return `${elements.title.value.trim()} ${canvasText}`.trim()
+}
+
+function activePhraseSnapshot() {
+  if (document.activeElement === elements.title) return elements.title.value.trim()
+  const activeObject = canvas.getActiveObject()
+  if (isEditableText(activeObject) && activeObject.isEditing) return activeObject.text.trim()
+  return activeTextSnapshot()
 }
 
 function clearRelatedNote({ keepPresence = false } = {}) {
@@ -628,7 +710,7 @@ async function refreshRelatedNote() {
       publishAmbientTelemetry('silent', ambientTelemetry.silent())
       return clearRelatedNote()
     }
-    if (state.entitySuggestion) {
+    if (state.entitySuggestion || state.calendarDraft) {
       publishAmbientTelemetry('silent', ambientTelemetry.silent())
       return
     }
@@ -1434,6 +1516,7 @@ async function saveActiveNote() {
 function queueSave() {
   if (state.loading) return
   cancelAmbientWork()
+  queueCalendarCheck()
   queueEntityCheck()
   setSaveState('Saving')
   clearTimeout(saveTimer)
@@ -1488,6 +1571,9 @@ async function selectNote(id) {
   entitySequence += 1
   state.entitySuggestion = null
   clearEntityPeek()
+  clearTimeout(calendarPresentTimer)
+  state.calendarDraft = null
+  clearCalendarDraft()
   state.relatedSuggestion = null
   clearRelatedNote()
   state.activeNoteId = id
@@ -2246,6 +2332,27 @@ document.querySelector('#open-entity-source').addEventListener('click', () => {
   state.entitySuggestion = null
   clearEntityPeek()
   if (sourceId) selectNote(sourceId)
+})
+elements.calendarPresence.addEventListener('click', () => {
+  if (state.calendarDraft) showCalendarDraft(state.calendarDraft)
+})
+document.querySelector('#dismiss-calendar').addEventListener('click', () => {
+  if (state.calendarDraft) state.dismissedCalendarDrafts.add(calendarDraftKey(state.calendarDraft))
+  state.calendarDraft = null
+  clearCalendarDraft()
+})
+document.querySelector('#download-calendar').addEventListener('click', () => {
+  const draft = state.calendarDraft
+  if (!draft) return
+  const blob = new Blob([calendarDraftToIcs(draft)], { type: 'text/calendar;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${draft.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'event'}.ics`
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 })
 elements.list.addEventListener('click', (event) => {
   const item = event.target.closest('[data-note-id]')

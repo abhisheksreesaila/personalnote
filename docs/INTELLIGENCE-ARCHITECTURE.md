@@ -45,6 +45,8 @@ Typing cancels queued or in-flight ambient work immediately. Timing belongs to t
 
 The local person listener is a separate fast lane: it prefetches after 250 ms and presents after an 850 ms quiet gate. It calls the product-owned entity API directly and never invokes Mastra. Person results cite indexed note context and defer all navigation and presentation decisions to the browser shell.
 
+Calendar detection is also local and framework-independent. `chrono-node` parses the actively edited phrase, the browser waits for the same 850 ms presentation gate, and the result remains a draft. The only consequential action is an explicit `.ics` download; detection alone never writes to a calendar or database.
+
 ## How To Add Capabilities
 
 Add product capabilities as narrow read or proposal tools. Tools should call authenticated FastHTML APIs, not SQLite directly. Separate retrieval from action, and keep every write reversible.

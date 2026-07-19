@@ -56,6 +56,7 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - Ambient related-note listening after a meaningful writing pause
 - FTS5-backed note search and related-context retrieval
 - Fast local person recognition with source-linked person peeks
+- Natural-language calendar drafts with explicit `.ics` export
 - Source-grounded related-note cards that collapse into a quiet presence marker
 - Local deterministic retrieval with optional Mastra reranking through any OpenAI-compatible model
 

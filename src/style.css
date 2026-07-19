@@ -676,6 +676,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .entity-card header > span { color: #267a6b; }
 .entity-card footer button { color: #226d61; border-color: rgba(38,122,107,.25); background: rgba(38,122,107,.08); }
 .entity-card footer button:hover { color: white; background: #267a6b; }
+.calendar-presence { color: #a75d2d; border-color: rgba(167,93,45,.34); }
+.calendar-presence:hover { color: white; background: #a75d2d; }
+.calendar-card { border-color: rgba(167,93,45,.25); border-left-color: #a75d2d; }
+.calendar-card header > span { color: #a75d2d; }
+.calendar-card footer button { color: #925025; border-color: rgba(167,93,45,.25); background: rgba(167,93,45,.08); }
+.calendar-card footer button:hover { color: white; background: #a75d2d; }
 @keyframes intelligence-arrive { from { opacity: 0; transform: translateX(8px) scale(.86); } }
 
 @media (min-width: 801px) {
