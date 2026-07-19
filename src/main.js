@@ -425,6 +425,7 @@ const state = {
   dismissedEntities: new Set(),
   calendarDraft: null,
   dismissedCalendarDrafts: new Set(),
+  intelligenceConnectionConfigured: false,
 }
 
 const PREFERENCES_KEY = 'personal-note.preferences.v1'
@@ -474,6 +475,7 @@ function api(path, options = {}) {
 let ambientTimer
 let ambientCollapseTimer
 let ambientRequest
+let ambientEnrichmentRequest
 let ambientSequence = 0
 const ambientTelemetry = new AmbientTelemetry()
 let entityPrefetchTimer
@@ -496,11 +498,13 @@ function publishAmbientTelemetry(event, snapshot = ambientTelemetry.snapshot()) 
 }
 
 function cancelAmbientWork() {
-  const hadPendingWork = Boolean(ambientTimer || ambientRequest)
+  const hadPendingWork = Boolean(ambientTimer || ambientRequest || ambientEnrichmentRequest)
   clearTimeout(ambientTimer)
   ambientTimer = null
   ambientRequest?.abort()
   ambientRequest = null
+  ambientEnrichmentRequest?.abort()
+  ambientEnrichmentRequest = null
   ambientSequence += 1
   if (hadPendingWork) publishAmbientTelemetry('cancelled', ambientTelemetry.cancel())
 }
@@ -656,6 +660,38 @@ function clearRelatedNote({ keepPresence = false } = {}) {
   elements.intelligencePresence.hidden = !keepPresence || !state.relatedSuggestion
 }
 
+async function enrichRelatedSuggestion(sequence, noteId, text) {
+  if (!state.intelligenceConnectionConfigured) return
+  ambientEnrichmentRequest?.abort()
+  ambientEnrichmentRequest = new AbortController()
+  const request = ambientEnrichmentRequest
+  try {
+    const result = await api('/intelligence/related/enrich', {
+      method: 'POST',
+      body: JSON.stringify({ noteId, text }),
+      signal: request.signal,
+    })
+    if (
+      sequence !== ambientSequence
+      || noteId !== state.activeNoteId
+      || !state.relatedSuggestion
+      || state.entitySuggestion
+      || state.calendarDraft
+    ) return
+    const suggestion = result.suggestion
+    const dismissalKey = suggestion ? `${noteId}:${suggestion.noteId}` : ''
+    if (!suggestion || state.dismissedRelated.has(dismissalKey)) return
+    showRelatedNote(suggestion)
+    const duration = Math.round(result.timing?.enrichmentMs || result.timing?.serverMs || 0)
+    document.querySelector('#settings-intelligence-latency').textContent = `${duration} ms · ${result.timing?.mode || 'enriched'}`
+    console.debug('event=intelligence.enrichment', result.timing)
+  } catch (error) {
+    if (error.name !== 'AbortError') console.debug('Related-note enrichment stayed quiet.', error)
+  } finally {
+    if (ambientEnrichmentRequest === request) ambientEnrichmentRequest = null
+  }
+}
+
 function collapseRelatedNote() {
   if (!state.relatedSuggestion) return clearRelatedNote()
   elements.intelligenceCard.classList.remove('open')
@@ -716,6 +752,7 @@ async function refreshRelatedNote() {
     }
     showRelatedNote(suggestion)
     publishAmbientTelemetry('presented', ambientTelemetry.presented())
+    void enrichRelatedSuggestion(sequence, noteId, text)
   } catch (error) {
     if (error.name !== 'AbortError') {
       publishAmbientTelemetry('failed', ambientTelemetry.silent())
@@ -1739,6 +1776,7 @@ function updateCapabilitySettings(capabilities) {
   const authentication = capabilities.authentication || {}
   const storage = capabilities.storage || {}
   document.querySelector('#settings-intelligence-provider').textContent = providerNames[intelligence.provider] || 'Unavailable'
+  state.intelligenceConnectionConfigured = Boolean(intelligence.connectionConfigured)
   document.querySelector('#settings-intelligence-key').textContent = intelligence.provider === 'local-retrieval'
     ? 'Not required'
     : intelligence.credentialsConfigured ? 'Configured' : 'Needs setup'

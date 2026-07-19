@@ -159,9 +159,8 @@ def create_app(
         retrieval_started = time.perf_counter()
         candidates = service.related_candidates(note_id, current_text)
         retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
-        enrichment_started = time.perf_counter()
-        suggestion = await enrich_related_note(worker_url, current_text, candidates)
-        enrichment_ms = (time.perf_counter() - enrichment_started) * 1000
+        suggestion = candidates[0] if candidates else None
+        enrichment_ms = 0.0
         total_ms = (time.perf_counter() - request_started) * 1000
         timing = {
             "retrievalMs": round(retrieval_ms, 2),
@@ -178,6 +177,28 @@ def create_app(
                 )
             },
         )
+
+    @app.post("/api/intelligence/related/enrich")
+    async def enrich_related(request):
+        request_started = time.perf_counter()
+        request_payload = await payload(request)
+        try:
+            note_id = int(request_payload.get("noteId"))
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "A valid noteId is required"}, status_code=400)
+        current_text = str(request_payload.get("text") or "")[:24_000]
+        candidates = service.related_candidates(note_id, current_text)
+        enrichment_started = time.perf_counter()
+        suggestion = await enrich_related_note(worker_url, current_text, candidates)
+        enrichment_ms = (time.perf_counter() - enrichment_started) * 1000
+        return JSONResponse({
+            "suggestion": suggestion,
+            "timing": {
+                "enrichmentMs": round(enrichment_ms, 2),
+                "serverMs": round((time.perf_counter() - request_started) * 1000, 2),
+                "mode": suggestion.get("mode", "silent") if suggestion else "silent",
+            },
+        })
 
     @app.post("/api/intelligence/entities")
     async def intelligence_entities(request):

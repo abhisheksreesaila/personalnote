@@ -29,7 +29,7 @@ flowchart LR
 
 ### FastHTML Bridge
 
-`routes.py` owns the public intelligence contract. `intelligence_client.py` calls the worker with a short timeout and falls back to the strongest local candidate when the worker is unavailable.
+`routes.py` owns the public intelligence contract. `/api/intelligence/related` returns the strongest local candidate without calling a model. `/api/intelligence/related/enrich` is a separate cancellable slow lane; `intelligence_client.py` gives the worker a bounded configurable budget and falls back to the strongest local candidate when the worker is unavailable.
 
 ### Mastra Worker
 
@@ -42,6 +42,8 @@ flowchart LR
 The related-context path records separate retrieval, enrichment, request, and queue-to-presentation timings. The FastHTML response includes safe timing metadata and a `Server-Timing` header; the browser records the latest completed sample, cancellation count, and Open or Dismiss interaction without storing note text.
 
 Typing cancels queued or in-flight ambient work immediately. Timing belongs to the product shell rather than Mastra, so swapping the worker does not change the measurement contract. The settings drawer shows the latest response mode and latency for development evaluation.
+
+Local presentation never waits for Mastra. In the validated development configuration, local retrieval returned in 13 ms while model enrichment completed independently in 2,065 ms. The browser applies late enrichment only when the note, request sequence, and visible suggestion are still current.
 
 The local person listener is a separate fast lane: it prefetches after 250 ms and presents after an 850 ms quiet gate. It calls the product-owned entity API directly and never invokes Mastra. Person results cite indexed note context and defer all navigation and presentation decisions to the browser shell.
 

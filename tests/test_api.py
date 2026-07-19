@@ -1,10 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from starlette.testclient import TestClient
 
+from intelligence_client import enrichment_timeout
 from routes import create_app
 
 
@@ -84,6 +85,12 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotIn("session-secret", serialized)
         self.assertNotIn("provider-secret", serialized)
 
+    def test_enrichment_timeout_is_bounded_and_tolerates_invalid_values(self):
+        with patch.dict("os.environ", {"INTELLIGENCE_ENRICH_TIMEOUT": "invalid"}):
+            self.assertEqual(enrichment_timeout(), 4.0)
+        with patch.dict("os.environ", {"INTELLIGENCE_ENRICH_TIMEOUT": "99"}):
+            self.assertEqual(enrichment_timeout(), 10.0)
+
     def test_related_note_is_grounded_and_excludes_active_note(self):
         notebook = self.client.get("/api/notebooks").json()[0]
         source = self.client.post(
@@ -104,10 +111,14 @@ class ApiContractTests(unittest.TestCase):
             json={"title": "October option", "notebookId": notebook["id"]},
         ).json()
 
-        response = self.client.post(
-            "/api/intelligence/related",
-            json={"noteId": active["id"], "text": "Talk to Maya about moving the launch to October."},
-        )
+        with patch(
+            "routes.enrich_related_note",
+            new=AsyncMock(side_effect=AssertionError("fast lane called the worker")),
+        ):
+            response = self.client.post(
+                "/api/intelligence/related",
+                json={"noteId": active["id"], "text": "Talk to Maya about moving the launch to October."},
+            )
 
         self.assertEqual(response.status_code, 200)
         suggestion = response.json()["suggestion"]
@@ -121,6 +132,14 @@ class ApiContractTests(unittest.TestCase):
         self.assertGreaterEqual(timing["serverMs"], timing["retrievalMs"])
         self.assertEqual(timing["mode"], "local-retrieval")
         self.assertIn("retrieval;dur=", response.headers["server-timing"])
+
+        enriched = self.client.post(
+            "/api/intelligence/related/enrich",
+            json={"noteId": active["id"], "text": "Talk to Maya about moving the launch to October."},
+        )
+        self.assertEqual(enriched.status_code, 200)
+        self.assertEqual(enriched.json()["suggestion"]["noteId"], source["id"])
+        self.assertEqual(enriched.json()["timing"]["mode"], "local-retrieval")
 
         entities = self.client.post(
             "/api/intelligence/entities",

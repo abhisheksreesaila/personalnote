@@ -1,9 +1,18 @@
 import logging
+import os
 
 import httpx
 
 
 logger = logging.getLogger(__name__)
+
+
+def enrichment_timeout() -> float:
+    try:
+        configured = float(os.getenv("INTELLIGENCE_ENRICH_TIMEOUT", "4.0"))
+    except ValueError:
+        configured = 4.0
+    return min(10.0, max(0.5, configured))
 
 
 async def enrich_related_note(
@@ -17,7 +26,7 @@ async def enrich_related_note(
         return candidates[0]
 
     try:
-        async with httpx.AsyncClient(timeout=0.45) as client:
+        async with httpx.AsyncClient(timeout=enrichment_timeout()) as client:
             response = await client.post(
                 f"{intelligence_url.rstrip('/')}/rank",
                 json={"currentText": current_text, "candidates": candidates},
