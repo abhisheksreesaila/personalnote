@@ -121,3 +121,9 @@ intelligence/
 - No consequential write occurs without an explicit proposal or user-granted policy.
 - Saved webpages and note text are untrusted input, never agent instructions.
 - Tools are replaceable; the editor and note database do not depend on Mastra internals.
+
+## AG-UI Compatibility
+
+The isolated spike in `experiments/ag-ui` proves that the official Mastra adapter works without React and can expose run, text, tool, and state events through the framework-neutral AG-UI interface. It does not replace the small JSON worker contract.
+
+AG-UI is currently rejected for the ambient path because its isolated peer graph adds 498 packages and carries unresolved engine and audit warnings. It remains a candidate for one authenticated SSE workflow where streaming, cancellation, and human approval justify that cost. Shared writable state stays disabled until tenant authorization and conflict handling are designed.

@@ -37,6 +37,7 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 - Add deterministic person mentions and a source-linked ambient person peek. **Prototype complete.**
 - Add deterministic calendar drafts with an explicit, reversible export action. **Prototype complete.**
 - Split immediate local context from cancellable, non-blocking Mastra enrichment. **Complete.**
+- Validate the non-React AG-UI Mastra adapter in an isolated package. **Spike complete; production adoption deferred.**
 - Add a compact local embedding model and hybrid lexical/semantic ranking.
 - Store provenance spans so highlighted source text opens at the exact object.
 - Learn attention thresholds from opens, dismissals, and ignored suggestions.
