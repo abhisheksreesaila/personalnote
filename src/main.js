@@ -1,6 +1,7 @@
 import './style.css'
 import { Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas } from 'fabric'
 import { createIcons, icons } from 'lucide'
+import { AmbientTelemetry } from './intelligence/ambient-telemetry.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
@@ -200,6 +201,7 @@ document.querySelector('#app').innerHTML = `
         <div class="setting-row"><span><i data-lucide="sparkles"></i>Framework</span><small>Mastra</small></div>
         <div class="setting-row"><span><i data-lucide="cpu"></i>Provider</span><small id="settings-intelligence-provider">Checking</small></div>
         <div class="setting-row"><span><i data-lucide="key-round"></i>Bring your own key</span><small id="settings-intelligence-key">Checking</small></div>
+        <div class="setting-row"><span><i data-lucide="timer"></i>Last response</span><small id="settings-intelligence-latency">No sample</small></div>
       </section>
       <section class="settings-section">
         <p class="settings-section-label">Privacy & access</p>
@@ -433,6 +435,26 @@ let ambientTimer
 let ambientCollapseTimer
 let ambientRequest
 let ambientSequence = 0
+const ambientTelemetry = new AmbientTelemetry()
+
+function publishAmbientTelemetry(event, snapshot = ambientTelemetry.snapshot()) {
+  const sample = snapshot.last
+  const latency = sample
+    ? `${sample.presentationMs ?? sample.requestMs ?? sample.server?.serverMs ?? 0} ms · ${sample.server?.mode || 'local'}`
+    : 'No sample'
+  document.querySelector('#settings-intelligence-latency').textContent = latency
+  console.debug('event=intelligence.latency', { event, ...snapshot })
+}
+
+function cancelAmbientWork() {
+  const hadPendingWork = Boolean(ambientTimer || ambientRequest)
+  clearTimeout(ambientTimer)
+  ambientTimer = null
+  ambientRequest?.abort()
+  ambientRequest = null
+  ambientSequence += 1
+  if (hadPendingWork) publishAmbientTelemetry('cancelled', ambientTelemetry.cancel())
+}
 
 function activeTextSnapshot() {
   const canvasText = canvas.getObjects()
@@ -476,28 +498,48 @@ function showRelatedNote(suggestion) {
 async function refreshRelatedNote() {
   const noteId = state.activeNoteId
   const text = activeTextSnapshot()
-  if (!noteId || state.notes.length < 2 || text.length < 24) return clearRelatedNote()
+  ambientTimer = null
+  if (!noteId || state.notes.length < 2 || text.length < 24) {
+    publishAmbientTelemetry('silent', ambientTelemetry.silent())
+    return clearRelatedNote()
+  }
   ambientRequest?.abort()
   ambientRequest = new AbortController()
+  const request = ambientRequest
   const sequence = ++ambientSequence
+  ambientTelemetry.requestStarted()
   try {
     const result = await api('/intelligence/related', {
       method: 'POST',
       body: JSON.stringify({ noteId, text }),
-      signal: ambientRequest.signal,
+      signal: request.signal,
     })
-    if (sequence !== ambientSequence || noteId !== state.activeNoteId) return
+    ambientTelemetry.response(result.timing)
+    if (sequence !== ambientSequence || noteId !== state.activeNoteId) {
+      publishAmbientTelemetry('cancelled', ambientTelemetry.cancel())
+      return
+    }
     const suggestion = result.suggestion
     const dismissalKey = suggestion ? `${noteId}:${suggestion.noteId}` : ''
-    if (!suggestion || state.dismissedRelated.has(dismissalKey)) return clearRelatedNote()
+    if (!suggestion || state.dismissedRelated.has(dismissalKey)) {
+      publishAmbientTelemetry('silent', ambientTelemetry.silent())
+      return clearRelatedNote()
+    }
     showRelatedNote(suggestion)
+    publishAmbientTelemetry('presented', ambientTelemetry.presented())
   } catch (error) {
-    if (error.name !== 'AbortError') console.debug('Related-note listener stayed quiet.', error)
+    if (error.name !== 'AbortError') {
+      publishAmbientTelemetry('failed', ambientTelemetry.silent())
+      console.debug('Related-note listener stayed quiet.', error)
+    }
+  } finally {
+    if (ambientRequest === request) ambientRequest = null
   }
 }
 
 function queueAmbientCheck() {
   clearTimeout(ambientTimer)
+  ambientTelemetry.queue()
   ambientTimer = setTimeout(refreshRelatedNote, 1100)
 }
 
@@ -1284,6 +1326,7 @@ async function saveActiveNote() {
 
 function queueSave() {
   if (state.loading) return
+  cancelAmbientWork()
   setSaveState('Saving')
   clearTimeout(saveTimer)
   saveTimer = setTimeout(saveActiveNote, 650)
@@ -2061,11 +2104,13 @@ elements.intelligencePresence.addEventListener('click', () => {
 document.querySelector('#dismiss-intelligence').addEventListener('click', () => {
   const suggestion = state.relatedSuggestion
   if (suggestion) state.dismissedRelated.add(`${state.activeNoteId}:${suggestion.noteId}`)
+  publishAmbientTelemetry('dismissed', ambientTelemetry.interaction('dismiss'))
   state.relatedSuggestion = null
   clearRelatedNote()
 })
 document.querySelector('#open-intelligence-source').addEventListener('click', () => {
   const sourceId = state.relatedSuggestion?.noteId
+  publishAmbientTelemetry('opened', ambientTelemetry.interaction('open'))
   state.relatedSuggestion = null
   clearRelatedNote()
   if (sourceId) selectNote(sourceId)

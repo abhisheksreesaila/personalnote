@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from pathlib import Path
 
 from fasthtml.common import FastHTML
@@ -148,15 +149,35 @@ def create_app(
 
     @app.post("/api/intelligence/related")
     async def related_note(request):
+        request_started = time.perf_counter()
         request_payload = await payload(request)
         try:
             note_id = int(request_payload.get("noteId"))
         except (TypeError, ValueError):
             return JSONResponse({"error": "A valid noteId is required"}, status_code=400)
         current_text = str(request_payload.get("text") or "")[:24_000]
+        retrieval_started = time.perf_counter()
         candidates = service.related_candidates(note_id, current_text)
+        retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
+        enrichment_started = time.perf_counter()
         suggestion = await enrich_related_note(worker_url, current_text, candidates)
-        return JSONResponse({"suggestion": suggestion})
+        enrichment_ms = (time.perf_counter() - enrichment_started) * 1000
+        total_ms = (time.perf_counter() - request_started) * 1000
+        timing = {
+            "retrievalMs": round(retrieval_ms, 2),
+            "enrichmentMs": round(enrichment_ms, 2),
+            "serverMs": round(total_ms, 2),
+            "mode": suggestion.get("mode", "silent") if suggestion else "silent",
+        }
+        return JSONResponse(
+            {"suggestion": suggestion, "timing": timing},
+            headers={
+                "Server-Timing": (
+                    f"retrieval;dur={retrieval_ms:.2f}, "
+                    f"intelligence;dur={enrichment_ms:.2f}"
+                )
+            },
+        )
 
     dist_path = ROOT / "dist"
     if dist_path.exists():

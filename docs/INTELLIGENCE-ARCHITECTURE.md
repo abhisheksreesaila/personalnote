@@ -37,6 +37,12 @@ flowchart LR
 
 `intelligence/server.ts` exposes only `/health` and `/rank`. It reports whether execution is local retrieval or model-backed and which provider family is active without revealing endpoint, deployment, or credentials.
 
+## Latency Contract
+
+The related-context path records separate retrieval, enrichment, request, and queue-to-presentation timings. The FastHTML response includes safe timing metadata and a `Server-Timing` header; the browser records the latest completed sample, cancellation count, and Open or Dismiss interaction without storing note text.
+
+Typing cancels queued or in-flight ambient work immediately. Timing belongs to the product shell rather than Mastra, so swapping the worker does not change the measurement contract. The settings drawer shows the latest response mode and latency for development evaluation.
+
 ## How To Add Capabilities
 
 Add product capabilities as narrow read or proposal tools. Tools should call authenticated FastHTML APIs, not SQLite directly. Separate retrieval from action, and keep every write reversible.

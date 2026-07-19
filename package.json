@@ -16,6 +16,7 @@
     "start:intelligence": "tsx intelligence/server.ts",
     "test:api": ".venv\\Scripts\\python.exe -m unittest tests.test_api -v",
     "test:intelligence": "tsx --test intelligence/ambient-agent.test.ts",
+    "test:ui-intelligence": "node --test src/intelligence/*.test.js",
     "typecheck:intelligence": "tsc -p tsconfig.intelligence.json",
     "build": "vite build",
     "preview": "vite preview"

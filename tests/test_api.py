@@ -114,6 +114,12 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotEqual(suggestion["noteId"], active["id"])
         self.assertIn("September launch", suggestion["excerpt"])
         self.assertEqual(suggestion["mode"], "local-retrieval")
+        timing = response.json()["timing"]
+        self.assertGreaterEqual(timing["retrievalMs"], 0)
+        self.assertGreaterEqual(timing["enrichmentMs"], 0)
+        self.assertGreaterEqual(timing["serverMs"], timing["retrievalMs"])
+        self.assertEqual(timing["mode"], "local-retrieval")
+        self.assertIn("retrieval;dur=", response.headers["server-timing"])
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 
 ## Phase 3: Retrieval Quality
 
+- Instrument retrieval, enrichment, request, presentation, cancellation, and interaction latency. **Complete.**
 - Add SQLite FTS5 indexing rather than scanning every Fabric document.
 - Add a compact local embedding model and hybrid lexical/semantic ranking.
 - Store provenance spans so highlighted source text opens at the exact object.
