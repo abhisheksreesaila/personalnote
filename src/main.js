@@ -2594,14 +2594,32 @@ document.querySelector('#rail-notebooks').addEventListener('click', () => setSid
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
 document.querySelector('#rail-new-note').addEventListener('click', () => createNote())
 const searchButton = document.querySelector('#search-button')
+let searchScrollTop = elements.workspace.scrollTop
 const collapseSearchButton = () => {
   if (document.activeElement !== searchButton) searchButton.classList.remove('is-expanded')
 }
-searchButton.addEventListener('pointerenter', () => searchButton.classList.add('is-expanded'))
+const revealSearchButton = () => searchButton.classList.remove('is-scroll-hidden')
+searchButton.addEventListener('pointerenter', () => {
+  revealSearchButton()
+  searchButton.classList.add('is-expanded')
+})
 searchButton.addEventListener('pointerleave', collapseSearchButton)
-searchButton.addEventListener('focus', () => searchButton.classList.add('is-expanded'))
+searchButton.addEventListener('focus', () => {
+  revealSearchButton()
+  searchButton.classList.add('is-expanded')
+})
 searchButton.addEventListener('blur', () => searchButton.classList.remove('is-expanded'))
 searchButton.addEventListener('click', openSearch)
+elements.workspace.addEventListener('scroll', () => {
+  const nextScrollTop = elements.workspace.scrollTop
+  const delta = nextScrollTop - searchScrollTop
+  if (nextScrollTop <= 24 || delta < -6) revealSearchButton()
+  else if (nextScrollTop > 72 && delta > 6 && document.activeElement !== searchButton) {
+    searchButton.classList.remove('is-expanded')
+    searchButton.classList.add('is-scroll-hidden')
+  }
+  searchScrollTop = nextScrollTop
+}, { passive: true })
 document.querySelector('#page-scan-trigger').addEventListener('click', () => {
   if (elements.pageScanCard.classList.contains('open')) closePageScan()
   else scanCurrentPage()

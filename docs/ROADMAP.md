@@ -69,6 +69,7 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 - Add undoable obstacle-aware Tidy text arrangement without moving ink or connectors. **Prototype complete.**
 - Add preview-first diagram grouping that preserves connector topology.
 - Explore deep cleanup for grammar and structure only as a reversible proposal with source comparison.
+- Keep Search in the top chrome: hide on downward canvas scrolling, reveal on upward scrolling, and preserve keyboard access. **Complete.**
 
 ## Phase 5: Living Projects
 

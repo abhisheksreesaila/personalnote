@@ -39,7 +39,7 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - Compact icon rail with an overlay notebook drawer and note-local properties inspector
 - Fixed menu rail with circular, touch-friendly action islands
 - Independent rail hover/focus lift with labels and reduced-motion fallback
-- Transparent canvas chrome with a top-center expanding Spotlight search pill
+- Transparent canvas chrome with a direction-aware top-center Spotlight search pill
 - Selection-aware typography controls for font family and size
 - Responsive Fabric canvas scaling and compact mobile writing dock
 - Capsule writing dock with left Voice and right Scan satellites
