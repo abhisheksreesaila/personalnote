@@ -75,7 +75,9 @@ The settings drawer stores default typography locally and reads safe runtime cap
 
 Drawing guides are local, deterministic, and off by default. Fabric pen strokes retain their original points. After a short ink pause, a recognized rough box, ellipse, connector, or arrow can produce a temporary non-exported Trace guide or an undoable Refine operation. Neither path invokes Mastra, and the raw sketch remains canonical unless the user explicitly refines it.
 
-Contextual intelligence is text-event-scoped and one-shot. Calendar, person, and related-note cards may appear once after the relevant edit, then disappear rather than becoming recurring reminders. Drawing, erasing, moving, and formatting do not rerun text context. The explicit Scan this page action always performs a fresh local summary of dates, known people, and grounded related notes.
+Contextual intelligence is text-event-scoped and one-shot. Calendar, person, and related-note cards may appear once after the relevant edit, then disappear rather than becoming recurring reminders. Drawing, erasing, moving, and formatting do not rerun text context. A floating right-edge Scan this page action always performs a fresh local summary of dates, known people, and grounded related notes. It parses each Fabric text object independently so diagram labels cannot corrupt a nearby calendar phrase.
+
+Tidy text reserves the padded bounds of every ink and diagram object, then arranges loose text into available space around those obstacles. It never moves or deletes drawing paths, and the complete layout operation remains undoable.
 
 The root `.env` is loaded by both FastHTML and the Mastra worker and is ignored by Git. Start from `.env.example`:
 

@@ -1,12 +1,12 @@
 import { casual } from 'chrono-node'
 
-const EVENT_CUE = /\b(?:appointment|breakfast|call|coffee|deadline|dinner|interview|lunch|meet|meeting|reminder|review|sync|workshop)\b/i
+const EVENT_CUE = /\b(?:appointment|breakfast|call|coffee|deadline|dinner|event|interview|lunch|meet|meeting|reminder|review|schedule|sync|workshop)\b/i
 
 function cleanTitle(text) {
   return text
     .replace(/\s+/g, ' ')
     .replace(/\s+([,.;!?])/g, '$1')
-    .replace(/\b(?:on|at)\s*$/i, '')
+    .replace(/\b(?:on|at|for)\s*$/i, '')
     .replace(/^[\s,.;:!-]+|[\s,.;:!-]+$/g, '')
     .trim()
 }

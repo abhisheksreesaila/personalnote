@@ -53,11 +53,11 @@ Calendar detection is also local and framework-independent. `chrono-node` parses
 
 Ambient context is scoped to text-edit events. Ink, erasing, object movement, formatting, and layout changes save normally but never rerun calendar, person, or related-note detection. Beginning an ink gesture cancels pending text intelligence and clears visible contextual cards.
 
-Each exact calendar, person-source, or related-note suggestion may surface once per note per browser session. After its brief display it disappears completely rather than leaving a reminder marker. `Scan this page` intentionally bypasses this ledger and assembles the current dates, known people, and grounded related notes on explicit request.
+Each exact calendar, person-source, or related-note suggestion may surface once per note per browser session. After its brief display it disappears completely rather than leaving a reminder marker. The floating right-edge `Scan this page` action intentionally bypasses this ledger and assembles the current dates, known people, and grounded related notes on explicit request. Calendar parsing runs on each title or Fabric text object independently before deduplication; unrelated labels elsewhere on the canvas never become part of an event title.
 
 ## Layout Cleanup
 
-The first cleanup command is deterministic and reversible: Page Scan can arrange two or more loose text objects into a stable grid and records the operation in normal undo history. Ink and connector topology remain untouched.
+The first cleanup command is deterministic and reversible: Page Scan can arrange two or more loose text objects into available structured positions and records the operation in normal undo history. Every non-text Fabric object contributes a padded reserved rectangle, so text is placed around ink, shapes, connectors, and arrows. Drawing objects and connector topology remain untouched.
 
 Deep cleanup is a future proposal workflow. Grammar rewriting, semantic regrouping, and diagram restructuring must show a preview and preserve the original because they can change meaning, emphasis, or spatial relationships.
 

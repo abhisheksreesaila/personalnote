@@ -26,6 +26,17 @@ test('stays quiet for dated prose without an event cue', () => {
   assert.equal(draft, null)
 })
 
+test('recognizes scheduling language used in a canvas text object', () => {
+  const draft = parseCalendarDraft(
+    'Lets schedule the event for Saturday at 6 am',
+    new Date('2026-07-19T09:00:00'),
+  )
+
+  assert.equal(draft.title, 'Lets schedule the event')
+  assert.equal(new Date(draft.startAt).getDay(), 6)
+  assert.equal(new Date(draft.startAt).getHours(), 6)
+})
+
 test('serializes a draft as an explicit calendar file', () => {
   const content = calendarDraftToIcs({
     title: 'Lunch with Maya',

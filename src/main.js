@@ -4,7 +4,7 @@ import { createIcons, icons } from 'lucide'
 import { AmbientTelemetry } from './intelligence/ambient-telemetry.js'
 import { calendarDraftToIcs, parseCalendarDraft } from './intelligence/calendar-draft.js'
 import { analyzeDiagramStroke, diagramGuidePath } from './intelligence/diagram-assist.js'
-import { planGridLayout } from './intelligence/layout-cleanup.js'
+import { planObstacleAwareLayout } from './intelligence/layout-cleanup.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
@@ -49,7 +49,6 @@ document.querySelector('#app').innerHTML = `
         <button class="rail-button" id="rail-notebooks" title="Notebooks" aria-label="Open notebooks"><i data-lucide="notebook-tabs"></i></button>
       </div>
       <div class="rail-group rail-bottom">
-        <button class="rail-button" id="rail-scan" title="Scan this page" aria-label="Scan this page"><i data-lucide="scan-search"></i></button>
         <button class="rail-button" id="rail-print" title="Print preview" aria-label="Open print preview"><i data-lucide="printer"></i></button>
         <button class="rail-button" id="rail-settings" title="Settings" aria-label="Open settings"><i data-lucide="settings"></i></button>
       </div>
@@ -124,6 +123,7 @@ document.querySelector('#app').innerHTML = `
 
         <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i></button>
         <button class="voice-button" id="voice-button" title="Voice dictation" aria-label="Start voice dictation" aria-pressed="false"><i data-lucide="mic"></i></button>
+        <button class="scan-page-button" id="page-scan-trigger" title="Scan this page" aria-label="Scan this page"><i data-lucide="scan-search"></i></button>
         <div class="voice-caption" id="voice-caption" role="status" hidden><span class="voice-pulse"></span><span id="voice-status">Listening</span></div>
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
         <button class="intelligence-presence" id="intelligence-presence" title="Related note available" aria-label="Show related note" hidden><i data-lucide="sparkles"></i></button>
@@ -812,6 +812,16 @@ function activeTextSnapshot() {
   return `${elements.title.value.trim()} ${canvasText}`.trim()
 }
 
+function pageTextSegments() {
+  return [
+    elements.title.value.trim(),
+    ...canvas.getObjects()
+      .filter(isEditableText)
+      .map(object => object.text?.trim())
+      .filter(Boolean),
+  ].filter(Boolean)
+}
+
 function activePhraseSnapshot() {
   if (document.activeElement === elements.title) return elements.title.value.trim()
   const activeObject = canvas.getActiveObject()
@@ -939,7 +949,9 @@ function queueAmbientCheck() {
 function closePageScan() {
   elements.pageScanCard.classList.remove('open')
   elements.pageScanCard.hidden = true
-  document.querySelector('#rail-scan').classList.remove('active')
+  const trigger = document.querySelector('#page-scan-trigger')
+  trigger.hidden = false
+  trigger.classList.remove('active')
 }
 
 function addPageScanFinding(icon, title, detail) {
@@ -968,7 +980,9 @@ async function scanCurrentPage() {
   addPageScanFinding('loader-circle', 'Scanning this page', 'Checking dates, people, and related notes locally.')
   elements.pageScanCard.hidden = false
   requestAnimationFrame(() => elements.pageScanCard.classList.add('open'))
-  document.querySelector('#rail-scan').classList.add('active')
+  const trigger = document.querySelector('#page-scan-trigger')
+  trigger.classList.add('active')
+  trigger.hidden = true
   document.querySelector('#open-scan-source').hidden = true
   const text = activeTextSnapshot()
   try {
@@ -977,14 +991,17 @@ async function scanCurrentPage() {
       api('/intelligence/related', { method: 'POST', body: JSON.stringify({ noteId, text }) }),
     ])
     elements.pageScanResults.replaceChildren()
-    const draft = parseCalendarDraft(text)
-    if (draft) {
+    const calendarDrafts = pageTextSegments()
+      .map(segment => parseCalendarDraft(segment))
+      .filter(Boolean)
+      .filter((draft, index, drafts) => drafts.findIndex(candidate => calendarDraftKey(candidate) === calendarDraftKey(draft)) === index)
+    calendarDrafts.forEach((draft) => {
       const when = new Intl.DateTimeFormat(undefined, {
         weekday: 'short', month: 'short', day: 'numeric',
         ...(draft.hasExplicitTime ? { hour: 'numeric', minute: '2-digit' } : {}),
       }).format(new Date(draft.startAt))
       addPageScanFinding('calendar-clock', draft.title, when)
-    }
+    })
     entities.people?.forEach((person) => {
       addPageScanFinding('user-round', person.name, person.sources[0]?.context || `${person.sourceCount} related sources`)
     })
@@ -1011,16 +1028,24 @@ function tidyPageText() {
   const items = textObjects.map((object, index) => {
     const id = String(index)
     objectsById.set(id, object)
+    const bounds = object.getBoundingRect()
     return {
       id,
-      left: object.left || 0,
-      top: object.top || 0,
-      width: object.getScaledWidth(),
-      height: object.getScaledHeight(),
+      left: bounds.left,
+      top: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+      offsetLeft: (object.left || 0) - bounds.left,
+      offsetTop: (object.top || 0) - bounds.top,
     }
   })
-  const plan = planGridLayout(items, {
+  const obstacles = canvas.getObjects()
+    .filter(object => !isEditableText(object) && object !== diagramGuideObject)
+    .map(object => object.getBoundingRect())
+  const plan = planObstacleAwareLayout(items, {
+    obstacles,
     maxWidth: state.pages.columns * PAGE_WIDTH - 48,
+    maxHeight: state.pages.rows * PAGE_HEIGHT - 48,
   })
   if (!plan.length) {
     addPageScanFinding('layout-grid', 'Nothing to tidy', 'Add at least two text objects before arranging the page.')
@@ -1031,7 +1056,8 @@ function tidyPageText() {
   canvas.discardActiveObject()
   plan.forEach(({ id, left, top }) => {
     const object = objectsById.get(id)
-    object.set({ left, top })
+    const item = items.find(candidate => candidate.id === id)
+    object.set({ left: left + item.offsetLeft, top: top + item.offsetTop })
     object.setCoords()
   })
   canvas.requestRenderAll()
@@ -2568,7 +2594,7 @@ document.querySelector('#rail-notebooks').addEventListener('click', () => setSid
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
 document.querySelector('#rail-new-note').addEventListener('click', () => createNote())
 document.querySelector('#search-button').addEventListener('click', openSearch)
-document.querySelector('#rail-scan').addEventListener('click', () => {
+document.querySelector('#page-scan-trigger').addEventListener('click', () => {
   if (elements.pageScanCard.classList.contains('open')) closePageScan()
   else scanCurrentPage()
 })

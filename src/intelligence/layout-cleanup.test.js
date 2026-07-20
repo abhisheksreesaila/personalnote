@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { planGridLayout } from './layout-cleanup.js'
+import { planGridLayout, planObstacleAwareLayout } from './layout-cleanup.js'
 
 
 test('orders loose text into a stable grid without overlap', () => {
@@ -21,4 +21,19 @@ test('orders loose text into a stable grid without overlap', () => {
 
 test('does nothing when there is not a meaningful layout group', () => {
   assert.deepEqual(planGridLayout([{ id: 'only', left: 10, top: 10, width: 40, height: 20 }]), [])
+})
+
+test('places text around reserved ink bounds', () => {
+  const plan = planObstacleAwareLayout([
+    { id: 'first', left: 90, top: 90, width: 150, height: 34 },
+    { id: 'second', left: 410, top: 170, width: 130, height: 40 },
+    { id: 'third', left: 520, top: 280, width: 120, height: 36 },
+  ], {
+    maxWidth: 760,
+    maxHeight: 900,
+    obstacles: [{ left: 70, top: 70, width: 570, height: 250 }],
+  })
+
+  assert.ok(plan.every(item => item.top >= 338))
+  assert.deepEqual(plan.map(item => item.id), ['first', 'second', 'third'])
 })
