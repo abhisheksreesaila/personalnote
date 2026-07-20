@@ -49,9 +49,21 @@ The local person listener is a separate fast lane: it prefetches after 250 ms an
 
 Calendar detection is also local and framework-independent. `chrono-node` parses the actively edited phrase, the browser waits for the same 850 ms presentation gate, and the result remains a draft. The only consequential action is an explicit `.ics` download; detection alone never writes to a calendar or database.
 
+## Attention Policy
+
+Ambient context is scoped to text-edit events. Ink, erasing, object movement, formatting, and layout changes save normally but never rerun calendar, person, or related-note detection. Beginning an ink gesture cancels pending text intelligence and clears visible contextual cards.
+
+Each exact calendar, person-source, or related-note suggestion may surface once per note per browser session. After its brief display it disappears completely rather than leaving a reminder marker. `Scan this page` intentionally bypasses this ledger and assembles the current dates, known people, and grounded related notes on explicit request.
+
+## Layout Cleanup
+
+The first cleanup command is deterministic and reversible: Page Scan can arrange two or more loose text objects into a stable grid and records the operation in normal undo history. Ink and connector topology remain untouched.
+
+Deep cleanup is a future proposal workflow. Grammar rewriting, semantic regrouping, and diagram restructuring must show a preview and preserve the original because they can change meaning, emphasis, or spatial relationships.
+
 ## Drawing Intelligence
 
-`src/intelligence/diagram-assist.js` analyzes only local Fabric stroke points. The first bounded vocabulary is rough boxes, ellipses, and open connectors. Small scribbles remain silent, the feature is off by default, and no stroke or image leaves the browser.
+`src/intelligence/diagram-assist.js` analyzes only local Fabric stroke points. The first bounded vocabulary is rough boxes, ellipses, open connectors, and single-stroke arrows. Small scribbles remain silent, the feature is off by default, and no stroke or image leaves the browser.
 
 Two proposal actions preserve different intents:
 

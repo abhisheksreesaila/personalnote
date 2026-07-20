@@ -57,8 +57,10 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - FTS5-backed note search and related-context retrieval
 - Fast local person recognition with source-linked person peeks
 - Natural-language calendar drafts with explicit `.ics` export
-- Opt-in rough box, circle, and connector assistance with Trace and undoable Refine actions
-- Source-grounded related-note cards that collapse into a quiet presence marker
+- One-shot contextual suggestions plus an explicit local Page Scan
+- Undoable Tidy text layout cleanup
+- Opt-in rough box, circle, connector, and arrow assistance with Trace and undoable Refine actions
+- Source-grounded related-note cards that disappear after their moment
 - Local deterministic retrieval with optional Mastra reranking through any OpenAI-compatible model
 
 ## Architecture
@@ -71,7 +73,9 @@ The runtime stack is intentionally modular: FastHTML owns HTTP delivery, `fh-saa
 
 The settings drawer stores default typography locally and reads safe runtime capability metadata from `/api/settings/capabilities`. Provider keys remain server-side environment values and are never returned to browser code. `fh-saas` includes Google OAuth, session, and tenant provisioning primitives, but authentication is deliberately bypassed in the current single-user development build; setting Google credentials alone does not activate access control.
 
-Drawing guides are local, deterministic, and off by default. Fabric pen strokes retain their original points. After a short ink pause, a recognized rough box, ellipse, or connector can produce a temporary non-exported Trace guide or an undoable Refine operation. Neither path invokes Mastra, and the raw sketch remains canonical unless the user explicitly refines it.
+Drawing guides are local, deterministic, and off by default. Fabric pen strokes retain their original points. After a short ink pause, a recognized rough box, ellipse, connector, or arrow can produce a temporary non-exported Trace guide or an undoable Refine operation. Neither path invokes Mastra, and the raw sketch remains canonical unless the user explicitly refines it.
+
+Contextual intelligence is text-event-scoped and one-shot. Calendar, person, and related-note cards may appear once after the relevant edit, then disappear rather than becoming recurring reminders. Drawing, erasing, moving, and formatting do not rerun text context. The explicit Scan this page action always performs a fresh local summary of dates, known people, and grounded related notes.
 
 The root `.env` is loaded by both FastHTML and the Mastra worker and is ignored by Git. Start from `.env.example`:
 

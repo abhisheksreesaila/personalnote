@@ -34,6 +34,21 @@ test('recognizes an ellipse and an open connector', () => {
   assert.match(diagramGuidePath(connector), /^M .+ Q .+$/)
 })
 
+test('recognizes an arrow without turning a plain connector into one', () => {
+  const arrow = analyzeDiagramStroke([
+    { x: 10, y: 50 }, { x: 38, y: 49 }, { x: 68, y: 50 },
+    { x: 100, y: 50 }, { x: 82, y: 38 }, { x: 100, y: 50 },
+    { x: 82, y: 62 },
+  ])
+  assert.equal(arrow.kind, 'arrow')
+  assert.match(diagramGuidePath(arrow), /^M .+ Q .+ M .+ L .+ L .+$/)
+
+  const connector = analyzeDiagramStroke([
+    { x: 10, y: 20 }, { x: 40, y: 20 }, { x: 75, y: 21 }, { x: 110, y: 22 }, { x: 140, y: 22 },
+  ])
+  assert.equal(connector.kind, 'connector')
+})
+
 test('stays quiet for a small scribble', () => {
   const scribble = [
     { x: 10, y: 10 }, { x: 20, y: 18 }, { x: 12, y: 22 },

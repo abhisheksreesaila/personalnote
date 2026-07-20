@@ -4,6 +4,7 @@ import { createIcons, icons } from 'lucide'
 import { AmbientTelemetry } from './intelligence/ambient-telemetry.js'
 import { calendarDraftToIcs, parseCalendarDraft } from './intelligence/calendar-draft.js'
 import { analyzeDiagramStroke, diagramGuidePath } from './intelligence/diagram-assist.js'
+import { planGridLayout } from './intelligence/layout-cleanup.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
@@ -48,6 +49,7 @@ document.querySelector('#app').innerHTML = `
         <button class="rail-button" id="rail-notebooks" title="Notebooks" aria-label="Open notebooks"><i data-lucide="notebook-tabs"></i></button>
       </div>
       <div class="rail-group rail-bottom">
+        <button class="rail-button" id="rail-scan" title="Scan this page" aria-label="Scan this page"><i data-lucide="scan-search"></i></button>
         <button class="rail-button" id="rail-print" title="Print preview" aria-label="Open print preview"><i data-lucide="printer"></i></button>
         <button class="rail-button" id="rail-settings" title="Settings" aria-label="Open settings"><i data-lucide="settings"></i></button>
       </div>
@@ -175,6 +177,19 @@ document.querySelector('#app').innerHTML = `
           <footer class="diagram-actions">
             <button id="trace-diagram"><i data-lucide="scan"></i><span>Trace</span></button>
             <button id="refine-diagram"><i data-lucide="wand-sparkles"></i><span>Refine</span></button>
+          </footer>
+        </aside>
+        <aside class="intelligence-card page-scan-card" id="page-scan-card" aria-live="polite" hidden>
+          <header>
+            <span><i data-lucide="scan-search"></i>Page scan</span>
+            <button id="close-page-scan" title="Close" aria-label="Close page scan"><i data-lucide="x"></i></button>
+          </header>
+          <strong>What needs attention</strong>
+          <div class="page-scan-results" id="page-scan-results"></div>
+          <footer>
+            <span>Local · On request</span>
+            <button id="tidy-page-text"><span>Tidy text</span><i data-lucide="layout-grid"></i></button>
+            <button id="open-scan-source" hidden><span>Open source</span><i data-lucide="arrow-up-right"></i></button>
           </footer>
         </aside>
 
@@ -416,6 +431,8 @@ const elements = {
   diagramTitle: document.querySelector('#diagram-title'),
   diagramDescription: document.querySelector('#diagram-description'),
   diagramAssist: document.querySelector('#settings-diagram-assist'),
+  pageScanCard: document.querySelector('#page-scan-card'),
+  pageScanResults: document.querySelector('#page-scan-results'),
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
@@ -448,10 +465,13 @@ const state = {
   historyIndex: -1,
   relatedSuggestion: null,
   dismissedRelated: new Set(),
+  seenRelated: new Set(),
   entitySuggestion: null,
   dismissedEntities: new Set(),
+  seenEntities: new Set(),
   calendarDraft: null,
   dismissedCalendarDrafts: new Set(),
+  seenCalendarDrafts: new Set(),
   intelligenceConnectionConfigured: false,
   diagramAssistEnabled: false,
 }
@@ -522,11 +542,13 @@ let diagramCollapseTimer
 let diagramSequence = 0
 let diagramSuggestion = null
 let diagramGuideObject = null
+let pageScanSourceId = null
 
 const DIAGRAM_LABELS = {
   'rounded-box': ['Rounded box', 'Keep the sketch and trace a softer box, or refine this stroke.'],
   ellipse: ['Soft circle', 'Keep the sketch and trace a balanced curve, or refine this stroke.'],
   connector: ['Clean connector', 'Keep the gesture and trace a calmer connection, or refine this stroke.'],
+  arrow: ['Hand-drawn arrow', 'Keep the gesture and trace a clearer direction, or refine this arrow.'],
 }
 
 function publishAmbientTelemetry(event, snapshot = ambientTelemetry.snapshot()) {
@@ -548,6 +570,23 @@ function cancelAmbientWork() {
   ambientEnrichmentRequest = null
   ambientSequence += 1
   if (hadPendingWork) publishAmbientTelemetry('cancelled', ambientTelemetry.cancel())
+}
+
+function quietContextualIntelligence() {
+  cancelAmbientWork()
+  clearTimeout(entityPrefetchTimer)
+  clearTimeout(entityPresentTimer)
+  entityRequest?.abort()
+  entityRequest = null
+  entityCandidate = null
+  entitySequence += 1
+  clearTimeout(calendarPresentTimer)
+  state.relatedSuggestion = null
+  state.entitySuggestion = null
+  state.calendarDraft = null
+  clearRelatedNote()
+  clearEntityPeek()
+  clearCalendarDraft()
 }
 
 function clearEntityPeek({ keepPresence = false } = {}) {
@@ -652,8 +691,8 @@ function collapseCalendarDraft() {
   elements.calendarCard.classList.remove('open')
   setTimeout(() => {
     if (!elements.calendarCard.classList.contains('open')) {
-      elements.calendarCard.hidden = true
-      elements.calendarPresence.hidden = false
+      state.calendarDraft = null
+      clearCalendarDraft()
     }
   }, 180)
 }
@@ -665,6 +704,7 @@ function showCalendarDraft(draft) {
     : { weekday: 'short', month: 'short', day: 'numeric' }
   elements.calendarTitle.textContent = draft.title
   elements.calendarWhen.textContent = new Intl.DateTimeFormat(undefined, dateOptions).format(date)
+  state.seenCalendarDrafts.add(calendarDraftKey(draft))
   state.entitySuggestion = null
   entityCandidate = null
   entitySequence += 1
@@ -683,7 +723,12 @@ function queueCalendarCheck() {
   clearTimeout(calendarPresentTimer)
   clearCalendarDraft()
   const draft = parseCalendarDraft(activePhraseSnapshot())
-  state.calendarDraft = draft && !state.dismissedCalendarDrafts.has(calendarDraftKey(draft)) ? draft : null
+  const draftKey = calendarDraftKey(draft)
+  state.calendarDraft = draft
+    && !state.dismissedCalendarDrafts.has(draftKey)
+    && !state.seenCalendarDrafts.has(draftKey)
+    ? draft
+    : null
   if (state.calendarDraft) {
     calendarPresentTimer = setTimeout(() => showCalendarDraft(state.calendarDraft), 850)
   }
@@ -694,8 +739,8 @@ function collapseEntityPeek() {
   elements.entityCard.classList.remove('open')
   setTimeout(() => {
     if (!elements.entityCard.classList.contains('open')) {
-      elements.entityCard.hidden = true
-      elements.entityPresence.hidden = false
+      state.entitySuggestion = null
+      clearEntityPeek()
     }
   }, 180)
 }
@@ -704,6 +749,7 @@ function showEntityPeek(person) {
   const source = person.sources[0]
   if (!source) return
   state.entitySuggestion = { ...person, source }
+  state.seenEntities.add(`${state.activeNoteId}:${person.name.toLocaleLowerCase()}:${source.noteId}`)
   elements.entityName.textContent = person.name
   elements.entityContext.textContent = source.context
   elements.entitySource.textContent = `${source.notebookName} · ${person.sourceCount} source${person.sourceCount === 1 ? '' : 's'}`
@@ -719,7 +765,7 @@ function presentEntityCandidate(sequence) {
   if (sequence !== entitySequence || !entityCandidate || state.calendarDraft) return
   const source = entityCandidate.sources[0]
   const dismissalKey = source ? `${state.activeNoteId}:${entityCandidate.name.toLocaleLowerCase()}:${source.noteId}` : ''
-  if (!source || state.dismissedEntities.has(dismissalKey)) return
+  if (!source || state.dismissedEntities.has(dismissalKey) || state.seenEntities.has(dismissalKey)) return
   showEntityPeek(entityCandidate)
 }
 
@@ -817,14 +863,15 @@ function collapseRelatedNote() {
   elements.intelligenceCard.classList.remove('open')
   setTimeout(() => {
     if (!elements.intelligenceCard.classList.contains('open')) {
-      elements.intelligenceCard.hidden = true
-      elements.intelligencePresence.hidden = false
+      state.relatedSuggestion = null
+      clearRelatedNote()
     }
   }, 180)
 }
 
 function showRelatedNote(suggestion) {
   state.relatedSuggestion = suggestion
+  state.seenRelated.add(`${state.activeNoteId}:${suggestion.noteId}`)
   elements.intelligenceTitle.textContent = suggestion.title
   elements.intelligenceExcerpt.textContent = suggestion.excerpt || 'A previous note touches the same thought.'
   elements.intelligenceReason.textContent = suggestion.reason
@@ -862,7 +909,7 @@ async function refreshRelatedNote() {
     }
     const suggestion = result.suggestion
     const dismissalKey = suggestion ? `${noteId}:${suggestion.noteId}` : ''
-    if (!suggestion || state.dismissedRelated.has(dismissalKey)) {
+    if (!suggestion || state.dismissedRelated.has(dismissalKey) || state.seenRelated.has(dismissalKey)) {
       publishAmbientTelemetry('silent', ambientTelemetry.silent())
       return clearRelatedNote()
     }
@@ -887,6 +934,110 @@ function queueAmbientCheck() {
   clearTimeout(ambientTimer)
   ambientTelemetry.queue()
   ambientTimer = setTimeout(refreshRelatedNote, 1100)
+}
+
+function closePageScan() {
+  elements.pageScanCard.classList.remove('open')
+  elements.pageScanCard.hidden = true
+  document.querySelector('#rail-scan').classList.remove('active')
+}
+
+function addPageScanFinding(icon, title, detail) {
+  const finding = document.createElement('div')
+  finding.className = 'page-scan-finding'
+  const mark = document.createElement('i')
+  mark.dataset.lucide = icon
+  const copy = document.createElement('div')
+  const heading = document.createElement('strong')
+  heading.textContent = title
+  const description = document.createElement('span')
+  description.textContent = detail
+  copy.append(heading, description)
+  finding.append(mark, copy)
+  elements.pageScanResults.append(finding)
+}
+
+async function scanCurrentPage() {
+  const noteId = state.activeNoteId
+  if (!noteId) return
+  setSettingsOpen(false)
+  setPropertiesOpen(false)
+  quietContextualIntelligence()
+  pageScanSourceId = null
+  elements.pageScanResults.replaceChildren()
+  addPageScanFinding('loader-circle', 'Scanning this page', 'Checking dates, people, and related notes locally.')
+  elements.pageScanCard.hidden = false
+  requestAnimationFrame(() => elements.pageScanCard.classList.add('open'))
+  document.querySelector('#rail-scan').classList.add('active')
+  document.querySelector('#open-scan-source').hidden = true
+  const text = activeTextSnapshot()
+  try {
+    const [entities, related] = await Promise.all([
+      api('/intelligence/entities', { method: 'POST', body: JSON.stringify({ noteId, text }) }),
+      api('/intelligence/related', { method: 'POST', body: JSON.stringify({ noteId, text }) }),
+    ])
+    elements.pageScanResults.replaceChildren()
+    const draft = parseCalendarDraft(text)
+    if (draft) {
+      const when = new Intl.DateTimeFormat(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric',
+        ...(draft.hasExplicitTime ? { hour: 'numeric', minute: '2-digit' } : {}),
+      }).format(new Date(draft.startAt))
+      addPageScanFinding('calendar-clock', draft.title, when)
+    }
+    entities.people?.forEach((person) => {
+      addPageScanFinding('user-round', person.name, person.sources[0]?.context || `${person.sourceCount} related sources`)
+    })
+    if (related.suggestion) {
+      pageScanSourceId = related.suggestion.noteId
+      addPageScanFinding('notebook-tabs', related.suggestion.title, related.suggestion.reason)
+      document.querySelector('#open-scan-source').hidden = false
+    }
+    if (!elements.pageScanResults.children.length) {
+      addPageScanFinding('check', 'Nothing pressing', 'No dates, known people, or grounded related notes stood out.')
+    }
+    createIcons({ icons })
+  } catch (error) {
+    elements.pageScanResults.replaceChildren()
+    addPageScanFinding('circle-alert', 'Scan unavailable', 'Your note is unchanged. Try again when the local service is available.')
+    createIcons({ icons })
+    console.debug('Page scan stayed quiet.', error)
+  }
+}
+
+function tidyPageText() {
+  const textObjects = canvas.getObjects().filter(isEditableText)
+  const objectsById = new Map()
+  const items = textObjects.map((object, index) => {
+    const id = String(index)
+    objectsById.set(id, object)
+    return {
+      id,
+      left: object.left || 0,
+      top: object.top || 0,
+      width: object.getScaledWidth(),
+      height: object.getScaledHeight(),
+    }
+  })
+  const plan = planGridLayout(items, {
+    maxWidth: state.pages.columns * PAGE_WIDTH - 48,
+  })
+  if (!plan.length) {
+    addPageScanFinding('layout-grid', 'Nothing to tidy', 'Add at least two text objects before arranging the page.')
+    createIcons({ icons })
+    return
+  }
+  commitHistorySnapshot()
+  canvas.discardActiveObject()
+  plan.forEach(({ id, left, top }) => {
+    const object = objectsById.get(id)
+    object.set({ left, top })
+    object.setCoords()
+  })
+  canvas.requestRenderAll()
+  reconcilePages()
+  if (commitHistorySnapshot()) queueSave()
+  closePageScan()
 }
 
 let inkOptionsCloseTimer
@@ -1663,24 +1814,27 @@ async function saveActiveNote() {
     if (note) note.title = title
     renderNoteList()
     setSaveState('Saved')
-    queueAmbientCheck()
   } catch (error) {
     console.error(error)
     setSaveState('Could not save', true)
   }
 }
 
-function queueSave() {
+function queueSave({ contextual = false } = {}) {
   if (state.loading) return
-  cancelAmbientWork()
-  queueCalendarCheck()
-  queueEntityCheck()
+  if (contextual) {
+    cancelAmbientWork()
+    queueCalendarCheck()
+    queueEntityCheck()
+    queueAmbientCheck()
+  }
   setSaveState('Saving')
   clearTimeout(saveTimer)
   saveTimer = setTimeout(saveActiveNote, 650)
 }
 
 let historyTimer
+let historyContextual = false
 function snapshot() {
   return JSON.stringify({ content: canvas.toJSON(), pages: state.pages })
 }
@@ -1694,11 +1848,14 @@ function commitHistorySnapshot() {
   return true
 }
 
-function recordHistory() {
+function recordHistory({ contextual = false } = {}) {
   if (state.loading) return
+  historyContextual = historyContextual || contextual
   clearTimeout(historyTimer)
   historyTimer = setTimeout(() => {
-    if (commitHistorySnapshot()) queueSave()
+    const shouldCheckContext = historyContextual
+    historyContextual = false
+    if (commitHistorySnapshot()) queueSave({ contextual: shouldCheckContext })
   }, 180)
 }
 
@@ -1720,6 +1877,7 @@ async function restoreHistory(index) {
 
 async function selectNote(id) {
   if (id === state.activeNoteId) return
+  closePageScan()
   clearTimeout(saveTimer)
   diagramSequence += 1
   clearDiagramAssist()
@@ -2252,12 +2410,16 @@ canvas.on('path:created', ({ path }) => {
 
 canvas.on('mouse:down', (event) => {
   if (canvas.isDrawingMode) {
+    closePageScan()
+    quietContextualIntelligence()
     state.drawingGesture = {
       point: { x: event.scenePoint.x, y: event.scenePoint.y },
       tool: state.tool,
       created: false,
     }
   } else if (state.tool === 'eraser') {
+    closePageScan()
+    quietContextualIntelligence()
     updateEraserCursor(event)
     state.eraserActive = true
     state.eraserLastPoint = { x: event.scenePoint.x, y: event.scenePoint.y }
@@ -2303,13 +2465,19 @@ canvas.on('mouse:move', (event) => {
   if (changed) resizePaper(true)
 })
 
-;['object:modified', 'path:created', 'text:changed'].forEach((eventName) => {
+;['object:modified', 'path:created'].forEach((eventName) => {
   canvas.on(eventName, () => {
     elements.paper.classList.remove('is-dragging')
     elements.workspace.classList.remove('is-object-dragging')
     reconcilePages()
     recordHistory()
   })
+})
+canvas.on('text:changed', () => {
+  elements.paper.classList.remove('is-dragging')
+  elements.workspace.classList.remove('is-object-dragging')
+  reconcilePages()
+  recordHistory({ contextual: true })
 })
 ;['object:moving', 'object:scaling', 'object:rotating'].forEach((eventName) => {
   canvas.on(eventName, expandPagesDuringTransform)
@@ -2400,11 +2568,22 @@ document.querySelector('#rail-notebooks').addEventListener('click', () => setSid
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
 document.querySelector('#rail-new-note').addEventListener('click', () => createNote())
 document.querySelector('#search-button').addEventListener('click', openSearch)
+document.querySelector('#rail-scan').addEventListener('click', () => {
+  if (elements.pageScanCard.classList.contains('open')) closePageScan()
+  else scanCurrentPage()
+})
 document.querySelector('#rail-print').addEventListener('click', () => openPrintPreview())
 document.querySelector('#rail-settings').addEventListener('click', () => setSettingsOpen(!elements.settings.classList.contains('open')))
 document.querySelector('#top-properties').addEventListener('click', () => setPropertiesOpen(!elements.properties.classList.contains('open')))
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#close-settings').addEventListener('click', () => setSettingsOpen(false))
+document.querySelector('#close-page-scan').addEventListener('click', closePageScan)
+document.querySelector('#tidy-page-text').addEventListener('click', tidyPageText)
+document.querySelector('#open-scan-source').addEventListener('click', () => {
+  const sourceId = pageScanSourceId
+  closePageScan()
+  if (sourceId) selectNote(sourceId)
+})
 document.querySelector('#close-print').addEventListener('click', closePrintPreview)
 document.querySelector('#print-note').addEventListener('click', printNote)
 document.querySelector('#edit-selected-notebook').addEventListener('click', () => {
@@ -2471,7 +2650,7 @@ document.addEventListener('pointerdown', (event) => {
     && !target.closest('.settings-panel, #rail-settings')
   ) setSettingsOpen(false)
 })
-elements.title.addEventListener('input', queueSave)
+elements.title.addEventListener('input', () => queueSave({ contextual: true }))
 elements.intelligencePresence.addEventListener('click', () => {
   if (state.relatedSuggestion) showRelatedNote(state.relatedSuggestion)
 })

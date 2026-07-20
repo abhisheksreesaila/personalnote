@@ -689,6 +689,18 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .diagram-card .diagram-actions { justify-content: flex-end; }
 .diagram-card .diagram-actions button { margin-left: 0; color: #315f7d; border-color: rgba(60,111,145,.25); background: rgba(60,111,145,.08); }
 .diagram-card .diagram-actions button:hover { color: white; background: #3c6f91; }
+.page-scan-card { width: min(340px, calc(100vw - var(--rail-width) - 28px)); border-color: rgba(54,104,82,.26); border-left-color: #366852; }
+.page-scan-card header > span { color: #366852; }
+.page-scan-results { display: grid; gap: 2px; margin: 10px 0 4px; }
+.page-scan-finding { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 9px 7px; border-top: 1px solid rgba(99,86,67,.1); }
+.page-scan-finding > svg { width: 15px; margin-top: 1px; color: #4c7663; }
+.page-scan-finding > div { min-width: 0; display: grid; gap: 3px; }
+.page-scan-finding strong { overflow: hidden; font: 600 12px/1.25 "Source Serif 4", serif; text-overflow: ellipsis; white-space: nowrap; }
+.page-scan-finding span { max-height: 2.8em; overflow: hidden; color: #756d63; font-size: 9px; line-height: 1.4; }
+.page-scan-card footer { flex-wrap: wrap; }
+.page-scan-card footer > span { margin-right: auto; }
+.page-scan-card footer button { margin-left: 0; color: #315f4c; border-color: rgba(54,104,82,.25); background: rgba(54,104,82,.08); }
+.page-scan-card footer button:hover { color: white; background: #366852; }
 @keyframes intelligence-arrive { from { opacity: 0; transform: translateX(8px) scale(.86); } }
 
 @media (min-width: 801px) {
