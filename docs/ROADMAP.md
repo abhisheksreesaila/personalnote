@@ -65,7 +65,7 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 ## Attention And Cleanup Track
 
 - Trigger contextual intelligence only from text edits and surface each exact result once per session. **Complete.**
-- Add a floating right-edge Page Scan with per-text-object date parsing. **Complete.**
+- Add a right-side Page Scan satellite with per-text-object date parsing. **Complete.**
 - Add undoable obstacle-aware Tidy text arrangement without moving ink or connectors. **Prototype complete.**
 - Add preview-first diagram grouping that preserves connector topology.
 - Explore deep cleanup for grammar and structure only as a reversible proposal with source comparison.

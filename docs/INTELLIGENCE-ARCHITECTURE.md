@@ -53,7 +53,7 @@ Calendar detection is also local and framework-independent. `chrono-node` parses
 
 Ambient context is scoped to text-edit events. Ink, erasing, object movement, formatting, and layout changes save normally but never rerun calendar, person, or related-note detection. Beginning an ink gesture cancels pending text intelligence and clears visible contextual cards.
 
-Each exact calendar, person-source, or related-note suggestion may surface once per note per browser session. After its brief display it disappears completely rather than leaving a reminder marker. The floating right-edge `Scan this page` action intentionally bypasses this ledger and assembles the current dates, known people, and grounded related notes on explicit request. Calendar parsing runs on each title or Fabric text object independently before deduplication; unrelated labels elsewhere on the canvas never become part of an event title.
+Each exact calendar, person-source, or related-note suggestion may surface once per note per browser session. After its brief display it disappears completely rather than leaving a reminder marker. The right-side `Scan this page` dock satellite intentionally bypasses this ledger and assembles the current dates, known people, and grounded related notes on explicit request. Calendar parsing runs on each title or Fabric text object independently before deduplication; unrelated labels elsewhere on the canvas never become part of an event title.
 
 ## Layout Cleanup
 

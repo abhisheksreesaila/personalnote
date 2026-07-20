@@ -121,7 +121,7 @@ document.querySelector('#app').innerHTML = `
           </div>
         </section>
 
-        <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i></button>
+        <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i><span>Search notes</span><kbd>Ctrl K</kbd></button>
         <button class="voice-button" id="voice-button" title="Voice dictation" aria-label="Start voice dictation" aria-pressed="false"><i data-lucide="mic"></i></button>
         <button class="scan-page-button" id="page-scan-trigger" title="Scan this page" aria-label="Scan this page"><i data-lucide="scan-search"></i></button>
         <div class="voice-caption" id="voice-caption" role="status" hidden><span class="voice-pulse"></span><span id="voice-status">Listening</span></div>
@@ -2348,10 +2348,10 @@ function renderSearchResults(results, query = '') {
 function openSearch() {
   elements.searchBackdrop.hidden = false
   renderSearchResults(recentSearchResults())
+  elements.searchInput.focus()
+  elements.searchInput.select()
   requestAnimationFrame(() => {
     elements.searchBackdrop.classList.add('open')
-    elements.searchInput.focus()
-    elements.searchInput.select()
   })
 }
 
@@ -2593,7 +2593,15 @@ document.querySelector('#toggle-sidebar').addEventListener('click', () => setSid
 document.querySelector('#rail-notebooks').addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
 document.querySelector('#rail-new-note').addEventListener('click', () => createNote())
-document.querySelector('#search-button').addEventListener('click', openSearch)
+const searchButton = document.querySelector('#search-button')
+const collapseSearchButton = () => {
+  if (document.activeElement !== searchButton) searchButton.classList.remove('is-expanded')
+}
+searchButton.addEventListener('pointerenter', () => searchButton.classList.add('is-expanded'))
+searchButton.addEventListener('pointerleave', collapseSearchButton)
+searchButton.addEventListener('focus', () => searchButton.classList.add('is-expanded'))
+searchButton.addEventListener('blur', () => searchButton.classList.remove('is-expanded'))
+searchButton.addEventListener('click', openSearch)
 document.querySelector('#page-scan-trigger').addEventListener('click', () => {
   if (elements.pageScanCard.classList.contains('open')) closePageScan()
   else scanCurrentPage()
