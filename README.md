@@ -39,7 +39,7 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - Compact icon rail with an overlay notebook drawer and note-local properties inspector
 - Fixed menu rail with circular, touch-friendly action islands
 - Independent rail hover/focus lift with labels and reduced-motion fallback
-- Transparent canvas chrome with a direction-aware top-center Spotlight search pill
+- Transparent canvas chrome with an expanded, direction-aware top-center Spotlight search pill
 - Selection-aware typography controls for font family and size
 - Responsive Fabric canvas scaling and compact mobile writing dock
 - Capsule writing dock with left Voice and right Scan satellites
@@ -59,7 +59,7 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - Natural-language calendar drafts with explicit `.ics` export
 - One-shot contextual suggestions plus an explicit local Page Scan
 - Undoable Tidy text layout cleanup
-- Opt-in rough box, circle, connector, and arrow assistance with Trace and undoable Refine actions
+- Scan-only rough box, circle, connector, and arrow proposals with approval-gated refinement
 - Source-grounded related-note cards that disappear after their moment
 - Local deterministic retrieval with optional Mastra reranking through any OpenAI-compatible model
 
@@ -73,9 +73,9 @@ The runtime stack is intentionally modular: FastHTML owns HTTP delivery, `fh-saa
 
 The settings drawer stores default typography locally and reads safe runtime capability metadata from `/api/settings/capabilities`. Provider keys remain server-side environment values and are never returned to browser code. `fh-saas` includes Google OAuth, session, and tenant provisioning primitives, but authentication is deliberately bypassed in the current single-user development build; setting Google credentials alone does not activate access control.
 
-Drawing guides are local, deterministic, and off by default. Fabric pen strokes retain their original points. After a short ink pause, a recognized rough box, ellipse, connector, or arrow can produce a temporary non-exported Trace guide or an undoable Refine operation. Neither path invokes Mastra, and the raw sketch remains canonical unless the user explicitly refines it.
+Drawing analysis is local, deterministic, and runs only when Scan this page is pressed. Fabric pen strokes retain their original points while drawing; there is no timer, background monitor, or per-stroke popup. After the sweep, recognized boxes, ellipses, connectors, and arrows appear as a single refinement proposal. Nothing changes until the user presses Approve, and one Undo restores every original stroke.
 
-Contextual intelligence is text-event-scoped and one-shot. Calendar, person, and related-note cards may appear once after the relevant edit, then disappear rather than becoming recurring reminders. Drawing, erasing, moving, and formatting do not rerun text context. A floating right-edge Scan this page action always performs a fresh local summary of dates, known people, and grounded related notes. It parses each Fabric text object independently so diagram labels cannot corrupt a nearby calendar phrase.
+Contextual intelligence is text-event-scoped and one-shot. Calendar, person, and related-note cards may appear once after the relevant edit, then disappear rather than becoming recurring reminders. Drawing, erasing, moving, and formatting do not rerun text context. The right-side Scan this page action performs one visible sweep, then summarizes dates, known people, grounded related notes, and recognizable drawing gestures. It parses each Fabric text object independently so diagram labels cannot corrupt a nearby calendar phrase.
 
 Tidy text reserves the padded bounds of every ink and diagram object, then arranges loose text into available space around those obstacles. It never moves or deletes drawing paths, and the complete layout operation remains undoable.
 

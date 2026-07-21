@@ -53,8 +53,8 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 ## Drawing Intelligence Track
 
 - Recognize single-stroke rough boxes, ellipses, and connectors locally. **Prototype complete.**
-- Offer non-persistent Trace guides while preserving the original ink. **Prototype complete.**
-- Offer undoable, softly hand-drawn Refine operations. **Prototype complete.**
+- Remove timed per-stroke analysis and run geometry recognition only during Page Scan. **Complete.**
+- Offer approval-gated, undoable batch refinement after a scan. **Prototype complete.**
 - Recognize single-stroke arrows separately from plain connectors. **Prototype complete.**
 - Group multi-stroke nodes and connectors into diagram proposals without flattening raw ink.
 - Add optional local handwriting/OCR for labels, with source stroke coordinates and confidence.
@@ -102,4 +102,4 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 
 ## Current Next Step
 
-Evaluate drawing assistance with real pen input before expanding the shape vocabulary. Measure false-positive rate, Trace versus Refine selection, undo rate, and whether the 650 ms ink-pause gate interrupts continued drawing. The next diagram implementation should be a multi-stroke grouping fixture set, not model-driven image generation.
+Evaluate scan-time drawing proposals with real pen input before expanding the shape vocabulary. Measure false-positive rate, approval rate, and undo rate. The next diagram implementation should be a multi-stroke grouping fixture set, not model-driven image generation.

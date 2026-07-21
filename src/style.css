@@ -417,6 +417,21 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   will-change: width, height;
   animation: paper-in 420ms cubic-bezier(.2,.75,.25,1) both;
 }
+.paper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(54,104,82,.7) 18%, rgba(38,122,157,.9) 50%, rgba(54,104,82,.7) 82%, transparent);
+  box-shadow: 0 7px 18px rgba(38,122,157,.2);
+  pointer-events: none;
+  z-index: 31;
+}
+.paper.is-page-scanning::before { opacity: 1; animation: page-scan-sweep 780ms cubic-bezier(.4,0,.2,1) both; }
+@keyframes page-scan-sweep { from { top: 0; } to { top: calc(100% - 2px); } }
 .paper::after {
   content: '';
   position: absolute;
@@ -593,7 +608,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   position: fixed;
   top: 8px;
   left: 50vw;
-  width: 42px;
+  width: 238px;
   height: 38px;
   display: flex;
   align-items: center;
@@ -612,12 +627,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   cursor: pointer;
   z-index: 12;
 }
-.search-button.is-scroll-hidden:not(.is-expanded):not(:focus-visible) { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(.88); pointer-events: none; }
-.search-button.is-expanded, .search-button:hover, .search-button:focus-visible { width: 238px; color: var(--blue); background: rgba(255,253,250,.97); border-color: rgba(38,122,157,.34); box-shadow: 0 10px 30px rgba(54,50,42,.17); }
+.search-button.is-scroll-hidden:not(:focus-visible) { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(.88); pointer-events: none; }
+.search-button:hover, .search-button:focus-visible { color: var(--blue); background: rgba(255,253,250,.97); border-color: rgba(38,122,157,.34); box-shadow: 0 10px 30px rgba(54,50,42,.17); }
 .search-button svg { width: 18px; flex: 0 0 18px; }
-.search-button span { min-width: 120px; overflow: hidden; text-align: left; font: 500 11px/1 "IBM Plex Sans", sans-serif; opacity: 0; transition: opacity 120ms ease 20ms; }
-.search-button kbd { margin-left: auto; padding: 3px 6px; border: 1px solid rgba(88,82,74,.14); border-radius: 5px; color: #8b8479; background: rgba(90,80,67,.06); font: 500 8px/1 "IBM Plex Sans", sans-serif; opacity: 0; transition: opacity 120ms ease 20ms; }
-.search-button.is-expanded span, .search-button.is-expanded kbd, .search-button:hover span, .search-button:hover kbd, .search-button:focus-visible span, .search-button:focus-visible kbd { opacity: 1; }
+.search-button span { min-width: 120px; overflow: hidden; text-align: left; font: 500 11px/1 "IBM Plex Sans", sans-serif; }
+.search-button kbd { margin-left: auto; padding: 3px 6px; border: 1px solid rgba(88,82,74,.14); border-radius: 5px; color: #8b8479; background: rgba(90,80,67,.06); font: 500 8px/1 "IBM Plex Sans", sans-serif; }
 .voice-button:hover, .scan-page-button:hover { background: #fffdfa; box-shadow: 0 10px 30px rgba(54,50,42,.2); }
 .scan-page-button:active { color: white; background: #366852; }
 .voice-button svg, .scan-page-button svg { width: 18px; }
@@ -711,13 +725,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .calendar-card header > span { color: #a75d2d; }
 .calendar-card footer button { color: #925025; border-color: rgba(167,93,45,.25); background: rgba(167,93,45,.08); }
 .calendar-card footer button:hover { color: white; background: #a75d2d; }
-.diagram-presence { color: #3c6f91; border-color: rgba(60,111,145,.34); }
-.diagram-presence:hover { color: white; background: #3c6f91; }
-.diagram-card { border-color: rgba(60,111,145,.25); border-left-color: #3c6f91; }
-.diagram-card header > span { color: #3c6f91; }
-.diagram-card .diagram-actions { justify-content: flex-end; }
-.diagram-card .diagram-actions button { margin-left: 0; color: #315f7d; border-color: rgba(60,111,145,.25); background: rgba(60,111,145,.08); }
-.diagram-card .diagram-actions button:hover { color: white; background: #3c6f91; }
 .page-scan-card { width: min(340px, calc(100vw - var(--rail-width) - 28px)); border-color: rgba(54,104,82,.26); border-left-color: #366852; }
 .page-scan-card header > span { color: #366852; }
 .page-scan-results { display: grid; gap: 2px; margin: 10px 0 4px; }
@@ -726,6 +733,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .page-scan-finding > div { min-width: 0; display: grid; gap: 3px; }
 .page-scan-finding strong { overflow: hidden; font: 600 12px/1.25 "Source Serif 4", serif; text-overflow: ellipsis; white-space: nowrap; }
 .page-scan-finding span { max-height: 2.8em; overflow: hidden; color: #756d63; font-size: 9px; line-height: 1.4; }
+.page-scan-actions { display: grid; gap: 6px; margin-top: 10px; }
+.page-scan-action { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 9px 8px; border: 1px solid rgba(54,104,82,.14); border-radius: 6px; background: rgba(54,104,82,.045); }
+.page-scan-action > svg { width: 15px; color: #4c7663; }
+.page-scan-action > div { min-width: 0; display: grid; gap: 2px; }
+.page-scan-action strong { font: 600 11px/1.25 "Source Serif 4", serif; }
+.page-scan-action span { color: #7b7369; font-size: 8px; line-height: 1.35; }
+.page-scan-action button { height: 28px; padding: 0 9px; border: 1px solid rgba(54,104,82,.25); border-radius: var(--radius-pill); color: #315f4c; background: rgba(255,255,255,.62); cursor: pointer; font-size: 9px; font-weight: 700; }
+.page-scan-action button:hover { color: white; background: #366852; }
 .page-scan-card footer { flex-wrap: wrap; }
 .page-scan-card footer > span { margin-right: auto; }
 .page-scan-card footer button { margin-left: 0; color: #315f4c; border-color: rgba(54,104,82,.25); background: rgba(54,104,82,.08); }
@@ -1091,7 +1106,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .note-list-item { gap: 7px; padding: 7px 7px 7px 10px; }
   .note-list-item span { font-size: 12px; }
   .topbar { padding-inline: 10px; }
-  .note-title { width: max(76px, calc(50vw - var(--rail-width) - 30px)); max-width: 130px; }
+  .note-title { min-width: 64px; width: 64px; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .properties-trigger { margin-left: auto; }
   .workspace { padding: 64px 12px 140px; }
   .tool-dock { left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); max-width: calc(100vw - var(--rail-width) - 12px); height: 44px; gap: 3px; padding: 4px; overflow: visible; bottom: 10px; }
@@ -1110,8 +1125,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .ink-options-popover { bottom: 62px; width: min(266px, calc(100vw - var(--rail-width) - 16px)); }
   .voice-button { --standalone-scale: 1; left: calc(var(--rail-width) + 12px); right: auto; bottom: 64px; width: 42px; height: 42px; transform: scale(var(--standalone-scale)); }
   .scan-page-button { --standalone-scale: 1; left: auto; right: 12px; bottom: 64px; width: 42px; height: 42px; transform: scale(var(--standalone-scale)); }
-  .search-button { top: 10px; width: 38px; height: 34px; padding-inline: 9px; border-radius: 17px; }
-  .search-button.is-expanded, .search-button:hover, .search-button:focus-visible { width: min(224px, calc(100vw - var(--rail-width) - 80px)); }
+  .search-button { top: 10px; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); width: min(180px, calc(100vw - var(--rail-width) - 150px)); height: 34px; padding-inline: 9px; border-radius: 17px; }
+  .search-button kbd { display: none; }
   .voice-button:active, .scan-page-button:active, .properties-trigger:active,
   .voice-button:focus-visible, .scan-page-button:focus-visible, .properties-trigger:focus-visible {
     --standalone-scale: 1.16;
@@ -1149,6 +1164,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .tool-dock .dock-control { transform: none !important; transition: none; }
   .search-button, .voice-button, .scan-page-button, .properties-trigger { --standalone-scale: 1 !important; transition: none; }
   .paper { transition-duration: 1ms; animation: none; }
+  .paper.is-page-scanning::before { animation-duration: 1ms; }
   .sidebar { transition-duration: 1ms; }
   .paper.voice-listening::after, .voice-button.active { animation: none; }
   .intelligence-card, .intelligence-presence { transition: none; animation: none; }

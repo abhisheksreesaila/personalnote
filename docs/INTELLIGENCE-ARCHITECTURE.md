@@ -63,12 +63,12 @@ Deep cleanup is a future proposal workflow. Grammar rewriting, semantic regroupi
 
 ## Drawing Intelligence
 
-`src/intelligence/diagram-assist.js` analyzes only local Fabric stroke points. The first bounded vocabulary is rough boxes, ellipses, open connectors, and single-stroke arrows. Small scribbles remain silent, the feature is off by default, and no stroke or image leaves the browser.
+`src/intelligence/diagram-assist.js` analyzes only local Fabric stroke points during an explicit Page Scan. The first bounded vocabulary is rough boxes, ellipses, open connectors, and single-stroke arrows. Small scribbles remain silent, there is no background drawing monitor, and no stroke or image leaves the browser.
 
-Two proposal actions preserve different intents:
+Page Scan lists recognized gesture counts alongside other findings. Drawing refinement is one approval-gated, undoable batch action:
 
-- **Trace** keeps the raw stroke and overlays a temporary dashed guide excluded from serialization, search, print, and export.
-- **Refine** replaces one recognized stroke with a softly irregular path and records the change in normal undo history.
+- **Approve** replaces recognized strokes with softly irregular paths and records the entire batch in normal undo history.
+- **Undo** restores every original point-bearing stroke.
 
 This geometry layer does not depend on Mastra. Later multimodal recognition may propose labels, multi-stroke grouping, icons, or child-friendly tracing references through a separate consented adapter, but it must return product-owned proposals rather than mutate Fabric directly.
 

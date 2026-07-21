@@ -166,19 +166,6 @@ document.querySelector('#app').innerHTML = `
             <button id="download-calendar"><span>Download .ics</span><i data-lucide="download"></i></button>
           </footer>
         </aside>
-        <button class="intelligence-presence diagram-presence" id="diagram-presence" title="Clear drawing guide" aria-label="Clear drawing guide" hidden><i data-lucide="scan"></i></button>
-        <aside class="intelligence-card diagram-card" id="diagram-card" aria-live="polite" hidden>
-          <header>
-            <span><i data-lucide="shapes"></i>Drawing assist</span>
-            <button id="dismiss-diagram" title="Dismiss" aria-label="Dismiss drawing suggestion"><i data-lucide="x"></i></button>
-          </header>
-          <strong id="diagram-title"></strong>
-          <p id="diagram-description"></p>
-          <footer class="diagram-actions">
-            <button id="trace-diagram"><i data-lucide="scan"></i><span>Trace</span></button>
-            <button id="refine-diagram"><i data-lucide="wand-sparkles"></i><span>Refine</span></button>
-          </footer>
-        </aside>
         <aside class="intelligence-card page-scan-card" id="page-scan-card" aria-live="polite" hidden>
           <header>
             <span><i data-lucide="scan-search"></i>Page scan</span>
@@ -186,9 +173,9 @@ document.querySelector('#app').innerHTML = `
           </header>
           <strong>What needs attention</strong>
           <div class="page-scan-results" id="page-scan-results"></div>
+          <div class="page-scan-actions" id="page-scan-actions"></div>
           <footer>
             <span>Local · On request</span>
-            <button id="tidy-page-text"><span>Tidy text</span><i data-lucide="layout-grid"></i></button>
             <button id="open-scan-source" hidden><span>Open source</span><i data-lucide="arrow-up-right"></i></button>
           </footer>
         </aside>
@@ -254,14 +241,7 @@ document.querySelector('#app').innerHTML = `
       </section>
       <section class="settings-section">
         <p class="settings-section-label">Intelligence</p>
-        <label class="setting-toggle-row" for="settings-diagram-assist">
-          <span><i data-lucide="shapes"></i>Drawing guides</span>
-          <span class="setting-toggle-control">
-            <small id="settings-diagram-assist-status">Off</small>
-            <input id="settings-diagram-assist" type="checkbox" />
-            <span class="setting-switch" aria-hidden="true"></span>
-          </span>
-        </label>
+        <div class="setting-row"><span><i data-lucide="scan-search"></i>Page analysis</span><small>On request</small></div>
         <div class="setting-row"><span><i data-lucide="sparkles"></i>Framework</span><small>Mastra</small></div>
         <div class="setting-row"><span><i data-lucide="cpu"></i>Provider</span><small id="settings-intelligence-provider">Checking</small></div>
         <div class="setting-row"><span><i data-lucide="key-round"></i>Bring your own key</span><small id="settings-intelligence-key">Checking</small></div>
@@ -426,13 +406,9 @@ const elements = {
   calendarPresence: document.querySelector('#calendar-presence'),
   calendarTitle: document.querySelector('#calendar-title'),
   calendarWhen: document.querySelector('#calendar-when'),
-  diagramCard: document.querySelector('#diagram-card'),
-  diagramPresence: document.querySelector('#diagram-presence'),
-  diagramTitle: document.querySelector('#diagram-title'),
-  diagramDescription: document.querySelector('#diagram-description'),
-  diagramAssist: document.querySelector('#settings-diagram-assist'),
   pageScanCard: document.querySelector('#page-scan-card'),
   pageScanResults: document.querySelector('#page-scan-results'),
+  pageScanActions: document.querySelector('#page-scan-actions'),
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
@@ -473,7 +449,6 @@ const state = {
   dismissedCalendarDrafts: new Set(),
   seenCalendarDrafts: new Set(),
   intelligenceConnectionConfigured: false,
-  diagramAssistEnabled: false,
 }
 
 const PREFERENCES_KEY = 'personal-note.preferences.v1'
@@ -485,7 +460,6 @@ function loadPreferences() {
     if (FONT_FAMILIES.has(preferences.fontFamily)) state.fontFamily = preferences.fontFamily
     const fontSize = Number(preferences.fontSize)
     if (Number.isFinite(fontSize)) state.fontSize = Math.min(72, Math.max(12, Math.round(fontSize)))
-    state.diagramAssistEnabled = preferences.diagramAssistEnabled === true
   } catch {
     localStorage.removeItem(PREFERENCES_KEY)
   }
@@ -495,7 +469,6 @@ function savePreferences() {
   localStorage.setItem(PREFERENCES_KEY, JSON.stringify({
     fontFamily: state.fontFamily,
     fontSize: state.fontSize,
-    diagramAssistEnabled: state.diagramAssistEnabled,
   }))
 }
 
@@ -537,19 +510,9 @@ let entityQueuedAt = 0
 let entityCandidate = null
 let calendarPresentTimer
 let calendarCollapseTimer
-let diagramAssistTimer
-let diagramCollapseTimer
-let diagramSequence = 0
-let diagramSuggestion = null
-let diagramGuideObject = null
 let pageScanSourceId = null
-
-const DIAGRAM_LABELS = {
-  'rounded-box': ['Rounded box', 'Keep the sketch and trace a softer box, or refine this stroke.'],
-  ellipse: ['Soft circle', 'Keep the sketch and trace a balanced curve, or refine this stroke.'],
-  connector: ['Clean connector', 'Keep the gesture and trace a calmer connection, or refine this stroke.'],
-  arrow: ['Hand-drawn arrow', 'Keep the gesture and trace a clearer direction, or refine this arrow.'],
-}
+let pageScanDiagramCandidates = []
+let pageScanCalendarDrafts = []
 
 function publishAmbientTelemetry(event, snapshot = ambientTelemetry.snapshot()) {
   const sample = snapshot.last
@@ -607,83 +570,19 @@ function clearCalendarDraft({ keepPresence = false } = {}) {
   elements.calendarPresence.hidden = !keepPresence || !state.calendarDraft
 }
 
-function removeDiagramGuide() {
-  if (diagramGuideObject && canvas.getObjects().includes(diagramGuideObject)) canvas.remove(diagramGuideObject)
-  diagramGuideObject = null
-  elements.diagramPresence.hidden = true
-  canvas.requestRenderAll()
-}
-
-function clearDiagramAssist({ removeGuide = true, keepPresence = false } = {}) {
-  clearTimeout(diagramAssistTimer)
-  clearTimeout(diagramCollapseTimer)
-  diagramSuggestion = null
-  elements.diagramCard.classList.remove('open')
-  elements.diagramCard.hidden = true
-  if (removeGuide) removeDiagramGuide()
-  else elements.diagramPresence.hidden = !keepPresence || !diagramGuideObject
-}
-
-function collapseDiagramAssist() {
-  if (!diagramSuggestion) return clearDiagramAssist({ removeGuide: false })
-  elements.diagramCard.classList.remove('open')
-  setTimeout(() => {
-    if (!elements.diagramCard.classList.contains('open')) {
-      elements.diagramCard.hidden = true
-      elements.diagramPresence.hidden = false
-      elements.diagramPresence.title = 'Show drawing suggestion'
-      elements.diagramPresence.setAttribute('aria-label', 'Show drawing suggestion')
-    }
-  }, 180)
-}
-
-function createDiagramGuide(temporary) {
-  if (!diagramSuggestion) return null
-  const { source, analysis } = diagramSuggestion
+function createRefinedDiagramGuide(source, analysis) {
   const guide = new Path(diagramGuidePath(analysis), {
     fill: null,
     stroke: source.stroke || state.color,
     strokeWidth: Math.max(2, source.strokeWidth || state.penWidth),
     strokeLineCap: 'round',
     strokeLineJoin: 'round',
-    strokeDashArray: temporary ? [8, 7] : null,
-    opacity: temporary ? 0.32 : Math.max(0.72, source.opacity || 1),
+    opacity: Math.max(0.72, source.opacity || 1),
     selectable: false,
     evented: false,
-    excludeFromExport: temporary,
   })
-  guide.isInk = !temporary
+  guide.isInk = true
   return guide
-}
-
-function showDiagramSuggestion() {
-  if (!diagramSuggestion) return
-  const [title, description] = DIAGRAM_LABELS[diagramSuggestion.analysis.kind]
-  elements.diagramTitle.textContent = title
-  elements.diagramDescription.textContent = description
-  clearRelatedNote()
-  state.entitySuggestion = null
-  clearEntityPeek()
-  state.calendarDraft = null
-  clearCalendarDraft()
-  elements.diagramPresence.hidden = true
-  elements.diagramCard.hidden = false
-  requestAnimationFrame(() => elements.diagramCard.classList.add('open'))
-  clearTimeout(diagramCollapseTimer)
-  diagramCollapseTimer = setTimeout(collapseDiagramAssist, 8500)
-}
-
-function queueDiagramAssist(path) {
-  if (!state.diagramAssistEnabled || state.tool !== 'pen' || diagramGuideObject) return
-  clearDiagramAssist({ removeGuide: false })
-  const sequence = ++diagramSequence
-  diagramAssistTimer = setTimeout(() => {
-    if (sequence !== diagramSequence || !canvas.getObjects().includes(path)) return
-    const analysis = analyzeDiagramStroke(getPathScenePoints(path))
-    if (!analysis) return
-    diagramSuggestion = { source: path, analysis }
-    showDiagramSuggestion()
-  }, 650)
 }
 
 function collapseCalendarDraft() {
@@ -947,6 +846,7 @@ function queueAmbientCheck() {
 }
 
 function closePageScan() {
+  elements.paper.classList.remove('is-page-scanning')
   elements.pageScanCard.classList.remove('open')
   elements.pageScanCard.hidden = true
   const trigger = document.querySelector('#page-scan-trigger')
@@ -969,6 +869,58 @@ function addPageScanFinding(icon, title, detail) {
   elements.pageScanResults.append(finding)
 }
 
+function addPageScanAction(icon, title, detail, action) {
+  const proposal = document.createElement('div')
+  proposal.className = 'page-scan-action'
+  const mark = document.createElement('i')
+  mark.dataset.lucide = icon
+  const copy = document.createElement('div')
+  const heading = document.createElement('strong')
+  heading.textContent = title
+  const description = document.createElement('span')
+  description.textContent = detail
+  copy.append(heading, description)
+  const approve = document.createElement('button')
+  approve.dataset.scanAction = action
+  approve.textContent = 'Approve'
+  proposal.append(mark, copy, approve)
+  elements.pageScanActions.append(proposal)
+}
+
+function scanDiagramCandidates() {
+  return canvas.getObjects()
+    .filter(object => object instanceof Path && Array.isArray(object.inkPoints) && object.inkPoints.length >= 5)
+    .map((source) => ({ source, analysis: analyzeDiagramStroke(getPathScenePoints(source)) }))
+    .filter(candidate => candidate.analysis)
+}
+
+function downloadCalendarDraft(draft) {
+  if (!draft) return
+  const blob = new Blob([calendarDraftToIcs(draft)], { type: 'text/calendar;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${draft.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'event'}.ics`
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function refineScannedDrawing() {
+  const candidates = pageScanDiagramCandidates.filter(candidate => canvas.getObjects().includes(candidate.source))
+  if (!candidates.length) return
+  commitHistorySnapshot()
+  candidates.forEach(({ source, analysis }) => {
+    const sourceIndex = canvas.getObjects().indexOf(source)
+    canvas.remove(source)
+    canvas.insertAt(Math.max(0, sourceIndex), createRefinedDiagramGuide(source, analysis))
+  })
+  canvas.requestRenderAll()
+  if (commitHistorySnapshot()) queueSave()
+  closePageScan()
+}
+
 async function scanCurrentPage() {
   const noteId = state.activeNoteId
   if (!noteId) return
@@ -976,26 +928,33 @@ async function scanCurrentPage() {
   setPropertiesOpen(false)
   quietContextualIntelligence()
   pageScanSourceId = null
+  pageScanDiagramCandidates = []
+  pageScanCalendarDrafts = []
   elements.pageScanResults.replaceChildren()
-  addPageScanFinding('loader-circle', 'Scanning this page', 'Checking dates, people, and related notes locally.')
+  elements.pageScanActions.replaceChildren()
+  addPageScanFinding('loader-circle', 'Scanning this page', 'Reading text, ink, dates, people, and related notes locally.')
   elements.pageScanCard.hidden = false
+  elements.paper.classList.add('is-page-scanning')
   requestAnimationFrame(() => elements.pageScanCard.classList.add('open'))
   const trigger = document.querySelector('#page-scan-trigger')
   trigger.classList.add('active')
   trigger.hidden = true
   document.querySelector('#open-scan-source').hidden = true
   const text = activeTextSnapshot()
+  const minimumSweep = new Promise(resolve => setTimeout(resolve, 780))
   try {
     const [entities, related] = await Promise.all([
       api('/intelligence/entities', { method: 'POST', body: JSON.stringify({ noteId, text }) }),
       api('/intelligence/related', { method: 'POST', body: JSON.stringify({ noteId, text }) }),
     ])
+    await minimumSweep
+    elements.paper.classList.remove('is-page-scanning')
     elements.pageScanResults.replaceChildren()
-    const calendarDrafts = pageTextSegments()
+    pageScanCalendarDrafts = pageTextSegments()
       .map(segment => parseCalendarDraft(segment))
       .filter(Boolean)
       .filter((draft, index, drafts) => drafts.findIndex(candidate => calendarDraftKey(candidate) === calendarDraftKey(draft)) === index)
-    calendarDrafts.forEach((draft) => {
+    pageScanCalendarDrafts.forEach((draft) => {
       const when = new Intl.DateTimeFormat(undefined, {
         weekday: 'short', month: 'short', day: 'numeric',
         ...(draft.hasExplicitTime ? { hour: 'numeric', minute: '2-digit' } : {}),
@@ -1005,6 +964,11 @@ async function scanCurrentPage() {
     entities.people?.forEach((person) => {
       addPageScanFinding('user-round', person.name, person.sources[0]?.context || `${person.sourceCount} related sources`)
     })
+    pageScanDiagramCandidates = scanDiagramCandidates()
+    if (pageScanDiagramCandidates.length) {
+      const kinds = [...new Set(pageScanDiagramCandidates.map(candidate => candidate.analysis.kind.replace('-', ' ')))]
+      addPageScanFinding('shapes', `${pageScanDiagramCandidates.length} diagram gestures`, kinds.join(', '))
+    }
     if (related.suggestion) {
       pageScanSourceId = related.suggestion.noteId
       addPageScanFinding('notebook-tabs', related.suggestion.title, related.suggestion.reason)
@@ -1013,9 +977,22 @@ async function scanCurrentPage() {
     if (!elements.pageScanResults.children.length) {
       addPageScanFinding('check', 'Nothing pressing', 'No dates, known people, or grounded related notes stood out.')
     }
+    const textCount = canvas.getObjects().filter(isEditableText).length
+    if (textCount >= 2) {
+      addPageScanAction('layout-grid', 'Tidy text around drawing', `Arrange ${textCount} text blocks without moving ink.`, 'tidy-text')
+    }
+    if (pageScanDiagramCandidates.length) {
+      addPageScanAction('wand-sparkles', 'Refine drawing gestures', `Replace ${pageScanDiagramCandidates.length} recognized shapes or arrows. One Undo restores the originals.`, 'refine-drawing')
+    }
+    if (pageScanCalendarDrafts.length) {
+      addPageScanAction('calendar-plus', 'Prepare calendar file', `Create an .ics file for “${pageScanCalendarDrafts[0].title}”.`, 'export-calendar')
+    }
     createIcons({ icons })
   } catch (error) {
+    await minimumSweep
+    elements.paper.classList.remove('is-page-scanning')
     elements.pageScanResults.replaceChildren()
+    elements.pageScanActions.replaceChildren()
     addPageScanFinding('circle-alert', 'Scan unavailable', 'Your note is unchanged. Try again when the local service is available.')
     createIcons({ icons })
     console.debug('Page scan stayed quiet.', error)
@@ -1040,7 +1017,7 @@ function tidyPageText() {
     }
   })
   const obstacles = canvas.getObjects()
-    .filter(object => !isEditableText(object) && object !== diagramGuideObject)
+    .filter(object => !isEditableText(object))
     .map(object => object.getBoundingRect())
   const plan = planObstacleAwareLayout(items, {
     obstacles,
@@ -1887,8 +1864,6 @@ function recordHistory({ contextual = false } = {}) {
 
 async function restoreHistory(index) {
   if (state.loading || index < 0 || index >= state.history.length) return
-  diagramSequence += 1
-  clearDiagramAssist()
   state.loading = true
   state.historyIndex = index
   const entry = JSON.parse(state.history[index])
@@ -1905,8 +1880,6 @@ async function selectNote(id) {
   if (id === state.activeNoteId) return
   closePageScan()
   clearTimeout(saveTimer)
-  diagramSequence += 1
-  clearDiagramAssist()
   cancelAmbientWork()
   clearTimeout(entityPrefetchTimer)
   clearTimeout(entityPresentTimer)
@@ -2072,8 +2045,6 @@ function syncDefaultTypographySettings() {
   })
   elements.settingsFontSize.value = state.fontSize
   elements.settingsFontSizeValue.value = state.fontSize
-  elements.diagramAssist.checked = state.diagramAssistEnabled
-  document.querySelector('#settings-diagram-assist-status').textContent = state.diagramAssistEnabled ? 'On' : 'Off'
 }
 
 function updateCapabilitySettings(capabilities) {
@@ -2391,8 +2362,6 @@ async function deleteActiveNote() {
 function clearActiveNote() {
   if (!state.activeNoteId || !canvas.getObjects().length) return elements.clearNoteDialog.close()
   clearTimeout(historyTimer)
-  diagramSequence += 1
-  clearDiagramAssist()
   canvas.discardActiveObject()
   canvas.clear()
   state.pages = { columns: 1, rows: 1 }
@@ -2431,7 +2400,6 @@ canvas.on('before:path:created', ({ path }) => {
 
 canvas.on('path:created', ({ path }) => {
   if (state.drawingGesture) state.drawingGesture.created = true
-  queueDiagramAssist(path)
 })
 
 canvas.on('mouse:down', (event) => {
@@ -2595,27 +2563,14 @@ document.querySelector('#close-sidebar').addEventListener('click', () => setSide
 document.querySelector('#rail-new-note').addEventListener('click', () => createNote())
 const searchButton = document.querySelector('#search-button')
 let searchScrollTop = elements.workspace.scrollTop
-const collapseSearchButton = () => {
-  if (document.activeElement !== searchButton) searchButton.classList.remove('is-expanded')
-}
 const revealSearchButton = () => searchButton.classList.remove('is-scroll-hidden')
-searchButton.addEventListener('pointerenter', () => {
-  revealSearchButton()
-  searchButton.classList.add('is-expanded')
-})
-searchButton.addEventListener('pointerleave', collapseSearchButton)
-searchButton.addEventListener('focus', () => {
-  revealSearchButton()
-  searchButton.classList.add('is-expanded')
-})
-searchButton.addEventListener('blur', () => searchButton.classList.remove('is-expanded'))
+searchButton.addEventListener('focus', revealSearchButton)
 searchButton.addEventListener('click', openSearch)
 elements.workspace.addEventListener('scroll', () => {
   const nextScrollTop = elements.workspace.scrollTop
   const delta = nextScrollTop - searchScrollTop
   if (nextScrollTop <= 24 || delta < -6) revealSearchButton()
   else if (nextScrollTop > 72 && delta > 6 && document.activeElement !== searchButton) {
-    searchButton.classList.remove('is-expanded')
     searchButton.classList.add('is-scroll-hidden')
   }
   searchScrollTop = nextScrollTop
@@ -2630,7 +2585,13 @@ document.querySelector('#top-properties').addEventListener('click', () => setPro
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#close-settings').addEventListener('click', () => setSettingsOpen(false))
 document.querySelector('#close-page-scan').addEventListener('click', closePageScan)
-document.querySelector('#tidy-page-text').addEventListener('click', tidyPageText)
+elements.pageScanActions.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-scan-action]')
+  if (!button) return
+  if (button.dataset.scanAction === 'tidy-text') tidyPageText()
+  else if (button.dataset.scanAction === 'refine-drawing') refineScannedDrawing()
+  else if (button.dataset.scanAction === 'export-calendar') downloadCalendarDraft(pageScanCalendarDrafts[0])
+})
 document.querySelector('#open-scan-source').addEventListener('click', () => {
   const sourceId = pageScanSourceId
   closePageScan()
@@ -2658,12 +2619,6 @@ elements.settingsFontSize.addEventListener('input', () => {
   savePreferences()
   syncDefaultTypographySettings()
   syncTypographyControls()
-})
-elements.diagramAssist.addEventListener('change', () => {
-  state.diagramAssistEnabled = elements.diagramAssist.checked
-  if (!state.diagramAssistEnabled) clearDiagramAssist()
-  savePreferences()
-  syncDefaultTypographySettings()
 })
 elements.notebookPicker.addEventListener('click', () => {
   const willOpen = elements.notebookPickerMenu.hidden
@@ -2746,48 +2701,7 @@ document.querySelector('#dismiss-calendar').addEventListener('click', () => {
   clearCalendarDraft()
 })
 document.querySelector('#download-calendar').addEventListener('click', () => {
-  const draft = state.calendarDraft
-  if (!draft) return
-  const blob = new Blob([calendarDraftToIcs(draft)], { type: 'text/calendar;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${draft.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'event'}.ics`
-  document.body.append(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-})
-elements.diagramPresence.addEventListener('click', () => {
-  if (diagramGuideObject) clearDiagramAssist()
-  else if (diagramSuggestion) showDiagramSuggestion()
-})
-document.querySelector('#dismiss-diagram').addEventListener('click', () => clearDiagramAssist())
-document.querySelector('#trace-diagram').addEventListener('click', () => {
-  if (!diagramSuggestion) return
-  removeDiagramGuide()
-  diagramGuideObject = createDiagramGuide(true)
-  const sourceIndex = canvas.getObjects().indexOf(diagramSuggestion.source)
-  canvas.insertAt(Math.max(0, sourceIndex), diagramGuideObject)
-  diagramSuggestion = null
-  clearTimeout(diagramCollapseTimer)
-  elements.diagramCard.classList.remove('open')
-  elements.diagramCard.hidden = true
-  elements.diagramPresence.hidden = false
-  elements.diagramPresence.title = 'Clear drawing guide'
-  elements.diagramPresence.setAttribute('aria-label', 'Clear drawing guide')
-  canvas.requestRenderAll()
-})
-document.querySelector('#refine-diagram').addEventListener('click', () => {
-  if (!diagramSuggestion) return
-  const { source } = diagramSuggestion
-  const sourceIndex = canvas.getObjects().indexOf(source)
-  const refined = createDiagramGuide(false)
-  canvas.remove(source)
-  canvas.insertAt(Math.max(0, sourceIndex), refined)
-  clearDiagramAssist()
-  canvas.requestRenderAll()
-  recordHistory()
+  downloadCalendarDraft(state.calendarDraft)
 })
 elements.list.addEventListener('click', (event) => {
   const item = event.target.closest('[data-note-id]')
