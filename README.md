@@ -75,7 +75,9 @@ The settings drawer stores default typography locally and reads safe runtime cap
 
 Drawing analysis is local, deterministic, and runs only when Scan this page is pressed. Fabric pen strokes retain their original points while drawing; there is no timer, background monitor, or per-stroke popup. After the sweep, recognized boxes, ellipses, connectors, and arrows appear as a single refinement proposal. Nothing changes until the user presses Approve, and one Undo restores every original stroke.
 
-Contextual intelligence is text-event-scoped and one-shot. Calendar, person, and related-note cards may appear once after the relevant edit, then disappear rather than becoming recurring reminders. Drawing, erasing, moving, and formatting do not rerun text context. The right-side Scan this page action performs one visible sweep, then summarizes dates, known people, grounded related notes, and recognizable drawing gestures. It parses each Fabric text object independently so diagram labels cannot corrupt a nearby calendar phrase.
+Contextual intelligence is text-event-scoped and one-shot. Calendar, person, and related-note cards may appear once after the relevant edit, then disappear rather than becoming recurring reminders. Drawing, erasing, moving, and formatting do not rerun text context. The right-side Scan this page action performs a deliberate 1.4-second sweep, then summarizes dates, known people, grounded related notes, and recognizable drawing gestures. It parses each Fabric text object independently so diagram labels cannot corrupt a nearby calendar phrase.
+
+Fabric selections and Highlighter strokes are explicit attention signals. Selected objects, plus text or diagram gestures intersecting a highlight, appear first with blue priority treatment. Approval actions target the selected drawing batch or selected text group before considering the rest of the page.
 
 Tidy text reserves the padded bounds of every ink and diagram object, then arranges loose text into available space around those obstacles. It never moves or deletes drawing paths, and the complete layout operation remains undoable.
 

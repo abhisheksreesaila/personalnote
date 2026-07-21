@@ -38,6 +38,7 @@ FabricObject.customProperties = Array.from(new Set([
   ...FabricObject.customProperties,
   'inkPoints',
   'isInk',
+  'inkTool',
 ]))
 
 document.querySelector('#app').innerHTML = `
@@ -513,6 +514,8 @@ let calendarCollapseTimer
 let pageScanSourceId = null
 let pageScanDiagramCandidates = []
 let pageScanCalendarDrafts = []
+let pageScanFocusedObjects = []
+let attentionSelection = []
 
 function publishAmbientTelemetry(event, snapshot = ambientTelemetry.snapshot()) {
   const sample = snapshot.last
@@ -582,6 +585,7 @@ function createRefinedDiagramGuide(source, analysis) {
     evented: false,
   })
   guide.isInk = true
+  guide.inkTool = 'pen'
   return guide
 }
 
@@ -854,9 +858,9 @@ function closePageScan() {
   trigger.classList.remove('active')
 }
 
-function addPageScanFinding(icon, title, detail) {
+function addPageScanFinding(icon, title, detail, { priority = false } = {}) {
   const finding = document.createElement('div')
-  finding.className = 'page-scan-finding'
+  finding.className = `page-scan-finding${priority ? ' is-priority' : ''}`
   const mark = document.createElement('i')
   mark.dataset.lucide = icon
   const copy = document.createElement('div')
@@ -869,9 +873,9 @@ function addPageScanFinding(icon, title, detail) {
   elements.pageScanResults.append(finding)
 }
 
-function addPageScanAction(icon, title, detail, action) {
+function addPageScanAction(icon, title, detail, action, { priority = false } = {}) {
   const proposal = document.createElement('div')
-  proposal.className = 'page-scan-action'
+  proposal.className = `page-scan-action${priority ? ' is-priority' : ''}`
   const mark = document.createElement('i')
   mark.dataset.lucide = icon
   const copy = document.createElement('div')
@@ -887,11 +891,60 @@ function addPageScanAction(icon, title, detail, action) {
   elements.pageScanActions.append(proposal)
 }
 
+function syncAttentionSelection() {
+  const trigger = document.querySelector('#page-scan-trigger')
+  const hasAttention = attentionSelection.length > 0
+  trigger.classList.toggle('has-attention', hasAttention)
+  trigger.setAttribute('aria-label', hasAttention ? 'Scan selected objects first' : 'Scan this page')
+  trigger.title = hasAttention ? `${attentionSelection.length} selected object${attentionSelection.length === 1 ? '' : 's'} get priority` : 'Scan this page'
+}
+
 function scanDiagramCandidates() {
+  const focused = new Set(pageScanFocusedObjects)
   return canvas.getObjects()
-    .filter(object => object instanceof Path && Array.isArray(object.inkPoints) && object.inkPoints.length >= 5)
-    .map((source) => ({ source, analysis: analyzeDiagramStroke(getPathScenePoints(source)) }))
+    .filter(object => object instanceof Path && !isHighlighterStroke(object) && Array.isArray(object.inkPoints) && object.inkPoints.length >= 5)
+    .map((source) => ({ source, analysis: analyzeDiagramStroke(getPathScenePoints(source)), priority: focused.has(source) }))
     .filter(candidate => candidate.analysis)
+    .sort((left, right) => Number(right.priority) - Number(left.priority))
+}
+
+function focusedTextSegments() {
+  return pageScanFocusedObjects
+    .filter(isEditableText)
+    .map(object => object.text?.trim())
+    .filter(Boolean)
+}
+
+function boundsOverlap(left, right) {
+  return !(
+    left.left + left.width < right.left
+    || right.left + right.width < left.left
+    || left.top + left.height < right.top
+    || right.top + right.height < left.top
+  )
+}
+
+function isHighlighterStroke(object) {
+  return object instanceof Path && (
+    object.inkTool === 'highlight'
+    || ((object.strokeWidth || 0) >= 10 && typeof object.stroke === 'string' && object.stroke.endsWith('55'))
+  )
+}
+
+function objectsUnderHighlights() {
+  const objects = canvas.getObjects()
+  const highlights = objects.filter(isHighlighterStroke)
+  if (!highlights.length) return []
+  const focused = new Set()
+  highlights.forEach((highlight) => {
+    const highlightBounds = highlight.getBoundingRect()
+    objects.forEach((object) => {
+      if (object !== highlight && !isHighlighterStroke(object) && boundsOverlap(highlightBounds, object.getBoundingRect())) {
+        focused.add(object)
+      }
+    })
+  })
+  return [...focused]
 }
 
 function downloadCalendarDraft(draft) {
@@ -908,7 +961,9 @@ function downloadCalendarDraft(draft) {
 }
 
 function refineScannedDrawing() {
-  const candidates = pageScanDiagramCandidates.filter(candidate => canvas.getObjects().includes(candidate.source))
+  const priorityCandidates = pageScanDiagramCandidates.filter(candidate => candidate.priority)
+  const targets = priorityCandidates.length ? priorityCandidates : pageScanDiagramCandidates
+  const candidates = targets.filter(candidate => canvas.getObjects().includes(candidate.source))
   if (!candidates.length) return
   commitHistorySnapshot()
   candidates.forEach(({ source, analysis }) => {
@@ -927,12 +982,18 @@ async function scanCurrentPage() {
   setSettingsOpen(false)
   setPropertiesOpen(false)
   quietContextualIntelligence()
+  const activeObjects = canvas.getActiveObjects()
+  const explicitFocus = activeObjects.length ? activeObjects : attentionSelection
+  pageScanFocusedObjects = [...new Set([...explicitFocus, ...objectsUnderHighlights()])]
   pageScanSourceId = null
   pageScanDiagramCandidates = []
   pageScanCalendarDrafts = []
   elements.pageScanResults.replaceChildren()
   elements.pageScanActions.replaceChildren()
-  addPageScanFinding('loader-circle', 'Scanning this page', 'Reading text, ink, dates, people, and related notes locally.')
+  const focusDetail = pageScanFocusedObjects.length
+    ? `Prioritizing ${pageScanFocusedObjects.length} selected object${pageScanFocusedObjects.length === 1 ? '' : 's'}, then reading the rest of the page.`
+    : 'Reading text, ink, dates, people, and related notes locally.'
+  addPageScanFinding('loader-circle', 'Scanning this page', focusDetail)
   elements.pageScanCard.hidden = false
   elements.paper.classList.add('is-page-scanning')
   requestAnimationFrame(() => elements.pageScanCard.classList.add('open'))
@@ -940,8 +1001,9 @@ async function scanCurrentPage() {
   trigger.classList.add('active')
   trigger.hidden = true
   document.querySelector('#open-scan-source').hidden = true
-  const text = activeTextSnapshot()
-  const minimumSweep = new Promise(resolve => setTimeout(resolve, 780))
+  const focusedSegments = focusedTextSegments()
+  const text = focusedSegments.length ? `${focusedSegments.join(' ')} ${activeTextSnapshot()}` : activeTextSnapshot()
+  const minimumSweep = new Promise(resolve => setTimeout(resolve, 1400))
   try {
     const [entities, related] = await Promise.all([
       api('/intelligence/entities', { method: 'POST', body: JSON.stringify({ noteId, text }) }),
@@ -950,24 +1012,34 @@ async function scanCurrentPage() {
     await minimumSweep
     elements.paper.classList.remove('is-page-scanning')
     elements.pageScanResults.replaceChildren()
-    pageScanCalendarDrafts = pageTextSegments()
+    const allSegments = pageTextSegments()
+    const orderedSegments = [...focusedSegments, ...allSegments.filter(segment => !focusedSegments.includes(segment))]
+    pageScanCalendarDrafts = orderedSegments
       .map(segment => parseCalendarDraft(segment))
       .filter(Boolean)
       .filter((draft, index, drafts) => drafts.findIndex(candidate => calendarDraftKey(candidate) === calendarDraftKey(draft)) === index)
     pageScanCalendarDrafts.forEach((draft) => {
+      const priority = focusedSegments.some(segment => calendarDraftKey(parseCalendarDraft(segment)) === calendarDraftKey(draft))
       const when = new Intl.DateTimeFormat(undefined, {
         weekday: 'short', month: 'short', day: 'numeric',
         ...(draft.hasExplicitTime ? { hour: 'numeric', minute: '2-digit' } : {}),
       }).format(new Date(draft.startAt))
-      addPageScanFinding('calendar-clock', draft.title, when)
+      addPageScanFinding(priority ? 'scan-eye' : 'calendar-clock', draft.title, priority ? `Selected · ${when}` : when, { priority })
     })
+    focusedSegments
+      .filter(segment => !parseCalendarDraft(segment))
+      .forEach(segment => addPageScanFinding('scan-eye', 'Selected text', segment.slice(0, 140), { priority: true }))
     entities.people?.forEach((person) => {
       addPageScanFinding('user-round', person.name, person.sources[0]?.context || `${person.sourceCount} related sources`)
     })
     pageScanDiagramCandidates = scanDiagramCandidates()
     if (pageScanDiagramCandidates.length) {
       const kinds = [...new Set(pageScanDiagramCandidates.map(candidate => candidate.analysis.kind.replace('-', ' ')))]
-      addPageScanFinding('shapes', `${pageScanDiagramCandidates.length} diagram gestures`, kinds.join(', '))
+      const priorityCount = pageScanDiagramCandidates.filter(candidate => candidate.priority).length
+      const title = priorityCount
+        ? `${priorityCount} selected diagram gesture${priorityCount === 1 ? '' : 's'}`
+        : `${pageScanDiagramCandidates.length} diagram gestures`
+      addPageScanFinding(priorityCount ? 'scan-eye' : 'shapes', title, kinds.join(', '), { priority: priorityCount > 0 })
     }
     if (related.suggestion) {
       pageScanSourceId = related.suggestion.noteId
@@ -978,11 +1050,25 @@ async function scanCurrentPage() {
       addPageScanFinding('check', 'Nothing pressing', 'No dates, known people, or grounded related notes stood out.')
     }
     const textCount = canvas.getObjects().filter(isEditableText).length
+    const focusedTextCount = pageScanFocusedObjects.filter(isEditableText).length
     if (textCount >= 2) {
-      addPageScanAction('layout-grid', 'Tidy text around drawing', `Arrange ${textCount} text blocks without moving ink.`, 'tidy-text')
+      addPageScanAction(
+        'layout-grid',
+        focusedTextCount >= 2 ? 'Tidy selected text' : 'Tidy text around drawing',
+        focusedTextCount >= 2 ? `Arrange the ${focusedTextCount} selected text blocks first.` : `Arrange ${textCount} text blocks without moving ink.`,
+        'tidy-text',
+        { priority: focusedTextCount >= 2 },
+      )
     }
     if (pageScanDiagramCandidates.length) {
-      addPageScanAction('wand-sparkles', 'Refine drawing gestures', `Replace ${pageScanDiagramCandidates.length} recognized shapes or arrows. One Undo restores the originals.`, 'refine-drawing')
+      const priorityCount = pageScanDiagramCandidates.filter(candidate => candidate.priority).length
+      addPageScanAction(
+        'wand-sparkles',
+        priorityCount ? 'Refine selected drawing' : 'Refine drawing gestures',
+        `Replace ${priorityCount || pageScanDiagramCandidates.length} recognized shapes or arrows. One Undo restores the originals.`,
+        'refine-drawing',
+        { priority: priorityCount > 0 },
+      )
     }
     if (pageScanCalendarDrafts.length) {
       addPageScanAction('calendar-plus', 'Prepare calendar file', `Create an .ics file for “${pageScanCalendarDrafts[0].title}”.`, 'export-calendar')
@@ -1000,7 +1086,9 @@ async function scanCurrentPage() {
 }
 
 function tidyPageText() {
-  const textObjects = canvas.getObjects().filter(isEditableText)
+  const focusedTextObjects = pageScanFocusedObjects.filter(object => isEditableText(object) && canvas.getObjects().includes(object))
+  const textObjects = focusedTextObjects.length >= 2 ? focusedTextObjects : canvas.getObjects().filter(isEditableText)
+  const textObjectSet = new Set(textObjects)
   const objectsById = new Map()
   const items = textObjects.map((object, index) => {
     const id = String(index)
@@ -1017,7 +1105,7 @@ function tidyPageText() {
     }
   })
   const obstacles = canvas.getObjects()
-    .filter(object => !isEditableText(object))
+    .filter(object => !textObjectSet.has(object))
     .map(object => object.getBoundingRect())
   const plan = planObstacleAwareLayout(items, {
     obstacles,
@@ -1701,6 +1789,7 @@ function createStrokeFragment(points, source) {
   })
   fragment.inkPoints = points.map(({ x, y }) => ({ x, y }))
   fragment.isInk = true
+  fragment.inkTool = source.inkTool
   return fragment
 }
 
@@ -1771,6 +1860,7 @@ function createInkDot(point, tool) {
     evented: false,
   })
   dot.isInk = true
+  dot.inkTool = tool
   canvas.add(dot)
   canvas.requestRenderAll()
   return dot
@@ -1870,6 +1960,8 @@ async function restoreHistory(index) {
   state.pages = entry.pages
   resizePaper(true)
   await canvas.loadFromJSON(entry.content)
+  attentionSelection = objectsUnderHighlights()
+  syncAttentionSelection()
   setTool('text')
   state.loading = false
   canvas.requestRenderAll()
@@ -1907,6 +1999,8 @@ async function selectNote(id) {
     state.pages = note.pageState || { columns: 1, rows: 1 }
     resizePaper()
     await canvas.loadFromJSON(note.content || { objects: [] })
+    attentionSelection = objectsUnderHighlights()
+    syncAttentionSelection()
     normalizedNote = normalizeNotebookFonts()
     normalizedNote = reconcilePages(true) || normalizedNote
     state.history = [snapshot()]
@@ -2394,12 +2488,17 @@ canvas.on('before:path:created', ({ path }) => {
   const points = canvas.freeDrawingBrush?._points || []
   path.inkPoints = points.map(({ x, y }) => ({ x, y }))
   path.isInk = true
+  path.inkTool = state.tool
   path.selectable = false
   path.evented = false
 })
 
 canvas.on('path:created', ({ path }) => {
   if (state.drawingGesture) state.drawingGesture.created = true
+  if (isHighlighterStroke(path)) {
+    attentionSelection = objectsUnderHighlights()
+    syncAttentionSelection()
+  }
 })
 
 canvas.on('mouse:down', (event) => {
@@ -2497,7 +2596,12 @@ canvas.on('mouse:out', () => {
 })
 document.addEventListener('pointerup', finishErasing)
 ;['selection:created', 'selection:updated', 'selection:cleared'].forEach((eventName) => {
-  canvas.on(eventName, syncTypographyControls)
+  canvas.on(eventName, () => {
+    if (eventName === 'selection:cleared') attentionSelection = []
+    else attentionSelection = [...canvas.getActiveObjects()]
+    syncAttentionSelection()
+    syncTypographyControls()
+  })
 })
 
 document.querySelectorAll('[data-tool]').forEach((button) => button.addEventListener('click', () => {

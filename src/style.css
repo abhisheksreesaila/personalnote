@@ -430,7 +430,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   pointer-events: none;
   z-index: 31;
 }
-.paper.is-page-scanning::before { opacity: 1; animation: page-scan-sweep 780ms cubic-bezier(.4,0,.2,1) both; }
+.paper.is-page-scanning::before { opacity: 1; animation: page-scan-sweep 1400ms cubic-bezier(.4,0,.2,1) both; }
 @keyframes page-scan-sweep { from { top: 0; } to { top: calc(100% - 2px); } }
 .paper::after {
   content: '';
@@ -622,12 +622,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   box-shadow: 0 3px 12px rgba(54,50,42,.08);
   backdrop-filter: blur(12px);
   transform: translateX(-50%);
-  transition: width 220ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease, transform 220ms cubic-bezier(.2,.8,.2,1), color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+  transition: width 420ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease, transform 420ms cubic-bezier(.2,.8,.2,1), color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
   white-space: nowrap;
   cursor: pointer;
   z-index: 12;
 }
-.search-button.is-scroll-hidden:not(:focus-visible) { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(.88); pointer-events: none; }
+.search-button.is-scroll-hidden:not(:focus-visible) { width: 42px; opacity: 0; transform: translateX(-50%) translateY(-12px) scale(.72); pointer-events: none; transition: width 420ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease 260ms, transform 420ms cubic-bezier(.2,.8,.2,1), color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease; }
 .search-button:hover, .search-button:focus-visible { color: var(--blue); background: rgba(255,253,250,.97); border-color: rgba(38,122,157,.34); box-shadow: 0 10px 30px rgba(54,50,42,.17); }
 .search-button svg { width: 18px; flex: 0 0 18px; }
 .search-button span { min-width: 120px; overflow: hidden; text-align: left; font: 500 11px/1 "IBM Plex Sans", sans-serif; }
@@ -635,6 +635,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .voice-button:hover, .scan-page-button:hover { background: #fffdfa; box-shadow: 0 10px 30px rgba(54,50,42,.2); }
 .scan-page-button:active { color: white; background: #366852; }
 .voice-button svg, .scan-page-button svg { width: 18px; }
+.scan-page-button.has-attention::after { content: ''; position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border: 2px solid rgba(250,249,246,.96); border-radius: 50%; background: #267a9d; box-shadow: 0 0 0 2px rgba(38,122,157,.16); }
 .voice-button.active { color: white; background: var(--terracotta); animation: voice-button-pulse 1.4s ease-in-out infinite; }
 @keyframes voice-button-pulse { 50% { box-shadow: 0 0 0 7px rgba(169,80,67,.13), 0 10px 30px rgba(54,50,42,.2); } }
 .voice-caption {
@@ -729,12 +730,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .page-scan-card header > span { color: #366852; }
 .page-scan-results { display: grid; gap: 2px; margin: 10px 0 4px; }
 .page-scan-finding { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 9px 7px; border-top: 1px solid rgba(99,86,67,.1); }
+.page-scan-finding.is-priority { margin-inline: -2px; padding-inline: 9px; border: 1px solid rgba(38,122,157,.2); border-radius: 6px; background: rgba(38,122,157,.065); }
+.page-scan-finding.is-priority > svg { color: #267a9d; }
 .page-scan-finding > svg { width: 15px; margin-top: 1px; color: #4c7663; }
 .page-scan-finding > div { min-width: 0; display: grid; gap: 3px; }
 .page-scan-finding strong { overflow: hidden; font: 600 12px/1.25 "Source Serif 4", serif; text-overflow: ellipsis; white-space: nowrap; }
 .page-scan-finding span { max-height: 2.8em; overflow: hidden; color: #756d63; font-size: 9px; line-height: 1.4; }
 .page-scan-actions { display: grid; gap: 6px; margin-top: 10px; }
 .page-scan-action { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 9px 8px; border: 1px solid rgba(54,104,82,.14); border-radius: 6px; background: rgba(54,104,82,.045); }
+.page-scan-action.is-priority { border-color: rgba(38,122,157,.28); background: rgba(38,122,157,.07); box-shadow: inset 3px 0 #267a9d; }
 .page-scan-action > svg { width: 15px; color: #4c7663; }
 .page-scan-action > div { min-width: 0; display: grid; gap: 2px; }
 .page-scan-action strong { font: 600 11px/1.25 "Source Serif 4", serif; }

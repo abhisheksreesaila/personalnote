@@ -70,6 +70,8 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 - Add preview-first diagram grouping that preserves connector topology.
 - Explore deep cleanup for grammar and structure only as a reversible proposal with source comparison.
 - Keep Search in the top chrome: hide on downward canvas scrolling, reveal on upward scrolling, and preserve keyboard access. **Complete.**
+- Prioritize active selections and Highlighter-intersected objects during Page Scan. **Complete.**
+- Use a deliberate 1.4-second scan sweep and compress-then-fade Search transition. **Complete.**
 
 ## Phase 5: Living Projects
 
