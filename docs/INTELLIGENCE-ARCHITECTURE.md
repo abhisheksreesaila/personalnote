@@ -19,6 +19,17 @@ flowchart LR
 
 ## Current Modules
 
+The intelligence worker is organized as a **modular protocol stack**. See [INTELLIGENCE-PROTOCOL.md](./INTELLIGENCE-PROTOCOL.md) for the full wire contract, tier model, and local model recommendations.
+
+```text
+intelligence/
+  protocol/          # Versioned schemas (Zod)
+  providers/         # Swappable executors (deterministic, local-model, cloud-model)
+  tasks/             # Task handlers (rank-related, future tasks)
+  runtime/executor.ts # Task router + protocol responses
+  server.ts          # HTTP: /health, /v1/execute, /rank (legacy)
+```
+
 ### Browser Listener
 
 `src/main.js` waits for a successful save and a meaningful idle pause. It sends only the active note ID and current text snapshot to `/api/intelligence/related`. Stale requests are cancelled, dismissed suggestions are suppressed for the session, and responses remain source-linked.
@@ -33,9 +44,9 @@ flowchart LR
 
 ### Mastra Worker
 
-`intelligence/ambient-agent.ts` currently performs one task: choose one candidate and phrase one restrained observation. It validates all input/output, caps candidates, uses one model step, rejects unknown note IDs, and treats note content as untrusted data.
+`intelligence/ambient-agent.ts` remains a thin backward-compatible export. The worker routes tasks through `runtime/executor.ts`, selects providers via `providers/registry.ts`, and exposes the canonical `POST /v1/execute` protocol endpoint. Legacy `POST /rank` is preserved.
 
-`intelligence/server.ts` exposes only `/health` and `/rank`. It reports whether execution is local retrieval or model-backed and which provider family is active without revealing endpoint, deployment, or credentials.
+`intelligence/providers/model.ts` wraps the configured model (Ollama, LM Studio, Azure) as an `IntelligenceProvider`. `intelligence/tasks/rank-related.ts` performs one task: choose one candidate and phrase one restrained observation. It validates all input/output, caps candidates, uses one model step, rejects unknown note IDs, and treats note content as untrusted data.
 
 ## Latency Contract
 

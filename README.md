@@ -1,6 +1,16 @@
 # Personal Note
 
-A local-first note canvas that behaves like a page until your content reaches an edge. The canvas adds pages in any direction as text or ink moves outward and removes unused outer pages as content moves back in.
+A local-first spatial notepad with **ambient intelligence** — contextual suggestions that appear briefly while you write and disappear, not a permanent chat assistant. The canvas behaves like a page until content reaches an edge, then grows or shrinks in any direction as text and ink move.
+
+## Documentation
+
+| Document | For |
+|----------|-----|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram, runtime layout, data flow, file map |
+| [docs/INTELLIGENCE-PROTOCOL.md](docs/INTELLIGENCE-PROTOCOL.md) | Wire protocol, provider tiers, local model recommendations |
+| [docs/INTELLIGENCE-ARCHITECTURE.md](docs/INTELLIGENCE-ARCHITECTURE.md) | Ambient intelligence boundaries, attention policy, planned tools |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Phase-based product roadmap |
+| [AGENTS.md](AGENTS.md) | Guide for AI coding agents working in this repo |
 
 ## Run locally
 
@@ -65,11 +75,28 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 
 ## Architecture
 
-The browser stores Fabric.js canvas JSON through a FastHTML REST interface. `main.py` is the runtime entrypoint, `routes.py` owns the application factory and API registration, `services.py` owns note persistence rules, and `app_schema.py` owns idempotent SQLite setup. `fh-saas` is pinned as the production SaaS toolkit for later authentication, tenant isolation, jobs, and billing without coupling those concerns to the canvas interaction model.
+Three processes in development (`npm run dev`):
 
-Ambient intelligence is split deliberately. FastHTML returns immediate source-grounded retrieval locally, then the browser may request non-blocking enrichment from a restricted Mastra worker on port `4112`. Mastra may rerank and phrase a connection with one bounded model step; it has no shell, filesystem, browser, or mutation tools. Without a configured model, the same feature remains available in deterministic `local-retrieval` mode.
+```text
+Browser (Vite :5173)  →  FastHTML API (:3137)  →  SQLite (FTS5 + notes)
+                              ↓ optional, non-blocking
+                         Mastra worker (:4112)  →  OpenAI-compatible / Azure model
+```
 
-The runtime stack is intentionally modular: FastHTML owns HTTP delivery, `fh-saas` supplies the future authentication/session/tenant primitives, SQLite owns local persistence, app JavaScript owns interaction state, Fabric.js owns the spatial canvas, and Mastra sits behind a narrow optional intelligence boundary. Mastra was selected as a lightweight TypeScript agent runtime for this boundary; the product does not depend on Mastra-specific types outside the worker, so another runtime can replace it.
+```mermaid
+flowchart LR
+    Editor[Fabric editor] --> API[FastHTML :3137]
+    API --> SQLite[(SQLite FTS5)]
+    API -->|immediate| Card[Ambient cards]
+    API -.->|enrich| Worker[Mastra :4112]
+    Worker -.-> Card
+```
+
+The browser stores Fabric.js canvas JSON through a FastHTML REST interface. `main.py` is the runtime entrypoint, `routes.py` owns the application factory and API registration, `services.py` owns note persistence and retrieval, and `app_schema.py` owns idempotent SQLite setup. `fh-saas` is pinned for future authentication, tenant isolation, jobs, and billing without coupling those concerns to the canvas.
+
+**Ambient intelligence** is split deliberately. FastHTML returns immediate source-grounded retrieval locally; the browser may then request non-blocking enrichment from a restricted Mastra worker. Mastra may rerank and phrase a connection with one bounded model step — no shell, filesystem, browser, or mutation tools. Without a configured model, the same features run in deterministic `local-retrieval` mode.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system diagram, data model, ambient lanes, and file map. See [AGENTS.md](AGENTS.md) if you are an AI agent contributing to this repo.
 
 The settings drawer stores default typography locally and reads safe runtime capability metadata from `/api/settings/capabilities`. Provider keys remain server-side environment values and are never returned to browser code. `fh-saas` includes Google OAuth, session, and tenant provisioning primitives, but authentication is deliberately bypassed in the current single-user development build; setting Google credentials alone does not activate access control.
 
@@ -99,8 +126,6 @@ For a cloud OpenAI-compatible provider, use its model name, `/v1` base URL, and 
 
 Azure OpenAI and Microsoft Foundry deployments use the official Azure provider. Set `PERSONAL_NOTE_DEPLOYMENT_NAME` to the deployment name, `PERSONAL_NOTE_MODEL_URL` to either its Azure OpenAI endpoint or the Foundry project endpoint, and `PERSONAL_NOTE_MODEL_KEY` to the resource key. Leave `PERSONAL_NOTE_MODEL` empty. The worker derives the Azure resource from a Foundry project endpoint and sends the key using Azure's `api-key` header. Optional legacy deployments can set `PERSONAL_NOTE_AZURE_DEPLOYMENT_URLS=1` and a specific `PERSONAL_NOTE_AZURE_API_VERSION`.
 
-The product roadmap is maintained in `docs/ROADMAP.md`.
-The current Mastra boundaries and proposed capability modules are documented in `docs/INTELLIGENCE-ARCHITECTURE.md`.
 
 An isolated non-React AG-UI compatibility spike lives in `experiments/ag-ui`. It is intentionally excluded from the production dependency graph and request path; see its README for the compatibility result and adoption criteria.
 

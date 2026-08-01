@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400;1,8..60,600&display=swap');
+/* Source Serif 4 must be pinned to a single optical size (opsz 24): Fabric measures
+   text at a large cache size where auto optical sizing picks different glyph widths
+   than the rendered 24px text, misplacing the caret and shrinking the text box. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,24,400;0,24,600;1,24,400;1,24,600&display=swap');
 
 :root {
   color: #17201e;
@@ -608,6 +611,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   position: fixed;
   top: 8px;
   left: 50vw;
+  --search-reveal: 1;
   width: 238px;
   height: 38px;
   display: flex;
@@ -620,14 +624,24 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   color: rgba(38,105,132,.78);
   background: rgba(250,249,246,.58);
   box-shadow: 0 3px 12px rgba(54,50,42,.08);
-  backdrop-filter: blur(12px);
-  transform: translateX(-50%);
-  transition: width 420ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease, transform 420ms cubic-bezier(.2,.8,.2,1), color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+  backdrop-filter: blur(calc(12px * var(--search-reveal)));
+  -webkit-backdrop-filter: blur(calc(12px * var(--search-reveal)));
+  opacity: calc(0.28 + 0.72 * var(--search-reveal));
+  transform: translate3d(-50%, calc((1 - var(--search-reveal)) * -20px), 0) scale(calc(0.968 + 0.032 * var(--search-reveal)));
+  transform-origin: center top;
+  transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
   white-space: nowrap;
   cursor: pointer;
   z-index: 12;
+  will-change: transform, opacity;
 }
-.search-button.is-scroll-hidden:not(:focus-visible) { width: 42px; opacity: 0; transform: translateX(-50%) translateY(-12px) scale(.72); pointer-events: none; transition: width 420ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease 260ms, transform 420ms cubic-bezier(.2,.8,.2,1), color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease; }
+.search-button.is-scroll-hidden { pointer-events: none; }
+.search-button span,
+.search-button kbd {
+  opacity: var(--search-reveal);
+  transform: translateX(calc((1 - var(--search-reveal)) * -6px));
+  transition: opacity 120ms linear, transform 120ms linear;
+}
 .search-button:hover, .search-button:focus-visible { color: var(--blue); background: rgba(255,253,250,.97); border-color: rgba(38,122,157,.34); box-shadow: 0 10px 30px rgba(54,50,42,.17); }
 .search-button svg { width: 18px; flex: 0 0 18px; }
 .search-button span { min-width: 120px; overflow: hidden; text-align: left; font: 500 11px/1 "IBM Plex Sans", sans-serif; }
@@ -797,7 +811,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   pointer-events: none;
 }
 .workspace.is-object-dragging .tool-dock { transform: translateX(-50%) translateY(5px); }
-.workspace.is-object-dragging .search-button { transform: translateX(-50%) translateY(5px); }
+.workspace.is-object-dragging .search-button { transform: translate3d(-50%, 5px, 0); }
 .workspace.is-object-dragging .voice-button { transform: translateX(-100%) translateY(5px); }
 .workspace.is-object-dragging .scan-page-button { transform: translateY(5px); }
 
@@ -1167,6 +1181,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .rail-brand, .rail-button { transform: none !important; transition: none; }
   .tool-dock .dock-control { transform: none !important; transition: none; }
   .search-button, .voice-button, .scan-page-button, .properties-trigger { --standalone-scale: 1 !important; transition: none; }
+  .search-button span, .search-button kbd { transition: none; }
   .paper { transition-duration: 1ms; animation: none; }
   .paper.is-page-scanning::before { animation-duration: 1ms; }
   .sidebar { transition-duration: 1ms; }

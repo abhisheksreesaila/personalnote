@@ -151,5 +151,50 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("Maya preferred", entities["people"][0]["sources"][0]["context"])
 
 
+    def test_page_scan_unifies_calendar_people_and_related(self):
+        notebook = self.client.get("/api/notebooks").json()[0]
+        source = self.client.post(
+            "/api/notes",
+            json={"title": "Launch timing", "notebookId": notebook["id"]},
+        ).json()
+        self.client.put(
+            f"/api/notes/{source['id']}",
+            json={
+                "title": "Launch timing",
+                "notebookId": notebook["id"],
+                "content": {"objects": [{"type": "IText", "text": "Maya preferred a September launch because of the partner event."}]},
+                "pageState": {"columns": 1, "rows": 1},
+            },
+        )
+        active = self.client.post(
+            "/api/notes",
+            json={"title": "October option", "notebookId": notebook["id"]},
+        ).json()
+
+        response = self.client.post(
+            "/api/intelligence/scan",
+            json={
+                "noteId": active["id"],
+                "text": "Talk to Maya about moving the launch to October. schedule something at 9 AM",
+                "segments": [
+                    "Talk to Maya about moving the launch to October.",
+                    "schedule something at 9 AM",
+                ],
+                "focusSegments": ["schedule something at 9 AM"],
+                "textObjectCount": 2,
+                "focusedTextCount": 1,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        scan = payload["scan"]
+        self.assertEqual(scan["related"]["noteId"], source["id"])
+        self.assertEqual(scan["people"][0]["name"], "Maya")
+        self.assertTrue(scan["calendarDrafts"])
+        self.assertTrue(scan["calendarDrafts"][0]["priority"])
+        self.assertTrue(scan["actions"]["canTidy"])
+        self.assertIn("retrieval;dur=", response.headers["server-timing"])
+
+
 if __name__ == "__main__":
     unittest.main()

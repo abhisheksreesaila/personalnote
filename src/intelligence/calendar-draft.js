@@ -1,6 +1,7 @@
 import { casual } from 'chrono-node'
 
-const EVENT_CUE = /\b(?:appointment|breakfast|call|coffee|deadline|dinner|event|interview|lunch|meet|meeting|reminder|review|schedule|sync|workshop)\b/i
+const EVENT_CUE = /\b(?:appointment|breakfast|call|coffee|deadline|dinner|event|interview|lunch|meet|meeting|reminder|review|schedule|sync|workshop|standup|stand-up|huddle|catchup|catch-up|dentist|doctor|flight|pickup|drop-off|tomorrow|today)\b/i
+const TIME_CUE = /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)\b/i
 
 function cleanTitle(text) {
   return text
@@ -12,10 +13,15 @@ function cleanTitle(text) {
 }
 
 export function parseCalendarDraft(text, referenceDate = new Date()) {
-  if (!EVENT_CUE.test(text)) return null
-  const result = casual.parse(text, referenceDate, { forwardDate: true })[0]
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  const hasEventCue = EVENT_CUE.test(trimmed)
+  const hasTimeCue = TIME_CUE.test(trimmed)
+  if (!hasEventCue && !hasTimeCue) return null
+  const result = casual.parse(trimmed, referenceDate, { forwardDate: true })[0]
   if (!result) return null
-  const title = cleanTitle(`${text.slice(0, result.index)} ${text.slice(result.index + result.text.length)}`)
+  if (!hasEventCue && !result.start.isCertain('hour')) return null
+  const title = cleanTitle(`${trimmed.slice(0, result.index)} ${trimmed.slice(result.index + result.text.length)}`)
   if (!title) return null
   const start = result.start.date()
   const parsedHour = result.start.get('hour')

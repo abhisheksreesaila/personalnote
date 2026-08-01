@@ -37,6 +37,27 @@ test('recognizes scheduling language used in a canvas text object', () => {
   assert.equal(new Date(draft.startAt).getHours(), 6)
 })
 
+test('recognizes explicit clock times without a scheduling verb', () => {
+  const draft = parseCalendarDraft(
+    'Team sync at 9 AM with Maya',
+    new Date('2026-07-30T12:00:00'),
+  )
+
+  assert.equal(draft.title, 'Team sync with Maya')
+  assert.equal(draft.hasExplicitTime, true)
+  assert.equal(new Date(draft.startAt).getHours(), 9)
+})
+
+test('parses schedule something at 9 AM phrasing', () => {
+  const draft = parseCalendarDraft(
+    'schedule something at 9 AM',
+    new Date('2026-07-30T12:00:00'),
+  )
+
+  assert.equal(draft.title, 'schedule something')
+  assert.equal(draft.hasExplicitTime, true)
+})
+
 test('serializes a draft as an explicit calendar file', () => {
   const content = calendarDraftToIcs({
     title: 'Lunch with Maya',

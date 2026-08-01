@@ -7,7 +7,8 @@ from fasthtml.common import FastHTML
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
-from intelligence_client import enrich_related_note
+from intelligence_client import enrich_related_note, enrich_scan_page, enrichment_timeout
+from intelligence_protocol import INTELLIGENCE_TIERS, PROTOCOL_VERSION
 from services import NoteService, NotFoundError
 
 
@@ -19,12 +20,30 @@ def runtime_capabilities() -> dict:
     deployment_name = os.getenv("PERSONAL_NOTE_DEPLOYMENT_NAME", "").strip()
     model_name = os.getenv("PERSONAL_NOTE_MODEL", "").strip()
     model_key = os.getenv("PERSONAL_NOTE_MODEL_KEY", "").strip()
+    model_url = os.getenv("PERSONAL_NOTE_MODEL_URL", "").strip()
+    tier = os.getenv("PERSONAL_NOTE_INTELLIGENCE_TIER", "local-first").strip().lower()
+    if tier not in INTELLIGENCE_TIERS:
+        tier = "local-first"
+    is_local_endpoint = bool(
+        model_url
+        and (
+            model_url.startswith("http://127.0.0.1")
+            or model_url.startswith("http://localhost")
+        )
+    )
     intelligence_provider = (
         "azure-openai"
         if deployment_name
         else "openai-compatible"
         if model_name
         else "local-retrieval"
+    )
+    executor = (
+        "cloud-model"
+        if deployment_name or (model_name and not is_local_endpoint)
+        else "local-model"
+        if model_name
+        else "deterministic"
     )
     auth_configured = all(
         os.getenv(name, "").strip()
@@ -40,10 +59,14 @@ def runtime_capabilities() -> dict:
         },
         "intelligence": {
             "framework": "mastra",
+            "protocolVersion": PROTOCOL_VERSION,
+            "tier": tier,
+            "executor": executor,
             "provider": intelligence_provider,
             "connectionConfigured": intelligence_provider != "local-retrieval",
             "credentialsConfigured": bool(model_key),
             "settingsSource": "server-environment",
+            "tasks": ["rank-related", "scan-page"],
         },
         "storage": {
             "engine": "sqlite",
@@ -209,6 +232,83 @@ def create_app(
         except (TypeError, ValueError):
             note_id = None
         return JSONResponse({"people": service.find_people(current_text, note_id)})
+
+    @app.post("/api/intelligence/scan")
+    async def intelligence_scan(request):
+        request_started = time.perf_counter()
+        request_payload = await payload(request)
+        try:
+            note_id = int(request_payload.get("noteId"))
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "A valid noteId is required"}, status_code=400)
+
+        current_text = str(request_payload.get("text") or "")[:24_000]
+        segments = request_payload.get("segments") or []
+        if not isinstance(segments, list):
+            segments = []
+        segments = [str(segment)[:8_000] for segment in segments][:80]
+
+        focus_segments = request_payload.get("focusSegments") or []
+        if not isinstance(focus_segments, list):
+            focus_segments = []
+        focus_segments = [str(segment)[:8_000] for segment in focus_segments][:40]
+
+        try:
+            text_object_count = max(0, int(request_payload.get("textObjectCount") or 0))
+        except (TypeError, ValueError):
+            text_object_count = 0
+        try:
+            focused_text_count = max(0, int(request_payload.get("focusedTextCount") or 0))
+        except (TypeError, ValueError):
+            focused_text_count = 0
+
+        retrieval_started = time.perf_counter()
+        local_scan = service.scan_page(
+            note_id,
+            current_text,
+            segments,
+            focus_segments,
+            text_object_count,
+            focused_text_count,
+        )
+        retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
+
+        enrichment_started = time.perf_counter()
+        enriched = await enrich_scan_page(worker_url, current_text, local_scan)
+        enrichment_ms = (time.perf_counter() - enrichment_started) * 1000
+
+        scan_result = local_scan
+        mode = local_scan.get("mode", "local-retrieval")
+        if enriched:
+            scan_result = {
+                **local_scan,
+                "calendarDrafts": enriched.get("calendarDrafts", local_scan["calendarDrafts"]),
+                "people": enriched.get("people", local_scan["people"]),
+                "related": enriched.get("related", local_scan["related"]),
+                "scanSummary": enriched.get("scanSummary", ""),
+                "mode": enriched.get("mode", mode),
+            }
+            mode = scan_result["mode"]
+
+        total_ms = (time.perf_counter() - request_started) * 1000
+        timing = {
+            "retrievalMs": round(retrieval_ms, 2),
+            "enrichmentMs": round(enrichment_ms, 2),
+            "serverMs": round(total_ms, 2),
+            "mode": mode,
+        }
+        return JSONResponse(
+            {
+                "scan": scan_result,
+                "timing": timing,
+            },
+            headers={
+                "Server-Timing": (
+                    f"retrieval;dur={retrieval_ms:.2f}, "
+                    f"intelligence;dur={enrichment_ms:.2f}"
+                )
+            },
+        )
 
     dist_path = ROOT / "dist"
     if dist_path.exists():

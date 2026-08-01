@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from app_schema import initialize_schema
+from calendar_parse import parse_calendar_segments
 
 
 DEFAULT_CONTENT = {"objects": []}
@@ -487,3 +488,31 @@ class NoteService:
                 }
             )
         return sorted(candidates, key=lambda item: (-item["score"], item["sourceUpdatedAt"]))[:5]
+
+    def scan_page(
+        self,
+        note_id: int,
+        text: str,
+        segments: list[str],
+        focus_segments: list[str],
+        text_object_count: int,
+        focused_text_count: int,
+    ) -> dict:
+        calendar_drafts = parse_calendar_segments(segments, focus_segments)
+        people = self.find_people(text, note_id)
+        candidates = self.related_candidates(note_id, text)
+        related = candidates[0] if candidates else None
+        tidy_focused = focused_text_count >= 2
+        tidy_count = focused_text_count if tidy_focused else text_object_count
+        return {
+            "calendarDrafts": calendar_drafts,
+            "people": people,
+            "related": related,
+            "relatedCandidates": candidates,
+            "actions": {
+                "canTidy": text_object_count >= 2,
+                "tidyFocused": tidy_focused,
+                "tidyCount": tidy_count,
+            },
+            "mode": "local-retrieval",
+        }

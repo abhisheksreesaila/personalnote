@@ -1,5 +1,5 @@
 import './style.css'
-import { Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas } from 'fabric'
+import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { AmbientTelemetry } from './intelligence/ambient-telemetry.js'
 import { calendarDraftToIcs, parseCalendarDraft } from './intelligence/calendar-draft.js'
@@ -483,6 +483,39 @@ const canvas = new Canvas('note-canvas', {
   selectionColor: 'rgba(28, 112, 168, 0.08)',
   selectionBorderColor: '#1c70a8',
 })
+
+const CANVAS_FONT_SPECS = [
+  '400 24px "Source Serif 4"',
+  '600 24px "Source Serif 4"',
+  '400 24px "IBM Plex Sans"',
+  '600 24px "IBM Plex Sans"',
+]
+let canvasFontLoadPromise
+
+function loadCanvasFonts() {
+  canvasFontLoadPromise ||= Promise.allSettled(
+    CANVAS_FONT_SPECS.map((spec) => document.fonts.load(spec)),
+  )
+  return canvasFontLoadPromise
+}
+
+function refreshCanvasTextMetrics() {
+  cache.clearFontCache()
+  canvas.getObjects().forEach((object) => {
+    if (!isEditableText(object)) return
+    object.initDimensions()
+    object.setCoords()
+  })
+  canvas.requestRenderAll()
+}
+
+async function prepareCanvasFonts() {
+  await Promise.race([
+    loadCanvasFonts(),
+    new Promise((resolve) => setTimeout(resolve, 2000)),
+  ])
+  refreshCanvasTextMetrics()
+}
 
 canvas.freeDrawingBrush = new PencilBrush(canvas)
 
@@ -992,7 +1025,7 @@ async function scanCurrentPage() {
   elements.pageScanActions.replaceChildren()
   const focusDetail = pageScanFocusedObjects.length
     ? `Prioritizing ${pageScanFocusedObjects.length} selected object${pageScanFocusedObjects.length === 1 ? '' : 's'}, then reading the rest of the page.`
-    : 'Reading text, ink, dates, people, and related notes locally.'
+    : 'Reading text, dates, people, and related notes through the intelligence layer.'
   addPageScanFinding('loader-circle', 'Scanning this page', focusDetail)
   elements.pageScanCard.hidden = false
   elements.paper.classList.add('is-page-scanning')
@@ -1004,32 +1037,44 @@ async function scanCurrentPage() {
   const focusedSegments = focusedTextSegments()
   const text = focusedSegments.length ? `${focusedSegments.join(' ')} ${activeTextSnapshot()}` : activeTextSnapshot()
   const minimumSweep = new Promise(resolve => setTimeout(resolve, 1400))
+  const textObjectCount = canvas.getObjects().filter(isEditableText).length
+  const focusedTextCount = pageScanFocusedObjects.filter(isEditableText).length
+  const allSegments = pageTextSegments()
   try {
-    const [entities, related] = await Promise.all([
-      api('/intelligence/entities', { method: 'POST', body: JSON.stringify({ noteId, text }) }),
-      api('/intelligence/related', { method: 'POST', body: JSON.stringify({ noteId, text }) }),
+    const [scanResponse] = await Promise.all([
+      api('/intelligence/scan', {
+        method: 'POST',
+        body: JSON.stringify({
+          noteId,
+          text,
+          segments: allSegments,
+          focusSegments: focusedSegments,
+          textObjectCount,
+          focusedTextCount,
+        }),
+      }),
+      minimumSweep,
     ])
-    await minimumSweep
+    const scan = scanResponse.scan || {}
     elements.paper.classList.remove('is-page-scanning')
     elements.pageScanResults.replaceChildren()
-    const allSegments = pageTextSegments()
-    const orderedSegments = [...focusedSegments, ...allSegments.filter(segment => !focusedSegments.includes(segment))]
-    pageScanCalendarDrafts = orderedSegments
-      .map(segment => parseCalendarDraft(segment))
-      .filter(Boolean)
-      .filter((draft, index, drafts) => drafts.findIndex(candidate => calendarDraftKey(candidate) === calendarDraftKey(draft)) === index)
+    pageScanCalendarDrafts = scan.calendarDrafts || []
     pageScanCalendarDrafts.forEach((draft) => {
-      const priority = focusedSegments.some(segment => calendarDraftKey(parseCalendarDraft(segment)) === calendarDraftKey(draft))
       const when = new Intl.DateTimeFormat(undefined, {
         weekday: 'short', month: 'short', day: 'numeric',
         ...(draft.hasExplicitTime ? { hour: 'numeric', minute: '2-digit' } : {}),
       }).format(new Date(draft.startAt))
-      addPageScanFinding(priority ? 'scan-eye' : 'calendar-clock', draft.title, priority ? `Selected · ${when}` : when, { priority })
+      addPageScanFinding(
+        draft.priority ? 'scan-eye' : 'calendar-clock',
+        draft.title,
+        draft.priority ? `Selected · ${when}` : when,
+        { priority: Boolean(draft.priority) },
+      )
     })
     focusedSegments
       .filter(segment => !parseCalendarDraft(segment))
       .forEach(segment => addPageScanFinding('scan-eye', 'Selected text', segment.slice(0, 140), { priority: true }))
-    entities.people?.forEach((person) => {
+    scan.people?.forEach((person) => {
       addPageScanFinding('user-round', person.name, person.sources[0]?.context || `${person.sourceCount} related sources`)
     })
     pageScanDiagramCandidates = scanDiagramCandidates()
@@ -1041,23 +1086,27 @@ async function scanCurrentPage() {
         : `${pageScanDiagramCandidates.length} diagram gestures`
       addPageScanFinding(priorityCount ? 'scan-eye' : 'shapes', title, kinds.join(', '), { priority: priorityCount > 0 })
     }
-    if (related.suggestion) {
-      pageScanSourceId = related.suggestion.noteId
-      addPageScanFinding('notebook-tabs', related.suggestion.title, related.suggestion.reason)
+    if (scan.related) {
+      pageScanSourceId = scan.related.noteId
+      addPageScanFinding('notebook-tabs', scan.related.title, scan.related.reason)
       document.querySelector('#open-scan-source').hidden = false
+    }
+    if (scan.scanSummary) {
+      addPageScanFinding('sparkles', 'Scan insight', scan.scanSummary)
     }
     if (!elements.pageScanResults.children.length) {
       addPageScanFinding('check', 'Nothing pressing', 'No dates, known people, or grounded related notes stood out.')
     }
-    const textCount = canvas.getObjects().filter(isEditableText).length
-    const focusedTextCount = pageScanFocusedObjects.filter(isEditableText).length
-    if (textCount >= 2) {
+    const actions = scan.actions || {}
+    if (actions.canTidy) {
       addPageScanAction(
         'layout-grid',
-        focusedTextCount >= 2 ? 'Tidy selected text' : 'Tidy text around drawing',
-        focusedTextCount >= 2 ? `Arrange the ${focusedTextCount} selected text blocks first.` : `Arrange ${textCount} text blocks without moving ink.`,
+        actions.tidyFocused ? 'Tidy selected text' : 'Tidy text around drawing',
+        actions.tidyFocused
+          ? `Arrange the ${actions.tidyCount} selected text blocks first.`
+          : `Arrange ${actions.tidyCount} text blocks without moving ink.`,
         'tidy-text',
-        { priority: focusedTextCount >= 2 },
+        { priority: Boolean(actions.tidyFocused) },
       )
     }
     if (pageScanDiagramCandidates.length) {
@@ -1510,8 +1559,15 @@ function getContentBounds() {
   }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
 }
 
+const TEXT_PLACEHOLDER = 'Start typing'
+
 function isEditableText(object) {
   return Boolean(object && typeof object.text === 'string' && typeof object.enterEditing === 'function')
+}
+
+function isPlaceholderText(value) {
+  const trimmed = String(value || '').trim()
+  return !trimmed || trimmed === TEXT_PLACEHOLDER
 }
 
 function findEditableTextAt(point) {
@@ -1520,10 +1576,39 @@ function findEditableTextAt(point) {
   ))
 }
 
+let contextualCheckTimer
+
+function scheduleContextualChecks() {
+  clearTimeout(contextualCheckTimer)
+  contextualCheckTimer = setTimeout(() => {
+    queueCalendarCheck()
+    queueEntityCheck()
+  }, 220)
+}
+
+function bindTextEditingLifecycle(text) {
+  if (text.__personalNoteTextBound) return
+  text.__personalNoteTextBound = true
+  text.on('editing:exited', () => {
+    if (isPlaceholderText(text.text) && canvas.getObjects().includes(text)) {
+      canvas.remove(text)
+      canvas.discardActiveObject()
+      reconcilePages()
+      recordHistory()
+    }
+  })
+}
+
+function bindCanvasTextObjects() {
+  canvas.getObjects().forEach((object) => {
+    if (isEditableText(object)) bindTextEditingLifecycle(object)
+  })
+}
+
 function normalizeNotebookFonts() {
   let changed = false
   canvas.getObjects().forEach((object) => {
-    if (isEditableText(object) && object.text === 'Start typing') {
+    if (isEditableText(object) && isPlaceholderText(object.text)) {
       canvas.remove(object)
       changed = true
       return
@@ -1650,7 +1735,7 @@ function expandPagesDuringTransform() {
   canvas.requestRenderAll()
 }
 
-function addText(point, value = '', beginEditing = true) {
+function addText(point, value = TEXT_PLACEHOLDER, beginEditing = true) {
   const text = new IText(value, {
     left: point.x,
     top: point.y,
@@ -1663,20 +1748,16 @@ function addText(point, value = '', beginEditing = true) {
     cornerStyle: 'circle',
     transparentCorners: false,
   })
-  text.on('editing:exited', () => {
-    if (!text.text.trim() && canvas.getObjects().includes(text)) {
-      canvas.remove(text)
-      canvas.discardActiveObject()
-      reconcilePages()
-      recordHistory()
-    }
-  })
+  bindTextEditingLifecycle(text)
   canvas.add(text)
   canvas.setActiveObject(text)
   if (beginEditing) {
     text.enterEditing()
-    text.setSelectionStart(0)
-    text.setSelectionEnd(0)
+    if (value === TEXT_PLACEHOLDER) text.selectAll()
+    else {
+      text.setSelectionStart(0)
+      text.setSelectionEnd(0)
+    }
   }
   canvas.requestRenderAll()
   return text
@@ -1796,7 +1877,7 @@ function createStrokeFragment(points, source) {
 function splitStrokeAt(path, point) {
   const points = getPathScenePoints(path)
   const strokeScale = (Math.abs(path.scaleX || 1) + Math.abs(path.scaleY || 1)) / 2
-  const radius = ERASER_RADIUS / state.displayScale + (path.strokeWidth || 1) * strokeScale / 2
+  const radius = ERASER_RADIUS + (path.strokeWidth || 1) * strokeScale / 2
   if (!points.some((candidate) => distanceBetween(candidate, point) <= radius)) return false
 
   const runs = []
@@ -1824,7 +1905,7 @@ function eraseAt(point, render = true) {
       changed = splitStrokeAt(object, point) || changed
     } else if (object instanceof Circle && object.isInk) {
       const center = object.getCenterPoint()
-      const radius = Math.max(object.getScaledWidth(), object.getScaledHeight()) / 2 + ERASER_RADIUS / state.displayScale
+      const radius = Math.max(object.getScaledWidth(), object.getScaledHeight()) / 2 + ERASER_RADIUS
       if (distanceBetween(center, point) <= radius) {
         canvas.remove(object)
         changed = true
@@ -1836,7 +1917,7 @@ function eraseAt(point, render = true) {
 }
 
 function eraseBetween(start, end) {
-  const steps = Math.max(1, Math.ceil(distanceBetween(start, end) / (ERASER_RADIUS * 0.45 / state.displayScale)))
+  const steps = Math.max(1, Math.ceil(distanceBetween(start, end) / (ERASER_RADIUS * 0.45)))
   let changed = false
   for (let step = 1; step <= steps; step += 1) {
     const amount = step / steps
@@ -1960,6 +2041,7 @@ async function restoreHistory(index) {
   state.pages = entry.pages
   resizePaper(true)
   await canvas.loadFromJSON(entry.content)
+  bindCanvasTextObjects()
   attentionSelection = objectsUnderHighlights()
   syncAttentionSelection()
   setTool('text')
@@ -1999,6 +2081,7 @@ async function selectNote(id) {
     state.pages = note.pageState || { columns: 1, rows: 1 }
     resizePaper()
     await canvas.loadFromJSON(note.content || { objects: [] })
+    bindCanvasTextObjects()
     attentionSelection = objectsUnderHighlights()
     syncAttentionSelection()
     normalizedNote = normalizeNotebookFonts()
@@ -2570,6 +2653,7 @@ canvas.on('text:changed', () => {
   elements.paper.classList.remove('is-dragging')
   elements.workspace.classList.remove('is-object-dragging')
   reconcilePages()
+  scheduleContextualChecks()
   recordHistory({ contextual: true })
 })
 ;['object:moving', 'object:scaling', 'object:rotating'].forEach((eventName) => {
@@ -2666,19 +2750,84 @@ document.querySelector('#rail-notebooks').addEventListener('click', () => setSid
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
 document.querySelector('#rail-new-note').addEventListener('click', () => createNote())
 const searchButton = document.querySelector('#search-button')
+const SEARCH_REVEAL_LERP = 0.18
+const SEARCH_HIDE_DISTANCE = 52
+const SEARCH_SHOW_UP_DELTA = -2
+const SEARCH_TOP_REVEAL = 10
+
+let searchReveal = 1
+let targetSearchReveal = 1
+let searchRevealFrame = null
 let searchScrollTop = elements.workspace.scrollTop
-const revealSearchButton = () => searchButton.classList.remove('is-scroll-hidden')
+let searchHideAccumulator = 0
+const reducedMotionSearch = window.matchMedia('(prefers-reduced-motion: reduce)')
+
+function searchRevealFromAccumulator() {
+  return Math.max(0, 1 - searchHideAccumulator / SEARCH_HIDE_DISTANCE)
+}
+
+function applySearchRevealFrame() {
+  const delta = targetSearchReveal - searchReveal
+  if (Math.abs(delta) >= 0.003) {
+    searchReveal += delta * SEARCH_REVEAL_LERP
+    searchRevealFrame = requestAnimationFrame(applySearchRevealFrame)
+  } else {
+    searchReveal = targetSearchReveal
+    searchRevealFrame = null
+  }
+  searchButton.style.setProperty('--search-reveal', searchReveal.toFixed(4))
+  searchButton.classList.toggle('is-scroll-hidden', searchReveal < 0.12)
+}
+
+function setSearchRevealTarget(value) {
+  targetSearchReveal = Math.max(0, Math.min(1, value))
+  if (reducedMotionSearch.matches) {
+    searchReveal = targetSearchReveal
+    searchButton.style.setProperty('--search-reveal', searchReveal.toFixed(4))
+    searchButton.classList.toggle('is-scroll-hidden', searchReveal < 0.12)
+    return
+  }
+  if (!searchRevealFrame) searchRevealFrame = requestAnimationFrame(applySearchRevealFrame)
+}
+
+function revealSearchButton() {
+  searchHideAccumulator = 0
+  setSearchRevealTarget(1)
+}
+
+searchButton.style.setProperty('--search-reveal', '1')
 searchButton.addEventListener('focus', revealSearchButton)
 searchButton.addEventListener('click', openSearch)
 elements.workspace.addEventListener('scroll', () => {
   const nextScrollTop = elements.workspace.scrollTop
   const delta = nextScrollTop - searchScrollTop
-  if (nextScrollTop <= 24 || delta < -6) revealSearchButton()
-  else if (nextScrollTop > 72 && delta > 6 && document.activeElement !== searchButton) {
-    searchButton.classList.add('is-scroll-hidden')
+
+  if (document.activeElement === searchButton) {
+    revealSearchButton()
+  } else if (nextScrollTop <= SEARCH_TOP_REVEAL) {
+    searchHideAccumulator = 0
+    setSearchRevealTarget(1)
+  } else if (delta > 0) {
+    searchHideAccumulator = Math.min(
+      SEARCH_HIDE_DISTANCE * 1.15,
+      searchHideAccumulator + delta * 0.92,
+    )
+    setSearchRevealTarget(searchRevealFromAccumulator())
+  } else if (delta < 0) {
+    searchHideAccumulator = Math.max(0, searchHideAccumulator + delta * 0.92)
+    setSearchRevealTarget(searchRevealFromAccumulator())
+    if (delta < SEARCH_SHOW_UP_DELTA) searchHideAccumulator = Math.max(0, searchHideAccumulator + delta)
   }
+
   searchScrollTop = nextScrollTop
 }, { passive: true })
+reducedMotionSearch.addEventListener('change', () => {
+  if (searchRevealFrame) {
+    cancelAnimationFrame(searchRevealFrame)
+    searchRevealFrame = null
+  }
+  setSearchRevealTarget(targetSearchReveal)
+})
 document.querySelector('#page-scan-trigger').addEventListener('click', () => {
   if (elements.pageScanCard.classList.contains('open')) closePageScan()
   else scanCurrentPage()
@@ -2761,7 +2910,10 @@ document.addEventListener('pointerdown', (event) => {
     && !target.closest('.settings-panel, #rail-settings')
   ) setSettingsOpen(false)
 })
-elements.title.addEventListener('input', () => queueSave({ contextual: true }))
+elements.title.addEventListener('input', () => {
+  scheduleContextualChecks()
+  queueSave({ contextual: true })
+})
 elements.intelligencePresence.addEventListener('click', () => {
   if (state.relatedSuggestion) showRelatedNote(state.relatedSuggestion)
 })
@@ -2946,6 +3098,7 @@ document.addEventListener('keydown', (event) => {
 })
 
 async function initialize() {
+  await prepareCanvasFonts()
   resizePaper()
   syncDefaultTypographySettings()
   loadCapabilitySettings()
@@ -2960,7 +3113,8 @@ async function initialize() {
   }
 }
 
-document.fonts.ready.then(() => canvas.requestRenderAll())
+document.fonts.ready.then(refreshCanvasTextMetrics)
+document.fonts.addEventListener('loadingdone', refreshCanvasTextMetrics)
 window.addEventListener('resize', () => resizePaper())
 setupVoiceInput()
 setupToolOptionGestures()
