@@ -6,6 +6,8 @@ A local-first spatial notepad with **ambient intelligence** — contextual sugge
 
 | Document | For |
 |----------|-----|
+| [docs/PRODUCT-BRIEF.md](docs/PRODUCT-BRIEF.md) | Product north star, verified implementation state, audio-first direction, framework decision |
+| [docs/VISUAL-INTELLIGENCE.md](docs/VISUAL-INTELLIGENCE.md) | Scan-triggered concept completion, diagram proposal architecture, timing and evaluation |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram, runtime layout, data flow, file map |
 | [docs/INTELLIGENCE-PROTOCOL.md](docs/INTELLIGENCE-PROTOCOL.md) | Wire protocol, provider tiers, local model recommendations |
 | [docs/INTELLIGENCE-ARCHITECTURE.md](docs/INTELLIGENCE-ARCHITECTURE.md) | Ambient intelligence boundaries, attention policy, planned tools |

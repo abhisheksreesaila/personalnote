@@ -187,7 +187,7 @@ Stale requests are cancelled via sequence counters and `AbortController`. Typing
 
 ## Page Scan (Explicit Intelligence)
 
-Page Scan is **deliberate**, not ambient. It runs local analysis only:
+Page Scan is **deliberate**, not ambient. Its core findings are local and deterministic:
 
 ```mermaid
 flowchart LR
@@ -208,6 +208,8 @@ flowchart LR
 ```
 
 Drawing intelligence analyzes Fabric stroke points locally. No background monitor, no image upload, no Mastra dependency.
+
+The current `/api/intelligence/scan` implementation also awaits optional worker enrichment for scan phrasing before returning. This can delay otherwise-ready local findings when the worker is slow or unavailable. The planned architecture separates the immediate local Scan response from a cancellable semantic diagram-proposal lane; see [VISUAL-INTELLIGENCE.md](./VISUAL-INTELLIGENCE.md).
 
 ## File Map
 
@@ -232,6 +234,8 @@ Drawing intelligence analyzes Fabric stroke points locally. No background monito
 | `src/intelligence/calendar-draft.js` | chrono-node parsing, `.ics` export |
 | `src/intelligence/diagram-assist.js` | Local stroke → box/ellipse/arrow recognition |
 | `src/intelligence/layout-cleanup.js` | Obstacle-aware text Tidy |
+
+Concept-aware multi-stroke grouping and semantic diagram proposals are designed but not implemented. See [VISUAL-INTELLIGENCE.md](./VISUAL-INTELLIGENCE.md).
 
 ### Configuration
 

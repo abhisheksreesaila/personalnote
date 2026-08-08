@@ -32,15 +32,18 @@ npm run dev
 
 **Always read before intelligence or API work:**
 
-1. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System diagram, data flow, file map
-2. [docs/INTELLIGENCE-ARCHITECTURE.md](docs/INTELLIGENCE-ARCHITECTURE.md) — Attention policy, latency contract, invariants
-3. [docs/ROADMAP.md](docs/ROADMAP.md) — What is complete vs planned
+1. [docs/PRODUCT-BRIEF.md](docs/PRODUCT-BRIEF.md) — Product north star, verified state, audio direction, open decisions
+2. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System diagram, data flow, file map
+3. [docs/INTELLIGENCE-ARCHITECTURE.md](docs/INTELLIGENCE-ARCHITECTURE.md) — Attention policy, latency contract, invariants
+4. [docs/VISUAL-INTELLIGENCE.md](docs/VISUAL-INTELLIGENCE.md) — Scan-triggered concept recognition, diagram proposals, timing, evaluation
+5. [docs/ROADMAP.md](docs/ROADMAP.md) — What is complete vs planned
 
 **By task area:**
 
 | Task | Start here |
 |------|------------|
 | Canvas UI / tools / layout | `src/main.js`, `src/style.css` |
+| Visual intelligence / diagram proposals | `docs/VISUAL-INTELLIGENCE.md`, `src/intelligence/diagram-assist.js` |
 | Ambient orchestration | `src/main.js` — search for `queueAmbientCheck`, `quietContextualIntelligence`, `refreshRelatedNote` |
 | Local browser intelligence | `src/intelligence/*.js` |
 | REST API / persistence | `routes.py`, `services.py`, `app_schema.py` |

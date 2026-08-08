@@ -57,6 +57,11 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 - Offer approval-gated, undoable batch refinement after a scan. **Prototype complete.**
 - Recognize single-stroke arrows separately from plain connectors. **Prototype complete.**
 - Group multi-stroke nodes and connectors into diagram proposals without flattening raw ink.
+- Associate nearby labels and selected text with grouped diagram elements.
+- Split immediate local Scan findings from cancellable semantic proposal enrichment.
+- Add a bounded scene snapshot and proposal schema; models never return arbitrary Fabric JSON.
+- Preview one semantic completion as a ghost overlay before an undoable approval.
+- Ship one high-precision concept capability, such as process-loop completion or rough-object cleanup, before broad generation.
 - Add optional local handwriting/OCR for labels, with source stroke coordinates and confidence.
 - Add domain-aware technical diagram suggestions only after explicit opt-in and a settled stroke cluster.
 - Explore child-friendly trace references with strict local processing, age-appropriate safety, and no automatic replacement.
@@ -104,4 +109,4 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 
 ## Current Next Step
 
-Evaluate scan-time drawing proposals with real pen input before expanding the shape vocabulary. Measure false-positive rate, approval rate, and undo rate. The next diagram implementation should be a multi-stroke grouping fixture set, not model-driven image generation.
+Build a real-pen fixture set for multi-stroke grouping, nearby-label association, and ambiguous negative examples. Then implement the focused scene snapshot and a model-free ghost preview. Do not start with broad model-driven image generation; add one bounded semantic completion only after local grouping and proposal validation are reliable.

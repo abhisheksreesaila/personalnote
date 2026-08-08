@@ -3,6 +3,12 @@ import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, S
 import { createIcons, icons } from 'lucide'
 import { AmbientTelemetry } from './intelligence/ambient-telemetry.js'
 import { calendarDraftToIcs, parseCalendarDraft } from './intelligence/calendar-draft.js'
+import {
+  conceptEdgePath,
+  conceptNodePath,
+  proposeConceptDiagram,
+  wrapConceptLabel,
+} from './intelligence/concept-diagram.js'
 import { analyzeDiagramStroke, diagramGuidePath } from './intelligence/diagram-assist.js'
 import { planObstacleAwareLayout } from './intelligence/layout-cleanup.js'
 
@@ -546,6 +552,8 @@ let calendarPresentTimer
 let calendarCollapseTimer
 let pageScanSourceId = null
 let pageScanDiagramCandidates = []
+let pageScanConceptProposal = null
+let pageScanConceptPreview = []
 let pageScanCalendarDrafts = []
 let pageScanFocusedObjects = []
 let attentionSelection = []
@@ -620,6 +628,88 @@ function createRefinedDiagramGuide(source, analysis) {
   guide.isInk = true
   guide.inkTool = 'pen'
   return guide
+}
+
+function conceptDiagramOrigin(plan) {
+  if (!pageScanFocusedObjects.length) return { left: 72, top: 120 }
+  const bounds = pageScanFocusedObjects.map(object => object.getBoundingRect())
+  const left = Math.max(48, Math.min(...bounds.map(item => item.left)))
+  const bottom = Math.max(...bounds.map(item => item.top + item.height))
+  return {
+    left: Math.min(left, Math.max(48, state.pages.columns * PAGE_WIDTH - plan.width - 48)),
+    top: bottom + 56,
+  }
+}
+
+function createConceptDiagramObjects(plan, origin, { preview = false } = {}) {
+  const common = {
+    opacity: preview ? 0.34 : 1,
+    selectable: !preview,
+    evented: !preview,
+    excludeFromExport: preview,
+  }
+  const edges = plan.edges.map(edge => new Path(conceptEdgePath(plan, edge, origin), {
+    ...common,
+    fill: null,
+    stroke: '#2d756d',
+    strokeWidth: 2.5,
+    strokeLineCap: 'round',
+    strokeDashArray: preview ? [8, 7] : null,
+  }))
+  const nodes = plan.nodes.flatMap((node) => {
+    const shape = new Path(conceptNodePath(node, origin), {
+      ...common,
+      fill: preview ? 'rgba(223, 241, 236, 0.28)' : '#eef7f3',
+      stroke: node.role === 'topic' ? '#245f59' : '#2d756d',
+      strokeWidth: node.role === 'topic' ? 3 : 2,
+      strokeLineCap: 'round',
+      strokeLineJoin: 'round',
+    })
+    const label = new IText(wrapConceptLabel(node.text, node.role === 'topic' ? 24 : 20), {
+      ...common,
+      left: origin.left + node.left + node.width / 2,
+      top: origin.top + node.top + node.height / 2,
+      originX: 'center',
+      originY: 'center',
+      textAlign: 'center',
+      fill: '#183b37',
+      fontFamily: 'IBM Plex Sans',
+      fontSize: node.role === 'topic' ? 20 : 17,
+      fontWeight: node.role === 'topic' ? 600 : 400,
+      lineHeight: 1.18,
+      padding: 5,
+    })
+    if (!preview) bindTextEditingLifecycle(label)
+    return [shape, label]
+  })
+  return [...edges, ...nodes]
+}
+
+function clearConceptDiagramPreview() {
+  pageScanConceptPreview.forEach((object) => canvas.remove(object))
+  pageScanConceptPreview = []
+  canvas.requestRenderAll()
+}
+
+function showConceptDiagramPreview(plan) {
+  clearConceptDiagramPreview()
+  const origin = conceptDiagramOrigin(plan)
+  pageScanConceptProposal = { plan, origin }
+  pageScanConceptPreview = createConceptDiagramObjects(plan, origin, { preview: true })
+  canvas.add(...pageScanConceptPreview)
+  canvas.requestRenderAll()
+}
+
+function acceptConceptDiagram() {
+  if (!pageScanConceptProposal) return
+  const { plan, origin } = pageScanConceptProposal
+  clearConceptDiagramPreview()
+  commitHistorySnapshot()
+  canvas.discardActiveObject()
+  canvas.add(...createConceptDiagramObjects(plan, origin))
+  reconcilePages()
+  if (commitHistorySnapshot()) queueSave()
+  closePageScan()
 }
 
 function collapseCalendarDraft() {
@@ -883,6 +973,8 @@ function queueAmbientCheck() {
 }
 
 function closePageScan() {
+  clearConceptDiagramPreview()
+  pageScanConceptProposal = null
   elements.paper.classList.remove('is-page-scanning')
   elements.pageScanCard.classList.remove('open')
   elements.pageScanCard.hidden = true
@@ -1020,6 +1112,8 @@ async function scanCurrentPage() {
   pageScanFocusedObjects = [...new Set([...explicitFocus, ...objectsUnderHighlights()])]
   pageScanSourceId = null
   pageScanDiagramCandidates = []
+  pageScanConceptProposal = null
+  clearConceptDiagramPreview()
   pageScanCalendarDrafts = []
   elements.pageScanResults.replaceChildren()
   elements.pageScanActions.replaceChildren()
@@ -1098,6 +1192,18 @@ async function scanCurrentPage() {
       addPageScanFinding('check', 'Nothing pressing', 'No dates, known people, or grounded related notes stood out.')
     }
     const actions = scan.actions || {}
+    const conceptPlan = proposeConceptDiagram(focusedSegments)
+    if (conceptPlan) {
+      addPageScanFinding('network', 'Concept map ready', conceptPlan.summary, { priority: true })
+      addPageScanAction(
+        'wand-sparkles',
+        'Create editable concept map',
+        'Add the preview as separate Fabric shapes, connectors, and editable labels. One Undo removes it.',
+        'create-concept-map',
+        { priority: true },
+      )
+      showConceptDiagramPreview(conceptPlan)
+    }
     if (actions.canTidy) {
       addPageScanAction(
         'layout-grid',
@@ -2843,6 +2949,7 @@ elements.pageScanActions.addEventListener('click', (event) => {
   if (!button) return
   if (button.dataset.scanAction === 'tidy-text') tidyPageText()
   else if (button.dataset.scanAction === 'refine-drawing') refineScannedDrawing()
+  else if (button.dataset.scanAction === 'create-concept-map') acceptConceptDiagram()
   else if (button.dataset.scanAction === 'export-calendar') downloadCalendarDraft(pageScanCalendarDrafts[0])
 })
 document.querySelector('#open-scan-source').addEventListener('click', () => {

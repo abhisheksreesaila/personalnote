@@ -626,16 +626,20 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   box-shadow: 0 3px 12px rgba(54,50,42,.08);
   backdrop-filter: blur(calc(12px * var(--search-reveal)));
   -webkit-backdrop-filter: blur(calc(12px * var(--search-reveal)));
-  opacity: calc(0.28 + 0.72 * var(--search-reveal));
-  transform: translate3d(-50%, calc((1 - var(--search-reveal)) * -20px), 0) scale(calc(0.968 + 0.032 * var(--search-reveal)));
+  opacity: var(--search-reveal);
+  transform: translate3d(-50%, calc((1 - var(--search-reveal)) * -28px), 0) scale(calc(0.94 + 0.06 * var(--search-reveal)));
   transform-origin: center top;
   transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
   white-space: nowrap;
+  visibility: visible;
   cursor: pointer;
   z-index: 12;
   will-change: transform, opacity;
 }
-.search-button.is-scroll-hidden { pointer-events: none; }
+.search-button.is-scroll-hidden {
+  pointer-events: none;
+  visibility: hidden;
+}
 .search-button span,
 .search-button kbd {
   opacity: var(--search-reveal);
