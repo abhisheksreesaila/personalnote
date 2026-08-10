@@ -1,5 +1,7 @@
+import ipaddress
 import logging
 import os
+import secrets
 import time
 from pathlib import Path
 
@@ -9,7 +11,13 @@ from starlette.staticfiles import StaticFiles
 
 from intelligence_client import enrich_related_note, enrich_scan_page, enrichment_timeout
 from intelligence_protocol import INTELLIGENCE_TIERS, PROTOCOL_VERSION
-from services import NoteService, NotFoundError
+from services import ConflictError, NoteService, NotFoundError
+from workspace_protocol import (
+    WORKSPACE_PROTOCOL_VERSION,
+    WorkspaceProtocol,
+    WorkspaceProtocolError,
+    load_capability_token,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -83,14 +91,45 @@ def create_app(
     data_path = Path(database_path or os.getenv("PERSONAL_NOTE_DB", ROOT / "data" / "personal-note.db"))
     worker_url = intelligence_url if intelligence_url is not None else os.getenv("INTELLIGENCE_URL", "http://127.0.0.1:4112")
     service = NoteService(data_path)
+    workspace_token, workspace_token_path = load_capability_token(data_path)
+    workspace_protocol = WorkspaceProtocol(service, workspace_token)
     app = FastHTML(sess_cls=None)
     app.state.note_service = service
+    app.state.workspace_token = workspace_token
+    app.state.workspace_token_path = workspace_token_path
 
     def json_error(error: Exception) -> JSONResponse:
-        status = 404 if isinstance(error, NotFoundError) else 500
+        status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 500
         if status == 500:
             logger.exception("event=api.request outcome=failed error_class=%s", type(error).__name__)
-        return JSONResponse({"error": str(error) if status == 404 else "Request failed"}, status_code=status)
+        return JSONResponse(
+            {"error": str(error) if status in {404, 409} else "Request failed"},
+            status_code=status,
+        )
+
+    def is_loopback_host(host: str) -> bool:
+        if host == "testclient":
+            return True
+        try:
+            address = ipaddress.ip_address(host.split("%", 1)[0])
+            return address.is_loopback or bool(address.ipv4_mapped and address.ipv4_mapped.is_loopback)
+        except ValueError:
+            return False
+
+    def protocol_error(
+        request_id: str | None,
+        code: str,
+        message: str,
+        status_code: int,
+    ) -> JSONResponse:
+        return JSONResponse(
+            {
+                "protocolVersion": WORKSPACE_PROTOCOL_VERSION,
+                "requestId": request_id,
+                "error": {"code": code, "message": message},
+            },
+            status_code=status_code,
+        )
 
     async def payload(request) -> dict:
         try:
@@ -106,6 +145,60 @@ def create_app(
     @app.get("/api/settings/capabilities")
     def settings_capabilities():
         return JSONResponse(runtime_capabilities())
+
+    @app.post("/api/workspace/v1")
+    async def workspace_request(request):
+        request_started = time.perf_counter()
+        request_id = None
+        client_host = request.client.host if request.client else ""
+        if not is_loopback_host(client_host):
+            return protocol_error(None, "scope_denied", "Loopback access is required", 403)
+        authorization = request.headers.get("authorization", "")
+        scheme, _, credential = authorization.partition(" ")
+        if scheme.casefold() != "bearer" or not secrets.compare_digest(
+            credential, workspace_token
+        ):
+            return protocol_error(None, "authentication_required", "A valid capability token is required", 401)
+        request_payload = await payload(request)
+        request_id_value = request_payload.get("requestId")
+        if isinstance(request_id_value, str) and 0 < len(request_id_value) <= 128:
+            request_id = request_id_value
+        else:
+            return protocol_error(None, "invalid_request", "A valid requestId is required", 400)
+        if request_payload.get("protocolVersion") != WORKSPACE_PROTOCOL_VERSION:
+            return protocol_error(request_id, "unsupported_version", "Protocol version is not supported", 400)
+        operation = request_payload.get("operation")
+        input_data = request_payload.get("input", {})
+        if not isinstance(operation, str) or not isinstance(input_data, dict):
+            return protocol_error(request_id, "invalid_request", "Operation and input are required", 400)
+        try:
+            result = workspace_protocol.execute(operation, input_data)
+            with service.connection() as connection:
+                sequence = connection.execute(
+                    "SELECT sequence FROM workspace_state WHERE id = 1"
+                ).fetchone()[0]
+            return JSONResponse(
+                {
+                    "protocolVersion": WORKSPACE_PROTOCOL_VERSION,
+                    "requestId": request_id,
+                    "result": result,
+                    "execution": {
+                        "mode": "local",
+                        "actor": "local-agent",
+                        "sourceRevision": f"workspace_rev_{sequence}",
+                        "latencyMs": round((time.perf_counter() - request_started) * 1000, 2),
+                    },
+                }
+            )
+        except WorkspaceProtocolError as error:
+            return protocol_error(request_id, error.code, str(error), error.status_code)
+        except Exception as error:
+            logger.exception(
+                "event=workspace.request outcome=failed operation=%s error_class=%s",
+                operation,
+                type(error).__name__,
+            )
+            return protocol_error(request_id, "internal_error", "Request failed", 500)
 
     @app.get("/api/notebooks")
     def list_notebooks():

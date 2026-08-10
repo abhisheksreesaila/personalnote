@@ -92,29 +92,65 @@
     /* ── ORNAMENTAL DIVIDER ─── */
     .orn { text-align: center; font-size: 18px; color: var(--rule-hi); margin: 12px 0; letter-spacing: .5em; }
 
-    /* ── MAIN GRID ─────────────────────────────────────────── */
-    .main-grid {
+    /* ── SECTION SHELL ─────────────────────────────────────────── */
+    .shell {
+      width: min(calc(100% - 64px), 1180px);
+      margin-inline: auto;
+    }
+    .section {
+      padding: 100px 0;
+      border-bottom: 2px solid var(--ink);
+    }
+    .section-header {
+      max-width: 780px;
+      margin-bottom: 64px;
+    }
+    .section-eyebrow {
+      font-family: var(--font-sans);
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .24em; text-transform: uppercase;
+      color: var(--ink-faint);
+      margin-bottom: 18px;
+    }
+    .section-heading {
+      font-size: clamp(34px, 5vw, 58px);
+      font-weight: 600; line-height: 1.08;
+      letter-spacing: -.02em;
+      color: var(--ink);
+      margin-bottom: 18px;
+    }
+    .section-heading em {
+      font-style: italic; color: var(--accent);
+    }
+    .section-subhead {
+      font-size: 17px; line-height: 1.7;
+      color: var(--ink-dim);
+      font-weight: 400;
+      max-width: 600px;
+    }
+
+    /* ── HERO SECTION (kept compact) ─────────────────────────── */
+    .hero-grid {
       display: grid;
       grid-template-columns: 1fr 1px 1fr;
-      max-width: 1200px;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 0 60px;
+      padding: 0 60px 80px;
       gap: 0;
-      min-height: calc(100vh - 180px);
+      min-height: calc(100vh - 230px);
     }
     @media (max-width: 900px) {
-      .main-grid { grid-template-columns: 1fr; }
-      .col-divider, .right-col { display: none; }
+      .hero-grid { grid-template-columns: 1fr; padding-bottom: 48px; }
+      .hero-divider, .hero-right { display: none; }
       .masthead { grid-template-columns: 1fr; }
       .masthead-left, .masthead-right { display: none; }
     }
-    .col-divider { background: var(--rule); width: 1px; }
+    .hero-divider { background: var(--rule); width: 1px; }
 
-    /* ── LEFT COLUMN ─── */
-    .left-col {
-      padding: 48px 48px 48px 0;
+    /* ── HERO LEFT COLUMN ─── */
+    .hero-left {
+      padding: 52px 52px 52px 0;
       display: flex; flex-direction: column;
-      gap: 0;
     }
 
     .eyebrow {
@@ -173,8 +209,8 @@
     }
     .btn-icon { font-size: 14px; }
 
-    /* ── FOOTER BADGES ─── */
-    .badges {
+    /* ── HERO BADGES ─── */
+    .hero-badges {
       margin-top: auto; padding-top: 48px;
       display: flex; gap: 24px; flex-wrap: wrap;
       font-family: var(--font-sans); font-size: 9px; font-weight: 700;
@@ -184,9 +220,9 @@
     }
     .badge-dot { color: var(--accent); }
 
-    /* ── RIGHT COLUMN — notebook preview ─── */
-    .right-col {
-      padding: 48px 0 48px 48px;
+    /* ── HERO RIGHT COLUMN — notebook preview ─── */
+    .hero-right {
+      padding: 52px 0 52px 52px;
       display: flex; flex-direction: column;
       gap: 28px;
     }
@@ -231,54 +267,8 @@
       display: flex; align-items: center; justify-content: center;
       min-height: 320px;
     }
-    .nb-page {
-      position: relative;
-      width: 100%; max-width: 420px;
-      min-height: 260px;
-      background: var(--page);
-      background-image: repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(99,86,67,0.055) 27px, rgba(99,86,67,0.055) 28px);
-      box-shadow: 0 8px 24px rgba(24,22,18,0.18), 0 1px 3px rgba(24,22,18,0.10);
-      padding: 28px 24px;
-      overflow: hidden;
-    }
-    .nb-page-date {
-      font-family: var(--font-sans); font-size: 8px; font-weight: 700;
-      letter-spacing: .18em; text-transform: uppercase;
-      color: var(--ink-faint); margin-bottom: 10px;
-    }
-    .nb-page-title {
-      font-size: 20px; font-weight: 600;
-      color: var(--ink); margin-bottom: 14px; line-height: 1.2;
-    }
-    .nb-text-line {
-      height: 12px; background: rgba(27,23,17,0.08);
-      margin-bottom: 8px;
-    }
-    .nb-text-line.short { width: 65%; }
-    .nb-text-line.med   { width: 82%; }
-    .nb-text-line.long  { width: 95%; }
 
-    .nb-node {
-      position: absolute;
-      font-family: var(--font-sans); font-size: 9px; font-weight: 700;
-      letter-spacing: .08em; text-transform: uppercase;
-      padding: 6px 10px;
-      border: 1px solid;
-    }
-    .nb-node-svc {
-      background: rgba(58,123,213,0.10);
-      border-color: rgba(58,123,213,0.50);
-      color: #17447b;
-      top: 100px; right: 20px;
-    }
-    .nb-node-db {
-      background: rgba(17,163,120,0.10);
-      border-color: rgba(17,163,120,0.50);
-      color: #0e6549;
-      bottom: 48px; right: 28px;
-    }
-
-    /* ── FEATURE LIST ─── */
+    /* ── FEATURE LIST ──────────────────────────────────────── */
     .feature-list { list-style: none; display: flex; flex-direction: column; gap: 16px; }
     .feature-item {
       display: flex; gap: 14px; align-items: flex-start;
@@ -296,29 +286,363 @@
       font-family: var(--font-sans);
     }
 
-    /* ── BOTTOM BAND ─────────────────────────────────────────── */
-    .bottom-band {
-      border-top: 2px solid var(--ink); /* double bottom rule */
-      margin-top: 0;
-      padding: 16px 60px;
+    /* ── NOT A NOTEBOOK WITH AN AI BUTTON ───────────────────── */
+    .agent-native-section {
+      padding: 96px 60px 80px;
+      border-top: 2px solid var(--ink);
+      background: var(--page);
+    }
+    .agent-native-intro {
+      text-align: center;
+      max-width: 720px;
+      margin: 0 auto 64px;
+    }
+    .agent-native-eyebrow {
+      font-family: var(--font-sans);
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .28em; text-transform: uppercase;
+      color: var(--ink-faint);
+      margin-bottom: 20px;
+    }
+    .agent-native-intro h2 {
+      font-size: clamp(36px, 5vw, 56px);
+      font-weight: 600; line-height: 1.06;
+      letter-spacing: -.02em;
+      color: var(--ink);
+      margin-bottom: 18px;
+    }
+    .agent-native-intro h2 em {
+      font-style: italic; color: var(--accent);
+    }
+    .agent-native-intro p {
+      font-family: var(--font-sans);
+      font-size: 16px; line-height: 1.7;
+      color: var(--ink-dim);
+    }
+    .agent-native-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      border: 1px solid var(--rule-hi);
+      box-shadow: 4px 4px 0 var(--rule);
+    }
+    .an-card {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--rule);
+      transition: transform 200ms ease, box-shadow 200ms ease;
+    }
+    .an-card:last-child { border-right: 0; }
+    .an-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(24,22,18,0.10);
+    }
+    .an-card-bar {
+      height: 5px;
+    }
+    .an-bar-spatial  { background: #2d85ad; }
+    .an-bar-protocol { background: #1b1711; }
+    .an-bar-ambient  { background: #8b3a28; }
+    .an-card-body {
+      padding: 36px 32px 40px;
+      background: var(--page);
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+    .an-card-icon {
+      width: 48px; height: 48px;
+      border: 1px solid var(--rule-hi);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; color: var(--ink);
+      margin-bottom: 24px;
+      background: var(--page-2);
+    }
+    .an-card-body h3 {
+      font-family: var(--font-serif);
+      font-size: 22px; font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+    .an-card-body p {
+      font-family: var(--font-sans);
+      font-size: 14px; line-height: 1.7;
+      color: var(--ink-dim);
+      margin-top: auto;
+    }
+
+    /* ── CANVAS SECTION ──────────────────────────────────────── */
+    .canvas-grid {
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      gap: 72px;
+      align-items: center;
+    }
+    .canvas-copy h2 {
+      font-size: clamp(34px, 4.5vw, 52px);
+      font-weight: 600; line-height: 1.08;
+      letter-spacing: -.02em;
+      color: var(--ink);
+    }
+    .canvas-copy h2 em { font-style: italic; color: var(--accent); }
+    .canvas-copy > p {
+      font-family: var(--font-sans); font-size: 15px; line-height: 1.7;
+      color: var(--ink-dim);
+      margin-top: 18px;
+      max-width: 480px;
+    }
+    .canvas-steps {
+      margin-top: 34px;
+      border-top: 1px solid var(--rule);
+    }
+    .canvas-step {
+      padding: 18px 0;
+      border-bottom: 1px solid var(--rule);
+      display: grid; grid-template-columns: 28px 1fr;
+      gap: 14px;
+    }
+    .canvas-step-num {
+      font-family: var(--font-sans);
+      font-size: 10px; font-weight: 700;
+      color: var(--accent);
+    }
+    .canvas-step strong {
+      font-family: var(--font-sans); font-size: 14px; font-weight: 600;
+      color: var(--ink); display: block; margin-bottom: 4px;
+    }
+    .canvas-step span {
+      font-size: 13px; line-height: 1.6; color: var(--ink-dim);
+    }
+
+    /* ── CANVAS PREVIEW ILLUSTRATION ─── */
+    .canvas-illus {
+      position: relative; overflow: hidden;
+      aspect-ratio: 11/7;
+      background: var(--canvas-bg);
+      border: 1px solid var(--rule-hi);
+      box-shadow: 3px 3px 0 var(--rule), 6px 6px 0 rgba(99,86,67,0.08);
+    }
+    .canvas-page-sheet {
+      position: absolute;
+      inset: 18px;
+      background: var(--page);
+      background-image: repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(99,86,67,0.07) 23px, rgba(99,86,67,0.07) 24px);
+      box-shadow: 0 4px 18px rgba(24,22,18,0.14);
+      padding: 26px 22px;
+      overflow: hidden;
+    }
+    .canvas-page-sheet .cl-title {
+      font-family: var(--font-serif); font-size: 18px; font-weight: 600;
+      color: var(--ink); margin-bottom: 6px;
+    }
+    .canvas-page-sheet .cl-date {
+      font-family: var(--font-sans); font-size: 8px; font-weight: 700;
+      letter-spacing: .18em; text-transform: uppercase;
+      color: var(--ink-faint); margin-bottom: 14px;
+    }
+    .cl-line {
+      height: 8px; background: rgba(27,23,17,0.09);
+      margin-bottom: 6px;
+    }
+    .cl-line.sm { width: 45%; }
+    .cl-line.md { width: 72%; }
+    .cl-line.lg { width: 90%; }
+    .cl-node {
+      position: absolute;
+      font-family: var(--font-sans); font-size: 7px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+      padding: 5px 8px; border: 1px solid;
+    }
+    .cl-node-svc {
+      background: rgba(45,133,173,0.12);
+      border-color: rgba(45,133,173,0.45);
+      color: #1a5c78;
+      top: 50px; right: 26px;
+    }
+    .cl-node-db {
+      background: rgba(17,163,120,0.12);
+      border-color: rgba(17,163,120,0.45);
+      color: #0e6549;
+      bottom: 50px; right: 40px;
+    }
+    .cl-node-q {
+      background: rgba(180,83,63,0.12);
+      border-color: rgba(180,83,63,0.45);
+      color: #8b3a28;
+      bottom: 50px; left: 26px;
+    }
+
+    /* ── AMBIENT SIGNALS SECTION ─────────────────────────────── */
+    .ambient-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: start;
+    }
+    .signal-card {
+      border: 1px solid var(--rule);
+      padding: 22px 24px;
+      display: flex; gap: 16px;
+      align-items: flex-start;
+      transition: border-color 200ms ease, background 200ms ease;
+    }
+    .signal-card + .signal-card { margin-top: 12px; }
+    .signal-card:hover {
+      border-color: var(--accent);
+      background: rgba(45,133,173,0.04);
+    }
+    .signal-dot {
+      flex-shrink: 0; width: 36px; height: 36px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px;
+    }
+    .signal-dot.link { background: rgba(45,133,173,0.14); color: var(--accent); }
+    .signal-dot.person { background: rgba(180,83,63,0.14); color: #8b3a28; }
+    .signal-dot.calendar { background: rgba(17,163,120,0.14); color: #0e6549; }
+    .signal-card strong {
+      display: block;
+      font-family: var(--font-sans); font-size: 14px; font-weight: 600;
+      color: var(--ink); margin-bottom: 2px;
+    }
+    .signal-card span {
+      display: block;
+      font-family: var(--font-sans); font-size: 12px; line-height: 1.6;
+      color: var(--ink-dim);
+    }
+    .signal-tag {
+      font-family: var(--font-sans); font-size: 8px; font-weight: 700;
+      letter-spacing: .14em; text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .ambient-quote blockquote {
+      font-family: var(--font-serif);
+      font-size: clamp(22px, 3vw, 32px);
+      font-weight: 400; font-style: italic;
+      line-height: 1.32; color: var(--ink);
+      margin-bottom: 16px;
+    }
+    .ambient-quote em { color: var(--accent); font-style: italic; }
+    .ambient-quote p {
+      font-family: var(--font-sans); font-size: 14px; line-height: 1.7;
+      color: var(--ink-dim);
+    }
+
+    /* ── PROTOCOL SECTION ────────────────────────────────────── */
+    .protocol-grid {
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      gap: 72px;
+      align-items: center;
+    }
+    .protocol-copy h2 {
+      font-size: clamp(34px, 4.5vw, 52px);
+      font-weight: 600; line-height: 1.08;
+      letter-spacing: -.02em;
+      color: var(--ink);
+    }
+    .protocol-copy h2 em { font-style: italic; color: var(--accent); }
+    .protocol-copy > p {
+      font-family: var(--font-sans); font-size: 15px; line-height: 1.7;
+      color: var(--ink-dim);
+      margin-top: 18px;
+      max-width: 480px;
+    }
+    .protocol-badges {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-top: 24px;
+    }
+    .protocol-badge {
+      font-family: var(--font-sans); font-size: 10px; font-weight: 600;
+      letter-spacing: .06em;
+      padding: 6px 12px;
+      border: 1px solid var(--rule-hi);
+      color: var(--ink-dim);
+    }
+    .proto-window {
+      background: var(--page-2);
+      border: 1px solid var(--rule-hi);
+      box-shadow: 3px 3px 0 var(--rule), 6px 6px 0 rgba(99,86,67,0.08);
+      overflow: hidden;
+    }
+    .proto-bar {
+      height: 36px; padding: 0 14px;
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(99,86,67,0.08);
+      border-bottom: 1px solid var(--rule);
+      font-family: var(--font-sans); font-size: 9px;
+      letter-spacing: .08em; color: var(--ink-faint);
+    }
+    .proto-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--ink-faint);
+    }
+    .proto-dot:first-child { background: #b4533f; }
+    .proto-dot:nth-child(2) { background: #ae7c2e; }
+    .proto-dot:nth-child(3) { background: #4f7a5f; margin-right: 6px; }
+    .proto-window pre {
+      padding: 24px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px; line-height: 1.8;
+      color: var(--ink-dim);
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .code-key { color: var(--accent); }
+    .code-str { color: #0e6549; }
+    .code-comment { color: var(--ink-faint); font-style: italic; }
+
+    /* ── CTA BAND ────────────────────────────────────────────── */
+    .cta-section {
+      padding: 96px 0;
+      background: var(--page-2);
+      border-bottom: 2px solid var(--ink);
+    }
+    .cta-layout {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 40px;
+    }
+    .cta-layout h2 {
+      max-width: 640px;
+      font-size: clamp(34px, 5vw, 56px);
+      font-weight: 600; line-height: 1.06;
+      letter-spacing: -.02em;
+      color: var(--ink);
+    }
+    .cta-layout h2 em {
+      font-style: italic; color: var(--accent);
+    }
+    .cta-layout .btn { min-width: 220px; }
+
+    /* ── FOOTER ──────────────────────────────────────────────── */
+    .site-footer {
+      padding: 20px 60px;
       display: flex; align-items: center; justify-content: space-between;
       font-family: var(--font-sans);
       font-size: 9px; font-weight: 700;
       letter-spacing: .16em; text-transform: uppercase;
       color: var(--ink-faint);
     }
-    .bottom-band a:hover { color: var(--accent); }
-    .bottom-compare {
-      display: flex; align-items: center; gap: 10px;
+    .site-footer a:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── RESPONSIVE ─────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .agent-native-grid { grid-template-columns: 1fr; }
+      .an-card { border-right: 0; border-bottom: 1px solid var(--rule); }
+      .agent-native-section { padding: 64px 28px 56px; }
+      .canvas-grid, .protocol-grid { grid-template-columns: 1fr; gap: 48px; }
+      .ambient-grid { grid-template-columns: 1fr; gap: 48px; }
+      .cta-layout { flex-direction: column; align-items: flex-start; }
+      .cta-layout .btn { min-width: unset; }
+      .site-footer { flex-direction: column; gap: 12px; padding: 20px 32px; }
     }
-    .alt-link {
-      font-family: var(--font-sans); font-size: 9px; font-weight: 700;
-      letter-spacing: .16em; text-transform: uppercase;
-      color: var(--ink-faint); text-decoration: none;
-      border-bottom: 1px solid var(--rule);
-      transition: color 140ms, border-color 140ms;
+    @media (max-width: 720px) {
+      .section-pad { padding: 48px 24px; }
+      .canvas-illus { aspect-ratio: 4/3; }
+      .proto-window pre { font-size: 10px; padding: 16px; }
+      .cta-section { padding: 64px 0; }
     }
-    .alt-link:hover { color: var(--accent); border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -333,119 +657,241 @@
   <div class="masthead-tagline">Write · Diagram &nbsp;·&nbsp; Think &nbsp;·&nbsp; Remember</div>
   <div class="orn">✦ &nbsp; ✦ &nbsp; ✦</div>
 
-  <!-- MAIN GRID -->
-  <div class="main-grid">
-
-    <!-- LEFT: headline + CTA -->
-    <div class="left-col">
-      <div class="eyebrow">A notebook for thinking</div>
-      <h1 class="headline">
-        Prose and diagrams<br>
-        sharing <em>one surface.</em>
-      </h1>
-      <p class="subhead">
-        Write as naturally as on paper. Drop a service node, a database, a callout — and watch your text reflow gracefully around it.
-      </p>
-      <p class="lede">
-        The canvas expands in every direction as you work, then retreats when you're done — the same fluid, infinite feel as Draw.io, but for prose and thought. Nothing leaves your machine: every note saves to a local SQLite file.
-      </p>
-
-      <div class="actions">
-        <a href="/login" class="btn primary">
-          <span class="btn-icon">G</span>
-          <span>Continue with Google</span>
-        </a>
-        <a href="/demo-login" class="btn">
-          Open demo workspace →
-        </a>
-        <a href="/" class="btn">
-          ← Dark mode landing page
-        </a>
-      </div>
-
-      <div class="badges" style="margin-top:40px">
-        <span><span class="badge-dot">✦</span> Local-first</span>
-        <span><span class="badge-dot">✦</span> SQLite-backed</span>
-        <span><span class="badge-dot">✦</span> Zero cloud</span>
-        <span><span class="badge-dot">✦</span> Pretext reflow</span>
-      </div>
-    </div>
-
-    <div class="col-divider"></div>
-
-    <!-- RIGHT: preview + features -->
-    <div class="right-col">
-
-      <div class="right-label">What it looks like</div>
-
-      <div class="nb-preview">
-        <div class="nb-menubar">
-          <span class="nb-brand">Personal Note</span>
-          <span class="nb-title">Architecture Review</span>
-          <span class="nb-status">saved</span>
-        </div>
-        <div class="nb-canvas">
-          <div class="nb-page">
-            <div class="nb-page-date">April 2026</div>
-            <div class="nb-page-title">Architecture Review</div>
-            <div class="nb-text-line long"></div>
-            <div class="nb-text-line med"></div>
-            <div class="nb-text-line long"></div>
-            <div style="margin-bottom:8px; height:8px;"></div>
-            <div class="nb-text-line short"></div>
-            <div class="nb-text-line long"></div>
-            <div class="nb-text-line med"></div>
-            <div style="margin-bottom:8px; height:8px;"></div>
-            <div class="nb-text-line long"></div>
-            <div class="nb-text-line short"></div>
-            <div class="nb-node nb-node-svc">API Gateway</div>
-            <div class="nb-node nb-node-db">Orders DB</div>
-          </div>
+  <!-- HERO -->
+  <section class="section-pad">
+    <div class="hero-grid">
+      <div class="hero-left">
+        <div class="eyebrow">A notebook for thinking</div>
+        <h1 class="headline">
+          Prose and diagrams<br>
+          sharing <em>one surface.</em>
+        </h1>
+        <p class="subhead">
+          Write as naturally as on paper. Drop a service node, a database, a callout — and watch your text reflow gracefully around it.
+        </p>
+        <p class="lede">
+          The canvas expands in every direction as you work, then retreats when you're done — the same fluid, infinite feel as Draw.io, but for prose and thought. Nothing leaves your machine: every note saves to a local SQLite file.
+        </p>
+        <div class="actions">
+          <a href="/demo-login" class="btn primary">Open demo workspace →</a>
+          <a href="/" class="btn">← Dark mode landing page</a>
         </div>
       </div>
-
-      <ul class="feature-list">
-        <li class="feature-item">
-          <div class="feature-mark">→</div>
-          <div>
-            <div class="feature-title">Draw.io-style canvas</div>
-            Starts as a single page. Expands in any direction as you work; shrinks back when content is removed.
+      <div class="hero-right">
+        <div class="right-label">What it looks like</div>
+        <div class="nb-preview">
+          <div class="nb-menubar">
+            <span class="nb-brand">Personal Note</span>
+            <span class="nb-title">Architecture Review</span>
+            <span class="nb-status">saved</span>
           </div>
-        </li>
-        <li class="feature-item">
-          <div class="feature-mark">→</div>
-          <div>
-            <div class="feature-title">Pretext reflow</div>
-            Text automatically wraps and flows around shapes using a custom layout engine.
+          <div class="nb-canvas">
+            <div class="nb-page">
+              <div class="nb-page-date">April 2026</div>
+              <div class="nb-page-title">Architecture Review</div>
+              <div class="nb-text-line long"></div>
+              <div class="nb-text-line med"></div>
+              <div class="nb-text-line long"></div>
+              <div style="margin-bottom:8px; height:8px;"></div>
+              <div class="nb-text-line short"></div>
+              <div class="nb-text-line long"></div>
+              <div class="nb-text-line med"></div>
+              <div style="margin-bottom:8px; height:8px;"></div>
+              <div class="nb-text-line long"></div>
+              <div class="nb-text-line short"></div>
+              <div class="nb-node nb-node-svc">API Gateway</div>
+              <div class="nb-node nb-node-db">Orders DB</div>
+            </div>
           </div>
-        </li>
-        <li class="feature-item">
-          <div class="feature-mark">→</div>
-          <div>
-            <div class="feature-title">Mac-style dock</div>
-            Approach the bottom edge and a dock appears — drop services, databases, queues, callouts, or draw freehand.
-          </div>
-        </li>
-        <li class="feature-item">
-          <div class="feature-mark">→</div>
-          <div>
-            <div class="feature-title">Everything local</div>
-            Notes save to SQLite on your machine. No accounts, no sync, no cloud.
-          </div>
-        </li>
-      </ul>
-
+        </div>
+        <ul class="feature-list">
+          <li class="feature-item">
+            <div class="feature-mark">→</div>
+            <div><div class="feature-title">Draw.io-style canvas</div>Starts as a single page. Expands in any direction as you work; shrinks back when content is removed.</div>
+          </li>
+          <li class="feature-item">
+            <div class="feature-mark">→</div>
+            <div><div class="feature-title">Pretext reflow</div>Text automatically wraps and flows around shapes using a custom layout engine.</div>
+          </li>
+          <li class="feature-item">
+            <div class="feature-mark">→</div>
+            <div><div class="feature-title">Mac-style dock</div>Approach the bottom edge and a dock appears — drop services, databases, queues, callouts, or draw freehand.</div>
+          </li>
+          <li class="feature-item">
+            <div class="feature-mark">→</div>
+            <div><div class="feature-title">Everything local</div>Notes save to SQLite on your machine. No accounts, no sync, no cloud.</div>
+          </li>
+        </ul>
+      </div>
     </div>
-  </div><!-- /main-grid -->
+  </section>
 
-  <!-- BOTTOM BAND -->
-  <div class="bottom-band">
-    <span>Personal Note · 2026</span>
-    <div class="bottom-compare">
+  <!-- NOT A NOTEBOOK WITH AN AI BUTTON -->
+  <section class="agent-native-section">
+    <div class="agent-native-intro">
+      <div class="agent-native-eyebrow">The difference</div>
+      <h2>Not a notebook with an <em>AI button.</em></h2>
+      <p>Most tools bolt a chat panel onto a document and call it "AI-powered." Personal Note is built differently — the workspace itself speaks a protocol agents understand. No chat window. No prompt engineering. Just your notes, available to the tools you choose.</p>
+    </div>
+    <div class="agent-native-grid">
+      <div class="an-card">
+        <div class="an-card-bar an-bar-spatial"></div>
+        <div class="an-card-body">
+          <div class="an-card-icon">⊞</div>
+          <h3>One surface for prose and diagrams</h3>
+          <p>No switching between a doc, a whiteboard, and a diagram tool. Write, place nodes, and draw freehand — all on a single canvas that expands with your thinking.</p>
+        </div>
+      </div>
+      <div class="an-card">
+        <div class="an-card-bar an-bar-protocol"></div>
+        <div class="an-card-body">
+          <div class="an-card-icon">⎇</div>
+          <h3>Agents are native, not bolted on</h3>
+          <p>The workspace exposes typed resources — notes, people, calendar drafts — through a semantic protocol. Any agent can query, propose, and enrich. No scraping. No fragile prompts.</p>
+        </div>
+      </div>
+      <div class="an-card">
+        <div class="an-card-bar an-bar-ambient"></div>
+        <div class="an-card-body">
+          <div class="an-card-icon">◎</div>
+          <h3>Intelligence is ambient, not interruptive</h3>
+          <p>Context cards appear when you pause and vanish when you resume. No permanent chat panel. No unsolicited suggestions. The notebook stays a notebook.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CANVAS SECTION -->
+  <section class="section-pad">
+    <div class="canvas-grid">
+      <div class="canvas-copy">
+        <h2>A canvas that <em>breathes</em> with you</h2>
+        <p>Unlike rigid documents, the canvas grows as your thinking does. Add a node, and text reflows. Delete a shape, and the page contracts. The surface feels alive.</p>
+        <div class="canvas-steps">
+          <div class="canvas-step">
+            <div class="canvas-step-num">1</div>
+            <div><strong>Start at the center</strong><span>Every note begins as a single, focused page — no infinite void, no intimidating blankness.</span></div>
+          </div>
+          <div class="canvas-step">
+            <div class="canvas-step-num">2</div>
+            <div><strong>Expand on demand</strong><span>Drag a node past the edge and the canvas grows. No scrollbars — just pan and keep working.</span></div>
+          </div>
+          <div class="canvas-step">
+            <div class="canvas-step-num">3</div>
+            <div><strong>Zoom for overview</strong><span>Pinch out to see the big picture — all your notes and their spatial relationships revealed at once.</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="canvas-illus">
+        <div class="canvas-page-sheet">
+          <div class="cl-date">Meeting Notes</div>
+          <div class="cl-title">System Design Review</div>
+          <div class="cl-line lg"></div>
+          <div class="cl-line md"></div>
+          <div class="cl-line sm"></div>
+          <div style="margin-bottom:8px; height:4px;"></div>
+          <div class="cl-line lg"></div>
+          <div class="cl-line sm"></div>
+          <div class="cl-line md"></div>
+          <div class="cl-line lg"></div>
+          <div class="cl-node cl-node-svc">Auth Service</div>
+          <div class="cl-node cl-node-db">Cache Layer</div>
+          <div class="cl-node cl-node-q">Event Queue</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AMBIENT INTELLIGENCE -->
+  <section class="section-pad">
+    <div class="ambient-grid">
+      <div>
+        <div class="signal-card">
+          <div class="signal-dot link">↗</div>
+          <div>
+            <strong>Related notes surface</strong>
+            <span>When you pause, the canvas quietly checks what you've written and shows notes from your library that connect — no search needed.</span>
+            <div class="signal-tag" style="margin-top:6px;">Local retrieval · FTS5</div>
+          </div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-dot person">👤</div>
+          <div>
+            <strong>People you've mentioned</strong>
+            <span>Names you've written before are recognized. The card links back to every note where that person appears.</span>
+            <div class="signal-tag" style="margin-top:6px;">Person index · On-device</div>
+          </div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-dot calendar">📅</div>
+          <div>
+            <strong>Calendar drafts appear</strong>
+            <span>Spot a date or time in your writing? A draft calendar event is proposed — one click to confirm, zero clicks to ignore.</span>
+            <div class="signal-tag" style="margin-top:6px;">Calendar parse · Proposal-gated</div>
+          </div>
+        </div>
+      </div>
+      <div class="ambient-quote">
+        <blockquote>
+          "The intelligence doesn't interrupt — it <em>waits.</em> Cards fade in after you stop typing. Cards fade out when you resume. It's ambient, not aggressive."
+        </blockquote>
+        <p>Every ambient feature works fully offline. Optional model enrichment can improve ranking, but the core experience needs no API key, no internet, and no account. Personal means personal.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- AGENT-NATIVE WORKSPACE -->
+  <section class="section-pad">
+    <div class="protocol-grid">
+      <div class="protocol-copy">
+        <h2>The workspace <em>agents</em> can read</h2>
+        <p>Personal Note exposes a semantic workspace protocol — notes, people, calendar drafts, and spatial layout — all discoverable through typed resources. External agents or embedded tools can query the workspace without touching SQLite directly.</p>
+        <div class="protocol-badges">
+          <span class="protocol-badge">Workspace Protocol</span>
+          <span class="protocol-badge">Resource Schemas</span>
+          <span class="protocol-badge">Proposal-gated</span>
+          <span class="protocol-badge">Read-only by default</span>
+        </div>
+      </div>
+      <div class="proto-window">
+        <div class="proto-bar">
+          <span class="proto-dot"></span><span class="proto-dot"></span><span class="proto-dot"></span>
+          workspace protocol · agent query
+        </div>
+        <pre><span class="code-comment">// Discover available resources</span>
+<span class="code-key">GET</span> <span class="code-str">/api/workspace/resources</span>
+
+<span class="code-comment">// Retrieve notes by semantic type</span>
+<span class="code-key">GET</span> <span class="code-str">/api/workspace/resources/note</span>
+
+<span class="code-comment">// Query the person index</span>
+<span class="code-key">GET</span> <span class="code-str">/api/workspace/resources/person</span>
+
+<span class="code-comment">// All mutations require explicit</span>
+<span class="code-comment">// user approval. No agent writes</span>
+<span class="code-comment">// without confirmation.</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="section-pad">
+      <div class="cta-layout">
+        <h2>Your notes.<br>Your machine.<br><em>Your thinking, amplified.</em></h2>
+        <a href="/demo-login" class="btn primary">Open demo workspace →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="site-footer">
+    <span>Personal Note · 2026 · Local-first · SQLite</span>
+    <div class="footer-compare">
       <span>Prefer dark mode?</span>
       <a href="/" class="alt-link">View the original landing →</a>
     </div>
-  </div>
+  </footer>
 
 </body>
 </html>

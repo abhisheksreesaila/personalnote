@@ -1,3 +1,5 @@
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,11 +15,121 @@ class ApiContractTests(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
         database_path = Path(self.temporary_directory.name) / "personal-note.db"
-        self.client = TestClient(create_app(database_path, intelligence_url=""))
+        self.app = create_app(database_path, intelligence_url="")
+        self.client = TestClient(self.app)
 
     def tearDown(self):
         self.client.close()
         self.temporary_directory.cleanup()
+
+    def workspace_request(self, body: dict, authenticated: bool = True):
+        headers = (
+            {"Authorization": f"Bearer {self.app.state.workspace_token}"}
+            if authenticated
+            else {}
+        )
+        return self.client.post("/api/workspace/v1", json=body, headers=headers)
+
+    def test_workspace_protocol_discovers_queries_and_gets_grounded_blocks(self):
+        fixtures = json.loads(
+            (Path(__file__).parent / "fixtures" / "workspace_protocol.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        unauthorized = self.workspace_request(fixtures["describeRequest"], False)
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(unauthorized.json()["error"]["code"], "authentication_required")
+
+        description_response = self.workspace_request(fixtures["describeRequest"])
+        self.assertEqual(description_response.status_code, 200)
+        description = description_response.json()["result"]
+        self.assertEqual(description["operations"], [
+            "workspace.describe", "resource.get", "workspace.query"
+        ])
+        self.assertEqual(description["scopes"], ["workspace:read"])
+
+        notebook = self.client.get("/api/notebooks").json()[0]
+        note = self.client.post(
+            "/api/notes", json={"title": "Launch notes", "notebookId": notebook["id"]}
+        ).json()
+        text_blocks = [
+            {"type": "IText", "text": "🚀 Maya preferred September for the partner event.", "left": 72, "top": 80},
+            {"type": "IText", "text": "The partner event needs a revised launch brief.", "left": 72, "top": 140},
+        ]
+        update = self.client.put(
+            f"/api/notes/{note['id']}",
+            json={
+                "title": "Launch notes",
+                "notebookId": notebook["id"],
+                "revision": note["revision"],
+                "content": {"objects": text_blocks},
+                "pageState": {"columns": 1, "rows": 1},
+            },
+        )
+        self.assertEqual(update.status_code, 200)
+        self.assertEqual(update.json()["revision"], note["revision"] + 1)
+
+        stale = self.client.put(
+            f"/api/notes/{note['id']}",
+            json={
+                "title": "Stale title",
+                "revision": note["revision"],
+                "content": {"objects": text_blocks},
+            },
+        )
+        self.assertEqual(stale.status_code, 409)
+
+        query_request = fixtures["queryRequest"] | {
+            "input": {"query": "partner event", "limit": 1}
+        }
+        first_page = self.workspace_request(query_request)
+        self.assertEqual(first_page.status_code, 200)
+        first_result = first_page.json()["result"]
+        self.assertEqual(len(first_result["items"]), 1)
+        self.assertIsNotNone(first_result["nextCursor"])
+        first_item = first_result["items"][0]
+        source_ref = first_item["sourceRefs"][0]
+        expected_hash = hashlib.sha256(source_ref["excerpt"].encode("utf-8")).hexdigest()
+        self.assertEqual(source_ref["valueHash"], f"sha256:{expected_hash}")
+        span_length = source_ref["textSpan"]["end"] - source_ref["textSpan"]["start"]
+        self.assertEqual(span_length, len(source_ref["excerpt"].encode("utf-16-le")) // 2)
+
+        second_page = self.workspace_request(
+            query_request | {
+                "requestId": "req_query_next",
+                "input": {
+                    "query": "partner event",
+                    "limit": 1,
+                    "cursor": first_result["nextCursor"],
+                },
+            }
+        ).json()["result"]
+        self.assertEqual(len(second_page["items"]), 1)
+        self.assertNotEqual(
+            first_item["resource"]["id"], second_page["items"][0]["resource"]["id"]
+        )
+
+        resource_response = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_resource",
+            "operation": "resource.get",
+            "input": {"id": first_item["resource"]["id"]},
+        })
+        resource = resource_response.json()["result"]["resource"]
+        self.assertEqual(resource["kind"], "block")
+        self.assertEqual(resource["data"]["blockKind"], "text")
+        self.assertIn("partner event", resource["data"]["text"])
+        self.assertNotIn("objects", resource_response.text)
+
+        with self.app.state.note_service.connection() as connection:
+            changes = connection.execute(
+                "SELECT change_type, revision FROM workspace_changes WHERE resource_id = ? ORDER BY sequence",
+                (note["resourceId"],),
+            ).fetchall()
+        self.assertEqual(
+            [(row["change_type"], row["revision"]) for row in changes],
+            [("created", 1), ("updated", 2)],
+        )
 
     def test_note_and_notebook_contract(self):
         health = self.client.get("/health")

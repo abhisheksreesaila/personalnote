@@ -2,6 +2,8 @@
 
 Personal Note intelligence uses a **versioned wire protocol** so tasks, providers, and runtimes can be swapped without changing the product shell.
 
+This is the internal bounded-task protocol. It is deliberately separate from the planned [Agent Workspace Protocol](./AGENT-WORKSPACE-PROTOCOL.md), which exposes semantic workspace reads and proposal authority to external or embedded agents. An adapter may use this task protocol internally, but `/v1/execute` does not grant workspace access.
+
 ## Design Goals
 
 1. **Local-first** — deterministic retrieval always works; models are optional enrichment.

@@ -2,6 +2,8 @@
 
 Personal Note is a **local-first spatial notepad** with **ambient intelligence**: contextual suggestions that appear briefly during writing and disappear, rather than a permanent chat assistant. The product owns retrieval, permissions, provenance, and UI. **Mastra** is an optional, replaceable worker for bounded model execution only.
 
+External and embedded agents integrate through the [Agent Workspace Protocol](./AGENT-WORKSPACE-PROTOCOL.md), a semantic boundary above persistence and below transport adapters. Slice 1 exposes authenticated, read-only stable resources without exposing Fabric JSON, SQLite, or worker internals. Proposals and runtime-specific adapters remain planned.
+
 ## Runtime Overview
 
 Three processes run in development (`npm run dev`):
@@ -17,9 +19,12 @@ flowchart TB
     subgraph API["FastHTML API (:3137)"]
         Routes[routes.py]
         Services[services.py]
+        Workspace[workspace_protocol.py]
         Schema[app_schema.py]
         Bridge[intelligence_client.py]
         Routes --> Services
+        Routes --> Workspace
+        Workspace --> Services
         Routes --> Bridge
         Services --> DB[(SQLite FTS5 + note_people)]
         Schema --> DB
@@ -32,6 +37,7 @@ flowchart TB
     end
 
     Browser -->|"/api/* REST"| API
+    Agent[Local external agent] -->|"POST /api/workspace/v1 + bearer token"| API
     Bridge -->|"POST /rank"| Worker
     Agent -.->|optional| Model[OpenAI-compatible / Azure OpenAI]
 ```
@@ -84,14 +90,19 @@ erDiagram
     notebooks ||--o{ notes : contains
     notes ||--o| note_search : "FTS5 index"
     notes ||--o{ note_people : "derived mentions"
+    workspace_state ||--o{ workspace_changes : orders
 
     notebooks {
         int id PK
+        string resource_id UK
+        int revision
         string name
         string color
     }
     notes {
         int id PK
+        string resource_id UK
+        int revision
         int notebook_id FK
         string title
         text content
@@ -108,9 +119,26 @@ erDiagram
         string normalized_name
         string context
     }
+    workspace_state {
+        string workspace_id
+        int sequence
+    }
+    workspace_changes {
+        int workspace_sequence UK
+        string resource_kind
+        string resource_id
+        int resource_revision
+        string change_type
+    }
 ```
 
-On every note write, `NoteService.index_note()` updates FTS5 and `note_people` in the same transaction. Canvas text is extracted from Fabric JSON for indexing; the full JSON blob is stored as `content`.
+On every note write, `NoteService.index_note()` updates FTS5 and `note_people` in the same transaction. Canonical writes increment resource revisions and append an ordered workspace change; deletion records a tombstone. Canvas text is extracted from Fabric JSON for indexing; the full JSON blob is stored as `content`. Stable `semanticId` values on Fabric objects let the protocol project text blocks without exposing canvas internals.
+
+## Agent Workspace Protocol
+
+`workspace_protocol.py` owns the transport-neutral Slice 1 reads. `routes.py` exposes them at loopback-only `POST /api/workspace/v1` with a bearer capability token. `workspace.describe` advertises the exact supported surface; `resource.get` projects workspace, notebook, note, and block envelopes; `workspace.query` uses FTS5 and signed, actor-bound cursors. Evidence uses note revisions, stable block IDs, zero-based UTF-16 spans, and SHA-256 value hashes.
+
+This path is independent of the optional Mastra worker and works with no model configured. It is read-only: proposals, `changes.since`, derived graph resources, MCP, and OpenClaw adapters are not shipped.
 
 ## Ambient Intelligence Lanes
 
@@ -221,6 +249,7 @@ The current `/api/intelligence/scan` implementation also awaits optional worker 
 | `routes.py` | `create_app()` factory, REST routes, intelligence API |
 | `services.py` | `NoteService`, FTS5 retrieval, person extraction |
 | `app_schema.py` | Idempotent SQLite schema setup |
+| `workspace_protocol.py` | Authenticated semantic resource projection and bounded query |
 | `intelligence_client.py` | HTTP bridge to Mastra worker |
 | `src/main.js` | Primary notepad UI (~2900 lines) |
 | `intelligence/server.ts` | Worker HTTP server (`/health`, `/rank`) |
@@ -235,7 +264,7 @@ The current `/api/intelligence/scan` implementation also awaits optional worker 
 | `src/intelligence/diagram-assist.js` | Local stroke → box/ellipse/arrow recognition |
 | `src/intelligence/layout-cleanup.js` | Obstacle-aware text Tidy |
 
-Concept-aware multi-stroke grouping and semantic diagram proposals are designed but not implemented. See [VISUAL-INTELLIGENCE.md](./VISUAL-INTELLIGENCE.md).
+Deterministic text-to-concept-map proposals with editable ghost previews are implemented. Multi-stroke grouping and semantic completion from raw ink remain planned; see [VISUAL-INTELLIGENCE.md](./VISUAL-INTELLIGENCE.md).
 
 ### Configuration
 
@@ -250,6 +279,16 @@ Concept-aware multi-stroke grouping and semantic diagram proposals are designed 
 ### Future structure (not yet implemented)
 
 See `docs/INTELLIGENCE-ARCHITECTURE.md` for the planned `intelligence/agents/`, `tools/`, `workflows/`, and `schemas/` layout.
+
+The next platform slice is intentionally product-owned rather than worker-owned:
+
+```text
+workspace_protocol/
+    schemas/       # Transport-neutral semantic resource and operation contracts
+    projectors/    # Canonical Fabric/note data -> stable resources
+    service/       # Scope, query, revision, proposal, and activity policy
+    adapters/      # HTTP first; MCP and external runtimes later
+```
 
 ## API Surface (Intelligence)
 

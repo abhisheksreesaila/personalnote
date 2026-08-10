@@ -91,6 +91,8 @@ This geometry layer does not depend on Mastra. Later multimodal recognition may 
 
 Add product capabilities as narrow read or proposal tools. Tools should call authenticated FastHTML APIs, not SQLite directly. Separate retrieval from action, and keep every write reversible.
 
+These capabilities will be formalized by the [Agent Workspace Protocol](./AGENT-WORKSPACE-PROTOCOL.md). The semantic protocol sits above note persistence and below MCP, OpenClaw, Mastra, or local-agent adapters. The existing `/v1/execute` protocol remains the internal bounded-task contract and is not exposed as workspace authority.
+
 Recommended structure:
 
 ```text
@@ -148,7 +150,7 @@ intelligence/
 ### Phase 4: External Depth
 
 - Add browser captures and web research behind explicit permission.
-- Add MCP so Hermes and other agents can consume the same safe tools.
+- Add MCP and OpenClaw adapters so external agents consume the same safe semantic operations.
 - Route expensive research to cloud subscriptions while preserving local capture and retrieval.
 
 ## Invariants

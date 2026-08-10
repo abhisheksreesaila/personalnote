@@ -1,0 +1,17 @@
+{
+  "describeRequest": {
+    "protocolVersion": "1",
+    "requestId": "req_describe_fixture",
+    "operation": "workspace.describe",
+    "input": {}
+  },
+  "queryRequest": {
+    "protocolVersion": "1",
+    "requestId": "req_query_fixture",
+    "operation": "workspace.query",
+    "input": {
+      "query": "partner event",
+      "limit": 10
+    }
+  }
+}

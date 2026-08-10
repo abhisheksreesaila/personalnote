@@ -1,3 +1,5 @@
+import { createIcons, icons } from 'lucide'
+
 async function loadLandingNote() {
   const response = await fetch('/landing-note.html')
   if (!response.ok) throw new Error('Could not load the landing page')
@@ -23,28 +25,21 @@ async function loadLandingNote() {
 
   page.body.querySelectorAll('script').forEach((script) => script.remove())
   document.querySelector('#app').innerHTML = page.body.innerHTML
-  document.querySelectorAll('a[href="/login"]').forEach((link) => link.setAttribute('href', '/notes'))
-
-  window.joinWaitlist = () => { window.location.href = '/notes' }
-
-  ;[
-    ['n0', 300], ['n1', 800], ['n2', 1400],
-    ['n3', 1950], ['n4', 2550], ['n5', 3100],
-  ].forEach(([id, delay]) => {
-    setTimeout(() => document.getElementById(id)?.classList.add('show'), delay)
+  document.querySelector('#app').classList.add('motion-ready')
+  createIcons({ icons })
+  document.querySelectorAll('video[autoplay]').forEach((video) => {
+    const play = () => video.play().catch(() => {})
+    video.addEventListener('canplay', play, { once: true })
+    video.load()
+    if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) play()
   })
-  setTimeout(() => document.getElementById('note-demo')?.classList.add('show'), 3700)
 
   const observer = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       if (entry.isIntersecting) entry.target.classList.add('visible')
     })
   }, { threshold: 0.1 })
-  document.querySelectorAll('.fade-up').forEach((element) => observer.observe(element))
-
-  document.querySelector('#wl-email')?.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') window.joinWaitlist()
-  })
+  document.querySelectorAll('.reveal').forEach((element) => observer.observe(element))
 }
 
 loadLandingNote().catch((error) => {

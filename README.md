@@ -10,6 +10,7 @@ A local-first spatial notepad with **ambient intelligence** — contextual sugge
 | [docs/VISUAL-INTELLIGENCE.md](docs/VISUAL-INTELLIGENCE.md) | Scan-triggered concept completion, diagram proposal architecture, timing and evaluation |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram, runtime layout, data flow, file map |
 | [docs/INTELLIGENCE-PROTOCOL.md](docs/INTELLIGENCE-PROTOCOL.md) | Wire protocol, provider tiers, local model recommendations |
+| [docs/AGENT-WORKSPACE-PROTOCOL.md](docs/AGENT-WORKSPACE-PROTOCOL.md) | Semantic workspace resources, grounded agent reads, proposals, and adapter boundary |
 | [docs/INTELLIGENCE-ARCHITECTURE.md](docs/INTELLIGENCE-ARCHITECTURE.md) | Ambient intelligence boundaries, attention policy, planned tools |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phase-based product roadmap |
 | [AGENTS.md](AGENTS.md) | Guide for AI coding agents working in this repo |
@@ -74,6 +75,7 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - Scan-only rough box, circle, connector, and arrow proposals with approval-gated refinement
 - Source-grounded related-note cards that disappear after their moment
 - Local deterministic retrieval with optional Mastra reranking through any OpenAI-compatible model
+- Loopback-only Agent Workspace Protocol with stable semantic resources, grounded lexical query, signed cursors, and bearer capability authentication
 
 ## Architecture
 
@@ -95,6 +97,24 @@ flowchart LR
 ```
 
 The browser stores Fabric.js canvas JSON through a FastHTML REST interface. `main.py` is the runtime entrypoint, `routes.py` owns the application factory and API registration, `services.py` owns note persistence and retrieval, and `app_schema.py` owns idempotent SQLite setup. `fh-saas` is pinned for future authentication, tenant isolation, jobs, and billing without coupling those concerns to the canvas.
+
+## Connect a local agent
+
+Slice 1 of the Agent Workspace Protocol is available at `POST http://127.0.0.1:3137/api/workspace/v1`. It is read-only, accepts loopback clients only, and supports `workspace.describe`, `resource.get`, and `workspace.query`. On first API startup, a random bearer token is written to `data/workspace.token` unless `PERSONAL_NOTE_AGENT_TOKEN` or `PERSONAL_NOTE_AGENT_TOKEN_FILE` is configured.
+
+```powershell
+$token = (Get-Content data/workspace.token -Raw).Trim()
+$headers = @{ Authorization = "Bearer $token" }
+$body = @{
+    protocolVersion = "1"
+    requestId = "readme-discovery"
+    operation = "workspace.describe"
+    input = @{}
+} | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:3137/api/workspace/v1 -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+```
+
+Call discovery first and use only advertised operations. Agents receive bounded semantic text and grounded evidence, never raw Fabric JSON or SQLite access. MCP and OpenClaw packages, proposals, canonical mutation, and remote access are future slices.
 
 **Ambient intelligence** is split deliberately. FastHTML returns immediate source-grounded retrieval locally; the browser may then request non-blocking enrichment from a restricted Mastra worker. Mastra may rerank and phrase a connection with one bounded model step — no shell, filesystem, browser, or mutation tools. Without a configured model, the same features run in deterministic `local-retrieval` mode.
 
@@ -136,3 +156,14 @@ End-to-end encryption is not implemented. SQLite is a persistence engine, not an
 `@chenglou/pretext` is installed as the future variable-width text layout engine. The reference implementation in `spatial-docs.html` demonstrates `prepareWithSegments()` and `layoutNextLine()` to flow prose around diagram nodes. The production notepad remains Fabric-based for direct manipulation; Pretext should be introduced as a dedicated spatial text object rather than replacing Fabric's canvas runtime wholesale.
 
 Create a production bundle with `npm run build`; `npm start` serves the FastHTML API and an existing `dist` build.
+
+## Railway deployment
+
+Railway builds the included multi-stage `Dockerfile`, serves the Vite bundle from FastHTML, and checks `/health`. The app works without model credentials; cloud intelligence remains disabled until provider variables are explicitly configured.
+
+1. Create or link a Railway project and deploy with `railway up`.
+2. Attach a persistent volume to the service at `/app/data`.
+3. Set `PERSONAL_NOTE_DB=/app/data/personal-note.db` and `PERSONAL_NOTE_INTELLIGENCE_TIER=local-only`.
+4. Generate a Railway domain for the service and verify `/health` before adding a custom domain.
+
+For optional cloud intelligence, add the relevant `PERSONAL_NOTE_*` model variables from `.env.example` through Railway's Variables UI. Do not upload `.env`. Custom domains are configured in Railway and at the DNS provider; no domain value needs to be hardcoded in this application.

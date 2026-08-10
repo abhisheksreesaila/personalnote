@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -34,12 +35,17 @@ class NotFoundError(Exception):
     pass
 
 
+class ConflictError(Exception):
+    pass
+
+
 class NoteService:
     def __init__(self, database_path: Path | str):
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as connection:
             self.default_notebook_id = initialize_schema(connection)
+            self.ensure_block_ids(connection)
             self.ensure_derived_indexes(connection)
 
     def connect(self) -> sqlite3.Connection:
@@ -68,6 +74,8 @@ class NoteService:
     def serialize_note(cls, note: sqlite3.Row) -> dict:
         return {
             "id": note["id"],
+            "resourceId": note["resource_id"],
+            "revision": note["revision"],
             "title": note["title"],
             "notebookId": note["notebook_id"],
             "content": cls.parse_json(note["content"], DEFAULT_CONTENT),
@@ -75,6 +83,118 @@ class NoteService:
             "createdAt": note["created_at"],
             "updatedAt": note["updated_at"],
         }
+
+    @staticmethod
+    def new_resource_id() -> str:
+        return f"res_{uuid.uuid4().hex}"
+
+    @staticmethod
+    def record_change(
+        connection: sqlite3.Connection,
+        resource_kind: str,
+        resource_id: str,
+        revision: int,
+        change_type: str,
+    ) -> int:
+        sequence = connection.execute(
+            """
+            UPDATE workspace_state
+            SET sequence = sequence + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1
+            RETURNING sequence
+            """
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO workspace_changes
+                (sequence, resource_kind, resource_id, revision, change_type)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (sequence, resource_kind, resource_id, revision, change_type),
+        )
+        return int(sequence)
+
+    @staticmethod
+    def expected_revision(payload: dict, current_revision: int) -> int:
+        if "revision" not in payload:
+            return current_revision
+        try:
+            expected = int(payload["revision"])
+        except (TypeError, ValueError):
+            raise ConflictError("A valid revision is required") from None
+        if expected != current_revision:
+            raise ConflictError("Resource revision does not match")
+        return expected
+
+    @classmethod
+    def normalize_canvas_document(
+        cls,
+        document: dict,
+        reserved_ids: set[str] | None = None,
+    ) -> tuple[dict, bool]:
+        if not isinstance(document, dict):
+            document = dict(DEFAULT_CONTENT)
+        objects = document.get("objects")
+        if not isinstance(objects, list):
+            objects = []
+            document["objects"] = objects
+        seen = set(reserved_ids or ())
+        changed = False
+        for item in objects:
+            if not isinstance(item, dict):
+                continue
+            semantic_id = item.get("semanticId")
+            if not isinstance(semantic_id, str) or not semantic_id or semantic_id in seen:
+                semantic_id = cls.new_resource_id()
+                item["semanticId"] = semantic_id
+                changed = True
+            seen.add(semantic_id)
+        return document, changed
+
+    @classmethod
+    def ensure_block_ids(cls, connection: sqlite3.Connection) -> None:
+        seen: set[str] = set()
+        notes = connection.execute(
+            "SELECT id, resource_id, revision, content FROM notes ORDER BY id"
+        ).fetchall()
+        for note in notes:
+            document = cls.parse_json(note["content"], DEFAULT_CONTENT)
+            document, changed = cls.normalize_canvas_document(document, seen)
+            seen.update(
+                item["semanticId"]
+                for item in document["objects"]
+                if isinstance(item, dict) and isinstance(item.get("semanticId"), str)
+            )
+            if not changed:
+                continue
+            revision = note["revision"] + 1
+            connection.execute(
+                """
+                UPDATE notes
+                SET content = ?, revision = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (json.dumps(document, separators=(",", ":")), revision, note["id"]),
+            )
+            cls.record_change(connection, "note", note["resource_id"], revision, "updated")
+        connection.commit()
+
+    @classmethod
+    def reserved_block_ids(
+        cls,
+        connection: sqlite3.Connection,
+        exclude_note_id: int,
+    ) -> set[str]:
+        reserved: set[str] = set()
+        rows = connection.execute(
+            "SELECT content FROM notes WHERE id != ?", (exclude_note_id,)
+        ).fetchall()
+        for row in rows:
+            document = cls.parse_json(row["content"], DEFAULT_CONTENT)
+            for item in document.get("objects", []):
+                if isinstance(item, dict) and isinstance(item.get("semanticId"), str):
+                    reserved.add(item["semanticId"])
+        return reserved
 
     @classmethod
     def canvas_text(cls, content: str) -> str:
@@ -189,7 +309,8 @@ class NoteService:
         with self.connection() as connection:
             rows = connection.execute(
                 """
-                SELECT notebooks.id, notebooks.name, notebooks.color,
+                                SELECT notebooks.id, notebooks.resource_id, notebooks.revision,
+                                    notebooks.name, notebooks.color,
                   COUNT(notes.id) AS note_count
                 FROM notebooks
                 LEFT JOIN notes ON notes.notebook_id = notebooks.id
@@ -200,6 +321,8 @@ class NoteService:
         return [
             {
                 "id": row["id"],
+                "resourceId": row["resource_id"],
+                "revision": row["revision"],
                 "name": row["name"],
                 "color": row["color"],
                 "noteCount": row["note_count"],
@@ -212,13 +335,16 @@ class NoteService:
         name = name or "Untitled notebook"
         requested_color = payload.get("color")
         color = requested_color if isinstance(requested_color, str) and NOTEBOOK_COLOR_PATTERN.fullmatch(requested_color) else DEFAULT_NOTEBOOK_COLOR
+        resource_id = self.new_resource_id()
         with self.connection() as connection:
             cursor = connection.execute(
-                "INSERT INTO notebooks (name, color) VALUES (?, ?)", (name, color)
+                "INSERT INTO notebooks (resource_id, name, color) VALUES (?, ?, ?)",
+                (resource_id, name, color),
             )
+            self.record_change(connection, "notebook", resource_id, 1, "created")
             connection.commit()
             notebook_id = cursor.lastrowid
-        return {"id": notebook_id, "name": name, "color": color, "noteCount": 0}
+        return {"id": notebook_id, "resourceId": resource_id, "revision": 1, "name": name, "color": color, "noteCount": 0}
 
     def update_notebook(self, notebook_id: int, payload: dict) -> dict:
         with self.connection() as connection:
@@ -227,20 +353,25 @@ class NoteService:
             ).fetchone()
             if current is None:
                 raise NotFoundError("Notebook not found")
+            expected_revision = self.expected_revision(payload, current["revision"])
             name = str(payload.get("name", current["name"])).strip()[:80] or current["name"]
             requested_color = payload.get("color")
             color = requested_color if isinstance(requested_color, str) and NOTEBOOK_COLOR_PATTERN.fullmatch(requested_color) else current["color"]
-            connection.execute(
-                "UPDATE notebooks SET name = ?, color = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (name, color, notebook_id),
+            revision = expected_revision + 1
+            cursor = connection.execute(
+                "UPDATE notebooks SET name = ?, color = ?, revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND revision = ?",
+                (name, color, revision, notebook_id, expected_revision),
             )
+            if cursor.rowcount == 0:
+                raise ConflictError("Resource revision does not match")
+            self.record_change(connection, "notebook", current["resource_id"], revision, "updated")
             connection.commit()
-        return {"id": notebook_id, "name": name, "color": color}
+        return {"id": notebook_id, "resourceId": current["resource_id"], "revision": revision, "name": name, "color": color}
 
     def delete_notebook(self, notebook_id: int) -> dict:
         with self.connection() as connection:
             notebook = connection.execute(
-                "SELECT id FROM notebooks WHERE id = ?", (notebook_id,)
+                "SELECT * FROM notebooks WHERE id = ?", (notebook_id,)
             ).fetchone()
             if notebook is None:
                 raise NotFoundError("Notebook not found")
@@ -249,29 +380,53 @@ class NoteService:
                 (notebook_id,),
             ).fetchone()
             if destination is None:
+                destination_resource_id = self.new_resource_id()
                 cursor = connection.execute(
-                    "INSERT INTO notebooks (name, color) VALUES (?, ?)",
-                    ("My Notes", DEFAULT_NOTEBOOK_COLOR),
+                    "INSERT INTO notebooks (resource_id, name, color) VALUES (?, ?, ?)",
+                    (destination_resource_id, "My Notes", DEFAULT_NOTEBOOK_COLOR),
                 )
                 destination_id = cursor.lastrowid
+                self.record_change(connection, "notebook", destination_resource_id, 1, "created")
             else:
                 destination_id = destination["id"]
-            connection.execute(
-                "UPDATE notes SET notebook_id = ? WHERE notebook_id = ?",
-                (destination_id, notebook_id),
-            )
+            moved_notes = connection.execute(
+                "SELECT id, resource_id, revision FROM notes WHERE notebook_id = ?",
+                (notebook_id,),
+            ).fetchall()
+            for note in moved_notes:
+                revision = note["revision"] + 1
+                connection.execute(
+                    "UPDATE notes SET notebook_id = ?, revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (destination_id, revision, note["id"]),
+                )
+                self.record_change(connection, "note", note["resource_id"], revision, "updated")
             connection.execute("DELETE FROM notebooks WHERE id = ?", (notebook_id,))
+            self.record_change(
+                connection,
+                "notebook",
+                notebook["resource_id"],
+                notebook["revision"] + 1,
+                "deleted",
+            )
             connection.commit()
-        return {"destinationNotebookId": destination_id}
+        return {
+            "destinationNotebookId": destination_id,
+            "movedNotes": [
+                {"id": note["id"], "revision": note["revision"] + 1}
+                for note in moved_notes
+            ],
+        }
 
     def list_notes(self) -> list[dict]:
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT id, title, notebook_id, created_at, updated_at FROM notes ORDER BY updated_at DESC, id DESC"
+                "SELECT id, resource_id, revision, title, notebook_id, created_at, updated_at FROM notes ORDER BY updated_at DESC, id DESC"
             ).fetchall()
         return [
             {
                 "id": row["id"],
+                "resourceId": row["resource_id"],
+                "revision": row["revision"],
                 "title": row["title"],
                 "notebookId": row["notebook_id"],
                 "createdAt": row["created_at"],
@@ -295,34 +450,47 @@ class NoteService:
             requested_notebook_id = int(payload.get("notebookId"))
         except (TypeError, ValueError):
             requested_notebook_id = self.default_notebook_id
+        resource_id = self.new_resource_id()
         with self.connection() as connection:
             notebook_id = requested_notebook_id if self.notebook_exists(connection, requested_notebook_id) else self.default_notebook_id
             cursor = connection.execute(
-                "INSERT INTO notes (title, notebook_id) VALUES (?, ?)",
-                (title, notebook_id),
+                "INSERT INTO notes (resource_id, title, notebook_id) VALUES (?, ?, ?)",
+                (resource_id, title, notebook_id),
             )
             note = connection.execute(
                 "SELECT * FROM notes WHERE id = ?", (cursor.lastrowid,)
             ).fetchone()
             self.index_note(connection, note["id"], note["title"], note["content"])
+            self.record_change(connection, "note", resource_id, 1, "created")
             connection.commit()
         return self.serialize_note(note)
 
     def update_note(self, note_id: int, payload: dict) -> dict:
         title = str(payload.get("title") or "Untitled note")[:180]
-        content = json.dumps(payload.get("content") or DEFAULT_CONTENT, separators=(",", ":"))
         page_state = json.dumps(payload.get("pageState") or DEFAULT_PAGE_STATE, separators=(",", ":"))
         with self.connection() as connection:
+            current = connection.execute(
+                "SELECT * FROM notes WHERE id = ?", (note_id,)
+            ).fetchone()
+            if current is None:
+                raise NotFoundError("Note not found")
+            expected_revision = self.expected_revision(payload, current["revision"])
+            document = payload.get("content") or DEFAULT_CONTENT
+            document, _ = self.normalize_canvas_document(
+                document, self.reserved_block_ids(connection, note_id)
+            )
+            content = json.dumps(document, separators=(",", ":"))
+            revision = expected_revision + 1
             cursor = connection.execute(
                 """
                 UPDATE notes
-                SET title = ?, content = ?, page_state = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET title = ?, content = ?, page_state = ?, revision = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND revision = ?
                 """,
-                (title, content, page_state, note_id),
+                (title, content, page_state, revision, note_id, expected_revision),
             )
             if cursor.rowcount == 0:
-                raise NotFoundError("Note not found")
+                raise ConflictError("Resource revision does not match")
             try:
                 notebook_id = int(payload.get("notebookId"))
             except (TypeError, ValueError):
@@ -333,8 +501,9 @@ class NoteService:
                     (notebook_id, note_id),
                 )
             self.index_note(connection, note_id, title, content)
+            self.record_change(connection, "note", current["resource_id"], revision, "updated")
             connection.commit()
-        return {"ok": True}
+        return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
 
     def move_note(self, note_id: int, payload: dict) -> dict:
         try:
@@ -344,21 +513,37 @@ class NoteService:
         with self.connection() as connection:
             if not self.notebook_exists(connection, notebook_id):
                 raise NotFoundError("Notebook not found")
+            current = connection.execute(
+                "SELECT * FROM notes WHERE id = ?", (note_id,)
+            ).fetchone()
+            if current is None:
+                raise NotFoundError("Note not found")
+            expected_revision = self.expected_revision(payload, current["revision"])
+            revision = expected_revision + 1
             cursor = connection.execute(
-                "UPDATE notes SET notebook_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (notebook_id, note_id),
+                "UPDATE notes SET notebook_id = ?, revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND revision = ?",
+                (notebook_id, revision, note_id, expected_revision),
             )
             if cursor.rowcount == 0:
-                raise NotFoundError("Note not found")
+                raise ConflictError("Resource revision does not match")
+            self.record_change(connection, "note", current["resource_id"], revision, "updated")
             connection.commit()
-        return {"ok": True}
+        return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
 
     def delete_note(self, note_id: int) -> None:
         with self.connection() as connection:
+            note = connection.execute(
+                "SELECT resource_id, revision FROM notes WHERE id = ?", (note_id,)
+            ).fetchone()
+            if note is None:
+                raise NotFoundError("Note not found")
             connection.execute("DELETE FROM note_search WHERE note_id = ?", (note_id,))
             cursor = connection.execute("DELETE FROM notes WHERE id = ?", (note_id,))
             if cursor.rowcount == 0:
                 raise NotFoundError("Note not found")
+            self.record_change(
+                connection, "note", note["resource_id"], note["revision"] + 1, "deleted"
+            )
             connection.commit()
 
     def search(self, query: str) -> list[dict]:

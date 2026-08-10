@@ -45,6 +45,7 @@ FabricObject.customProperties = Array.from(new Set([
   'inkPoints',
   'isInk',
   'inkTool',
+  'semanticId',
 ]))
 
 document.querySelector('#app').innerHTML = `
@@ -62,7 +63,9 @@ document.querySelector('#app').innerHTML = `
     </nav>
     <aside class="sidebar" id="sidebar" inert>
       <div class="brand-row">
-        <span class="brand-name">Personal Note</span>
+        <button class="icon-button mobile-library-back" id="mobile-library-back" title="Back to notebooks" aria-label="Back to notebooks"><i data-lucide="arrow-left"></i></button>
+        <span class="brand-name desktop-brand-name">Personal Note</span>
+        <span class="mobile-library-heading" id="mobile-library-heading">Notebooks</span>
         <button class="icon-button" id="close-sidebar" title="Close notebooks" aria-label="Close notebooks"><i data-lucide="x"></i></button>
       </div>
       <div class="notebook-navigator" id="notebook-navigator">
@@ -92,6 +95,7 @@ document.querySelector('#app').innerHTML = `
 
     <main class="main-view">
       <header class="topbar">
+        <button class="icon-button mobile-editor-back" id="mobile-editor-back" title="Back to notes" aria-label="Back to notes"><i data-lucide="arrow-left"></i></button>
         <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
         <div class="save-state" id="save-state"><span></span>Saved</div>
         <button class="icon-button properties-trigger" id="top-properties" title="Note properties" aria-label="Open note properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
@@ -112,6 +116,13 @@ document.querySelector('#app').innerHTML = `
           <div class="tool-group">
             <button class="tool-button" id="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
             <button class="tool-button" id="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
+          </div>
+        </div>
+        <div class="mobile-capture-island" id="mobile-capture-island">
+          <button class="mobile-new-note" id="mobile-new-note" title="New note - hold for more" aria-label="Create new note. Press and hold for dictate or scan" aria-expanded="false"><i data-lucide="square-pen"></i></button>
+          <div class="mobile-capture-menu" id="mobile-capture-menu" hidden>
+            <button id="mobile-dictate" aria-label="Dictate into this note"><span class="mobile-action-icon"><i data-lucide="mic"></i></span><span class="mobile-action-label">Dictate</span></button>
+            <button id="mobile-scan" aria-label="Scan this page"><span class="mobile-action-icon"><i data-lucide="scan-search"></i></span><span class="mobile-action-label">Scan page</span></button>
           </div>
         </div>
         <section class="ink-options-popover" id="ink-options-popover" role="dialog" aria-label="Ink options" hidden>
@@ -1665,7 +1676,7 @@ function getContentBounds() {
   }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
 }
 
-const TEXT_PLACEHOLDER = 'Start typing'
+const LEGACY_TEXT_PLACEHOLDER = 'Start typing'
 
 function isEditableText(object) {
   return Boolean(object && typeof object.text === 'string' && typeof object.enterEditing === 'function')
@@ -1673,7 +1684,7 @@ function isEditableText(object) {
 
 function isPlaceholderText(value) {
   const trimmed = String(value || '').trim()
-  return !trimmed || trimmed === TEXT_PLACEHOLDER
+  return !trimmed || trimmed === LEGACY_TEXT_PLACEHOLDER
 }
 
 function findEditableTextAt(point) {
@@ -1841,7 +1852,7 @@ function expandPagesDuringTransform() {
   canvas.requestRenderAll()
 }
 
-function addText(point, value = TEXT_PLACEHOLDER, beginEditing = true) {
+function addText(point, value = '', beginEditing = true) {
   const text = new IText(value, {
     left: point.x,
     top: point.y,
@@ -1859,8 +1870,7 @@ function addText(point, value = TEXT_PLACEHOLDER, beginEditing = true) {
   canvas.setActiveObject(text)
   if (beginEditing) {
     text.enterEditing()
-    if (value === TEXT_PLACEHOLDER) text.selectAll()
-    else {
+    if (value) {
       text.setSelectionStart(0)
       text.setSelectionEnd(0)
     }
@@ -2076,27 +2086,50 @@ function setTool(tool) {
 }
 
 let saveTimer
+let saveInFlight = false
+let saveQueued = false
+
+function ensureCanvasObjectIds() {
+  canvas.getObjects().forEach((object) => {
+    if (!object.semanticId) object.semanticId = `res_${crypto.randomUUID().replaceAll('-', '')}`
+  })
+}
+
 async function saveActiveNote() {
   if (!state.activeNoteId || state.loading) return
+  if (saveInFlight) {
+    saveQueued = true
+    return
+  }
+  saveInFlight = true
   setSaveState('Saving')
+  const noteId = state.activeNoteId
+  const note = state.notes.find((item) => item.id === noteId)
   try {
+    ensureCanvasObjectIds()
     const title = elements.title.value.trim() || 'Untitled note'
-    await api(`/notes/${state.activeNoteId}`, {
+    const result = await api(`/notes/${noteId}`, {
       method: 'PUT',
       body: JSON.stringify({
         title,
         content: canvas.toJSON(),
         pageState: state.pages,
-        notebookId: state.notes.find((item) => item.id === state.activeNoteId)?.notebookId,
+        notebookId: note?.notebookId,
+        revision: note?.revision,
       }),
     })
-    const note = state.notes.find((item) => item.id === state.activeNoteId)
-    if (note) note.title = title
+    if (note) Object.assign(note, { title, revision: result.revision, resourceId: result.resourceId })
     renderNoteList()
     setSaveState('Saved')
   } catch (error) {
     console.error(error)
     setSaveState('Could not save', true)
+  } finally {
+    saveInFlight = false
+    if (saveQueued) {
+      saveQueued = false
+      saveActiveNote()
+    }
   }
 }
 
@@ -2116,6 +2149,7 @@ function queueSave({ contextual = false } = {}) {
 let historyTimer
 let historyContextual = false
 function snapshot() {
+  ensureCanvasObjectIds()
   return JSON.stringify({ content: canvas.toJSON(), pages: state.pages })
 }
 
@@ -2181,7 +2215,11 @@ async function selectNote(id) {
   try {
     const note = await api(`/notes/${id}`)
     const summary = state.notes.find((item) => item.id === id)
-    if (summary) summary.notebookId = note.notebookId
+    if (summary) Object.assign(summary, {
+      notebookId: note.notebookId,
+      resourceId: note.resourceId,
+      revision: note.revision,
+    })
     state.selectedNotebookId = note.notebookId
     elements.title.value = note.title
     state.pages = note.pageState || { columns: 1, rows: 1 }
@@ -2236,11 +2274,11 @@ async function createNote(notebookId) {
 async function moveNote(noteId, notebookId) {
   const note = state.notes.find((item) => item.id === noteId)
   if (!note || note.notebookId === notebookId) return
-  await api(`/notes/${noteId}/notebook`, {
+  const result = await api(`/notes/${noteId}/notebook`, {
     method: 'PATCH',
-    body: JSON.stringify({ notebookId }),
+    body: JSON.stringify({ notebookId, revision: note.revision }),
   })
-  note.notebookId = notebookId
+  Object.assign(note, { notebookId, revision: result.revision, resourceId: result.resourceId })
   if (noteId === state.activeNoteId) state.selectedNotebookId = notebookId
   renderNoteList()
 }
@@ -2267,8 +2305,12 @@ async function saveNotebook() {
   if (!name) return elements.notebookName.focus()
   const color = document.querySelector('[name="notebook-color"]:checked').value
   if (id) {
-    const updated = await api(`/notebooks/${id}`, { method: 'PUT', body: JSON.stringify({ name, color }) })
-    Object.assign(state.notebooks.find((notebook) => notebook.id === id), updated)
+    const notebook = state.notebooks.find((item) => item.id === id)
+    const updated = await api(`/notebooks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, color, revision: notebook?.revision }),
+    })
+    Object.assign(notebook, updated)
   } else {
     const notebook = await api('/notebooks', { method: 'POST', body: JSON.stringify({ name, color }) })
     state.notebooks.unshift(notebook)
@@ -2282,8 +2324,12 @@ async function deleteNotebook() {
   const id = Number(elements.notebookForm.dataset.notebookId)
   if (!id) return
   const result = await api(`/notebooks/${id}`, { method: 'DELETE' })
+  const movedRevisions = new Map(result.movedNotes.map((note) => [note.id, note.revision]))
   state.notes.forEach((note) => {
-    if (note.notebookId === id) note.notebookId = result.destinationNotebookId
+    if (note.notebookId === id) {
+      note.notebookId = result.destinationNotebookId
+      note.revision = movedRevisions.get(note.id) ?? note.revision
+    }
   })
   state.notebooks = await api('/notebooks')
   state.selectedNotebookId = result.destinationNotebookId
@@ -2386,7 +2432,7 @@ function applyTypography(property, value) {
     text.set(property, value)
     text.setCoords()
     canvas.requestRenderAll()
-    recordHistory()
+    if (!isPlaceholderText(text.text)) recordHistory()
   }
   syncTypographyControls()
 }
@@ -2842,7 +2888,18 @@ document.querySelector('#confirm-clear-note').addEventListener('click', (event) 
 document.querySelector('#delete-note').addEventListener('click', deleteActiveNote)
 document.querySelector('#undo').addEventListener('click', () => restoreHistory(state.historyIndex - 1))
 document.querySelector('#redo').addEventListener('click', () => restoreHistory(state.historyIndex + 1))
-function setSidebarOpen(open) {
+const mobileLayout = window.matchMedia('(max-width: 800px)')
+
+function setMobileLibraryView(view) {
+  const notesView = view === 'notes'
+  elements.sidebar.classList.toggle('mobile-notes-view', notesView)
+  document.querySelector('#mobile-library-heading').textContent = notesView
+    ? document.querySelector('#selected-notebook-name').textContent
+    : 'Notebooks'
+}
+
+function setSidebarOpen(open, mobileView = 'notebooks') {
+  if (open && mobileLayout.matches) setMobileLibraryView(mobileView)
   elements.shell.classList.toggle('sidebar-open', open)
   elements.sidebar.classList.toggle('open', open)
   elements.sidebar.inert = !open
@@ -2855,6 +2912,82 @@ document.querySelector('#toggle-sidebar').addEventListener('click', () => setSid
 document.querySelector('#rail-notebooks').addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
 document.querySelector('#rail-new-note').addEventListener('click', () => createNote())
+document.querySelector('#mobile-editor-back').addEventListener('click', () => {
+  const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
+  if (activeNote) state.selectedNotebookId = activeNote.notebookId
+  renderNoteList()
+  setSidebarOpen(true, 'notes')
+})
+document.querySelector('#mobile-library-back').addEventListener('click', () => setMobileLibraryView('notebooks'))
+
+const mobileCaptureIsland = document.querySelector('#mobile-capture-island')
+const mobileCaptureMenu = document.querySelector('#mobile-capture-menu')
+const mobileNewNote = document.querySelector('#mobile-new-note')
+const MOBILE_ACTION_HOLD_MS = 450
+const MOBILE_ACTION_MOVE_TOLERANCE = 12
+let mobileActionHoldTimer = null
+let mobileActionHoldOrigin = null
+let suppressMobileNewNoteClick = false
+
+function setMobileCaptureMenuOpen(open) {
+  mobileCaptureMenu.hidden = !open
+  mobileNewNote.setAttribute('aria-expanded', String(open))
+  mobileCaptureIsland.classList.toggle('menu-open', open)
+}
+
+function cancelMobileActionHold() {
+  clearTimeout(mobileActionHoldTimer)
+  mobileActionHoldTimer = null
+  mobileActionHoldOrigin = null
+  mobileNewNote.classList.remove('is-pressing')
+}
+
+mobileNewNote.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return
+  cancelMobileActionHold()
+  mobileNewNote.setPointerCapture(event.pointerId)
+  mobileActionHoldOrigin = { x: event.clientX, y: event.clientY }
+  mobileNewNote.classList.add('is-pressing')
+  mobileActionHoldTimer = setTimeout(() => {
+    suppressMobileNewNoteClick = true
+    setMobileCaptureMenuOpen(true)
+    mobileNewNote.classList.remove('is-pressing')
+    navigator.vibrate?.(12)
+  }, MOBILE_ACTION_HOLD_MS)
+})
+mobileNewNote.addEventListener('pointermove', (event) => {
+  if (!mobileActionHoldOrigin) return
+  const moved = Math.hypot(event.clientX - mobileActionHoldOrigin.x, event.clientY - mobileActionHoldOrigin.y)
+  if (moved > MOBILE_ACTION_MOVE_TOLERANCE) cancelMobileActionHold()
+})
+mobileNewNote.addEventListener('pointerup', cancelMobileActionHold)
+mobileNewNote.addEventListener('pointercancel', cancelMobileActionHold)
+mobileNewNote.addEventListener('contextmenu', (event) => {
+  event.preventDefault()
+  suppressMobileNewNoteClick = true
+  cancelMobileActionHold()
+  setMobileCaptureMenuOpen(true)
+})
+mobileNewNote.addEventListener('click', (event) => {
+  if (suppressMobileNewNoteClick) {
+    event.preventDefault()
+    suppressMobileNewNoteClick = false
+    return
+  }
+  setMobileCaptureMenuOpen(false)
+  createNote()
+})
+document.querySelector('#mobile-dictate').addEventListener('click', () => {
+  setMobileCaptureMenuOpen(false)
+  elements.voiceButton.click()
+})
+document.querySelector('#mobile-scan').addEventListener('click', () => {
+  setMobileCaptureMenuOpen(false)
+  document.querySelector('#page-scan-trigger').click()
+})
+document.addEventListener('pointerdown', (event) => {
+  if (!mobileCaptureMenu.hidden && !mobileCaptureIsland.contains(event.target)) setMobileCaptureMenuOpen(false)
+})
 const searchButton = document.querySelector('#search-button')
 const SEARCH_REVEAL_LERP = 0.18
 const SEARCH_HIDE_DISTANCE = 52
@@ -3077,6 +3210,7 @@ elements.list.addEventListener('click', (event) => {
   if (notebook) {
     state.selectedNotebookId = Number(notebook.dataset.notebookSelect)
     renderNoteList()
+    if (mobileLayout.matches) setMobileLibraryView('notes')
   }
 })
 elements.list.addEventListener('dragstart', (event) => {

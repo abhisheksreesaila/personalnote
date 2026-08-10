@@ -45,6 +45,11 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 
 ## Phase 4: Self-Organization
 
+- Define the Agent Workspace Protocol semantic model, authority boundary, and phased conformance criteria. **Complete.**
+- Add stable note revisions and persisted Fabric object IDs. **Complete.**
+- Project workspace, notebook, note, and block resources without exposing Fabric JSON. **Complete.**
+- Add capability discovery, bounded lexical query, source references, and cursor pagination. **Complete.**
+- Add cross-language protocol fixtures and contract tests. **Complete.**
 - Extract people, dates, commitments, decisions, and topics into derived records.
 - Introduce Inbox, Projects, Areas, Resources, and Archive as suggested states.
 - Keep raw captures canonical; all cleanup and classification remains reversible.
@@ -95,7 +100,7 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 
 - Route research and long-context synthesis to user-approved cloud models.
 - Add subscription boundaries around expensive reasoning, web research, and multimodal processing.
-- Expose safe notebook capabilities through MCP for Hermes and other community agents.
+- Expose the Agent Workspace Protocol through MCP and OpenClaw adapters for community agents.
 - Keep local capture, search, organization, and basic contextual listening available without a subscription.
 
 ## Security Track: Identity And Encryption
@@ -109,4 +114,4 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 
 ## Current Next Step
 
-Build a real-pen fixture set for multi-stroke grouping, nearby-label association, and ambiguous negative examples. Then implement the focused scene snapshot and a model-free ghost preview. Do not start with broad model-driven image generation; add one bounded semantic completion only after local grouping and proposal validation are reliable.
+Design Slice 2 of the Agent Workspace Protocol around durable, idempotent proposals and product-owned undo. Start with low-risk semantic links and classifications; keep note mutation, MCP, OpenClaw, and autonomous workflows unavailable until evidence checks, decision records, and crash-safe inverse changes are proven.

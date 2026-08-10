@@ -10,7 +10,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      if (location.pathname === '/') import('/src/landing.js')
+      if (location.pathname === '/') location.replace('/landing-note.html')
       else import('/src/main.js')
     </script>
   </body>

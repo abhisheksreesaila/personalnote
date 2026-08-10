@@ -3,650 +3,256 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Personal Note — Your Mind Is Infinite. Your Workspace Shouldn't Be a Cage.</title>
-  <meta name="description" content="The first breathing canvas for thinkers. Local-first, zero-knowledge, E2EE encrypted. A private sanctuary where pages snap for structure and dissolve for dreaming."/>
+  <title>Personal Note — The agent-native notebook</title>
+  <meta name="description" content="An agent-native, local-first notebook with ambient intelligence and an interface that moves between paper and infinite canvas."/>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400;1,8..60,600;1,8..60,700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,500&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+    *, *::before, *::after { box-sizing: border-box; }
+    * { margin: 0; }
     :root {
-      --bg:          #0A0A0F;
-      --surface:     #0F0F1A;
-      --surface-2:   #14141F;
-      --border:      #1E1E30;
-      --border-hi:   #2A2A48;
-      --accent:      #D4A837;
-      --accent-dim:  rgba(212,168,55,0.10);
-      --accent-glow: rgba(212,168,55,0.22);
-      --green:       #4F7942;
-      --green-hi:    #6DBF67;
-      --text:        #E8E8F2;
-      --text-dim:    #55556A;
-      --text-muted:  #1A1A2E;
-      --font-mono:   'JetBrains Mono','Courier New',monospace;
-      --font-sans:   'IBM Plex Sans','Helvetica Neue',sans-serif;
-      --font-serif:  'Source Serif 4','Georgia',serif;
-      --max:         1120px;
+      --ink: #f1f2ec; --muted: #9ba8a3; --canvas: #0a100f; --paper: #111816;
+      --surface: #0d1412; --rail: #08100e; --blue: #60bad8; --blue-soft: rgba(38,122,157,.18);
+      --terracotta: #ef765d; --terracotta-soft: #291713; --green: #72b58a;
+      --gold: #deb25e; --line: rgba(204,224,216,.14); --shadow: 0 26px 80px rgba(0,0,0,.36);
+      --sans: "IBM Plex Sans", sans-serif; --serif: "Source Serif 4", serif; --mono: "IBM Plex Mono", monospace; --max: 1180px;
     }
-
     html { scroll-behavior: smooth; }
-    body {
-      background: var(--bg); color: var(--text);
-      font-family: var(--font-sans); font-size: 16px; line-height: 1.65;
-      overflow-x: hidden;
+    body { min-width: 320px; overflow-x: hidden; color: var(--ink); background-color: var(--canvas); background-image: linear-gradient(rgba(114,181,138,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(114,181,138,.035) 1px,transparent 1px); background-size: 44px 44px; font: 400 16px/1.6 var(--sans); }
+    a { color: inherit; text-decoration: none; } button,a { -webkit-tap-highlight-color: transparent; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+    .shell { width: min(calc(100% - 48px),var(--max)); margin-inline: auto; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 9px; color: var(--terracotta); font: 500 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .eyebrow::before { content: ""; width: 23px; height: 1px; background: currentColor; }
+    .site-nav { position: fixed; z-index: 20; top: 14px; left: 50%; transform: translateX(-50%); width: min(calc(100% - 28px),1180px); height: 58px; padding: 0 10px 0 17px; display: flex; align-items: center; gap: 24px; color: var(--ink); background: rgba(12,19,17,.82); border: 1px solid rgba(190,221,209,.16); border-radius: 8px; box-shadow: 0 12px 38px rgba(0,0,0,.34); backdrop-filter: blur(18px) saturate(1.1); }
+    .brand { margin-right: auto; display: inline-flex; align-items: center; gap: 10px; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: var(--terracotta); border-radius: 50%; font: 600 italic 16px/1 var(--serif); }
+    .brand-name { font: 600 16px/1 var(--serif); }
+    .nav-link { color: #a5b2ad; font-size: 13px; transition: color 150ms ease; } .nav-link:hover { color: var(--blue); }
+    .button { min-height: 40px; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; border-radius: 999px; font: 600 13px/1 var(--sans); cursor: pointer; transition: transform 160ms ease,box-shadow 160ms ease,background 160ms ease; }
+    .button svg { width: 16px; height: 16px; stroke-width: 1.8; } .button:hover { transform: translateY(-2px); }
+    .button-primary { color: #07100d; background: var(--green); box-shadow: 0 8px 28px rgba(79,159,106,.2); } .button-primary:hover { background: #8bc99f; box-shadow: 0 12px 34px rgba(79,159,106,.3); }
+    .button-light { color: var(--ink); background: rgba(21,31,28,.76); border-color: rgba(190,221,209,.18); backdrop-filter: blur(12px); }
+    .hero { min-height: min(820px,88svh); position: relative; display: flex; align-items: flex-end; overflow: hidden; background: #0a100f; border-bottom: 1px solid rgba(157,197,181,.18); }
+    .hero::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(114,181,138,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(114,181,138,.06) 1px,transparent 1px); background-size: 72px 72px; mask-image: linear-gradient(to bottom,black,transparent 92%); }
+    .hero-content { position: relative; z-index: 2; width: min(920px,100%); margin-inline: auto; padding: 154px 0 86px; text-align: center; }
+    .hero-content .eyebrow, .hero-actions, .hero-proof { justify-content: center; }
+    .hero h1 { max-width: 900px; margin: 22px auto 0; font: 600 clamp(68px,7.2vw,112px)/.92 var(--serif); letter-spacing: 0; text-wrap: balance; }
+    .hero h1 em { color: var(--terracotta); font-weight: 500; }
+    .hero-lede { max-width: 560px; margin: 28px auto 0; color: #b8c4bf; font: 400 clamp(18px,2vw,23px)/1.5 var(--serif); }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+    .hero-proof { display: flex; flex-wrap: wrap; gap: 7px 18px; margin-top: 34px; color: #9eaea8; font: 500 11px/1.4 var(--mono); }
+    .hero-proof span { display: inline-flex; align-items: center; gap: 7px; } .hero-proof span::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .scroll-note { position: absolute; z-index: 2; right: 28px; bottom: 30px; display: flex; align-items: center; gap: 10px; color: #7f918b; font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+    .scroll-note::after { content: ""; width: 44px; height: 1px; background: currentColor; }
+    .agent-field { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: .76; }
+    .agent-field .graph-edge { fill: none; stroke: rgba(96,186,216,.22); stroke-width: 1; stroke-dasharray: 5 12; animation: graph-flow 16s linear infinite; }
+    .agent-field .graph-edge.hot { stroke: rgba(114,181,138,.38); animation-duration: 10s; }
+    .agent-field .graph-node { fill: #0a100f; stroke: rgba(96,186,216,.72); stroke-width: 1.2; transform-box: fill-box; transform-origin: center; animation: graph-node 4.8s ease-in-out infinite; }
+    .agent-field .graph-node.core { fill: rgba(239,118,93,.18); stroke: var(--terracotta); }
+    .agent-field .graph-node:nth-of-type(3n) { animation-delay: -1.7s; }
+    .agent-field .graph-node:nth-of-type(4n) { animation-delay: -3.1s; }
+    .agent-field .graph-label { fill: rgba(184,211,201,.48); font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .paper-section { --muted: #6f6a60; --line: rgba(48,62,58,.18); position: relative; overflow: hidden; color: #17201e; background: #f7f5ef; }
+    .paper-section::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .36; background: radial-gradient(circle at 78% 22%,rgba(96,186,216,.18),transparent 23%),linear-gradient(rgba(23,32,30,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(23,32,30,.035) 1px,transparent 1px); background-size: auto,48px 48px,48px 48px; }
+    .paper-section .shell { position: relative; }
+    .section { padding: 112px 0; } .section-heading { max-width: 760px; }
+    .section-heading h2 { margin-top: 14px; font: 600 clamp(40px,6vw,76px)/1.02 var(--serif); letter-spacing: 0; }
+    .section-heading p { max-width: 620px; margin-top: 20px; color: var(--muted); font-size: 17px; }
+    .semantic-map { position: relative; min-height: 400px; margin-top: 62px; overflow: hidden; color: var(--ink); background: #0c1513; border: 1px solid rgba(23,32,30,.38); box-shadow: 0 26px 70px rgba(24,34,31,.18); }
+    .semantic-map::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at center,rgba(96,186,216,.12),transparent 38%),linear-gradient(rgba(114,181,138,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(114,181,138,.05) 1px,transparent 1px); background-size: auto,36px 36px,36px 36px; }
+    .semantic-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .semantic-lines path { fill: none; stroke: rgba(96,186,216,.34); stroke-width: 1; stroke-dasharray: 4 8; animation: semantic-flow 12s linear infinite; }
+    .semantic-lines path:nth-child(even) { stroke: rgba(114,181,138,.34); animation-direction: reverse; animation-duration: 16s; }
+    .semantic-core,.semantic-node { position: absolute; z-index: 2; display: grid; place-items: center; text-align: center; border-radius: 50%; }
+    .semantic-core { left: 50%; top: 50%; width: 142px; height: 142px; transform: translate(-50%,-50%); color: #f7f5ef; background: #14221f; border: 1px solid rgba(114,181,138,.64); box-shadow: 0 0 0 15px rgba(114,181,138,.055),0 0 50px rgba(96,186,216,.15); }
+    .semantic-core strong { display: block; font: 600 19px/1.1 var(--serif); }
+    .semantic-core span { display: block; margin-top: 7px; color: #8fa49d; font: 500 8px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .semantic-node { left: var(--x); top: var(--y); width: 92px; height: 92px; transform: translate(-50%,-50%); color: #cfddd8; background: rgba(17,28,25,.94); border: 1px solid rgba(96,186,216,.36); font: 500 10px/1.25 var(--mono); text-transform: uppercase; box-shadow: 0 0 0 0 rgba(96,186,216,.14); animation: semantic-node-pulse 5s ease-in-out infinite; }
+    .semantic-node.note { width: 104px; height: 78px; padding: 14px; place-items: start; text-align: left; color: #25312e; background: #edf0e9; border: 0; border-radius: 2px; box-shadow: 5px 6px 0 rgba(96,186,216,.16); }
+    .semantic-node.note::after { content: "3 text blocks"; margin-top: 8px; color: #728079; font: 500 7px/1 var(--mono); }
+    .semantic-node.insight { width: 116px; height: 76px; padding: 12px; border-radius: 4px; color: #f2c16c; background: #211d13; border-color: rgba(222,178,94,.55); }
+    .semantic-node.insight::before { content: "extracted"; display: block; margin-bottom: 5px; color: #99825a; font-size: 7px; }
+    .semantic-node.person { border-radius: 50% 50% 8px 8px; }
+    .semantic-node.calendar { border-radius: 6px; border-top: 8px solid rgba(114,181,138,.72); }
+    .semantic-node.agent { width: 132px; height: 78px; padding: 11px 12px; grid-template-columns: 28px 1fr; gap: 9px; border-radius: 6px; border-color: rgba(239,118,93,.55); color: #f0a28f; text-align: left; }
+    .agent-glyph { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; font: 600 12px/1 var(--mono); }
+    .agent-name { display: block; color: #f0a28f; font-size: 9px; }
+    .agent-task { display: block; margin-top: 5px; color: #aebdb8; font-size: 7px; letter-spacing: .04em; }
+    .semantic-node.agent::before { content: ""; position: absolute; right: 100%; top: 50%; width: 72px; height: 1px; background: linear-gradient(90deg,transparent,var(--terracotta)); transform-origin: right; animation: agent-beam 2.4s ease-in-out infinite; }
+    .agent-result { position: absolute; z-index: 4; left: var(--x); top: var(--y); padding: 7px 9px; color: #d7e5e0; background: #172521; border-left: 2px solid var(--green); border-radius: 2px; font: 500 8px/1.2 var(--mono); text-transform: uppercase; box-shadow: 0 8px 20px rgba(0,0,0,.24); animation: agent-result 6s ease-in-out infinite; }
+    .agent-result.calendar-result { border-left-color: var(--terracotta); animation-delay: -3s; }
+    .semantic-node:nth-of-type(3n) { animation-delay: -1.8s; }
+    .semantic-node:nth-of-type(4n) { animation-delay: -3.4s; }
+    .semantic-legend { position: absolute; z-index: 3; right: 18px; bottom: 14px; display: flex; gap: 14px; color: #81958e; font: 500 8px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+    .semantic-legend span { display: flex; align-items: center; gap: 6px; }
+    .semantic-legend i { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+    .semantic-legend span:last-child i { background: var(--terracotta); }
+    .thought-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 0; margin-top: 48px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .thought { min-height: 300px; padding: 36px 34px 38px 0; border-right: 1px solid var(--line); } .thought+.thought { padding-left: 34px; } .thought:last-child { border-right: 0; }
+    .thought-icon { width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; } .thought-icon svg { width: 21px; height: 21px; stroke-width: 1.6; }
+    .thought:nth-child(1) .thought-icon { color: var(--terracotta); background: rgba(239,118,93,.12); } .thought:nth-child(2) .thought-icon { color: var(--blue); background: var(--blue-soft); } .thought:nth-child(3) .thought-icon { color: var(--green); background: rgba(114,181,138,.12); }
+    .thought { transition: background 220ms ease,transform 220ms ease; } .thought:hover { background: rgba(255,255,255,.025); transform: translateY(-4px); }
+    .thought h3 { margin-top: 48px; font: 600 28px/1.15 var(--serif); } .thought p { margin-top: 13px; color: var(--muted); font-size: 14px; }
+    .status-label { display: inline-flex; align-items: center; min-height: 22px; margin-top: 22px; padding: 0 8px; color: #fff; background: var(--green); border-radius: 999px; font: 500 9px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+    .flow-section { --muted: #6f6a60; --line: rgba(48,62,58,.18); overflow: hidden; color: #17201e; background: #ece9df; border-block: 1px solid var(--line); }
+    .flow-layout { display: grid; grid-template-columns: .82fr 1.18fr; gap: 84px; align-items: center; }
+    .flow-copy h2,.local-copy h2 { margin-top: 14px; font: 600 clamp(40px,5vw,68px)/1.03 var(--serif); } .flow-copy>p,.local-copy p { margin-top: 22px; color: var(--muted); }
+    .flow-list { margin-top: 36px; } .flow-item { display: grid; grid-template-columns: 34px 1fr; gap: 14px; padding: 17px 0; border-top: 1px solid var(--line); } .flow-item:last-child { border-bottom: 1px solid var(--line); }
+    .flow-number { color: var(--terracotta); font: 500 11px/1.6 var(--mono); } .flow-item strong { display: block; font: 600 16px/1.3 var(--sans); } .flow-item span { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
+    .mini-workspace { position: relative; overflow: hidden; aspect-ratio: 11/7; background: #121a18; border: 1px solid rgba(48,62,58,.32); box-shadow: var(--shadow); }
+    .workspace-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(114,181,138,.065) 1px,transparent 1px),linear-gradient(90deg,rgba(114,181,138,.065) 1px,transparent 1px); background-size: 28px 28px; }
+    .adaptive-page { position: absolute; left: 19%; top: 13%; width: 62%; height: 74%; overflow: hidden; color: #17201e; background: #f7f5ef; box-shadow: 0 15px 38px rgba(0,0,0,.32); animation: page-breathe 10s cubic-bezier(.65,0,.35,1) infinite; }
+    .adaptive-page::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 2px; background: var(--terracotta); opacity: .6; animation: edge-alert 10s linear infinite; }
+    .adaptive-chrome { height: 27px; padding: 0 11px; display: flex; align-items: center; justify-content: space-between; color: #79817d; background: #e9e6dd; border-bottom: 1px solid rgba(23,32,30,.12); font: 500 7px/1 var(--mono); text-transform: uppercase; }
+    .adaptive-copy { width: 280px; padding: 20px 22px; }
+    .adaptive-copy strong { display: block; margin-bottom: 13px; font: 600 17px/1.1 var(--serif); }
+    .adaptive-line { height: 6px; margin-top: 8px; border-radius: 3px; background: rgba(23,32,30,.1); }
+    .adaptive-line:nth-child(2) { width: 92%; } .adaptive-line:nth-child(3) { width: 76%; }
+    .overflow-thought { position: absolute; left: 244px; top: 86px; width: 270px; overflow: hidden; color: #2b5e71; white-space: nowrap; font: 500 11px/1 var(--mono); clip-path: inset(0 100% 0 0); animation: type-and-delete 10s steps(28,end) infinite; }
+    .overflow-thought::after { content: ""; display: inline-block; width: 1px; height: 14px; margin-left: 2px; vertical-align: -2px; background: var(--terracotta); animation: cursor-blink .7s steps(1) infinite; }
+    .adaptive-phase { position: absolute; z-index: 3; left: 18px; bottom: 16px; min-height: 25px; padding: 7px 10px; color: #b9c8c3; background: rgba(7,14,12,.84); border: 1px solid rgba(190,221,209,.16); font: 500 8px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; }
+    .adaptive-phase span { display: block; animation: phase-one 10s linear infinite; }
+    .adaptive-phase span:nth-child(2),.adaptive-phase span:nth-child(3) { position: absolute; inset: 7px 10px; opacity: 0; }
+    .adaptive-phase span:nth-child(2) { animation-name: phase-two; } .adaptive-phase span:nth-child(3) { animation-name: phase-three; }
+    .boundary-note { position: absolute; z-index: 3; right: 16px; top: 16px; color: #76958b; font: 500 8px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+    .intelligence-section { position: relative; overflow: hidden; color: #f7f6f0; background: radial-gradient(circle at 22% 62%,rgba(96,186,216,.1),transparent 24%),#07100e; border-block: 1px solid rgba(96,186,216,.15); } .intelligence-section .eyebrow { color: #ef8d75; } .intelligence-section .section-heading p { color: #aeb9b5; }
+    .signal-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 74px; margin-top: 70px; align-items: start; } .signal-stack { position: relative; display: grid; gap: 12px; padding-left: 22px; }
+    .signal-stack::before { content: ""; position: absolute; left: 5px; top: 88px; bottom: 26px; width: 1px; background: linear-gradient(var(--blue),rgba(96,186,216,.08)); }
+    .source-page { position: relative; margin-bottom: 18px; padding: 22px 24px 25px; color: #24302d; background: #edf0e9; border: 1px solid rgba(255,255,255,.24); box-shadow: 0 18px 44px rgba(0,0,0,.28); transform: rotate(-1deg); }
+    .source-page::after { content: ""; position: absolute; left: -18px; right: -18px; top: 0; height: 1px; background: linear-gradient(90deg,transparent,var(--blue),transparent); animation: source-scan 12s ease-in-out infinite; }
+    .source-kicker { color: #7b8782; font: 500 8px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .source-page p { margin-top: 11px; font: 500 16px/1.6 var(--serif); }
+    .source-mark { padding: 0 2px; background: rgba(96,186,216,.2); border-bottom: 1px solid rgba(38,122,157,.46); }
+    .source-mark.person { background: rgba(239,118,93,.18); border-color: rgba(239,118,93,.5); }
+    .source-mark.date { background: rgba(114,181,138,.2); border-color: rgba(114,181,138,.52); }
+    .source-status { display: flex; justify-content: space-between; margin-top: 14px; color: #74817c; font: 500 8px/1 var(--mono); text-transform: uppercase; }
+    .scan-progress { position: relative; min-width: 104px; min-height: 10px; text-align: right; }
+    .scan-progress span { position: absolute; inset: 0; animation: scan-copy 12s linear infinite; }
+    .scan-progress span:last-child { opacity: 0; animation-name: found-copy; }
+    .signal { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; padding: 18px 20px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.045); opacity: 0; transform: translateY(12px); animation: signal-reveal-one 12s cubic-bezier(.2,.8,.2,1) infinite,signal-breathe 6s ease-in-out infinite; }
+    .signal:nth-child(3) { animation-name: signal-reveal-two,signal-breathe; } .signal:nth-child(4) { animation-name: signal-reveal-three,signal-breathe; }
+    .signal-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; } .signal-icon svg { width: 18px; height: 18px; }
+    .signal:nth-child(2) .signal-icon { color: #8ac4d9; background: rgba(38,122,157,.25); } .signal:nth-child(3) .signal-icon { color: #eaa18e; background: rgba(180,83,63,.25); } .signal:nth-child(4) .signal-icon { color: #a8c5ae; background: rgba(79,122,95,.28); }
+    .signal strong { display: block; font-size: 14px; } .signal span { display: block; margin-top: 2px; color: #98a6a1; font-size: 12px; } .signal-tag { color: #8ea09a; font: 400 10px/1 var(--mono); text-transform: uppercase; }
+    .quiet-copy { padding-top: 10px; } .quiet-copy blockquote { font: 400 clamp(28px,4vw,46px)/1.24 var(--serif); } .quiet-copy blockquote em { color: #8ac4d9; } .quiet-copy p { margin-top: 24px; color: #aeb9b5; font-size: 14px; }
+    .scan-ready { display: inline-flex; align-items: center; gap: 8px; margin-top: 28px; padding: 8px 11px; color: #a9c1b8; border: 1px solid rgba(114,181,138,.24); border-radius: 999px; font: 500 9px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+    .scan-ready::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(114,181,138,.35); animation: scan-ready 2.8s ease-out infinite; }
+    .local-section { background: #111916; } .local-layout { display: grid; grid-template-columns: .88fr 1.12fr; gap: 78px; align-items: center; }
+    .truth-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 30px; } .truth-list span { padding: 7px 11px; color: #bdd0c8; background: rgba(114,181,138,.09); border: 1px solid rgba(114,181,138,.16); border-radius: 999px; font: 500 11px/1 var(--mono); }
+    .agent-handoff { padding: 28px; color: #dbe4e1; background: #080e0c; border: 1px solid #33413e; box-shadow: var(--shadow); }
+    .handoff-title { display: flex; align-items: center; justify-content: space-between; padding-bottom: 18px; border-bottom: 1px solid #2c3a36; }
+    .handoff-title strong { font: 600 18px/1.2 var(--serif); } .handoff-title span { color: #8eb69a; font: 500 9px/1 var(--mono); text-transform: uppercase; }
+    .handoff-steps { display: grid; gap: 0; }
+    .handoff-step { display: grid; grid-template-columns: 36px 1fr; gap: 14px; padding: 20px 0; border-bottom: 1px solid #26332f; }
+    .handoff-step:last-child { border-bottom: 0; padding-bottom: 4px; }
+    .handoff-number { width: 30px; height: 30px; display: grid; place-items: center; color: var(--terracotta); border: 1px solid rgba(239,118,93,.5); border-radius: 50%; font: 500 10px/1 var(--mono); }
+    .handoff-step strong { display: block; font-size: 14px; } .handoff-step p { margin-top: 4px; color: #91a09b; font-size: 12px; }
+    .permission-line { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; } .permission-line span { padding: 5px 7px; color: #a9c9bc; background: rgba(114,181,138,.09); border: 1px solid rgba(114,181,138,.15); border-radius: 3px; font: 500 8px/1 var(--mono); text-transform: uppercase; }
+    .ready-section { padding: 96px 0; color: #17201e; background: #f1ded7; border-top: 1px solid rgba(180,83,63,.22); }
+    .ready-layout { display: flex; align-items: center; justify-content: space-between; gap: 40px; } .ready-layout h2 { max-width: 740px; font: 600 clamp(39px,5.7vw,72px)/1.02 var(--serif); } .ready-layout h2 em { color: var(--terracotta); font-weight: 500; }
+    footer { color: #cbd4d1; background: var(--rail); } .footer-inner { min-height: 110px; display: flex; align-items: center; gap: 26px; } .footer-inner .brand { color: #fff; }
+    .footer-note { margin-left: auto; color: #82918c; font: 400 10px/1.4 var(--mono); text-align: right; }
+    .hero .eyebrow,.hero h1,.hero-lede,.hero-actions,.hero-proof { animation: hero-arrive 800ms both; } .hero h1 { animation-delay: 80ms; } .hero-lede { animation-delay: 160ms; } .hero-actions { animation-delay: 240ms; } .hero-proof { animation-delay: 320ms; }
+    .reveal { opacity: 1; transform: none; } .motion-ready .reveal { opacity: 0; transform: translateY(26px); transition: opacity 700ms cubic-bezier(.2,.7,.2,1),transform 700ms cubic-bezier(.2,.7,.2,1); } .motion-ready .reveal.visible { opacity: 1; transform: none; }
+    @keyframes hero-arrive { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+    @keyframes graph-flow { to { stroke-dashoffset: -136; } }
+    @keyframes graph-node { 0%,100% { transform: scale(.82); opacity: .5; } 50% { transform: scale(1.25); opacity: 1; } }
+    @keyframes semantic-flow { to { stroke-dashoffset: -96; } }
+    @keyframes semantic-node-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(96,186,216,.05); } 50% { box-shadow: 0 0 0 11px rgba(96,186,216,0); } }
+    @keyframes agent-beam { 0%,100% { opacity: .15; transform: scaleX(.35); } 50% { opacity: .9; transform: scaleX(1); } }
+    @keyframes agent-result { 0%,20%,100% { opacity: .25; transform: translateY(4px); } 38%,76% { opacity: 1; transform: none; } }
+    @keyframes signal-breathe { 0%,100% { border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.035); } 50% { border-color: rgba(96,186,216,.22); background: rgba(96,186,216,.065); } }
+    @keyframes source-scan { 0%,8% { transform: translateY(0); opacity: 0; } 14% { opacity: .9; } 28% { transform: translateY(145px); opacity: .55; } 34%,100% { transform: translateY(145px); opacity: 0; } }
+    @keyframes scan-copy { 0%,7%,34%,100% { opacity: 0; } 10%,29% { opacity: 1; } }
+    @keyframes found-copy { 0%,31%,92%,100% { opacity: 0; } 36%,88% { opacity: 1; } }
+    @keyframes signal-reveal-one { 0%,30%,96%,100% { opacity: 0; transform: translateY(12px); } 36%,90% { opacity: 1; transform: none; } }
+    @keyframes signal-reveal-two { 0%,38%,96%,100% { opacity: 0; transform: translateY(12px); } 44%,90% { opacity: 1; transform: none; } }
+    @keyframes signal-reveal-three { 0%,46%,96%,100% { opacity: 0; transform: translateY(12px); } 52%,90% { opacity: 1; transform: none; } }
+    @keyframes scan-ready { 70%,100% { box-shadow: 0 0 0 9px rgba(114,181,138,0); } }
+    @keyframes page-breathe { 0%,24%,100% { left: 19%; width: 62%; } 36%,68% { left: 5%; width: 90%; } 80% { left: 19%; width: 62%; } }
+    @keyframes edge-alert { 0%,18%,80%,100% { opacity: .15; } 24%,68% { opacity: .85; } }
+    @keyframes type-and-delete { 0%,16% { clip-path: inset(0 100% 0 0); opacity: 1; } 35%,63% { clip-path: inset(0 0 0 0); opacity: 1; } 74%,100% { clip-path: inset(0 100% 0 0); opacity: 0; } }
+    @keyframes cursor-blink { 50% { opacity: 0; } }
+    @keyframes phase-one { 0%,25% { opacity: 1; } 31%,100% { opacity: 0; } }
+    @keyframes phase-two { 0%,28%,68%,100% { opacity: 0; } 36%,62% { opacity: 1; } }
+    @keyframes phase-three { 0%,66%,100% { opacity: 0; } 74%,94% { opacity: 1; } }
+    @keyframes protocol-scan { 0%,15% { transform: translateY(0); opacity: 0; } 25% { opacity: .7; } 75% { opacity: .35; } 90%,100% { transform: translateY(330px); opacity: 0; } }
+    @media (max-width:900px) {
+      .nav-link { display: none; } .hero { min-height: 760px; }
+      .thought-grid { grid-template-columns: 1fr; } .thought { min-height: auto; padding: 30px 0; border-right: 0; } .thought+.thought { padding-left: 0; } .thought h3 { margin-top: 24px; }
+      .flow-layout,.signal-grid,.local-layout { grid-template-columns: 1fr; gap: 56px; } .local-copy { max-width: 650px; }
+      .semantic-map { min-height: 460px; } .semantic-node { width: 78px; height: 78px; font-size: 8px; }
     }
-
-    /* scanline */
-    body::before {
-      content:''; position:fixed; inset:0; z-index:9998; pointer-events:none;
-      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.05) 2px,rgba(0,0,0,.05) 4px);
+    @media (max-width:620px) {
+      .shell { width: min(calc(100% - 32px),var(--max)); } .site-nav { top: 8px; width: calc(100% - 16px); height: 54px; padding-left: 10px; } .brand-name { font-size: 14px; } .site-nav .button { min-height: 36px; padding-inline: 12px; font-size: 11px; }
+      .hero { min-height: 760px; align-items: flex-start; } .hero-content { padding: 126px 0 36px; } .hero h1 { font-size: clamp(54px,18vw,78px); line-height: .88; } .hero h1 span,.hero h1 em { display: block; } .hero-lede { font-size: 18px; } .hero-actions { display: grid; width: 100%; } .hero-actions .button { width: 100%; min-width: 0; padding-inline: 12px; } .scroll-note { display: none; }
+      .section { padding: 82px 0; } .section-heading h2,.flow-copy h2,.local-copy h2 { font-size: 42px; }
+      .signal { grid-template-columns: 40px 1fr; } .signal-tag { display: none; }
+      .semantic-map { min-height: 520px; } .semantic-core { width: 104px; height: 104px; } .semantic-node,.agent-result { left: var(--mx,var(--x)); } .semantic-node { top: var(--my,var(--y)); width: 68px; height: 68px; } .semantic-node.note,.semantic-node.insight { width: 82px; height: 64px; padding: 9px; } .semantic-node.agent { width: 105px; height: 68px; grid-template-columns: 22px 1fr; gap: 6px; padding: 8px; } .agent-glyph { width: 22px; height: 22px; } .agent-result { max-width: 94px; font-size: 6px; } .semantic-legend { display: none; }
+      .overflow-thought { left: 155px; }
+      .agent-handoff { padding: 20px; } .ready-layout { align-items: flex-start; flex-direction: column; } .footer-inner { padding: 28px 0; align-items: flex-start; flex-direction: column; } .footer-note { margin-left: 0; text-align: left; }
     }
-
-    /* noise */
-    body::after {
-      content:''; position:fixed; inset:0; z-index:9997; pointer-events:none; opacity:.02;
-      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
-    }
-
-    a { color: inherit; text-decoration: none; }
-
-    .btn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 11px 24px; font-family: var(--font-mono);
-      font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-      border: 1px solid; cursor: pointer; transition: all 150ms ease;
-    }
-    .btn-primary  { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .btn-primary:hover  { background: transparent; color: var(--accent); }
-    .btn-outline  { background: transparent; color: var(--accent); border-color: var(--accent); }
-    .btn-outline:hover  { background: var(--accent); color: #fff; }
-    .btn-ghost    { background: transparent; color: var(--text-dim); border-color: var(--border-hi); }
-    .btn-ghost:hover    { border-color: var(--accent); color: var(--accent); }
-
-    /* ── NAV ─────────────────────────────── */
-    nav {
-      position: sticky; top: 0; z-index: 100;
-      background: rgba(10,10,15,.95); backdrop-filter: blur(16px);
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center;
-      height: 56px; padding: 0 28px;
-    }
-    .nav-logo {
-      font-family: var(--font-serif); font-size: 17px; font-weight: 700;
-      color: var(--accent); font-style: italic; margin-right: 8px;
-    }
-    .nav-slash  { font-family: var(--font-mono); color: var(--text-dim); margin: 0 8px; }
-    .nav-sub    { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: .14em; text-transform: uppercase; margin-right: auto; }
-    .nl {
-      padding: 0 14px; height: 56px; line-height: 56px;
-      font-family: var(--font-mono); font-size: 12px; font-weight: 700;
-      letter-spacing: .12em; text-transform: uppercase;
-      color: var(--text-dim); transition: color 140ms;
-    }
-    .nl:hover { color: var(--accent); }
-
-    /* ── PHILOSOPHY BAR ──────────────────── */
-    .phil-bar {
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      padding: 9px 28px; display: flex; align-items: center;
-      justify-content: center; gap: 20px; overflow: hidden;
-    }
-    .phil-bar span {
-      font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
-      letter-spacing: .09em; white-space: nowrap;
-    }
-    .phil-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green-hi); flex-shrink:0; }
-
-    /* ── HERO ────────────────────────────── */
-    .hero-wrap { max-width: var(--max); margin: 0 auto; padding: 80px 28px 70px; }
-    .hero {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
-    }
-    @media (max-width: 860px) { .hero { grid-template-columns: 1fr; gap: 40px; } }
-
-    .hero-badge {
-      display: inline-flex; align-items: center; gap: 8px;
-      border: 1px solid var(--border-hi); padding: 5px 12px;
-      font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em;
-      color: var(--text-dim); margin-bottom: 24px;
-    }
-    .hb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s ease-in-out infinite; }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.75)} }
-
-    .hero-h1 {
-      font-family: var(--font-serif);
-      font-size: clamp(30px, 4.2vw, 56px);
-      line-height: 1.13; font-weight: 700;
-      color: var(--text); margin-bottom: 20px;
-    }
-    .hero-h1 .blu  { color: var(--accent); font-style: italic; }
-    .hero-h1 .grn  { color: var(--green-hi); font-style: normal; }
-
-    .hero-p {
-      font-size: 15px; color: var(--text-dim); line-height: 1.75;
-      margin-bottom: 32px; max-width: 480px;
-    }
-    .hero-btns { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 40px; }
-
-    .hero-stats { display: flex; gap: 32px; flex-wrap: wrap; }
-    .hs { display: flex; flex-direction: column; gap: 2px; }
-    .hs-val   { font-family: var(--font-mono); font-size: 19px; font-weight: 800; color: var(--accent); }
-    .hs-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-dim); }
-
-    /* ── TERMINAL DEMO ───────────────────── */
-    .demo-wrap {
-      background: var(--surface); border: 1px solid var(--border);
-      overflow: hidden; position: relative;
-    }
-    .demo-bar {
-      background: var(--surface-2); border-bottom: 1px solid var(--border);
-      padding: 9px 14px; display: flex; align-items: center; gap: 6px;
-    }
-    .db-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .db-r { background: #FF5F56; } .db-y { background: #FFBD2E; } .db-g { background: #27C93F; }
-    .db-title {
-      font-family: var(--font-mono); font-size: 11px;
-      color: var(--text-dim); margin-left: 8px; letter-spacing: .07em;
-    }
-
-    .boot-body { padding: 18px 20px; min-height: 190px; }
-    .boot-line {
-      font-family: var(--font-mono); font-size: 12px; line-height: 1.9;
-      color: var(--text-dim); opacity: 0; transition: opacity 200ms;
-    }
-    .boot-line.show { opacity: 1; }
-    .boot-line.acc  { color: var(--green-hi); }
-    .boot-line.blu  { color: var(--accent); }
-    .cursor::after  { content:'█'; animation: blink 1s step-end infinite; color: var(--accent); }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-
-    .note-editor {
-      border-top: 1px solid var(--border); padding: 20px 22px;
-      opacity: 0; transition: opacity 700ms 400ms;
-    }
-    .note-editor.show { opacity: 1; }
-    .ne-mode  { font-family: var(--font-mono); font-size: 10px; letter-spacing: .15em; color: var(--accent); margin-bottom: 12px; text-transform: uppercase; }
-    .ne-title { font-family: var(--font-serif); font-size: 19px; font-weight: 700; color: var(--text); margin-bottom: 8px; font-style: italic; line-height: 1.3; }
-    .ne-body  { font-size: 13px; color: var(--text-dim); line-height: 1.7; }
-    .ne-cursor { display: inline-block; width: 7px; height: 13px; background: var(--accent); animation: blink 1s step-end infinite; vertical-align: middle; margin-left: 2px; }
-    .ne-chips { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-    .ne-chip {
-      font-family: var(--font-mono); font-size: 10px; padding: 3px 9px;
-      border: 1px solid var(--border-hi); color: var(--text-dim); letter-spacing: .08em;
-    }
-    .ne-chip.g { border-color: var(--green); color: var(--green-hi); }
-    .ne-chip.b { border-color: var(--accent); color: var(--accent); }
-
-    /* ── SECTION COMMON ─────────────────── */
-    section { padding: 88px 28px; }
-    .section-inner { max-width: var(--max); margin: 0 auto; }
-    .section-label {
-      font-family: var(--font-mono); font-size: 11px; letter-spacing: .18em;
-      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
-    }
-    .section-h2 {
-      font-family: var(--font-serif); font-size: clamp(24px,3.5vw,44px);
-      line-height: 1.18; color: var(--text); margin-bottom: 14px; font-weight: 700;
-    }
-    .section-h2 span { color: var(--accent); font-style: italic; }
-    .section-sub {
-      font-size: 14px; color: var(--text-dim); max-width: 600px; line-height: 1.75;
-      margin-bottom: 48px;
-    }
-
-    /* ── ZERO-KNOWLEDGE ─────────────────── */
-    #zero { background: var(--surface); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
-    .zk-grid {
-      display: grid; grid-template-columns: repeat(3,1fr); gap: 2px;
-    }
-    @media (max-width: 720px) { .zk-grid { grid-template-columns: 1fr; } }
-    .zk-card { background: var(--bg); border: 1px solid var(--border); padding: 32px 28px; }
-    .zk-icon  { font-size: 28px; margin-bottom: 14px; display: block; }
-    .zk-title {
-      font-family: var(--font-mono); font-size: 12px; font-weight: 700;
-      letter-spacing: .11em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px;
-    }
-    .zk-desc  { font-size: 13px; color: var(--text-dim); line-height: 1.72; }
-    .zk-badge {
-      display: inline-block; margin-top: 16px;
-      font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
-      padding: 3px 9px; border: 1px solid var(--green); color: var(--green-hi);
-      text-transform: uppercase;
-    }
-
-    /* ── BENEFITS ───────────────────────── */
-    .benefit-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 32px; }
-    @media (max-width: 760px) { .benefit-grid { grid-template-columns: 1fr; } }
-    .benefit-card {
-      padding: 28px; border-left: 2px solid var(--border-hi);
-      transition: border-left-color 200ms;
-    }
-    .benefit-card:hover { border-left-color: var(--accent); }
-    .bc-num   { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: .1em; margin-bottom: 12px; }
-    .bc-title { font-family: var(--font-serif); font-size: 21px; font-weight: 700; color: var(--text); margin-bottom: 10px; line-height: 1.2; }
-    .bc-desc  { font-size: 13px; color: var(--text-dim); line-height: 1.72; }
-
-    /* ── VESSELS ────────────────────────── */
-    #vessels { background: var(--surface); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
-    .vessel-list { display: flex; flex-direction: column; }
-    .vessel-row {
-      display: grid; grid-template-columns: 200px 1fr auto;
-      align-items: center; gap: 24px;
-      padding: 20px 24px;
-      border: 1px solid var(--border); margin-top: -1px;
-      background: var(--bg); transition: background 140ms;
-    }
-    .vessel-row:hover { background: var(--surface-2); }
-    @media (max-width: 680px) { .vessel-row { grid-template-columns: 1fr; gap: 8px; } }
-    .vr-name { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: .05em; }
-    .vr-desc { font-size: 13px; color: var(--text-dim); line-height: 1.55; }
-    .vr-tag {
-      font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
-      padding: 4px 11px; border: 1px solid var(--border-hi);
-      color: var(--text-dim); white-space: nowrap; text-transform: uppercase;
-    }
-    .vr-tag.b { border-color: var(--accent); color: var(--accent); }
-    .vr-tag.g { border-color: var(--green); color: var(--green-hi); }
-
-    /* ── TECH MOAT ──────────────────────── */
-    .moat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
-    @media (max-width: 760px) { .moat-grid { grid-template-columns: 1fr; } }
-    .moat-card {
-      background: var(--surface); border: 1px solid var(--border);
-      padding: 26px; position: relative; overflow: hidden;
-    }
-    .moat-card::before {
-      content:''; position:absolute; top:0; left:0; right:0; height:2px;
-      background: linear-gradient(90deg, var(--accent), transparent);
-    }
-    .moat-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em; color: var(--accent); text-transform: uppercase; margin-bottom: 10px; }
-    .moat-title { font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
-    .moat-desc  { font-size: 13px; color: var(--text-dim); line-height: 1.65; }
-
-    /* ── WAITLIST ───────────────────────── */
-    #waitlist {
-      background: var(--surface); border-top: 1px solid var(--border);
-      padding: 100px 28px; text-align: center;
-    }
-    #waitlist .section-inner { max-width: 560px; }
-    #waitlist .section-h2 { margin-bottom: 10px; }
-    .wl-form {
-      display: flex; gap: 0; max-width: 440px; margin: 0 auto 16px;
-    }
-    .wl-input {
-      flex: 1; padding: 12px 16px;
-      background: var(--bg); border: 1px solid var(--border-hi); border-right: none;
-      color: var(--text); font-family: var(--font-mono); font-size: 13px;
-      outline: none; transition: border-color 150ms;
-    }
-    .wl-input:focus { border-color: var(--accent); }
-    .wl-input::placeholder { color: var(--text-dim); }
-    .wl-btn {
-      padding: 12px 20px; background: var(--accent); color: #fff;
-      border: 1px solid var(--accent); font-family: var(--font-mono);
-      font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-      cursor: pointer; transition: all 150ms;
-    }
-    .wl-btn:hover { background: transparent; color: var(--accent); }
-    .wl-note { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); letter-spacing: .08em; }
-    .wl-note .hi { color: var(--green-hi); }
-
-    /* ── PHILOSOPHY QUOTE ───────────────── */
-    .phil-quote {
-      background: var(--surface-2);
-      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
-      padding: 48px 28px; text-align: center;
-    }
-    .pq-inner { max-width: 640px; margin: 0 auto; }
-    .pq-text {
-      font-family: var(--font-serif);
-      font-size: clamp(18px, 2.5vw, 27px);
-      font-style: italic; color: var(--text); line-height: 1.55; font-weight: 400;
-    }
-    .pq-source {
-      font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
-      letter-spacing: .14em; margin-top: 18px; text-transform: uppercase;
-    }
-
-    /* ── FOOTER ─────────────────────────── */
-    footer { background: var(--bg); border-top: 1px solid var(--border); padding: 28px; }
-    .footer-inner {
-      max-width: var(--max); margin: 0 auto;
-      display: flex; align-items: center; justify-content: space-between;
-      flex-wrap: wrap; gap: 14px;
-    }
-    .footer-logo  { font-family: var(--font-serif); font-size: 15px; font-weight: 700; color: var(--accent); font-style: italic; }
-    .footer-links { display: flex; gap: 18px; }
-    .footer-link  { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: .1em; text-transform: uppercase; transition: color 140ms; }
-    .footer-link:hover { color: var(--accent); }
-    .footer-copy  { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); letter-spacing: .1em; }
-
-    /* ── FADE UP ────────────────────────── */
-    .fade-up { opacity: 0; transform: translateY(20px); transition: opacity 500ms ease, transform 500ms ease; }
-    .fade-up.visible { opacity: 1; transform: none; }
-
-    @media (max-width: 680px) {
-      nav { height: 58px; padding: 0 16px; }
-      .nav-logo { margin-right: auto; white-space: nowrap; }
-      .nav-slash, .nav-sub, .nl { display: none; }
-      nav .btn { min-height: 34px; margin-left: 10px !important; padding: 8px 10px; font-size: 8px; letter-spacing: .10em; white-space: nowrap; }
-      .phil-bar { padding-inline: 16px; }
-      .phil-bar span { overflow: hidden; text-overflow: ellipsis; }
-      .hero-wrap { padding: 48px 20px 58px; }
-      .hero-badge { max-width: 100%; font-size: 9px; letter-spacing: .1em; }
-      .hero-btns { display: grid; grid-template-columns: 1fr; }
-      .hero-btns .btn { justify-content: center; }
-      .hero-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 20px; }
-      section { padding: 68px 20px; }
-      .boot-body, .note-editor { padding-inline: 16px; }
-      .boot-line { font-size: 10px; overflow-wrap: anywhere; }
-      .wl-form { flex-direction: column; }
-      .wl-input { width: 100%; border-right: 1px solid var(--border-hi); }
-      .wl-btn { width: 100%; }
-      .footer-inner { align-items: flex-start; flex-direction: column; }
-      .footer-links { flex-wrap: wrap; }
-    }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior: auto; } *,*::before,*::after { transition-duration: .01ms!important; animation-duration: .01ms!important; animation-iteration-count: 1!important; } .reveal { opacity: 1; transform: none; } .signal,.scan-progress span,.source-page::after { animation: none!important; } .signal { opacity: 1; transform: none; } .source-page::after,.scan-progress span:first-child { opacity: 0; } .scan-progress span:last-child { opacity: 1; } }
   </style>
 </head>
 <body>
-
-  <!-- ════ NAV ════ -->
-  <nav>
-    <div class="nav-logo">Personal Note</div>
-    <div class="nav-slash">//</div>
-    <div class="nav-sub">LOCAL·FIRST &nbsp;·&nbsp; ZERO·KNOWLEDGE &nbsp;·&nbsp; PRIVATE BETA</div>
-    <a class="nl" href="#zero">WHY US</a>
-    <a class="nl" href="#vessels">VESSELS</a>
-    <a class="nl" href="#tech">TECH</a>
-    <a href="/notes" class="btn btn-primary" style="margin-left:12px">⊹ OPEN THE PROTOTYPE</a>
+  <nav class="site-nav" aria-label="Primary navigation">
+    <a class="brand" href="#top" aria-label="Personal Note home"><span class="brand-mark">P</span><span class="brand-name">Personal Note</span></a>
+    <a class="nav-link" href="#agents">Agents</a><a class="nav-link" href="#intelligence">Ambient intelligence</a><a class="nav-link" href="#workspace">Interface</a>
+    <a class="button button-primary" href="/notes">Open workspace <i data-lucide="arrow-up-right"></i></a>
   </nav>
-
-  <!-- ════ PHILOSOPHY BAR ════ -->
-  <div class="phil-bar">
-    <div class="phil-dot"></div>
-    <span>STRUCTURE WHEN YOU WANT IT &nbsp;·&nbsp; SPACE WHEN YOU DON'T &nbsp;·&nbsp; WRITER WHEN YOU NEED A PAGE &nbsp;·&nbsp; PAINTER WHEN YOU NEED A CANVAS</span>
-    <div class="phil-dot"></div>
-  </div>
-
-  <!-- ════ HERO ════ -->
-  <div class="hero-wrap">
-    <div class="hero">
-
-      <div class="hero-left">
-        <div class="hero-badge"><div class="hb-dot"></div>PRIVATE BETA — LIMITED SANCTUARIES</div>
-        <h1 class="hero-h1">
-          Your mind<br/>
-          is <span class="blu">infinite.</span><br/>
-          Your workspace<br/>
-          shouldn't be a <span class="grn">cage.</span>
-        </h1>
-        <p class="hero-p">
-          The first breathing canvas for thinkers. A private, local-first sanctuary where pages snap for structure and dissolve for dreaming. Built for the way your mind actually works.
-        </p>
-        <div class="hero-btns">
-          <a href="/notes" class="btn btn-primary">⊹ Enter The Workspace →</a>
-          <a href="#tech" class="btn btn-outline">▶ See The Spatial Stack</a>
-        </div>
-        <div class="hero-stats">
-          <div class="hs">
-            <div class="hs-val">0ms</div>
-            <div class="hs-label">Local Latency</div>
-          </div>
-          <div class="hs">
-            <div class="hs-val">E2EE</div>
-            <div class="hs-label">Zero Knowledge</div>
-          </div>
-          <div class="hs">
-            <div class="hs-val">∞</div>
-            <div class="hs-label">Canvas Size</div>
-          </div>
-          <div class="hs">
-            <div class="hs-val">.md</div>
-            <div class="hs-label">Open Standard</div>
-          </div>
-        </div>
+  <header class="hero" id="top">
+    <svg class="agent-field" viewBox="0 0 1440 820" preserveAspectRatio="none" aria-hidden="true">
+      <g><path class="graph-edge hot" d="M40 270L230 330L420 245L585 355L720 220L875 342L1050 258L1245 345L1410 285"/><path class="graph-edge" d="M110 620L280 520L470 610L585 355L760 565L875 342L1080 530L1330 590"/><path class="graph-edge" d="M230 330L280 520L420 245L470 610M720 220L760 565M1050 258L1080 530L1245 345M470 610L760 565L1080 530"/><path class="graph-edge" d="M40 270L110 620M420 245L720 220L1050 258L1410 285M1330 590L1245 345"/></g>
+      <g><circle class="graph-node" cx="40" cy="270" r="5"/><circle class="graph-node" cx="110" cy="620" r="4"/><circle class="graph-node" cx="230" cy="330" r="7"/><circle class="graph-node" cx="280" cy="520" r="5"/><circle class="graph-node" cx="420" cy="245" r="5"/><circle class="graph-node" cx="470" cy="610" r="6"/><circle class="graph-node core" cx="585" cy="355" r="9"/><circle class="graph-node" cx="720" cy="220" r="5"/><circle class="graph-node core" cx="760" cy="565" r="7"/><circle class="graph-node" cx="875" cy="342" r="6"/><circle class="graph-node" cx="1050" cy="258" r="5"/><circle class="graph-node core" cx="1080" cy="530" r="8"/><circle class="graph-node" cx="1245" cy="345" r="6"/><circle class="graph-node" cx="1330" cy="590" r="4"/><circle class="graph-node" cx="1410" cy="285" r="5"/></g>
+      <g><text class="graph-label" x="205" y="307">people</text><text class="graph-label" x="437" y="638">decisions</text><text class="graph-label" x="684" y="198">notes</text><text class="graph-label" x="1035" y="560">calendar</text><text class="graph-label" x="1212" y="323">ideas</text></g>
+    </svg>
+    <div class="shell"><div class="hero-content">
+      <span class="eyebrow">The agent-native notebook</span>
+      <h1><span>Personal</span> <em>Note.</em></h1>
+      <p class="hero-lede">A local workspace built for people and agents to think together. Write on adaptive paper, connect ideas in space, and give trusted agents grounded access without handing over your notes.</p>
+      <div class="hero-actions"><a class="button button-primary" href="/notes">Open your workspace <i data-lucide="arrow-right"></i></a><a class="button button-light" href="#agents"><i data-lucide="bot"></i> Explore agent access</a></div>
+      <div class="hero-proof" aria-label="Product capabilities"><span>Semantic workspace live</span><span>Local-first</span><span>Hermes Agent · MCP · OpenClaw</span></div>
+    </div></div>
+    <div class="scroll-note">People write. Agents connect.</div>
+  </header>
+  <main>
+    <section class="paper-section section" id="agents"><div class="shell">
+      <div class="section-heading reveal"><span class="eyebrow">01 · Agent native</span><h2>Not a notebook with an AI button.</h2><p>A local semantic layer connects notes, people, commitments, dates, and spatial relationships as you work. Trusted agents enter through one grounded boundary — discovering context and proposing changes without scraping the page or touching SQLite.</p></div>
+      <div class="semantic-map reveal" aria-label="Personal Note semantic workspace connecting notes, people, dates, spatial layout, and agent runtimes">
+        <svg class="semantic-lines" viewBox="0 0 1180 400" preserveAspectRatio="none" aria-hidden="true"><path d="M590 200L185 92M590 200L165 306M590 200L405 76M590 200L405 330M590 200L775 76M590 200L785 326M590 200L1010 104M590 200L1018 300M185 92L405 76M165 306L405 330M775 76L1010 104M785 326L1018 300"/></svg>
+        <div class="semantic-core"><div><strong>Personal Note</strong><span>semantic workspace</span></div></div>
+        <div class="semantic-node note" style="--x:15%;--mx:13%;--y:23%">Review note</div><div class="semantic-node person" style="--x:14%;--y:76%">Maya</div><div class="semantic-node insight" style="--x:34%;--mx:41%;--y:19%">Cache needs review</div><div class="semantic-node calendar" style="--x:34%;--mx:41%;--y:82%">Fri · 2 PM</div>
+        <div class="semantic-node note" style="--x:66%;--mx:56%;--y:19%;--my:32%">Retry notes</div><div class="semantic-node" style="--x:67%;--mx:58%;--y:81%;--my:68%">Source<br>evidence</div><div class="semantic-node agent" style="--x:86%;--mx:84%;--y:24%"><span class="agent-glyph">H</span><span><span class="agent-name">Hermes</span><span class="agent-task">extract follow-up</span></span></div><div class="semantic-node agent" style="--x:87%;--mx:84%;--y:76%"><span class="agent-glyph">O</span><span><span class="agent-name">OpenClaw</span><span class="agent-task">prepare proposal</span></span></div>
+        <div class="agent-result" style="--x:69%;--y:35%">Action · ask Maya</div><div class="agent-result calendar-result" style="--x:70%;--y:61%">Draft · Friday 2 PM</div>
+        <div class="semantic-legend"><span><i></i>workspace meaning</span><span><i></i>trusted runtime</span></div>
       </div>
-
-      <div class="hero-right">
-        <div class="demo-wrap">
-          <div class="demo-bar">
-            <div class="db-dot db-r"></div>
-            <div class="db-dot db-y"></div>
-            <div class="db-dot db-g"></div>
-            <div class="db-title">personal-note — sanctuary v1.0.0</div>
-          </div>
-          <div class="boot-body">
-            <div class="boot-line" id="n0">&gt; INITIALIZING LOCAL VAULT...</div>
-            <div class="boot-line blu" id="n1">&gt; SQLITE ENGINE: READY [0ms latency]</div>
-            <div class="boot-line" id="n2">&gt; E2EE: ACTIVE — ZERO KNOWLEDGE CONFIRMED</div>
-            <div class="boot-line" id="n3">&gt; LOADING 間 (MA) INTERFACE... PAGE MODE</div>
-            <div class="boot-line blu" id="n4">&gt; BREATH SYNC: ████████████ STABLE</div>
-            <div class="boot-line acc cursor" id="n5">&gt; YOUR SANCTUARY IS READY.</div>
-          </div>
-          <div class="note-editor" id="note-demo">
-            <div class="ne-mode">// PAGE MODE — "The Manifesto"</div>
-            <div class="ne-title">The Last Breakthrough I Almost Lost</div>
-            <div class="ne-body">
-              We were three hours deep when the insight landed. The kind that rewires everything. I grabbed my phone, opened a notes app, and watched the idea die inside a cluttered sidebar at 9pt font.<span class="ne-cursor"></span>
-            </div>
-            <div class="ne-chips">
-              <div class="ne-chip g">● E2EE ENCRYPTED</div>
-              <div class="ne-chip">LOCAL · SQLite</div>
-              <div class="ne-chip b">TEMPORAL ECHO ON</div>
-            </div>
-          </div>
-        </div>
+      <div class="thought-grid">
+        <article class="thought reveal"><div class="thought-icon">01</div><span class="status-label">Protocol live</span><h3>A workspace agents can read</h3><p>A versioned local protocol exposes notebooks, notes, text blocks, bounded search, and source evidence. Agents discover exactly what they may access before they act.</p></article>
+        <article class="thought reveal"><div class="thought-icon">02</div><span class="status-label">Adapters connected</span><h3>Meet agents where they run</h3><p>Hermes Agent, MCP, and OpenClaw connect through thin adapters over the same contract. Runtime-specific objects never leak into your notes.</p></article>
+        <article class="thought reveal"><div class="thought-icon">03</div><span class="status-label">Model ready</span><h3>Local by default</h3><p>A local semantic model connects the workspace automatically. Explicitly consented tasks can still use the cloud provider you choose without changing the notebook contract.</p></article>
       </div>
-
-    </div>
-  </div>
-
-  <!-- ════ ZERO-KNOWLEDGE INTELLIGENCE ════ -->
-  <section id="zero">
-    <div class="section-inner">
-      <div class="section-label">// ZERO-KNOWLEDGE INTELLIGENCE™</div>
-      <h2 class="section-h2">Most tools treat you<br/>like a <span>filing clerk.</span></h2>
-      <p class="section-sub">We treat you like a creator. Local-first speed meets a cloud vault that even we can't open. That's not a feature — that's the architecture.</p>
-
-      <div class="zk-grid">
-        <div class="zk-card fade-up">
-          <span class="zk-icon">⚡</span>
-          <div class="zk-title">Local-First · Cloud-Durable</div>
-          <div class="zk-desc">Work at the speed of thought. SQLite on your device means zero network dependency. Sync to the cloud on your schedule — with E2EE so your thoughts stay yours forever.</div>
-          <div class="zk-badge">0ms offline latency</div>
-        </div>
-        <div class="zk-card fade-up">
-          <span class="zk-icon">🔐</span>
-          <div class="zk-title">E2EE — We Can't Read It</div>
-          <div class="zk-desc">End-to-End Encryption isn't a checkbox. It's the architecture. Your cloud backup is a sealed vault. We hold no keys. Your private thoughts are private — permanently.</div>
-          <div class="zk-badge">zero-knowledge by design</div>
-        </div>
-        <div class="zk-card fade-up">
-          <span class="zk-icon">間</span>
-          <div class="zk-title">The 間 (Ma) Interface</div>
-          <div class="zk-desc">A UI that understands intent. Page mode snaps in when you're writing a manifesto. Canvas mode opens when you're connecting the dots. The switch is automatic — no button, no toggle.</div>
-          <div class="zk-badge">intent-aware interface</div>
-        </div>
+    </div></section>
+    <section class="intelligence-section section" id="intelligence"><div class="shell">
+      <div class="section-heading reveal"><span class="eyebrow">02 · Ambient intelligence</span><h2>Useful before you have to ask.</h2><p>There is no permanent assistant panel and no conversation to manage. After a meaningful pause, quiet signals surface beside the work, cite their source, and disappear when their moment has passed.</p></div>
+      <div class="signal-grid"><div class="signal-stack reveal"><div class="source-page"><div class="source-kicker">Architecture review · today</div><p>Ask <span class="source-mark person">Maya</span> to revisit the cache decision before <span class="source-mark date">Friday at 2</span>. The retry notes from April may explain the edge case.</p><div class="source-status"><span>writing paused</span><span class="scan-progress"><span>scanning page…</span><span>3 signals found</span></span></div></div><div class="signal"><div class="signal-icon">↗</div><div><strong>Related thought</strong><span>A grounded connection to “Retry strategy · April”</span></div><div class="signal-tag">local FTS5</div></div><div class="signal"><div class="signal-icon">M</div><div><strong>Maya in context</strong><span>Linked to the source note, never a guessed profile</span></div><div class="signal-tag">source linked</div></div><div class="signal"><div class="signal-icon">14</div><div><strong>Friday · 2:00 PM</strong><span>A reviewable calendar draft, never an automatic event</span></div><div class="signal-tag">approval first</div></div></div>
+        <div class="quiet-copy reveal"><blockquote>Your notes can remember the <em>person, promise, and next move</em> hiding in the page.</blockquote><p>Related thoughts arrive from local retrieval. People remain linked to their source note. Dates become reviewable calendar drafts. Page Scan recognizes rough diagrams and offers an editable proposal. Nothing silently rewrites the page.</p><div class="scan-ready">Page Scan · ready</div></div>
       </div>
-    </div>
-  </section>
-
-  <!-- ════ BENEFITS ════ -->
-  <section id="benefits">
-    <div class="section-inner">
-      <div class="section-label">// THE HUMAN IMPACT</div>
-      <h2 class="section-h2">Stop fighting your tools.<br/><span>Start thinking.</span></h2>
-      <p class="section-sub">Three things that happen when your workspace finally gets out of the way.</p>
-
-      <div class="benefit-grid">
-        <div class="benefit-card fade-up">
-          <div class="bc-num">// 01 — FLOW</div>
-          <div class="bc-title">Achieve Flow,<br/>Not Friction</div>
-          <div class="bc-desc">Ghost Overlay editing shows you beautiful typography as you write. Touch the text — it becomes raw Markdown. Release — it breathes back into clean layout. The tool disappears.</div>
-        </div>
-        <div class="benefit-card fade-up">
-          <div class="bc-num">// 02 — RETAIN</div>
-          <div class="bc-title">Make Thinking<br/>Fun Again</div>
-          <div class="bc-desc">Head First Vessel turns dry research into visual, high-retention knowledge assets automatically. Your notes stop being an archive and start being a teacher.</div>
-        </div>
-        <div class="benefit-card fade-up">
-          <div class="bc-num">// 03 — RECALL</div>
-          <div class="bc-title">Total Mental<br/>Recall</div>
-          <div class="bc-desc">Hybrid Storage films the evolution of your ideas. Travel back in time and see exactly how a breakthrough was born — the mental trail, not just the destination.</div>
-        </div>
+    </div></section>
+    <section class="flow-section section" id="workspace"><div class="shell flow-layout">
+      <div class="flow-copy reveal"><span class="eyebrow">03 · Adaptive interface</span><h2>Paper when you want it. Space when you need it.</h2><p>Begin with the focus of a familiar page. Write, sketch, and highlight without managing a canvas. When the thought outgrows the sheet, the workspace expands around it; when it settles, the interface contracts back to the work.</p>
+        <div class="flow-list"><div class="flow-item"><span class="flow-number">01</span><div><strong>Capture like paper</strong><span>Click and type, draw with pen, highlight, dictate, and stay close to the thought.</span></div></div><div class="flow-item"><span class="flow-number">02</span><div><strong>Think like a canvas</strong><span>Move ideas apart, draw the relationship, and let the page grow at its edges.</span></div></div><div class="flow-item"><span class="flow-number">03</span><div><strong>Return to quiet</strong><span>Tidy text around ink, hide utility chrome, and shrink the workspace when extra space is no longer useful.</span></div></div></div>
       </div>
-    </div>
-  </section>
-
-  <!-- ════ VESSELS ════ -->
-  <section id="vessels">
-    <div class="section-inner">
-      <div class="section-label">// THE VESSELS</div>
-      <h2 class="section-h2">Five ways to<br/><span>think differently.</span></h2>
-      <p class="section-sub">Each Vessel is a distinct cognitive gear — not a tab, not a plugin. A different way of being in your ideas.</p>
-
-      <div class="vessel-list">
-        <div class="vessel-row fade-up">
-          <div class="vr-name">Jarvis "Jam"</div>
-          <div class="vr-desc">A hands-free, voice-to-voice session that transcribes and maps your brainstorm in real-time. Talk to your ideas before they're fully formed. Capture everything. Miss nothing.</div>
-          <div class="vr-tag b">VOICE · AI</div>
-        </div>
-        <div class="vessel-row fade-up">
-          <div class="vr-name">Temporal Echo</div>
-          <div class="vr-desc">A 3D "Time Machine" tunnel. Scrub through your Git-based idea history like a movie. See how your thinking evolved — not just what you concluded, but how you got there.</div>
-          <div class="vr-tag g">TIME TRAVEL</div>
-        </div>
-        <div class="vessel-row fade-up">
-          <div class="vr-name">The Web Siphon</div>
-          <div class="vr-desc">A one-click bridge from the internet to your vault. Clip any article, thread, or page into your encrypted inbox. No more 50 open tabs. No more "I'll read this later."</div>
-          <div class="vr-tag">WEB · CAPTURE</div>
-        </div>
-        <div class="vessel-row fade-up">
-          <div class="vr-name">Auto-Vessel</div>
-          <div class="vr-desc">Draw shaky doodles, rough sketches, messy flowcharts. We convert them into clean professional diagrams and icons instantly. Sketch at the speed of thought.</div>
-          <div class="vr-tag b">SKETCH · AI</div>
-        </div>
-        <div class="vessel-row fade-up">
-          <div class="vr-name">DeepTutor Research</div>
-          <div class="vr-desc">An autonomous multi-agent engine that performs PhD-level research with full citations while you sleep. Wake to a structured knowledge report ready to annotate and connect.</div>
-          <div class="vr-tag g">AUTONOMOUS</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ════ TECH MOAT ════ -->
-  <section id="tech">
-    <div class="section-inner">
-      <div class="section-label">// THE TECH MOAT</div>
-      <h2 class="section-h2">Built for<br/>the <span>savvy mind.</span></h2>
-      <p class="section-sub">The infrastructure decisions that make Personal Note structurally different from every tool you've tried before.</p>
-
-      <div class="moat-grid">
-        <div class="moat-card fade-up">
-          <div class="moat-label">// OPEN FORMAT</div>
-          <div class="moat-title">Markdown-Native Storage</div>
-          <div class="moat-desc">Your data lives in plain <code style="color:var(--accent);font-family:var(--font-mono);font-size:12px;">.md</code> files on your device. No proprietary database. No vendor lock-in. Export everything, anytime. Your thoughts belong to you — forever.</div>
-        </div>
-        <div class="moat-card fade-up">
-          <div class="moat-label">// COMPRESSION</div>
-          <div class="moat-title">Memvid Subconscious</div>
-          <div class="moat-desc">We compress millions of reasoning traces into a single portable video frame. 15× higher density than traditional databases. Your entire idea history — every revision, every branch — fits in your pocket.</div>
-        </div>
-        <div class="moat-card fade-up">
-          <div class="moat-label">// PRIVACY</div>
-          <div class="moat-title">Blind Indexing</div>
-          <div class="moat-desc">Search your encrypted cloud archive without the provider ever "seeing" a word. Your queries are private. Your results are private. Even the search index is sealed. Blind by design.</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ════ WAITLIST ════ -->
-  <section id="waitlist">
-    <div class="section-inner">
-      <div class="section-label" style="text-align:center">// ENTER THE PROTOTYPE</div>
-      <h2 class="section-h2" style="text-align:center">
-        The workspace is ready.<br/><span>Start thinking.</span>
-      </h2>
-      <p class="section-sub" style="text-align:center; margin:0 auto 36px;">
-        Enter the current prototype directly. It already includes notebooks, note organization, themes, and the spatial writing surface.
-      </p>
-      <div class="wl-form">
-        <input class="wl-input" type="text" id="wl-email" value="Prototype ready" readonly/>
-        <button class="wl-btn" onclick="joinWaitlist()">Open Prototype →</button>
-      </div>
-      <div class="wl-note" id="wl-note">
-        Local-first backbone. <span class="hi">Spatial editor is live in the prototype.</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ════ PHILOSOPHY QUOTE ════ -->
-  <div class="phil-quote">
-    <div class="pq-inner">
-      <div class="pq-text">
-        "Structure when you want it, space when you don't.<br/>
-        Writer when you need a page, painter when you need a canvas."
-      </div>
-      <div class="pq-source">Personal Note — Core Philosophy</div>
-    </div>
-  </div>
-
-  <!-- ════ FOOTER ════ -->
-  <footer>
-    <div class="footer-inner">
-      <div class="footer-logo">Personal Note</div>
-      <div class="footer-links">
-        <a class="footer-link" href="#">Privacy</a>
-        <a class="footer-link" href="#">Security</a>
-        <a class="footer-link" href="#">Open Source</a>
-        <a class="footer-link" href="#">Contact</a>
-      </div>
-      <div class="footer-copy">© 2026 PERSONAL NOTE. LOCAL-FIRST. ZERO-KNOWLEDGE. FOREVER YOURS.</div>
-    </div>
-  </footer>
-
-  <script>
-    // ── BOOT SEQUENCE ──
-    const seq = [
-      { id: 'n0', delay: 300  },
-      { id: 'n1', delay: 800  },
-      { id: 'n2', delay: 1400 },
-      { id: 'n3', delay: 1950 },
-      { id: 'n4', delay: 2550 },
-      { id: 'n5', delay: 3100 },
-    ];
-    seq.forEach(({ id, delay }) => {
-      setTimeout(() => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('show');
-      }, delay);
-    });
-
-    // Show note editor after boot completes
-    setTimeout(() => {
-      const editor = document.getElementById('note-demo');
-      if (editor) editor.classList.add('show');
-    }, 3700);
-
-    // ── FADE UP OBSERVER ──
-    const obs = new IntersectionObserver(entries => {
-      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
-    }, { threshold: 0.1 });
-    document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
-
-    // ── WAITLIST ──
-    function joinWaitlist() {
-      window.location.href = '/notes';
-    }
-
-    // Allow Enter key on waitlist input
-    document.getElementById('wl-email').addEventListener('keydown', e => {
-      if (e.key === 'Enter') joinWaitlist();
-    });
-  </script>
-
+      <figure class="mini-workspace reveal" aria-label="Animated Personal Note canvas: text reaches the page edge, the workspace expands, then contracts after the text is deleted"><div class="workspace-grid"></div><div class="boundary-note">live page boundary</div><div class="adaptive-page"><div class="adaptive-chrome"><span>System design review</span><span>saved locally</span></div><div class="adaptive-copy"><strong>Follow the thought</strong><div class="adaptive-line"></div><div class="adaptive-line"></div><div class="overflow-thought">→ connect this decision to the retry strategy</div></div></div><div class="adaptive-phase"><span>01 · typing reaches the edge</span><span>02 · workspace expands</span><span>03 · delete restores focus</span></div></figure>
+    </div></section>
+    <section class="local-section section"><div class="shell local-layout">
+      <div class="local-copy reveal"><span class="eyebrow">Your notebook stays in charge</span><h2>Let an agent help, without giving it the keys.</h2><p>Connect Hermes, OpenClaw, or another trusted agent to a specific notebook. It can find relevant context and prepare useful next steps, but it cannot silently edit, export, or send anything.</p><div class="truth-list"><span>You choose the notebook</span><span>Sources stay visible</span><span>Actions need approval</span></div></div>
+      <div class="agent-handoff reveal" aria-label="How connecting an agent works"><div class="handoff-title"><strong>Connect Hermes to “Work”</strong><span>you control access</span></div><div class="handoff-steps"><div class="handoff-step"><span class="handoff-number">01</span><div><strong>Choose what it may read</strong><p>Give access to this notebook, not your whole device.</p><div class="permission-line"><span>Work notes</span><span>Read + search</span></div></div></div><div class="handoff-step"><span class="handoff-number">02</span><div><strong>See what it found</strong><p>Every person, date, and related note links back to its source.</p><div class="permission-line"><span>3 sources cited</span></div></div></div><div class="handoff-step"><span class="handoff-number">03</span><div><strong>Approve the next move</strong><p>The agent prepares a follow-up or calendar draft. You decide whether it happens.</p><div class="permission-line"><span>Review proposal</span><span>No silent changes</span></div></div></div></div></div>
+    </div></section>
+    <section class="ready-section"><div class="shell ready-layout reveal"><h2>Your notebook should work with you.<br/><em>And with your agents.</em></h2><a class="button button-primary" href="/notes">Open Personal Note <i data-lucide="arrow-right"></i></a></div></section>
+  </main>
+  <footer><div class="shell footer-inner"><a class="brand" href="#top"><span class="brand-mark">P</span><span class="brand-name">Personal Note</span></a><div class="footer-note">Local-first prototype · Data saved on this device<br/>Encryption at rest and end-to-end encryption are not yet implemented.</div></div></footer>
 </body>
 </html>

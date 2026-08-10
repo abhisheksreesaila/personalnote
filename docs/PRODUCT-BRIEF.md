@@ -45,7 +45,8 @@ See `docs/VISUAL-INTELLIGENCE.md` for the visual proposal architecture and deliv
 | Calendar | Local `chrono-node` parsing and explicit `.ics` export | Prototype |
 | Page Scan | Explicit scan for dates, people, related notes, text cleanup, and drawing proposals | Prototype |
 | Drawing assistance | Local scan-time recognition of rough boxes, ellipses, connectors, and arrows; approval-gated refinement | Prototype |
-| Concept-aware diagrams | Multi-stroke grouping, intent recognition, semantic completion, and ghost previews | Designed, not implemented |
+| Concept-aware diagrams | Deterministic text-to-concept-map planning with an editable ghost preview and approval | Prototype complete |
+| Agent workspace protocol | Transport-neutral semantic resources, grounded reads, scoped proposals, and adapter boundary | Architecture defined |
 | Voice | Browser `SpeechRecognition` inserts finalized text into a Fabric text object | Thin browser-dependent prototype |
 | Model runtime | Optional TypeScript worker using Mastra for one bounded generation step | Replaceable implementation |
 | Authentication | Deliberately bypassed in the current single-user build | Not implemented |
@@ -112,6 +113,8 @@ The repository already contains the right small substrate:
 
 That substrate should grow only when a concrete capability requires it. A replacement runtime needs to implement the provider interface or the `/v1/execute` contract; it should not require editor changes.
 
+External agents require a different boundary from this internal task runner. The [Agent Workspace Protocol](./AGENT-WORKSPACE-PROTOCOL.md) defines stable semantic resources, bounded source-grounded reads, and proposal-gated changes. MCP, OpenClaw, embedded local agents, and future runtimes adapt to that product-owned contract rather than receiving database or canvas access.
+
 AG-UI remains isolated because its dependency graph is disproportionate for ambient work. It may be reconsidered for a long-running, visible workflow where streaming lifecycle events and human approval justify the cost. The current Mastra worker is acceptable for bounded model calls, but it is not part of the product's core architecture.
 
 ## Proposed Audio-First Architecture
@@ -171,9 +174,9 @@ Measure end-to-end perceived latency separately from service time. A fast query 
 
 1. Document the exact Rod Io reference with screenshots or interaction notes and extract testable canvas behaviors from it.
 2. Test the current canvas, Page Scan, and ambient suggestions with real note-taking sessions; record latency, false-positive, dismissal, and undo rates.
-3. Collect real visual-thinking stroke fixtures and implement multi-stroke grouping plus nearby-label association.
-4. Split Page Scan local findings from optional model enrichment so Scan never waits for a worker.
-5. Add the bounded scene snapshot, diagram proposal schema, and reversible ghost preview described in `docs/VISUAL-INTELLIGENCE.md`.
+3. Implement Slice 1 of the Agent Workspace Protocol: stable object IDs, revisions, semantic note/block projections, discovery, and bounded lexical query.
+4. Collect real visual-thinking stroke fixtures and implement multi-stroke grouping plus nearby-label association.
+5. Split Page Scan local findings from optional model enrichment so Scan never waits for a worker.
 6. Ship one high-precision semantic visual capability before attempting broad diagram generation.
 7. Integrate a replaceable Whisper-class transcription provider when voice moves beyond the browser prototype.
 8. Improve retrieval with provenance spans and evaluation fixtures before adding broader autonomous behavior.

@@ -35,8 +35,9 @@ npm run dev
 1. [docs/PRODUCT-BRIEF.md](docs/PRODUCT-BRIEF.md) — Product north star, verified state, audio direction, open decisions
 2. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System diagram, data flow, file map
 3. [docs/INTELLIGENCE-ARCHITECTURE.md](docs/INTELLIGENCE-ARCHITECTURE.md) — Attention policy, latency contract, invariants
-4. [docs/VISUAL-INTELLIGENCE.md](docs/VISUAL-INTELLIGENCE.md) — Scan-triggered concept recognition, diagram proposals, timing, evaluation
-5. [docs/ROADMAP.md](docs/ROADMAP.md) — What is complete vs planned
+4. [docs/AGENT-WORKSPACE-PROTOCOL.md](docs/AGENT-WORKSPACE-PROTOCOL.md) — Semantic resources, agent authority, proposals, adapters
+5. [docs/VISUAL-INTELLIGENCE.md](docs/VISUAL-INTELLIGENCE.md) — Scan-triggered concept recognition, diagram proposals, timing, evaluation
+6. [docs/ROADMAP.md](docs/ROADMAP.md) — What is complete vs planned
 
 **By task area:**
 
@@ -49,6 +50,7 @@ npm run dev
 | REST API / persistence | `routes.py`, `services.py`, `app_schema.py` |
 | Mastra worker | `intelligence/ambient-agent.ts`, `intelligence/server.ts` |
 | Worker bridge | `intelligence_client.py` |
+| External or embedded agent access | `docs/AGENT-WORKSPACE-PROTOCOL.md` |
 | Config / env | `.env.example`, `routes.py` → `runtime_capabilities()` |
 
 ## Architecture at a Glance
@@ -103,6 +105,7 @@ npm run build                # Production frontend → dist/
 | Goal | Where to add |
 |------|--------------|
 | New intelligence task | `intelligence/protocol/schemas.ts` → `intelligence/tasks/` → `runtime/executor.ts` → optional FastHTML route |
+| New agent-facing workspace operation | `docs/AGENT-WORKSPACE-PROTOCOL.md` → product-owned protocol service → transport adapter |
 | New model provider | `intelligence/providers/` → register in `registry.ts` |
 | New ambient feature (local) | `src/intelligence/`, wire in `src/main.js`, add API in `routes.py` + `services.py` |
 | Retrieval improvement | `services.py` (`related_candidates`, `index_note`, FTS5 queries) |
