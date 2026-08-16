@@ -13,5 +13,14 @@
       "query": "partner event",
       "limit": 10
     }
+  },
+  "changesRequest": {
+    "protocolVersion": "1",
+    "requestId": "req_changes_fixture",
+    "operation": "changes.since",
+    "input": {
+      "since": 0,
+      "limit": 50
+    }
   }
 }

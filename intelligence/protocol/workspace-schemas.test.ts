@@ -11,6 +11,7 @@ const fixtures = JSON.parse(await readFile(fixtureUrl, 'utf-8')) as Record<strin
 test('shared workspace protocol requests satisfy the TypeScript contract', () => {
   assert.equal(workspaceRequestSchema.parse(fixtures.describeRequest).operation, 'workspace.describe')
   assert.equal(workspaceRequestSchema.parse(fixtures.queryRequest).operation, 'workspace.query')
+  assert.equal(workspaceRequestSchema.parse(fixtures.changesRequest).operation, 'changes.since')
 })
 
 test('the Slice 2 contract accepts proposal operations', () => {

@@ -1,6 +1,6 @@
 # Agent Workspace Protocol
 
-Status: Slice 2 safe derived proposals shipped, 2026-08-15. The read-only semantic boundary, revision-checked `link_resources` and `classify_note` proposals, idempotency, and append-only activity records are implemented. Broader derived graph resources, synchronization, MCP, and OpenClaw adapters remain planned.
+Status: Slice 2 safe derived proposals and Slice 3 incremental synchronization shipped, 2026-08-15. The read-only semantic boundary, revision-checked `link_resources` and `classify_note` proposals, idempotency, append-only activity records, and signed-cursor change replay are implemented. Broader derived graph resources, MCP, and OpenClaw adapters remain planned.
 
 ## Decision
 
@@ -140,7 +140,7 @@ Derived resources never overwrite canonical material. Deterministic extractors r
 
 Agents start with `workspace.describe`, which returns protocol versions, supported operations, resource kinds, current scopes, inference tiers, limits, cursor retention, and proposal types. Unsupported capabilities are absent, not guessed.
 
-Slice 2 advertises `workspace.describe`, `resource.get`, `workspace.query`, `proposal.create`, `proposal.get`, `proposal.cancel`, `proposal.decide`, and `activity.list`. It supports only `link_resources` and `classify_note` proposals; broader operations remain unavailable.
+The current surface advertises `workspace.describe`, `resource.get`, `workspace.query`, `changes.since`, `proposal.create`, `proposal.get`, `proposal.cancel`, `proposal.decide`, and `activity.list`. It supports only `link_resources` and `classify_note` proposals; broader operations remain unavailable.
 
 ### Read operations
 
@@ -299,10 +299,14 @@ Exit criterion: met for derived links and classifications. Two retries create on
 
 ### Slice 3: Derived semantic graph
 
+**Incremental synchronization shipped.**
+
 1. Add entities, relationships, decisions, and commitments as rebuildable records.
 2. Run deterministic extraction first, then optional local-model enrichment.
 3. Add hybrid retrieval and evidence quality fixtures.
-4. Expose `workspace.context` and `changes.since`.
+4. Expose `workspace.context`.
+
+`changes.since` is available now. It replays the ordered change ledger in bounded pages using a signed cursor and represents deleted resources as metadata-only tombstones. Clients must refetch a changed resource through `resource.get` when its current semantic envelope is needed.
 
 Exit criterion: an agent can answer an unresolved-commitment query with exact source references while the model worker is offline.
 
@@ -332,4 +336,4 @@ An implementation is conformant only if:
 
 ## Next Build Target
 
-Keep Slice 1 stable while designing Slice 2's durable proposal and inverse-change boundary. Do not expose canonical mutations through an adapter before proposal decisions, evidence revision checks, idempotency, audit records, and crash-safe undo pass recovery tests.
+Add rebuildable entity, decision, and commitment resources with deterministic extraction, then expose a bounded `workspace.context` pack. Do not expose canonical mutations through an adapter before proposal decisions, evidence revision checks, idempotency, audit records, and crash-safe undo pass recovery tests.

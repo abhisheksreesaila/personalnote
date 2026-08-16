@@ -89,7 +89,7 @@ Setup pins `NVIDIA/NeMo-Speech.cpp` to commit `b00a5537c71059cf49c1d8e11609af7ab
 - Scan-only rough box, circle, connector, and arrow proposals with approval-gated refinement
 - Source-grounded related-note cards that disappear after their moment
 - Local deterministic retrieval with optional Mastra reranking through any OpenAI-compatible model
-- Loopback-only Agent Workspace Protocol with stable semantic resources, grounded lexical query, signed cursors, and bearer capability authentication
+- Loopback-only Agent Workspace Protocol with stable semantic resources, grounded lexical query, signed cursors, incremental change replay, and bearer capability authentication
 
 ## Architecture
 
@@ -114,7 +114,7 @@ The browser stores Fabric.js canvas JSON through a FastHTML REST interface. `mai
 
 ## Connect a local agent
 
-Slice 2 of the Agent Workspace Protocol is available at `POST http://127.0.0.1:3137/api/workspace/v1`. It accepts loopback clients only and supports discovery, resource reads, queries, proposal lifecycle operations, and activity reads. Agents can propose only revision-checked derived links and note classifications; they cannot directly alter canonical note content. On first API startup, a random bearer token is written to `data/workspace.token` unless `PERSONAL_NOTE_AGENT_TOKEN` or `PERSONAL_NOTE_AGENT_TOKEN_FILE` is configured.
+The Agent Workspace Protocol is available at `POST http://127.0.0.1:3137/api/workspace/v1`. It accepts loopback clients only and supports discovery, resource reads, queries, signed-cursor `changes.since` replay, proposal lifecycle operations, and activity reads. The change feed returns ordered resource metadata and deletion tombstones, never canonical note payloads. Agents can propose only revision-checked derived links and note classifications; they cannot directly alter canonical note content. On first API startup, a random bearer token is written to `data/workspace.token` unless `PERSONAL_NOTE_AGENT_TOKEN` or `PERSONAL_NOTE_AGENT_TOKEN_FILE` is configured.
 
 ```powershell
 $token = (Get-Content data/workspace.token -Raw).Trim()
@@ -128,7 +128,7 @@ $body = @{
 Invoke-RestMethod http://127.0.0.1:3137/api/workspace/v1 -Method Post -Headers $headers -ContentType 'application/json' -Body $body
 ```
 
-Call discovery first and use only advertised operations. Agents receive bounded semantic text and grounded evidence, never raw Fabric JSON or SQLite access. MCP and OpenClaw packages, proposals, canonical mutation, and remote access are future slices.
+Call discovery first and use only advertised operations. Agents receive bounded semantic text and grounded evidence, never raw Fabric JSON or SQLite access. MCP and OpenClaw packages, canonical mutation, and remote access are future slices.
 
 **Ambient intelligence** is split deliberately. FastHTML returns immediate source-grounded retrieval locally; the browser may then request non-blocking enrichment from a restricted Mastra worker. Mastra may rerank and phrase a connection with one bounded model step — no shell, filesystem, browser, or mutation tools. Without a configured model, the same features run in deterministic `local-retrieval` mode.
 

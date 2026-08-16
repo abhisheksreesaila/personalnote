@@ -282,6 +282,51 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("proposal.applied", [item["type"] for item in activity])
         self.assertIn("proposal.conflicted", [item["type"] for item in activity])
 
+    def test_workspace_changes_are_ordered_paginated_and_include_tombstones(self):
+        with self.app.state.note_service.connection() as connection:
+            since = connection.execute(
+                "SELECT sequence FROM workspace_state WHERE id = 1"
+            ).fetchone()["sequence"]
+        notebook = self.client.get("/api/notebooks").json()[0]
+        note = self.client.post(
+            "/api/notes", json={"title": "Temporary note", "notebookId": notebook["id"]}
+        ).json()
+        updated = self.client.put(
+            f"/api/notes/{note['id']}",
+            json={
+                "title": "Temporary note revised",
+                "notebookId": notebook["id"],
+                "revision": note["revision"],
+                "content": {"objects": []},
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(self.client.delete(f"/api/notes/{note['id']}").status_code, 204)
+
+        first_page = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_changes_first",
+            "operation": "changes.since",
+            "input": {"since": since, "limit": 2},
+        })
+        self.assertEqual(first_page.status_code, 200)
+        first_result = first_page.json()["result"]
+        self.assertEqual([item["changeType"] for item in first_result["items"]], ["created", "updated"])
+        self.assertEqual([item["sequence"] for item in first_result["items"]], sorted(item["sequence"] for item in first_result["items"]))
+        self.assertIsNotNone(first_result["nextCursor"])
+
+        second_page = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_changes_next",
+            "operation": "changes.since",
+            "input": {"cursor": first_result["nextCursor"]},
+        })
+        self.assertEqual(second_page.status_code, 200)
+        tombstone = second_page.json()["result"]["items"]
+        self.assertEqual(len(tombstone), 1)
+        self.assertEqual(tombstone[0]["changeType"], "deleted")
+        self.assertEqual(tombstone[0]["resource"]["id"], note["resourceId"])
+
     def test_note_and_notebook_contract(self):
         health = self.client.get("/health")
         self.assertEqual(health.status_code, 200)

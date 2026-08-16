@@ -153,9 +153,9 @@ On every note write, `NoteService.index_note()` updates FTS5 and `note_people` i
 
 ## Agent Workspace Protocol
 
-`workspace_protocol.py` owns the transport-neutral Slice 2 surface. `routes.py` exposes it at loopback-only `POST /api/workspace/v1` with a bearer capability token. `workspace.describe` advertises the exact supported surface; `resource.get` projects workspace, notebook, note, and block envelopes; `workspace.query` uses FTS5 and signed, actor-bound cursors; proposal operations apply only revision-checked derived links and classifications. Evidence uses note revisions, stable block IDs, zero-based UTF-16 spans, and SHA-256 value hashes.
+`workspace_protocol.py` owns the transport-neutral Slice 2 proposal and Slice 3 synchronization surface. `routes.py` exposes it at loopback-only `POST /api/workspace/v1` with a bearer capability token. `workspace.describe` advertises the exact supported surface; `resource.get` projects workspace, notebook, note, and block envelopes; `workspace.query` uses FTS5 and signed, actor-bound cursors; `changes.since` replays bounded ordered metadata changes and deletion tombstones; proposal operations apply only revision-checked derived links and classifications. Evidence uses note revisions, stable block IDs, zero-based UTF-16 spans, and SHA-256 value hashes.
 
-This path is independent of the optional Mastra worker and works with no model configured. It supports only product-approved derived proposals (`link_resources` and `classify_note`), recording idempotent decisions, inverse changes, workspace changes, and activity atomically. Canonical block edits, `changes.since`, MCP, and OpenClaw adapters are not shipped.
+This path is independent of the optional Mastra worker and works with no model configured. It supports only product-approved derived proposals (`link_resources` and `classify_note`), recording idempotent decisions, inverse changes, workspace changes, and activity atomically. Canonical block edits, MCP, and OpenClaw adapters are not shipped.
 
 ## Ambient Intelligence Lanes
 

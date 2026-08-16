@@ -15,6 +15,7 @@ from services import NoteService, WORD_PATTERN
 WORKSPACE_PROTOCOL_VERSION = "1"
 MAX_QUERY_CHARS = 400
 MAX_QUERY_RESULTS = 20
+MAX_CHANGE_RESULTS = 100
 MAX_BLOCK_CHARS = 8_000
 MAX_EXCERPT_CHARS = 280
 CURSOR_RETENTION_SECONDS = 86_400
@@ -161,6 +162,7 @@ class WorkspaceProtocol:
                 "workspace.describe",
                 "resource.get",
                 "workspace.query",
+                "changes.since",
                 "proposal.create",
                 "proposal.get",
                 "proposal.cancel",
@@ -173,6 +175,7 @@ class WorkspaceProtocol:
             "limits": {
                 "queryChars": MAX_QUERY_CHARS,
                 "queryResults": MAX_QUERY_RESULTS,
+                "changeResults": MAX_CHANGE_RESULTS,
                 "blockChars": MAX_BLOCK_CHARS,
                 "excerptChars": MAX_EXCERPT_CHARS,
             },
@@ -296,6 +299,51 @@ class WorkspaceProtocol:
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             raise WorkspaceProtocolError("invalid_cursor", "Cursor is invalid") from None
 
+    def encode_change_cursor(self, sequence: int, workspace_id: str) -> str:
+        payload = {
+            "actor": ACTOR_ID,
+            "issuedAt": int(time.time()),
+            "sequence": sequence,
+            "type": "changes",
+            "version": WORKSPACE_PROTOCOL_VERSION,
+            "workspaceId": workspace_id,
+        }
+        encoded = base64.urlsafe_b64encode(
+            json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ).rstrip(b"=")
+        signature = hmac.new(
+            self.capability_token.encode("utf-8"), encoded, hashlib.sha256
+        ).digest()
+        return f"{encoded.decode()}.{base64.urlsafe_b64encode(signature).decode().rstrip('=')}"
+
+    def decode_change_cursor(self, cursor: str, workspace_id: str) -> int:
+        try:
+            encoded_text, signature_text = cursor.split(".", 1)
+            encoded = encoded_text.encode("ascii")
+            signature = base64.urlsafe_b64decode(signature_text + "=" * (-len(signature_text) % 4))
+            expected = hmac.new(
+                self.capability_token.encode("utf-8"), encoded, hashlib.sha256
+            ).digest()
+            if not hmac.compare_digest(signature, expected):
+                raise ValueError
+            payload = json.loads(
+                base64.urlsafe_b64decode(encoded + b"=" * (-len(encoded) % 4))
+            )
+            if (
+                payload["actor"] != ACTOR_ID
+                or payload["type"] != "changes"
+                or payload["version"] != WORKSPACE_PROTOCOL_VERSION
+                or payload["workspaceId"] != workspace_id
+            ):
+                raise ValueError
+            if int(time.time()) - int(payload["issuedAt"]) > CURSOR_RETENTION_SECONDS:
+                raise WorkspaceProtocolError("cursor_expired", "Cursor has expired", 409)
+            return max(0, int(payload["sequence"]))
+        except WorkspaceProtocolError:
+            raise
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            raise WorkspaceProtocolError("invalid_cursor", "Cursor is invalid") from None
+
     @staticmethod
     def excerpt_span(text: str, match_start: int) -> tuple[int, int]:
         start = max(0, match_start - 80)
@@ -373,6 +421,49 @@ class WorkspaceProtocol:
                 else None
             )
         return {"items": page, "nextCursor": next_cursor}
+
+    def changes_since(self, input_data: dict) -> dict:
+        try:
+            limit = min(MAX_CHANGE_RESULTS, max(1, int(input_data.get("limit", 50))))
+            since = max(0, int(input_data.get("since", 0)))
+        except (TypeError, ValueError):
+            raise WorkspaceProtocolError("invalid_request", "Since and limit must be integers") from None
+        with self.note_service.connection() as connection:
+            workspace = self.workspace_state(connection)
+            if input_data.get("cursor"):
+                since = self.decode_change_cursor(str(input_data["cursor"]), workspace["workspace_id"])
+            rows = connection.execute(
+                """
+                SELECT sequence, resource_kind, resource_id, revision, change_type, occurred_at
+                FROM workspace_changes
+                WHERE sequence > ?
+                ORDER BY sequence ASC
+                LIMIT ?
+                """,
+                (since, limit + 1),
+            ).fetchall()
+            page = rows[:limit]
+            next_cursor = (
+                self.encode_change_cursor(page[-1]["sequence"], workspace["workspace_id"])
+                if len(rows) > limit
+                else None
+            )
+        return {
+            "items": [
+                {
+                    "sequence": row["sequence"],
+                    "resource": {
+                        "kind": row["resource_kind"],
+                        "id": row["resource_id"],
+                        "revision": row["revision"],
+                    },
+                    "changeType": row["change_type"],
+                    "occurredAt": row["occurred_at"],
+                }
+                for row in page
+            ],
+            "nextCursor": next_cursor,
+        }
 
     @staticmethod
     def json_value(value) -> str:
@@ -763,6 +854,8 @@ class WorkspaceProtocol:
             return {"resource": self.resource_get(str(input_data.get("id") or ""))}
         if operation == "workspace.query":
             return self.query(input_data)
+        if operation == "changes.since":
+            return self.changes_since(input_data)
         if operation == "proposal.create":
             return self.proposal_create(input_data)
         if operation == "proposal.get":

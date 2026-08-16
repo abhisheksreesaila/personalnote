@@ -7,6 +7,7 @@ export const workspaceOperationSchema = z.enum([
   'workspace.describe',
   'resource.get',
   'workspace.query',
+  'changes.since',
   'proposal.create',
   'proposal.get',
   'proposal.cancel',
