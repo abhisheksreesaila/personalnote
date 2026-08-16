@@ -89,7 +89,7 @@ Setup pins `NVIDIA/NeMo-Speech.cpp` to commit `b00a5537c71059cf49c1d8e11609af7ab
 - Scan-only rough box, circle, connector, and arrow proposals with approval-gated refinement
 - Source-grounded related-note cards that disappear after their moment
 - Local deterministic retrieval with optional Mastra reranking through any OpenAI-compatible model
-- Loopback-only Agent Workspace Protocol with stable semantic resources, grounded lexical query, signed cursors, incremental change replay, and bearer capability authentication
+- Loopback-only Agent Workspace Protocol with stable semantic resources, grounded lexical query, signed cursors, incremental change replay, bearer capability authentication, and Page Scan proposal review
 
 ## Architecture
 
@@ -128,7 +128,7 @@ $body = @{
 Invoke-RestMethod http://127.0.0.1:3137/api/workspace/v1 -Method Post -Headers $headers -ContentType 'application/json' -Body $body
 ```
 
-Call discovery first and use only advertised operations. Agents receive bounded semantic text and grounded evidence, never raw Fabric JSON or SQLite access. MCP and OpenClaw packages, canonical mutation, and remote access are future slices.
+Call discovery first and use only advertised operations. Agents receive bounded semantic text and grounded evidence, never raw Fabric JSON or SQLite access. Pending derived proposals for the active note can appear in the explicit Page Scan review surface; approval or dismissal goes through a loopback-only, note-scoped server bridge, so the bearer token never reaches browser code. MCP and OpenClaw packages, workflow streaming, canonical mutation, and remote access are future slices.
 
 **Ambient intelligence** is split deliberately. FastHTML returns immediate source-grounded retrieval locally; the browser may then request non-blocking enrichment from a restricted Mastra worker. Mastra may rerank and phrase a connection with one bounded model step — no shell, filesystem, browser, or mutation tools. Without a configured model, the same features run in deterministic `local-retrieval` mode.
 

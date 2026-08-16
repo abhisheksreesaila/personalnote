@@ -1144,6 +1144,89 @@ function addPageScanAction(icon, title, detail, action, { priority = false } = {
   elements.pageScanActions.append(proposal)
 }
 
+function activeNoteResourceId() {
+  return state.notes.find((note) => note.id === state.activeNoteId)?.resourceId || null
+}
+
+function agentProposalCopy(proposal) {
+  const input = proposal.input || {}
+  if (proposal.type === 'classify_note') {
+    return {
+      title: `Classify note as ${input.category || 'organize'}`,
+      detail: 'A local agent proposed a reversible note classification from cited text.',
+    }
+  }
+  const target = state.notes.find((note) => note.resourceId === input.targetId)
+  return {
+    title: `Link with ${target?.title || 'another note'}`,
+    detail: `A local agent proposed a ${input.relationshipType || 'related'} connection from cited text.`,
+  }
+}
+
+function addAgentProposalAction(proposal) {
+  const copy = agentProposalCopy(proposal)
+  const item = document.createElement('div')
+  item.className = 'page-scan-action agent-proposal-action'
+  item.dataset.agentProposalId = proposal.id
+  const mark = document.createElement('i')
+  mark.dataset.lucide = 'sparkles'
+  const content = document.createElement('div')
+  const heading = document.createElement('strong')
+  heading.textContent = copy.title
+  const detail = document.createElement('span')
+  detail.textContent = copy.detail
+  content.append(heading, detail)
+  const controls = document.createElement('div')
+  controls.className = 'page-scan-action-controls'
+  ;[['accept', 'Approve'], ['reject', 'Dismiss']].forEach(([decision, label]) => {
+    const button = document.createElement('button')
+    button.dataset.scanAction = 'agent-proposal-decision'
+    button.dataset.proposalId = proposal.id
+    button.dataset.proposalDecision = decision
+    button.textContent = label
+    controls.append(button)
+  })
+  item.append(mark, content, controls)
+  elements.pageScanActions.append(item)
+}
+
+async function loadAgentProposalActions() {
+  const resourceId = activeNoteResourceId()
+  if (!resourceId) return
+  try {
+    const response = await api(`/agent/proposals/${encodeURIComponent(resourceId)}`)
+    response.items?.forEach(addAgentProposalAction)
+    if (response.items?.length) createIcons({ icons })
+  } catch (error) {
+    console.debug('Agent proposal review stayed quiet.', error)
+  }
+}
+
+async function decideAgentProposal(button) {
+  const resourceId = activeNoteResourceId()
+  const proposalId = button.dataset.proposalId
+  const decision = button.dataset.proposalDecision
+  if (!resourceId || !proposalId || !decision) return
+  const action = button.closest('.agent-proposal-action')
+  action?.querySelectorAll('button').forEach((control) => { control.disabled = true })
+  try {
+    await api(`/agent/proposals/${encodeURIComponent(proposalId)}/decision`, {
+      method: 'POST',
+      body: JSON.stringify({ noteId: resourceId, decision }),
+    })
+    action?.remove()
+    addPageScanFinding(
+      decision === 'accept' ? 'check' : 'x',
+      decision === 'accept' ? 'Proposal applied' : 'Proposal dismissed',
+      decision === 'accept' ? 'The derived workspace change is now recorded.' : 'Your note was left unchanged.',
+    )
+    createIcons({ icons })
+  } catch (error) {
+    action?.querySelectorAll('button').forEach((control) => { control.disabled = false })
+    console.debug('Agent proposal decision failed.', error)
+  }
+}
+
 function syncAttentionSelection() {
   const trigger = document.querySelector('#page-scan-trigger')
   const hasAttention = attentionSelection.length > 0
@@ -1359,6 +1442,7 @@ async function scanCurrentPage({ prioritizeSelection = true } = {}) {
     if (pageScanCalendarDrafts.length) {
       addPageScanAction('calendar-plus', 'Prepare calendar file', `Create an .ics file for “${pageScanCalendarDrafts[0].title}”.`, 'export-calendar')
     }
+    await loadAgentProposalActions()
     createIcons({ icons })
   } catch (error) {
     await minimumSweep
@@ -3689,6 +3773,7 @@ elements.pageScanActions.addEventListener('click', (event) => {
   else if (button.dataset.scanAction === 'refine-drawing') refineScannedDrawing()
   else if (button.dataset.scanAction === 'create-concept-map') acceptConceptDiagram()
   else if (button.dataset.scanAction === 'export-calendar') downloadCalendarDraft(pageScanCalendarDrafts[0])
+  else if (button.dataset.scanAction === 'agent-proposal-decision') void decideAgentProposal(button)
 })
 document.querySelector('#open-scan-source').addEventListener('click', () => {
   const sourceId = pageScanSourceId

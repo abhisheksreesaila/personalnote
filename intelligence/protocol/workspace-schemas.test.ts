@@ -24,3 +24,14 @@ test('the Slice 2 contract accepts proposal operations', () => {
 
   assert.equal(result.success, true)
 })
+
+test('the contract accepts note-scoped proposal listing', () => {
+  const result = workspaceRequestSchema.safeParse({
+    protocolVersion: '1',
+    requestId: 'req_proposal_list',
+    operation: 'proposal.list',
+    input: { noteId: 'note_123' },
+  })
+
+  assert.equal(result.success, true)
+})

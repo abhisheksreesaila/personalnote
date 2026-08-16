@@ -327,6 +327,63 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(tombstone[0]["changeType"], "deleted")
         self.assertEqual(tombstone[0]["resource"]["id"], note["resourceId"])
 
+    def test_embedded_agent_bridge_lists_and_decides_note_scoped_proposals(self):
+        notebook = self.client.get("/api/notebooks").json()[0]
+        source = self.client.post(
+            "/api/notes", json={"title": "Source", "notebookId": notebook["id"]}
+        ).json()
+        target = self.client.post(
+            "/api/notes", json={"title": "Target", "notebookId": notebook["id"]}
+        ).json()
+        updated = self.client.put(
+            f"/api/notes/{source['id']}",
+            json={
+                "title": source["title"],
+                "notebookId": notebook["id"],
+                "revision": source["revision"],
+                "content": {"objects": [{"type": "IText", "text": "Link this source note."}]},
+            },
+        ).json()
+        source_document = self.client.get(f"/api/notes/{source['id']}").json()
+        block_id = source_document["content"]["objects"][0]["semanticId"]
+        evidence = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_bridge_evidence",
+            "operation": "resource.get",
+            "input": {"id": block_id},
+        }).json()["result"]["resource"]["evidence"][0]
+        proposal = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_bridge_proposal",
+            "operation": "proposal.create",
+            "input": {
+                "idempotencyKey": "bridge-link-source-target",
+                "proposal": {
+                    "type": "link_resources",
+                    "sourceId": source["resourceId"],
+                    "targetId": target["resourceId"],
+                    "relationshipType": "related",
+                    "expectedRevisions": {
+                        source["resourceId"]: updated["revision"],
+                        target["resourceId"]: target["revision"],
+                    },
+                    "evidence": [evidence],
+                },
+            },
+        }).json()["result"]["proposal"]
+
+        listed = self.client.get(f"/api/agent/proposals/{source['resourceId']}")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([item["id"] for item in listed.json()["items"]], [proposal["id"]])
+        self.assertNotIn(self.app.state.workspace_token, listed.text)
+
+        decision = self.client.post(
+            f"/api/agent/proposals/{proposal['id']}/decision",
+            json={"noteId": source["resourceId"], "decision": "accept"},
+        )
+        self.assertEqual(decision.status_code, 200)
+        self.assertEqual(decision.json()["proposal"]["state"], "applied")
+
     def test_note_and_notebook_contract(self):
         health = self.client.get("/health")
         self.assertEqual(health.status_code, 200)

@@ -1,6 +1,6 @@
 # Agent Workspace Protocol
 
-Status: Slice 2 safe derived proposals and Slice 3 incremental synchronization shipped, 2026-08-15. The read-only semantic boundary, revision-checked `link_resources` and `classify_note` proposals, idempotency, append-only activity records, and signed-cursor change replay are implemented. Broader derived graph resources, MCP, and OpenClaw adapters remain planned.
+Status: Safe derived proposals, incremental synchronization, and embedded proposal review are shipped, 2026-08-15. The read-only semantic boundary, revision-checked `link_resources` and `classify_note` proposals, idempotency, append-only activity records, signed-cursor change replay, and Page Scan review bridge are implemented. Broader derived graph resources, MCP, streaming workflows, and OpenClaw adapters remain planned.
 
 ## Decision
 
@@ -140,7 +140,7 @@ Derived resources never overwrite canonical material. Deterministic extractors r
 
 Agents start with `workspace.describe`, which returns protocol versions, supported operations, resource kinds, current scopes, inference tiers, limits, cursor retention, and proposal types. Unsupported capabilities are absent, not guessed.
 
-The current surface advertises `workspace.describe`, `resource.get`, `workspace.query`, `changes.since`, `proposal.create`, `proposal.get`, `proposal.cancel`, `proposal.decide`, and `activity.list`. It supports only `link_resources` and `classify_note` proposals; broader operations remain unavailable.
+The current surface advertises `workspace.describe`, `resource.get`, `workspace.query`, `changes.since`, `proposal.create`, `proposal.list`, `proposal.get`, `proposal.cancel`, `proposal.decide`, and `activity.list`. It supports only `link_resources` and `classify_note` proposals; broader operations remain unavailable.
 
 ### Read operations
 
@@ -160,6 +160,7 @@ The current surface advertises `workspace.describe`, `resource.get`, `workspace.
 | Operation | Result |
 |-----------|--------|
 | `proposal.create` | Validate and store a typed proposal; never mutate |
+| `proposal.list` | Pending proposals scoped to one note for review |
 | `proposal.get` | Current proposal, preview, evidence, and decision state |
 | `proposal.cancel` | Withdraw the caller's pending proposal |
 | `proposal.decide` | Product or authorized user accepts or rejects |
@@ -255,6 +256,8 @@ Provide a small client over the same HTTP or local IPC envelope. Connection boot
 ### Embedded local agent
 
 The bundled local agent uses the same client and permissions as an external agent. Product code may offer a better approval UI, but it receives no hidden database or canvas privileges.
+
+The shipped Page Scan review bridge is deliberately narrower than a protocol proxy: `GET /api/agent/proposals/{noteResourceId}` returns only pending proposals relevant to that note, while `POST /api/agent/proposals/{proposalId}/decision` accepts only an explicit `accept` or `reject` for one of those pending proposals. Both routes are loopback-only, keep the bearer token server-side, and never expose a general operation selector to browser code. The browser creates no proposal and performs no direct canvas mutation; it only requests a product-owned decision.
 
 ## Quiet Intelligence
 

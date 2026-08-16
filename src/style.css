@@ -906,6 +906,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .page-scan-action span { color: #7b7369; font-size: 8px; line-height: 1.35; }
 .page-scan-action button { height: 28px; padding: 0 9px; border: 1px solid rgba(54,104,82,.25); border-radius: var(--radius-pill); color: #315f4c; background: rgba(255,255,255,.62); cursor: pointer; font-size: 9px; font-weight: 700; }
 .page-scan-action button:hover { color: white; background: #366852; }
+.page-scan-action-controls { display: flex; gap: 4px; }
+.agent-proposal-action { border-color: rgba(177,102,55,.28); background: rgba(177,102,55,.055); }
+.agent-proposal-action > svg { color: #a05b31; }
+.agent-proposal-action .page-scan-action-controls button:last-child { color: #765f51; }
+.agent-proposal-action .page-scan-action-controls button:last-child:hover { background: #765f51; }
+.page-scan-action button:disabled { cursor: wait; opacity: .58; }
 .page-scan-card footer { flex-wrap: wrap; }
 .page-scan-card footer > span { margin-right: auto; }
 .page-scan-card footer button { margin-left: 0; color: #315f4c; border-color: rgba(54,104,82,.25); background: rgba(54,104,82,.08); }

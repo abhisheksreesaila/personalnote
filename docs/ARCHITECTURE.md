@@ -2,7 +2,7 @@
 
 Personal Note is a **local-first spatial notepad** with **ambient intelligence**: contextual suggestions that appear briefly during writing and disappear, rather than a permanent chat assistant. The product owns retrieval, permissions, provenance, and UI. **Mastra** is an optional, replaceable worker for bounded model execution only.
 
-External and embedded agents integrate through the [Agent Workspace Protocol](./AGENT-WORKSPACE-PROTOCOL.md), a semantic boundary above persistence and below transport adapters. Slice 2 exposes authenticated stable resources plus revision-checked, derived-only link/classification proposals without exposing Fabric JSON, SQLite, or worker internals. Runtime-specific adapters remain planned.
+External and embedded agents integrate through the [Agent Workspace Protocol](./AGENT-WORKSPACE-PROTOCOL.md), a semantic boundary above persistence and below transport adapters. Stable resources, revision-checked derived-only link/classification proposals, incremental synchronization, and a Page Scan-only review bridge are shipped without exposing Fabric JSON, SQLite, worker internals, or the browser capability token. Runtime-specific adapters and run lifecycle streaming remain planned.
 
 ## Runtime Overview
 

@@ -164,6 +164,7 @@ class WorkspaceProtocol:
                 "workspace.query",
                 "changes.since",
                 "proposal.create",
+                "proposal.list",
                 "proposal.get",
                 "proposal.cancel",
                 "proposal.decide",
@@ -684,6 +685,28 @@ class WorkspaceProtocol:
             raise WorkspaceProtocolError("not_found", "Proposal not found", 404)
         return {"proposal": self.proposal_view(row)}
 
+    def proposal_list(self, input_data: dict) -> dict:
+        note_id = input_data.get("noteId")
+        if not isinstance(note_id, str) or not note_id:
+            raise WorkspaceProtocolError("invalid_request", "A note resource id is required")
+        with self.note_service.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM workspace_proposals
+                WHERE actor_id = ? AND state = 'pending'
+                ORDER BY created_at ASC, id ASC
+                LIMIT 50
+                """,
+                (ACTOR_ID,),
+            ).fetchall()
+        proposals = []
+        for row in rows:
+            proposal = self.proposal_view(row)
+            proposal_input = proposal["input"]
+            if note_id in {proposal_input.get("noteId"), proposal_input.get("sourceId"), proposal_input.get("targetId")}:
+                proposals.append(proposal)
+        return {"items": proposals}
+
     def proposal_cancel(self, input_data: dict) -> dict:
         proposal_id = input_data.get("id")
         if not isinstance(proposal_id, str):
@@ -858,6 +881,8 @@ class WorkspaceProtocol:
             return self.changes_since(input_data)
         if operation == "proposal.create":
             return self.proposal_create(input_data)
+        if operation == "proposal.list":
+            return self.proposal_list(input_data)
         if operation == "proposal.get":
             return self.proposal_get(input_data)
         if operation == "proposal.cancel":

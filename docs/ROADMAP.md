@@ -53,6 +53,7 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 - Add cross-language protocol fixtures and contract tests. **Complete.**
 - Add revision-checked, idempotent `link_resources` and `classify_note` proposals with durable inverse records and activity ledger. **Complete.**
 - Add signed-cursor `changes.since` replay for bounded incremental agent synchronization and deletion tombstones. **Complete.**
+- Add Page Scan review for note-scoped pending proposals through a token-safe local bridge. **Complete.**
 - Extract people, dates, commitments, decisions, and topics into derived records.
 - Introduce Inbox, Projects, Areas, Resources, and Archive as suggested states.
 - Keep raw captures canonical; all cleanup and classification remains reversible.

@@ -200,6 +200,39 @@ def create_app(
             )
             return protocol_error(request_id, "internal_error", "Request failed", 500)
 
+    @app.get("/api/agent/proposals/{note_resource_id}")
+    def embedded_agent_proposals(request, note_resource_id: str):
+        client_host = request.client.host if request.client else ""
+        if not is_loopback_host(client_host):
+            return JSONResponse({"error": "Loopback access is required"}, status_code=403)
+        try:
+            return JSONResponse(workspace_protocol.proposal_list({"noteId": note_resource_id}))
+        except WorkspaceProtocolError as error:
+            return JSONResponse({"error": str(error), "code": error.code}, status_code=error.status_code)
+
+    @app.post("/api/agent/proposals/{proposal_id}/decision")
+    async def decide_embedded_agent_proposal(request, proposal_id: str):
+        client_host = request.client.host if request.client else ""
+        if not is_loopback_host(client_host):
+            return JSONResponse({"error": "Loopback access is required"}, status_code=403)
+        request_payload = await payload(request)
+        note_id = request_payload.get("noteId")
+        decision = request_payload.get("decision")
+        if not isinstance(note_id, str) or decision not in {"accept", "reject"}:
+            return JSONResponse({"error": "A note resource id and valid decision are required"}, status_code=400)
+        try:
+            pending = workspace_protocol.proposal_list({"noteId": note_id})["items"]
+            if not any(item["id"] == proposal_id for item in pending):
+                return JSONResponse({"error": "Pending proposal not found"}, status_code=404)
+            result = workspace_protocol.proposal_decide({
+                "id": proposal_id,
+                "decision": decision,
+                "idempotencyKey": f"embedded-{decision}-{proposal_id}-{secrets.token_hex(8)}",
+            })
+            return JSONResponse(result)
+        except WorkspaceProtocolError as error:
+            return JSONResponse({"error": str(error), "code": error.code}, status_code=error.status_code)
+
     @app.get("/api/notebooks")
     def list_notebooks():
         return JSONResponse(service.list_notebooks())
