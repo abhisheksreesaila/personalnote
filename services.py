@@ -11,6 +11,28 @@ from calendar_parse import parse_calendar_segments
 
 DEFAULT_CONTENT = {"objects": []}
 DEFAULT_PAGE_STATE = {"columns": 1, "rows": 1}
+DEFAULT_MINDMAP_CONTENT = {
+    "version": 1,
+    "title": "Untitled mind map",
+    "rootId": "root",
+    "defaultPresentation": "box",
+    "nodes": [
+        {
+            "id": "root",
+            "parentId": None,
+            "text": "Central idea",
+            "x": 0,
+            "y": 0,
+            "color": "#ef684b",
+            "fontSize": 28,
+            "bold": True,
+            "font": "hand",
+            "presentation": "box",
+            "curve": 78,
+        }
+    ],
+}
+NOTE_TYPES = {"canvas", "mindmap"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
@@ -76,6 +98,7 @@ class NoteService:
             "id": note["id"],
             "resourceId": note["resource_id"],
             "revision": note["revision"],
+            "noteType": note["note_type"],
             "title": note["title"],
             "notebookId": note["notebook_id"],
             "content": cls.parse_json(note["content"], DEFAULT_CONTENT),
@@ -155,9 +178,11 @@ class NoteService:
     def ensure_block_ids(cls, connection: sqlite3.Connection) -> None:
         seen: set[str] = set()
         notes = connection.execute(
-            "SELECT id, resource_id, revision, content FROM notes ORDER BY id"
+            "SELECT id, resource_id, revision, note_type, content FROM notes ORDER BY id"
         ).fetchall()
         for note in notes:
+            if note["note_type"] != "canvas":
+                continue
             document = cls.parse_json(note["content"], DEFAULT_CONTENT)
             document, changed = cls.normalize_canvas_document(document, seen)
             seen.update(
@@ -187,7 +212,8 @@ class NoteService:
     ) -> set[str]:
         reserved: set[str] = set()
         rows = connection.execute(
-            "SELECT content FROM notes WHERE id != ?", (exclude_note_id,)
+            "SELECT content FROM notes WHERE id != ? AND note_type = 'canvas'",
+            (exclude_note_id,),
         ).fetchall()
         for row in rows:
             document = cls.parse_json(row["content"], DEFAULT_CONTENT)
@@ -204,6 +230,30 @@ class NoteService:
             for item in document.get("objects", [])
             if isinstance(item, dict) and isinstance(item.get("text"), str)
         )
+
+    @classmethod
+    def mindmap_text(cls, content: str) -> str:
+        document = cls.parse_json(content, DEFAULT_MINDMAP_CONTENT)
+        return " ".join(
+            node["text"]
+            for node in document.get("nodes", [])
+            if isinstance(node, dict) and isinstance(node.get("text"), str)
+        )
+
+    @classmethod
+    def note_text(cls, note_type: str, content: str) -> str:
+        return cls.mindmap_text(content) if note_type == "mindmap" else cls.canvas_text(content)
+
+    @staticmethod
+    def normalize_mindmap_document(document: dict) -> dict:
+        if not isinstance(document, dict) or not isinstance(document.get("nodes"), list):
+            return json.loads(json.dumps(DEFAULT_MINDMAP_CONTENT))
+        nodes = [node for node in document["nodes"] if isinstance(node, dict)]
+        if not nodes:
+            return json.loads(json.dumps(DEFAULT_MINDMAP_CONTENT))
+        document["nodes"] = nodes
+        document["version"] = 1
+        return document
 
     @staticmethod
     def extract_people(text: str) -> list[str]:
@@ -244,8 +294,9 @@ class NoteService:
         note_id: int,
         title: str,
         content: str,
+        note_type: str = "canvas",
     ) -> None:
-        body = cls.canvas_text(content)
+        body = cls.note_text(note_type, content)
         connection.execute("DELETE FROM note_search WHERE note_id = ?", (note_id,))
         connection.execute(
             "INSERT INTO note_search (note_id, title, body) VALUES (?, ?, ?)",
@@ -266,9 +317,17 @@ class NoteService:
     def rebuild_derived_indexes(cls, connection: sqlite3.Connection) -> None:
         connection.execute("DELETE FROM note_search")
         connection.execute("DELETE FROM note_people")
-        notes = connection.execute("SELECT id, title, content FROM notes").fetchall()
+        notes = connection.execute(
+            "SELECT id, title, note_type, content FROM notes"
+        ).fetchall()
         for note in notes:
-            cls.index_note(connection, note["id"], note["title"], note["content"])
+            cls.index_note(
+                connection,
+                note["id"],
+                note["title"],
+                note["content"],
+                note["note_type"],
+            )
         connection.commit()
 
     @classmethod
@@ -420,13 +479,14 @@ class NoteService:
     def list_notes(self) -> list[dict]:
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT id, resource_id, revision, title, notebook_id, created_at, updated_at FROM notes ORDER BY updated_at DESC, id DESC"
+                "SELECT id, resource_id, revision, note_type, title, notebook_id, created_at, updated_at FROM notes ORDER BY updated_at DESC, id DESC"
             ).fetchall()
         return [
             {
                 "id": row["id"],
                 "resourceId": row["resource_id"],
                 "revision": row["revision"],
+                "noteType": row["note_type"],
                 "title": row["title"],
                 "notebookId": row["notebook_id"],
                 "createdAt": row["created_at"],
@@ -446,6 +506,11 @@ class NoteService:
 
     def create_note(self, payload: dict) -> dict:
         title = str(payload.get("title") or "Untitled note")[:180]
+        requested_note_type = str(payload.get("noteType") or "canvas")
+        note_type = requested_note_type if requested_note_type in NOTE_TYPES else "canvas"
+        initial_content = (
+            DEFAULT_MINDMAP_CONTENT if note_type == "mindmap" else DEFAULT_CONTENT
+        )
         try:
             requested_notebook_id = int(payload.get("notebookId"))
         except (TypeError, ValueError):
@@ -454,13 +519,25 @@ class NoteService:
         with self.connection() as connection:
             notebook_id = requested_notebook_id if self.notebook_exists(connection, requested_notebook_id) else self.default_notebook_id
             cursor = connection.execute(
-                "INSERT INTO notes (resource_id, title, notebook_id) VALUES (?, ?, ?)",
-                (resource_id, title, notebook_id),
+                "INSERT INTO notes (resource_id, note_type, title, content, notebook_id) VALUES (?, ?, ?, ?, ?)",
+                (
+                    resource_id,
+                    note_type,
+                    title,
+                    json.dumps(initial_content, separators=(",", ":")),
+                    notebook_id,
+                ),
             )
             note = connection.execute(
                 "SELECT * FROM notes WHERE id = ?", (cursor.lastrowid,)
             ).fetchone()
-            self.index_note(connection, note["id"], note["title"], note["content"])
+            self.index_note(
+                connection,
+                note["id"],
+                note["title"],
+                note["content"],
+                note["note_type"],
+            )
             self.record_change(connection, "note", resource_id, 1, "created")
             connection.commit()
         return self.serialize_note(note)
@@ -475,10 +552,15 @@ class NoteService:
             if current is None:
                 raise NotFoundError("Note not found")
             expected_revision = self.expected_revision(payload, current["revision"])
-            document = payload.get("content") or DEFAULT_CONTENT
-            document, _ = self.normalize_canvas_document(
-                document, self.reserved_block_ids(connection, note_id)
-            )
+            note_type = current["note_type"]
+            default_content = DEFAULT_MINDMAP_CONTENT if note_type == "mindmap" else DEFAULT_CONTENT
+            document = payload.get("content") or default_content
+            if note_type == "mindmap":
+                document = self.normalize_mindmap_document(document)
+            else:
+                document, _ = self.normalize_canvas_document(
+                    document, self.reserved_block_ids(connection, note_id)
+                )
             content = json.dumps(document, separators=(",", ":"))
             revision = expected_revision + 1
             cursor = connection.execute(
@@ -500,7 +582,7 @@ class NoteService:
                     "UPDATE notes SET notebook_id = ? WHERE id = ?",
                     (notebook_id, note_id),
                 )
-            self.index_note(connection, note_id, title, content)
+            self.index_note(connection, note_id, title, content, note_type)
             self.record_change(connection, "note", current["resource_id"], revision, "updated")
             connection.commit()
         return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
@@ -569,6 +651,7 @@ class NoteService:
             {
                 "id": note["id"],
                 "title": note["title"],
+                "noteType": note["note_type"],
                 "notebookId": note["notebook_id"],
                 "notebookName": note["notebook_name"],
                 "notebookColor": note["notebook_color"],

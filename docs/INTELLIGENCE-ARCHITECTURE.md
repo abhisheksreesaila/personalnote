@@ -30,6 +30,8 @@ intelligence/
   server.ts          # HTTP: /health, /v1/execute, /rank (legacy)
 ```
 
+Voice transcription is intentionally outside this task stack. Browser modules in `src/intelligence/` own dictation state, PCM capture, durable IndexedDB audio, and the replaceable realtime provider. The local Nemotron service has no note, database, retrieval, or mutation authority; only finalized text crosses into the normal canvas save and contextual-index path.
+
 ### Browser Listener
 
 `src/main.js` waits for a successful save and a meaningful idle pause. It sends only the active note ID and current text snapshot to `/api/intelligence/related`. Stale requests are cancelled, dismissed suggestions are suppressed for the session, and responses remain source-linked.

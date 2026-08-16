@@ -101,6 +101,36 @@
       padding: 100px 0;
       border-bottom: 2px solid var(--ink);
     }
+    .section-pad {
+      width: min(calc(100% - 120px), 1180px);
+      margin-inline: auto;
+      padding: 96px 0;
+    }
+    .story-section {
+      position: relative;
+      border-top: 1px solid var(--rule-hi);
+    }
+    .chapter-marker {
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 46px;
+      font-family: var(--font-sans);
+      color: var(--ink-faint);
+    }
+    .chapter-marker span {
+      width: 52px; height: 28px;
+      display: grid; place-items: center;
+      border: 1px solid var(--rule-hi);
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .18em;
+    }
+    .chapter-marker::after {
+      content: '';
+      height: 1px;
+      background: var(--rule);
+    }
     .section-header {
       max-width: 780px;
       margin-bottom: 64px;
@@ -132,7 +162,7 @@
     /* ── HERO SECTION (kept compact) ─────────────────────────── */
     .hero-grid {
       display: grid;
-      grid-template-columns: 1fr 1px 1fr;
+      grid-template-columns: 1fr 1fr;
       max-width: 1180px;
       margin: 0 auto;
       padding: 0 60px 80px;
@@ -288,13 +318,16 @@
 
     /* ── NOT A NOTEBOOK WITH AN AI BUTTON ───────────────────── */
     .agent-native-section {
-      padding: 96px 60px 80px;
+      padding: 96px max(60px, calc((100vw - 1180px) / 2)) 88px;
       border-top: 2px solid var(--ink);
       background: var(--page);
     }
     .agent-native-intro {
-      text-align: center;
-      max-width: 720px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, .7fr);
+      gap: 72px;
+      align-items: end;
+      max-width: 1180px;
       margin: 0 auto 64px;
     }
     .agent-native-eyebrow {
@@ -318,25 +351,24 @@
       font-family: var(--font-sans);
       font-size: 16px; line-height: 1.7;
       color: var(--ink-dim);
+      padding-left: 24px;
+      border-left: 2px solid var(--accent);
     }
     .agent-native-grid {
+      max-width: 1180px;
+      margin-inline: auto;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 0;
-      border: 1px solid var(--rule-hi);
-      box-shadow: 4px 4px 0 var(--rule);
+      border-top: 1px solid var(--rule-hi);
+      border-bottom: 1px solid var(--rule-hi);
     }
     .an-card {
       display: flex;
       flex-direction: column;
       border-right: 1px solid var(--rule);
-      transition: transform 200ms ease, box-shadow 200ms ease;
     }
     .an-card:last-child { border-right: 0; }
-    .an-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 12px 32px rgba(24,22,18,0.10);
-    }
     .an-card-bar {
       height: 5px;
     }
@@ -351,12 +383,13 @@
       flex: 1;
     }
     .an-card-icon {
-      width: 48px; height: 48px;
-      border: 1px solid var(--rule-hi);
+      width: max-content; height: 34px;
+      border-bottom: 1px solid var(--rule-hi);
       display: flex; align-items: center; justify-content: center;
-      font-size: 20px; color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: 9px; font-weight: 700; letter-spacing: .16em;
+      color: var(--ink-faint);
       margin-bottom: 24px;
-      background: var(--page-2);
     }
     .an-card-body h3 {
       font-family: var(--font-serif);
@@ -476,9 +509,27 @@
     /* ── AMBIENT SIGNALS SECTION ─────────────────────────────── */
     .ambient-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 64px;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 80px;
       align-items: start;
+    }
+    .ambient-heading {
+      max-width: 720px;
+      margin-bottom: 52px;
+    }
+    .ambient-heading h2 {
+      font-size: clamp(34px, 4.5vw, 52px);
+      font-weight: 600; line-height: 1.08;
+      letter-spacing: -.02em;
+      color: var(--ink);
+      margin-bottom: 16px;
+    }
+    .ambient-heading h2 em { font-style: italic; color: var(--accent); }
+    .ambient-heading p {
+      max-width: 580px;
+      font-family: var(--font-sans);
+      font-size: 15px; line-height: 1.7;
+      color: var(--ink-dim);
     }
     .signal-card {
       border: 1px solid var(--rule);
@@ -536,6 +587,13 @@
       gap: 72px;
       align-items: center;
     }
+    .protocol-section {
+      background: #dce8e9;
+      border-color: rgba(32,88,105,.28);
+    }
+    .protocol-section .chapter-marker { color: #50737c; }
+    .protocol-section .chapter-marker span { border-color: rgba(32,88,105,.35); }
+    .protocol-section .chapter-marker::after { background: rgba(32,88,105,.22); }
     .protocol-copy h2 {
       font-size: clamp(34px, 4.5vw, 52px);
       font-weight: 600; line-height: 1.08;
@@ -596,7 +654,7 @@
     /* ── CTA BAND ────────────────────────────────────────────── */
     .cta-section {
       padding: 96px 0;
-      background: var(--page-2);
+      background: #19333b;
       border-bottom: 2px solid var(--ink);
     }
     .cta-layout {
@@ -608,10 +666,20 @@
       font-size: clamp(34px, 5vw, 56px);
       font-weight: 600; line-height: 1.06;
       letter-spacing: -.02em;
-      color: var(--ink);
+      color: #f4f0e7;
     }
     .cta-layout h2 em {
-      font-style: italic; color: var(--accent);
+      font-style: italic; color: #86c7dd;
+    }
+    .cta-layout .btn.primary {
+      background: #f4f0e7;
+      border-color: #f4f0e7;
+      color: #19333b;
+    }
+    .cta-layout .btn.primary:hover {
+      background: #86c7dd;
+      border-color: #86c7dd;
+      color: #19333b;
     }
     .cta-layout .btn { min-width: 220px; }
 
@@ -628,6 +696,10 @@
 
     /* ── RESPONSIVE ─────────────────────────────────────────── */
     @media (max-width: 900px) {
+      .section-pad { width: min(calc(100% - 56px), 720px); }
+      .hero-right { display: none; }
+      .agent-native-intro { grid-template-columns: 1fr; gap: 28px; }
+      .agent-native-intro p { padding-left: 18px; }
       .agent-native-grid { grid-template-columns: 1fr; }
       .an-card { border-right: 0; border-bottom: 1px solid var(--rule); }
       .agent-native-section { padding: 64px 28px 56px; }
@@ -638,7 +710,8 @@
       .site-footer { flex-direction: column; gap: 12px; padding: 20px 32px; }
     }
     @media (max-width: 720px) {
-      .section-pad { padding: 48px 24px; }
+      .section-pad { width: calc(100% - 40px); padding: 64px 0; }
+      .chapter-marker { margin-bottom: 34px; }
       .canvas-illus { aspect-ratio: 4/3; }
       .proto-window pre { font-size: 10px; padding: 16px; }
       .cta-section { padding: 64px 0; }
@@ -729,15 +802,17 @@
   <!-- NOT A NOTEBOOK WITH AN AI BUTTON -->
   <section class="agent-native-section">
     <div class="agent-native-intro">
-      <div class="agent-native-eyebrow">The difference</div>
-      <h2>Not a notebook with an <em>AI button.</em></h2>
+      <div>
+        <div class="agent-native-eyebrow">01 · The difference</div>
+        <h2>Not a notebook with an <em>AI button.</em></h2>
+      </div>
       <p>Most tools bolt a chat panel onto a document and call it "AI-powered." Personal Note is built differently — the workspace itself speaks a protocol agents understand. No chat window. No prompt engineering. Just your notes, available to the tools you choose.</p>
     </div>
     <div class="agent-native-grid">
       <div class="an-card">
         <div class="an-card-bar an-bar-spatial"></div>
         <div class="an-card-body">
-          <div class="an-card-icon">⊞</div>
+          <div class="an-card-icon">01 / SURFACE</div>
           <h3>One surface for prose and diagrams</h3>
           <p>No switching between a doc, a whiteboard, and a diagram tool. Write, place nodes, and draw freehand — all on a single canvas that expands with your thinking.</p>
         </div>
@@ -745,7 +820,7 @@
       <div class="an-card">
         <div class="an-card-bar an-bar-protocol"></div>
         <div class="an-card-body">
-          <div class="an-card-icon">⎇</div>
+          <div class="an-card-icon">02 / PROTOCOL</div>
           <h3>Agents are native, not bolted on</h3>
           <p>The workspace exposes typed resources — notes, people, calendar drafts — through a semantic protocol. Any agent can query, propose, and enrich. No scraping. No fragile prompts.</p>
         </div>
@@ -753,7 +828,7 @@
       <div class="an-card">
         <div class="an-card-bar an-bar-ambient"></div>
         <div class="an-card-body">
-          <div class="an-card-icon">◎</div>
+          <div class="an-card-icon">03 / AMBIENT</div>
           <h3>Intelligence is ambient, not interruptive</h3>
           <p>Context cards appear when you pause and vanish when you resume. No permanent chat panel. No unsolicited suggestions. The notebook stays a notebook.</p>
         </div>
@@ -762,8 +837,10 @@
   </section>
 
   <!-- CANVAS SECTION -->
-  <section class="section-pad">
-    <div class="canvas-grid">
+  <section class="story-section">
+    <div class="section-pad">
+      <div class="chapter-marker"><span>02</span></div>
+      <div class="canvas-grid">
       <div class="canvas-copy">
         <h2>A canvas that <em>breathes</em> with you</h2>
         <p>Unlike rigid documents, the canvas grows as your thinking does. Add a node, and text reflows. Delete a shape, and the page contracts. The surface feels alive.</p>
@@ -799,12 +876,19 @@
           <div class="cl-node cl-node-q">Event Queue</div>
         </div>
       </div>
+      </div>
     </div>
   </section>
 
   <!-- AMBIENT INTELLIGENCE -->
-  <section class="section-pad">
-    <div class="ambient-grid">
+  <section class="story-section">
+    <div class="section-pad">
+      <div class="chapter-marker"><span>03</span></div>
+      <div class="ambient-heading">
+        <h2>Useful context, only when the page goes <em>quiet.</em></h2>
+        <p>Personal Note listens to editing rhythm, not every keystroke. Deterministic local signals arrive first; optional model work can enrich them later without delaying capture.</p>
+      </div>
+      <div class="ambient-grid">
       <div>
         <div class="signal-card">
           <div class="signal-dot link">↗</div>
@@ -837,12 +921,15 @@
         </blockquote>
         <p>Every ambient feature works fully offline. Optional model enrichment can improve ranking, but the core experience needs no API key, no internet, and no account. Personal means personal.</p>
       </div>
+      </div>
     </div>
   </section>
 
   <!-- AGENT-NATIVE WORKSPACE -->
-  <section class="section-pad">
-    <div class="protocol-grid">
+  <section class="story-section protocol-section">
+    <div class="section-pad">
+      <div class="chapter-marker"><span>04</span></div>
+      <div class="protocol-grid">
       <div class="protocol-copy">
         <h2>The workspace <em>agents</em> can read</h2>
         <p>Personal Note exposes a semantic workspace protocol — notes, people, calendar drafts, and spatial layout — all discoverable through typed resources. External agents or embedded tools can query the workspace without touching SQLite directly.</p>
@@ -858,18 +945,17 @@
           <span class="proto-dot"></span><span class="proto-dot"></span><span class="proto-dot"></span>
           workspace protocol · agent query
         </div>
-        <pre><span class="code-comment">// Discover available resources</span>
-<span class="code-key">GET</span> <span class="code-str">/api/workspace/resources</span>
+        <pre><span class="code-comment">// One stable, versioned workspace boundary</span>
+      <span class="code-key">POST</span> <span class="code-str">/api/workspace/v1</span>
 
-<span class="code-comment">// Retrieve notes by semantic type</span>
-<span class="code-key">GET</span> <span class="code-str">/api/workspace/resources/note</span>
-
-<span class="code-comment">// Query the person index</span>
-<span class="code-key">GET</span> <span class="code-str">/api/workspace/resources/person</span>
+      { <span class="code-key">"operation"</span>: <span class="code-str">"workspace.describe"</span> }
+      { <span class="code-key">"operation"</span>: <span class="code-str">"resource.get"</span> }
+      { <span class="code-key">"operation"</span>: <span class="code-str">"workspace.query"</span> }
 
 <span class="code-comment">// All mutations require explicit</span>
 <span class="code-comment">// user approval. No agent writes</span>
 <span class="code-comment">// without confirmation.</span></pre>
+      </div>
       </div>
     </div>
   </section>

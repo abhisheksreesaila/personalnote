@@ -1,12 +1,12 @@
 # Personal Note Product And Architecture Brief
 
-Status: working reference, verified against the repository on 2026-08-07.
+Status: working reference, verified against the repository on 2026-08-10.
 
 This is the first document to read when resuming the project. It explains the product intent, what is actually implemented, the architectural decisions already made, and the next decisions that still need evidence. Detailed contracts remain in the linked architecture, protocol, and roadmap documents.
 
 ## Product North Star
 
-Personal Note is a **local-first spatial thinking tool**. Capture must feel immediate. The canvas should get out of the way, grow and shrink with the user's material, and quietly surface useful context without becoming a chat application.
+Personal Note is a **local-first spatial thinking tool**. Capture must feel immediate. Every workspace object begins as a note, while its type selects the right spatial editor. Canvas notes should get out of the way, grow and shrink with the user's material, and quietly surface useful context without becoming a chat application. Mind-map notes provide an infinite SVG workspace for branching thought without creating a separate library or persistence silo.
 
 The interface is inspired by the experience currently referred to as **Rod Io**. That name is a working reference only; the exact product, URL, and interaction details still need to be documented before treating it as a design specification.
 
@@ -17,7 +17,7 @@ The intended experience has four parts:
 3. **Ambient assistance** that appears only when relevant, cites its source, and then leaves.
 4. **User authority** over every consequential mutation, classification, export, or refinement.
 
-The primary product differentiator is **concept-aware visual assistance**: Scan can understand a focused rough drawing well enough to polish it, complete one likely missing element, or propose one editable diagram for an abstract idea. Voice transcription is an important capture adapter, but it is not where the product should invent a new framework.
+Voice is the **primary capture mode**. The primary product differentiator remains **concept-aware visual assistance**: Scan can understand a focused rough drawing well enough to polish it, complete one likely missing element, or propose one editable diagram for an abstract idea. Voice should use a narrow, replaceable transcription boundary rather than introduce a general AI framework.
 
 See `docs/VISUAL-INTELLIGENCE.md` for the visual proposal architecture and delivery sequence.
 
@@ -38,8 +38,9 @@ See `docs/VISUAL-INTELLIGENCE.md` for the visual proposal architecture and deliv
 | Area | Verified implementation | Maturity |
 |------|-------------------------|----------|
 | Spatial editor | Fabric.js canvas with text, ink, highlighting, erasing, object manipulation, undo/redo, and responsive page growth/shrink | Working product foundation |
-| Persistence | FastHTML REST API, SQLite note storage, Fabric JSON as canonical note content | Working |
-| Retrieval | SQLite FTS5 index rebuilt from Fabric text on each note write | Working |
+| Mind-map editor | Native infinite SVG branches with direct node editing, history, cleanup, minimap, image support, and JSON/PNG export | Working product foundation |
+| Persistence | FastHTML REST API and one SQLite note store; immutable `note_type` selects canonical Fabric or mind-map JSON | Working |
+| Retrieval | SQLite FTS5 index rebuilt from canvas text or mind-map node labels on each note write | Working |
 | Related context | Local candidate retrieval after text save and idle pause; optional model rerank/rephrase | Complete prototype |
 | People | Deterministic person index and source-linked ambient peek | Prototype |
 | Calendar | Local `chrono-node` parsing and explicit `.ics` export | Prototype |
@@ -47,7 +48,7 @@ See `docs/VISUAL-INTELLIGENCE.md` for the visual proposal architecture and deliv
 | Drawing assistance | Local scan-time recognition of rough boxes, ellipses, connectors, and arrows; approval-gated refinement | Prototype |
 | Concept-aware diagrams | Deterministic text-to-concept-map planning with an editable ghost preview and approval | Prototype complete |
 | Agent workspace protocol | Transport-neutral semantic resources, grounded reads, scoped proposals, and adapter boundary | Architecture defined |
-| Voice | Browser `SpeechRecognition` inserts finalized text into a Fabric text object | Thin browser-dependent prototype |
+| Voice | Windows-owned 16 kHz PCM capture, durable IndexedDB chunks, local Nemotron streaming partials/finals, mobile OS dictation, and browser fallback | Working local-first prototype; physical-mic evaluation remains |
 | Model runtime | Optional TypeScript worker using Mastra for one bounded generation step | Replaceable implementation |
 | Authentication | Deliberately bypassed in the current single-user build | Not implemented |
 | Encryption and sync | SQLite is local storage only; no E2EE or sync protocol | Not implemented |
@@ -56,8 +57,13 @@ See `docs/VISUAL-INTELLIGENCE.md` for the visual proposal architecture and deliv
 
 ```mermaid
 flowchart LR
-    Capture[Text, ink, current voice dictation] --> Canvas[Fabric canvas]
+    Capture[Text, ink, voice dictation] --> Canvas[Fabric canvas note]
+    Branch[Mind-map node editing] --> Map[SVG mind-map note]
+    Mic[Windows microphone] --> Audio[(IndexedDB PCM chunks)]
+    Mic --> ASR[Nemotron loopback ASR :8080]
+    ASR --> Canvas
     Canvas --> API[FastHTML API]
+    Map --> API
     API --> DB[(SQLite + FTS5)]
     API --> Local[Deterministic retrieval and parsing]
     Local --> UI[Ambient cards and proposals]
@@ -66,7 +72,7 @@ flowchart LR
     Provider -. enrichment only .-> UI
 ```
 
-Development uses three processes: Vite on `5173`, FastHTML on `3137`, and the optional intelligence worker on `4112`.
+Development uses three core processes: Vite on `5173`, FastHTML on `3137`, and the optional intelligence worker on `4112`. Windows local voice adds a separately started loopback ASR service on `8080`.
 
 The editor and local ambient lanes do not depend on Mastra. The worker accepts a versioned JSON protocol at `POST /v1/execute`; task handlers select a provider through a small internal interface. Mastra is currently used only inside the model provider.
 
@@ -85,18 +91,29 @@ Ambient behavior is orchestrated by the product shell in `src/main.js`:
 
 The product owns FTS5 retrieval, candidate filtering, provenance, attention policy, presentation, and approval. The worker receives bounded text and candidates, has no database or mutation access, and may return only a validated result.
 
-## Voice And Audio: Current Gap
+## Voice And Audio: Implemented State
 
-Voice is not yet an audio-first capture system. The current button uses the browser Web Speech API:
+Windows desktop now has an app-owned audio-first path:
 
-- There is no `MediaRecorder` or durable audio object.
-- Browser and platform support determine whether dictation is available.
-- The recognition service and privacy behavior are browser-dependent.
-- Interim text is visual feedback only; finalized text is appended to one Fabric text object.
-- Raw audio, timestamps, confidence, speaker turns, and transcript provenance are not stored.
-- Finalized voice text currently takes the normal save path but does **not** request contextual calendar, person, or related-note checks.
+- `MicrophonePcmCapture` converts microphone input to mono 16 kHz PCM16.
+- `DurableAudioSession` writes ordered chunks and session metadata to IndexedDB before each chunk is sent for recognition.
+- `LocalTranscriptionProvider` streams audio to `ws://127.0.0.1:8080/v1/realtime` and maps partial, final, error, and close events.
+- Live partials remain transient feedback. Final text enters an editable Fabric text object and uses the normal contextual history/save/index path.
+- Storage failure does not stop capture or transcription; the session reports degraded durability instead.
+- Completed, cancelled, and interrupted sessions retain status, timestamps, chunk count, byte count, and duration.
 
-This is useful as an interaction prototype, not as the primary capture architecture.
+The local engine is the Q8 build of `nvidia/nemotron-3.5-asr-streaming-0.6b`, served by pinned `NVIDIA/NeMo-Speech.cpp`. Deterministic speech validation produced live partials and a final transcript, and the measured CPU throughput was 3.2549x realtime after a 3.296-second warmup. A real physical-microphone session and first-partial latency still need manual validation because the automation browser denies microphone permission.
+
+## Voice Target Decision
+
+The first supported voice surfaces are mobile web on iOS and Android, plus Windows desktop. They intentionally use different recognition paths behind one transcript-session contract:
+
+- **Mobile web:** delegate recognition to the operating system's keyboard dictation. Personal Note provides a focused text capture surface and accepts the resulting text; it does not claim local audio processing or attempt to bundle a model into a mobile browser.
+- **Windows desktop:** use an application-owned, small local streaming model with no network requirement after installation. The recognizer must sit behind a replaceable provider boundary and must not block raw capture.
+- **General web fallback:** retain browser `SpeechRecognition` only as a best-effort adapter. Its availability, network use, and privacy behavior are browser-dependent.
+- **Future native mobile apps:** may use the same provider contract with an on-device model when native packaging exists. Training or fine-tuning a custom model should wait for a representative error corpus; the first release should benchmark suitable existing small models.
+
+Mobile keyboard dictation returns text, not microphone audio, so durable raw-audio capture applies only when Personal Note owns the microphone session. The app must label these capabilities honestly rather than imply that all voice paths retain audio or run offline.
 
 ## Framework Decision
 
@@ -117,15 +134,16 @@ External agents require a different boundary from this internal task runner. The
 
 AG-UI remains isolated because its dependency graph is disproportionate for ambient work. It may be reconsidered for a long-running, visible workflow where streaming lifecycle events and human approval justify the cost. The current Mastra worker is acceptable for bounded model calls, but it is not part of the product's core architecture.
 
-## Proposed Audio-First Architecture
+## Audio-First Architecture
 
 Audio should be a separate capture pipeline, not another agent task:
 
 ```mermaid
 flowchart LR
     Mic[Microphone] --> Capture[Capture controller]
-    Capture --> LocalBuffer[(Durable local chunks)]
-    Capture --> STT[Transcription adapter]
+    Capture --> LocalBuffer[(IndexedDB PCM chunks)]
+    Capture --> STT[Nemotron realtime adapter]
+    OS[Mobile OS dictation] --> Stable
     STT --> Draft[Live transcript draft]
     Draft --> Stable[Stable transcript segments]
     Stable --> Canvas[Fabric text objects]
@@ -138,12 +156,12 @@ Recommended boundaries:
 
 1. **Capture controller** owns microphone permission, start/stop, chunking, interruption recovery, and immediate visual state.
 2. **Audio store** writes chunks locally as they arrive so capture survives slow transcription or a worker failure.
-3. **Transcription adapter** supports at least browser speech for prototyping and a local engine for the real local-first path. Cloud transcription is explicit opt-in.
+3. **Transcription adapter** supports mobile OS text input, best-effort browser speech, and a Windows local engine. Cloud transcription is explicit opt-in.
 4. **Transcript assembler** separates unstable partial text from stable timestamped segments and preserves corrections.
 5. **Canvas adapter** projects stable segments into editable spatial text without making Fabric the audio database.
 6. **Ambient trigger** runs only after a stable segment and a quiet pause; it reuses the existing deterministic lanes.
 
-The first implementation should prefer a narrow `TranscriptionProvider` contract over a universal AI abstraction. Evaluate local engines against target devices before choosing packaging; model size, startup time, streaming support, CPU use, battery cost, and word error rate matter more than framework features.
+The implementation uses a narrow provider contract rather than a universal AI abstraction. The local companion is explicitly installed and started on Windows; the ordinary hosted web app does not claim a bundled model. CPU throughput is sufficient for the current prototype, so CUDA remains deferred until real microphone evidence shows a latency problem.
 
 ## Latency Budgets
 
@@ -163,8 +181,9 @@ Measure end-to-end perceived latency separately from service time. A fast query 
 
 ## Current Architectural Risks
 
-- `src/main.js` combines canvas control, persistence orchestration, ambient policy, Page Scan, and voice behavior in one large module. New audio work should first extract narrow controllers rather than expand the file indefinitely.
-- Browser speech recognition is not a dependable local-first or cross-browser foundation.
+- `src/main.js` still combines canvas control, persistence orchestration, ambient policy, Page Scan, and voice coordination; capture, storage, provider, and session behavior are now extracted into narrow modules.
+- Browser speech recognition remains only a fallback and is not a dependable local-first or cross-browser foundation.
+- IndexedDB audio is app-owned and durable in-browser, but retention controls, export, cleanup, and cross-device sync are not designed.
 - FTS5 retrieval has no semantic ranking, object-level provenance span, or attention-quality fixture set yet.
 - Model enrichment is optional and well-contained, but capability metadata still names Mastra directly; future UI should describe capabilities rather than framework brands.
 - Authentication, tenant scoping, attachment storage, sync, and E2EE remain undesigned and constrain any cloud or multi-device audio plan.
@@ -172,26 +191,20 @@ Measure end-to-end perceived latency separately from service time. A fast query 
 
 ## Recommended Sequence
 
-1. Document the exact Rod Io reference with screenshots or interaction notes and extract testable canvas behaviors from it.
-2. Test the current canvas, Page Scan, and ambient suggestions with real note-taking sessions; record latency, false-positive, dismissal, and undo rates.
-3. Implement Slice 1 of the Agent Workspace Protocol: stable object IDs, revisions, semantic note/block projections, discovery, and bounded lexical query.
-4. Collect real visual-thinking stroke fixtures and implement multi-stroke grouping plus nearby-label association.
-5. Split Page Scan local findings from optional model enrichment so Scan never waits for a worker.
-6. Ship one high-precision semantic visual capability before attempting broad diagram generation.
-7. Integrate a replaceable Whisper-class transcription provider when voice moves beyond the browser prototype.
-8. Improve retrieval with provenance spans and evaluation fixtures before adding broader autonomous behavior.
-9. Extract ambient, Scan, and capture orchestration from `src/main.js` as concrete modules become stable.
+1. Manually validate a physical Windows microphone session and record first-partial latency.
+2. Test cancellation, device interruption, reload recovery, and IndexedDB failure with real speech.
+3. Measure correction rate, memory, CPU, battery cost, and punctuation quality on representative speech.
+4. Decide retention, deletion, playback, and export controls for stored PCM sessions.
+5. Keep CUDA deferred unless measured CPU latency fails the interaction budget.
+6. Resume other product work only after the voice capture contract and retention behavior are accepted.
 
 ## Questions That Still Need Product Decisions
 
 - Is audio canonical and retained by default, retained temporarily, or deleted after transcript confirmation?
-- Must primary transcription work fully offline on the minimum supported device?
 - Is voice continuous session capture, short dictation, or both?
 - How should transcript segments occupy space: one growing object, timestamped blocks, or clustered cards?
 - When may ambient intelligence interrupt during live speech, if ever?
-- Which devices and browsers define the first performance target?
 - What exactly does the Rod Io reference contribute: canvas physics, navigation, visual language, or capture flow?
-- Is desktop packaging required to guarantee local models and durable audio storage?
 
 ## Resume Checklist For Future Sessions
 

@@ -16,9 +16,12 @@
     "start:intelligence": "tsx intelligence/server.ts",
     "test:api": ".venv\\Scripts\\python.exe -m unittest tests.test_api -v",
     "test:intelligence": "tsx --test intelligence/ambient-agent.test.ts intelligence/protocol/workspace-schemas.test.ts intelligence/runtime/executor.test.ts",
-    "test:ui-intelligence": "node --test src/intelligence/*.test.js",
+    "test:ui-intelligence": "node --test src/intelligence/*.test.js src/mindmap/*.test.js",
     "typecheck:intelligence": "tsc -p tsconfig.intelligence.json",
+    "voice:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-voice.ps1",
+    "voice:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-voice.ps1",
     "build": "vite build",
+    "benchmark:bundle": "npm run build && node scripts/check-performance-budget.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {

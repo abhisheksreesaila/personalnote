@@ -97,7 +97,10 @@ npm run test:api
 npm run test:intelligence
 npm run test:ui-intelligence
 npm run typecheck:intelligence
+npm run voice:setup           # One-time pinned Nemotron CPU runtime + model setup
+npm run voice:start           # Loopback realtime ASR service on :8080
 npm run build                # Production frontend → dist/
+npm run benchmark:bundle     # Build and enforce browser bundle budgets
 ```
 
 ## Where to Extend

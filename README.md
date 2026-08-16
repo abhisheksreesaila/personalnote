@@ -29,6 +29,19 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 
 `npm run dev` starts Vite, FastHTML, and the intelligence worker together. `python main.py` starts only the standalone FastHTML server and built frontend at `http://127.0.0.1:3137/notes`. If that standalone server is already running, repeating the command prints its URL and exits successfully.
 
+### Local Windows voice
+
+The desktop voice path uses NVIDIA Nemotron 3.5 ASR through a loopback-only CPU service. The one-time setup requires Git, CMake, Ninja, Visual Studio C++ Build Tools, and the Hugging Face `hf` CLI:
+
+```powershell
+npm run voice:setup
+npm run voice:start
+```
+
+Setup pins `NVIDIA/NeMo-Speech.cpp` to commit `b00a5537c71059cf49c1d8e11609af7abd6b4b0b`, builds only its ASR and HTTP components, and downloads `nvidia/nemotron-3.5-asr-streaming-0.6b` Q8 to `%LOCALAPPDATA%\PersonalNote`. The service listens on `127.0.0.1:8080`; run it alongside `npm run dev`. Mobile uses operating-system keyboard dictation, and browser speech remains a best-effort fallback.
+
+`VITE_LOCAL_ASR_ENDPOINT` can override the realtime WebSocket URL at build time. Leave it empty for loopback-local transcription. A hosted `wss://` endpoint processes microphone audio remotely and must not be described as local-only.
+
 ## Current capabilities
 
 - Double-click anywhere to type directly on the canvas
@@ -59,7 +72,8 @@ Open `http://localhost:5173` for the landing page. Its prototype actions enter t
 - Anchored standalone magnification for Voice, Scan, and note Properties
 - Collision-free horizontal tool magnification with opaque lifted controls
 - Color-coded rail actions and a global settings placeholder drawer
-- Click-to-dictate voice input with a listening edge around the canvas
+- Click-to-dictate voice input with live partials, editable finalized canvas text, and a listening edge
+- App-owned Windows microphone capture with ordered PCM16 chunks persisted in IndexedDB before local transcription
 - Print review with one physical sheet per logical canvas page
 - Sharp per-page Fabric exports, boundary clipping, Letter/A4 output, and `Ctrl+P`
 - SQLite persistence in `data/personal-note.db`
@@ -167,3 +181,5 @@ Railway builds the included multi-stage `Dockerfile`, serves the Vite bundle fro
 4. Generate a Railway domain for the service and verify `/health` before adding a custom domain.
 
 For optional cloud intelligence, add the relevant `PERSONAL_NOTE_*` model variables from `.env.example` through Railway's Variables UI. Do not upload `.env`. Custom domains are configured in Railway and at the DNS provider; no domain value needs to be hardcoded in this application.
+
+Hosted Nemotron voice runs as a separate CPU service built from `deploy/nemotron`. Attach its own persistent volume at `/models`, set `ASR_CORS_ORIGIN` to the app origin, expose port `8080`, and verify `/ready`. Then set the main app's build-time variable to `VITE_LOCAL_ASR_ENDPOINT=wss://<asr-domain>/v1/realtime` and redeploy the main service. Audio sent to this endpoint leaves the browser and is processed by the Railway ASR service; the `/models` volume is separate from the app's `/app/data` note database volume.

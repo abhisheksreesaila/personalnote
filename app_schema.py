@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
     resource_id TEXT,
     revision INTEGER NOT NULL DEFAULT 1,
+    note_type TEXT NOT NULL DEFAULT 'canvas',
   title TEXT NOT NULL DEFAULT 'Untitled note',
   content TEXT NOT NULL DEFAULT '{"objects":[]}',
   page_state TEXT NOT NULL DEFAULT '{"columns":1,"rows":1}',
@@ -70,6 +71,10 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
     if "revision" not in note_columns:
         connection.execute(
             "ALTER TABLE notes ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
+        )
+    if "note_type" not in note_columns:
+        connection.execute(
+            "ALTER TABLE notes ADD COLUMN note_type TEXT NOT NULL DEFAULT 'canvas'"
         )
 
     notebook_columns = {

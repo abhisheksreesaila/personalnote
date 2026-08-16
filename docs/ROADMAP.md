@@ -7,6 +7,7 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 ## Phase 0: Product Foundation - Complete
 
 - Spatial Fabric canvas with text, ink, erasing, printing, and responsive pages.
+- Typed notes with an infinite SVG mind-map editor, shared SQLite persistence, and node-label search. **Complete.**
 - Notebook and note organization with fast lexical search.
 - Local SQLite persistence behind stable JSON APIs.
 - Distinct mobile and desktop interaction language.
@@ -54,6 +55,20 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 - Introduce Inbox, Projects, Areas, Resources, and Archive as suggested states.
 - Keep raw captures canonical; all cleanup and classification remains reversible.
 - Add an activity ledger showing what the system linked, cleaned, or proposed.
+
+## Voice Capture Track
+
+- Extract product-owned dictation state while preserving editable Fabric insertion. **Complete.**
+- Keep mobile operating-system dictation and browser recognition fallback. **Complete.**
+- Add Windows-owned mono 16 kHz PCM capture behind a replaceable provider. **Complete.**
+- Persist ordered PCM16 chunks and session metadata in IndexedDB before transcription delivery. **Complete.**
+- Stream partial and final text through local Nemotron 3.5 ASR Q8 on loopback. **Complete.**
+- Feed finalized text into normal contextual save and FTS5 indexing. **Complete.**
+- Pin and automate CPU runtime/model provisioning and startup. **Complete.**
+- Validate deterministic inference, realtime provider events, and CPU throughput. **Complete: 3.2549x realtime.**
+- Validate physical microphone capture, first-partial latency, interruption recovery, and correction quality.
+- Decide stored-audio retention, playback, export, and deletion controls.
+- Consider CUDA only if physical-microphone measurements miss the latency budget.
 
 ## Drawing Intelligence Track
 
@@ -114,4 +129,4 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 
 ## Current Next Step
 
-Design Slice 2 of the Agent Workspace Protocol around durable, idempotent proposals and product-owned undo. Start with low-risk semantic links and classifications; keep note mutation, MCP, OpenClaw, and autonomous workflows unavailable until evidence checks, decision records, and crash-safe inverse changes are proven.
+Finish physical-microphone validation for the Windows voice path: measure first-partial latency, verify final editable text and contextual indexing, exercise cancellation/interruption, and settle stored-audio retention behavior. Do not expand the voice runtime to CUDA without evidence that CPU misses the interaction budget.

@@ -173,6 +173,50 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(self.client.get(f"/api/notes/{note['id']}").status_code, 404)
         self.assertEqual(self.client.get("/api/search", params={"q": "partner event"}).json(), [])
 
+    def test_mindmap_note_round_trips_and_indexes_node_text(self):
+        notebook = self.client.get("/api/notebooks").json()[0]
+        response = self.client.post(
+            "/api/notes",
+            json={
+                "title": "Product map",
+                "notebookId": notebook["id"],
+                "noteType": "mindmap",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        note = response.json()
+        self.assertEqual(note["noteType"], "mindmap")
+        self.assertEqual(note["content"]["nodes"][0]["text"], "Central idea")
+
+        document = note["content"]
+        document["nodes"].append({
+            "id": "research",
+            "parentId": "root",
+            "text": "Customer discovery interviews",
+            "x": 320,
+            "y": -80,
+            "color": "#3d8fe8",
+        })
+        update = self.client.put(
+            f"/api/notes/{note['id']}",
+            json={
+                "title": "Product map",
+                "notebookId": notebook["id"],
+                "revision": note["revision"],
+                "content": document,
+            },
+        )
+        self.assertEqual(update.status_code, 200)
+
+        loaded = self.client.get(f"/api/notes/{note['id']}").json()
+        self.assertEqual(loaded["noteType"], "mindmap")
+        self.assertEqual(loaded["content"]["nodes"][1]["text"], "Customer discovery interviews")
+        summaries = self.client.get("/api/notes").json()
+        self.assertEqual(summaries[0]["noteType"], "mindmap")
+        search = self.client.get("/api/search", params={"q": "discovery interviews"}).json()
+        self.assertEqual(search[0]["id"], note["id"])
+        self.assertEqual(search[0]["noteType"], "mindmap")
+
     def test_settings_capabilities_never_expose_secrets(self):
         configured_environment = {
             "GOOGLE_CLIENT_ID": "google-client-id",

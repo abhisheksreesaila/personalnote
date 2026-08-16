@@ -1,5 +1,5 @@
 import './style.css'
-import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas } from 'fabric'
+import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { AmbientTelemetry } from './intelligence/ambient-telemetry.js'
 import { calendarDraftToIcs, parseCalendarDraft } from './intelligence/calendar-draft.js'
@@ -10,7 +10,14 @@ import {
   wrapConceptLabel,
 } from './intelligence/concept-diagram.js'
 import { analyzeDiagramStroke, diagramGuidePath } from './intelligence/diagram-assist.js'
+import { DictationSession } from './intelligence/dictation-session.js'
 import { planObstacleAwareLayout } from './intelligence/layout-cleanup.js'
+import { DurableAudioSession } from './intelligence/local-audio-store.js'
+import { LocalTranscriptionProvider } from './intelligence/local-transcription-provider.js'
+import { MicrophonePcmCapture } from './intelligence/microphone-pcm-capture.js'
+import { pageBoundedTextLayout } from './intelligence/voice-text-layout.js'
+import { VOICE_SCAN_HOLD_MS, VoiceScanGesture } from './intelligence/voice-scan-gesture.js'
+import { mountMindMap } from './mindmap/editor.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
@@ -39,6 +46,18 @@ const STROKE_WIDTHS = {
   pen: [1, 3, 6, 10],
   highlight: [10, 20, 32, 48],
 }
+const dictationSession = new DictationSession()
+const DEFAULT_MINDMAP_DOCUMENT = {
+  version: 1,
+  title: 'Untitled mind map',
+  rootId: 'root',
+  defaultPresentation: 'box',
+  nodes: [{
+    id: 'root', parentId: null, text: 'Central idea', x: 0, y: 0,
+    color: '#ef684b', fontSize: 28, bold: true, font: 'hand',
+    presentation: 'box', curve: 78,
+  }],
+}
 
 FabricObject.customProperties = Array.from(new Set([
   ...FabricObject.customProperties,
@@ -53,14 +72,30 @@ document.querySelector('#app').innerHTML = `
     <nav class="side-rail" aria-label="Workspace">
       <button class="rail-brand" id="toggle-sidebar" title="Notebooks" aria-label="Open notebooks" aria-expanded="false">P</button>
       <div class="rail-group">
-        <button class="rail-button" id="rail-new-note" title="New note" aria-label="New note"><i data-lucide="square-pen"></i></button>
+        <div class="rail-create-control">
+          <button class="rail-button hold-create-button" id="rail-new-note" title="New canvas note - hold for more types" aria-label="Create new canvas note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square-pen"></i></button>
+        </div>
         <button class="rail-button" id="rail-notebooks" title="Notebooks" aria-label="Open notebooks"><i data-lucide="notebook-tabs"></i></button>
+      </div>
+      <div class="rail-group mindmap-rail-actions" id="mindmap-rail-actions" aria-label="Mind map tools" hidden>
+        <button class="rail-button" data-map-action="image" title="Add image" aria-label="Add image"><i data-lucide="image-plus"></i></button>
+        <button class="rail-button" data-map-action="import" title="Import JSON" aria-label="Import JSON"><i data-lucide="folder-open"></i></button>
+        <button class="rail-button" data-map-action="export-json" title="Export JSON" aria-label="Export JSON"><i data-lucide="braces"></i></button>
+        <button class="rail-button" data-map-action="export-png" title="Export PNG" aria-label="Export PNG"><i data-lucide="image-down"></i></button>
+        <button class="rail-button" data-map-action="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
+        <button class="rail-button" data-map-action="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
+        <button class="rail-button" data-map-action="clean" title="Clean up layout" aria-label="Clean up layout"><i data-lucide="wand-sparkles"></i></button>
+        <button class="rail-button" data-map-action="fit" title="Fit map" aria-label="Fit map"><i data-lucide="scan"></i></button>
       </div>
       <div class="rail-group rail-bottom">
         <button class="rail-button" id="rail-print" title="Print preview" aria-label="Open print preview"><i data-lucide="printer"></i></button>
         <button class="rail-button" id="rail-settings" title="Settings" aria-label="Open settings"><i data-lucide="settings"></i></button>
       </div>
     </nav>
+    <div class="note-create-menu" id="note-create-menu" role="menu" aria-label="Create note as" hidden>
+      <button role="menuitem" data-create-note-type="canvas"><i data-lucide="file-text"></i><span>Canvas note</span></button>
+      <button role="menuitem" data-create-note-type="mindmap"><i data-lucide="git-fork"></i><span>Mind map</span></button>
+    </div>
     <aside class="sidebar" id="sidebar" inert>
       <div class="brand-row">
         <button class="icon-button mobile-library-back" id="mobile-library-back" title="Back to notebooks" aria-label="Back to notebooks"><i data-lucide="arrow-left"></i></button>
@@ -83,7 +118,9 @@ document.querySelector('#app').innerHTML = `
               <div><small>Notes</small><strong id="selected-notebook-name">Notebook</strong></div>
             </div>
             <div class="note-pane-actions">
-              <button class="icon-button" id="new-note" title="New note" aria-label="New note"><i data-lucide="square-pen"></i></button>
+              <div class="sidebar-create-control">
+                <button class="icon-button hold-create-button" id="new-note" title="New canvas note - hold for more types" aria-label="Create new canvas note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square-pen"></i></button>
+              </div>
               <button class="icon-button" id="edit-selected-notebook" title="Edit notebook" aria-label="Edit selected notebook"><i data-lucide="more-horizontal"></i></button>
             </div>
           </div>
@@ -104,6 +141,7 @@ document.querySelector('#app').innerHTML = `
       <section class="workspace" id="workspace">
         <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
           <div class="tool-group">
+            <button class="tool-button mobile-hand-tool" data-tool="hand" title="Move canvas" aria-label="Move canvas"><i data-lucide="hand"></i></button>
             <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select"><i data-lucide="mouse-pointer-2"></i></button>
             <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text"><i data-lucide="type"></i></button>
             <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen"><i data-lucide="pencil"></i></button>
@@ -119,9 +157,11 @@ document.querySelector('#app').innerHTML = `
           </div>
         </div>
         <div class="mobile-capture-island" id="mobile-capture-island">
-          <button class="mobile-new-note" id="mobile-new-note" title="New note - hold for more" aria-label="Create new note. Press and hold for dictate or scan" aria-expanded="false"><i data-lucide="square-pen"></i></button>
+          <button class="mobile-new-note hold-create-button" id="mobile-new-note" title="New note - hold for more" aria-label="Create new note. Press and hold for more capture options" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square-pen"></i></button>
           <div class="mobile-capture-menu" id="mobile-capture-menu" hidden>
+            <button id="mobile-mindmap" aria-label="Create a mind map note"><span class="mobile-action-icon"><i data-lucide="git-fork"></i></span><span class="mobile-action-label">Mind map</span></button>
             <button id="mobile-dictate" aria-label="Dictate into this note"><span class="mobile-action-icon"><i data-lucide="mic"></i></span><span class="mobile-action-label">Dictate</span></button>
+            <button id="mobile-draw" aria-label="Draw on this note"><span class="mobile-action-icon"><i data-lucide="pencil"></i></span><span class="mobile-action-label">Draw</span></button>
             <button id="mobile-scan" aria-label="Scan this page"><span class="mobile-action-icon"><i data-lucide="scan-search"></i></span><span class="mobile-action-label">Scan page</span></button>
           </div>
         </div>
@@ -140,8 +180,8 @@ document.querySelector('#app').innerHTML = `
         </section>
 
         <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i><span>Search notes</span><kbd>Ctrl K</kbd></button>
-        <button class="voice-button" id="voice-button" title="Voice dictation" aria-label="Start voice dictation" aria-pressed="false"><i data-lucide="mic"></i></button>
-        <button class="scan-page-button" id="page-scan-trigger" title="Scan this page" aria-label="Scan this page"><i data-lucide="scan-search"></i></button>
+        <button class="voice-button" id="voice-button" title="Press to dictate · hold to scan this page" aria-label="Start voice dictation. Hold to scan this page" aria-pressed="false"><span class="voice-button-icon voice-mic-icon"><i data-lucide="mic"></i></span><span class="voice-button-icon voice-scan-icon"><i data-lucide="scan-search"></i></span></button>
+        <button id="page-scan-trigger" hidden aria-label="Scan this page"></button>
         <div class="voice-caption" id="voice-caption" role="status" hidden><span class="voice-pulse"></span><span id="voice-status">Listening</span></div>
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
         <button class="intelligence-presence" id="intelligence-presence" title="Related note available" aria-label="Show related note" hidden><i data-lucide="sparkles"></i></button>
@@ -201,6 +241,7 @@ document.querySelector('#app').innerHTML = `
         <div class="paper" id="paper">
           <canvas id="note-canvas"></canvas>
         </div>
+        <div class="mindmap-host" id="mindmap-host" hidden></div>
         <div class="page-count" id="page-count">1 page</div>
       </section>
     </main>
@@ -217,7 +258,7 @@ document.querySelector('#app').innerHTML = `
           <div class="notebook-picker-menu" id="notebook-picker-menu" role="menu" hidden></div>
         </div>
       </section>
-      <section class="property-section">
+      <section class="property-section" id="canvas-typography-properties">
         <div class="property-section-title"><span>Typography</span><small id="text-selection-status">New text</small></div>
         <div class="font-family-control" id="font-family-control" aria-label="Font family">
           <button data-font-family="Source Serif 4" class="active" title="Serif" aria-label="Serif">Ag</button>
@@ -229,8 +270,9 @@ document.querySelector('#app').innerHTML = `
           <input id="font-size-control" type="range" min="12" max="72" step="1" value="24" />
         </label>
       </section>
+      <div class="mindmap-properties" id="mindmap-properties" hidden></div>
       <section class="property-section property-note-info">
-        <div><span>Canvas</span><strong>Expands automatically</strong></div>
+        <div><span id="note-surface-label">Canvas</span><strong id="note-surface-detail">Expands automatically</strong></div>
         <div><span>Storage</span><strong>On this device</strong></div>
       </section>
       <div class="properties-footer">
@@ -359,11 +401,28 @@ document.querySelector('#app').innerHTML = `
         </div>
         <button class="icon-button" value="cancel" aria-label="Close"><i data-lucide="x"></i></button>
       </div>
-      <p class="clear-note-copy">This removes every text and ink object and returns the canvas to one page. The note title and notebook stay in place.</p>
+      <p class="clear-note-copy" id="clear-note-copy">This removes every text and ink object and returns the canvas to one page. The note title and notebook stay in place.</p>
       <p class="dialog-note">You can undo this immediately from the writing dock.</p>
       <div class="dialog-actions">
         <button class="dialog-cancel" value="cancel">Cancel</button>
         <button class="dialog-danger" id="confirm-clear-note" value="default">Clear all</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="notebook-dialog mobile-dictation-dialog" id="mobile-dictation-dialog" aria-labelledby="mobile-dictation-title">
+    <form id="mobile-dictation-form">
+      <div class="dialog-heading-row">
+        <div>
+          <p class="dialog-eyebrow">Phone keyboard</p>
+          <h2 id="mobile-dictation-title">Dictation</h2>
+        </div>
+        <button class="icon-button" id="close-mobile-dictation" type="button" aria-label="Cancel dictation"><i data-lucide="x"></i></button>
+      </div>
+      <textarea id="mobile-dictation-text" rows="7" enterkeyhint="done" autocapitalize="sentences" placeholder="Speak or type..."></textarea>
+      <div class="dialog-actions">
+        <button class="dialog-cancel" id="cancel-mobile-dictation" type="button">Cancel</button>
+        <button class="dialog-primary" type="submit">Add to note</button>
       </div>
     </form>
   </dialog>
@@ -375,6 +434,7 @@ const elements = {
   shell: document.querySelector('.app-shell'),
   workspace: document.querySelector('#workspace'),
   paper: document.querySelector('#paper'),
+  mindmapHost: document.querySelector('#mindmap-host'),
   title: document.querySelector('#note-title'),
   list: document.querySelector('#notebook-navigator'),
   notebookList: document.querySelector('#notebook-list'),
@@ -389,10 +449,17 @@ const elements = {
   searchResults: document.querySelector('#search-results'),
   notebookDialog: document.querySelector('#notebook-dialog'),
   clearNoteDialog: document.querySelector('#clear-note-dialog'),
+  mobileDictationDialog: document.querySelector('#mobile-dictation-dialog'),
+  mobileDictationText: document.querySelector('#mobile-dictation-text'),
   notebookForm: document.querySelector('#notebook-form'),
   notebookName: document.querySelector('#notebook-name'),
   sidebarToggle: document.querySelector('#toggle-sidebar'),
   properties: document.querySelector('#properties-panel'),
+  canvasTypographyProperties: document.querySelector('#canvas-typography-properties'),
+  noteSurfaceLabel: document.querySelector('#note-surface-label'),
+  noteSurfaceDetail: document.querySelector('#note-surface-detail'),
+  clearNoteCopy: document.querySelector('#clear-note-copy'),
+  printButton: document.querySelector('#rail-print'),
   settings: document.querySelector('#settings-panel'),
   fontSize: document.querySelector('#font-size-control'),
   fontSizeValue: document.querySelector('#font-size-value'),
@@ -430,12 +497,16 @@ const elements = {
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
+  noteCreateMenu: document.querySelector('#note-create-menu'),
+  mindmapProperties: document.querySelector('#mindmap-properties'),
+  mindmapRailActions: document.querySelector('#mindmap-rail-actions'),
 }
 
 const state = {
   notes: [],
   notebooks: [],
   activeNoteId: null,
+  activeNoteType: 'canvas',
   selectedNotebookId: null,
   pages: { columns: 1, rows: 1 },
   tool: 'text',
@@ -445,10 +516,17 @@ const state = {
   fontFamily: 'Source Serif 4',
   fontSize: 24,
   displayScale: 1,
+  canvasZoom: 1,
   recognition: null,
   listening: false,
-  voiceTarget: null,
   voiceError: null,
+  voiceMode: null,
+  localTranscription: null,
+  microphoneCapture: null,
+  audioCaptureSession: null,
+  audioStorageFailed: false,
+  localFinishTimer: null,
+  voiceAttempt: 0,
   drawingGesture: null,
   eraserActive: false,
   eraserChanged: false,
@@ -467,6 +545,44 @@ const state = {
   dismissedCalendarDrafts: new Set(),
   seenCalendarDrafts: new Set(),
   intelligenceConnectionConfigured: false,
+}
+
+let mindmapEditor = null
+
+function setActiveNoteType(noteType) {
+  state.activeNoteType = noteType === 'mindmap' ? 'mindmap' : 'canvas'
+  const isMindMap = state.activeNoteType === 'mindmap'
+  elements.shell.classList.toggle('mindmap-active', isMindMap)
+  elements.paper.hidden = isMindMap
+  elements.mindmapHost.hidden = !isMindMap
+  elements.pageCount.hidden = isMindMap
+  elements.canvasTypographyProperties.hidden = isMindMap
+  elements.mindmapProperties.hidden = !isMindMap
+  elements.mindmapRailActions.hidden = !isMindMap
+  elements.properties.querySelector('.properties-heading span').textContent = isMindMap ? 'Mind map' : 'Inspector'
+  elements.properties.querySelector('.properties-heading h2').textContent = isMindMap ? 'Node properties' : 'Note properties'
+  elements.noteSurfaceLabel.textContent = isMindMap ? 'Mind map' : 'Canvas'
+  elements.noteSurfaceDetail.textContent = isMindMap ? 'Infinite SVG workspace' : 'Expands automatically'
+  elements.clearNoteCopy.textContent = isMindMap
+    ? 'This removes every branch and returns the map to one starting topic. The note title and notebook stay in place.'
+    : 'This removes every text and ink object and returns the canvas to one page. The note title and notebook stay in place.'
+  elements.printButton.disabled = isMindMap
+  elements.printButton.title = isMindMap ? 'Print preview is available for canvas notes' : 'Print preview'
+  if (!isMindMap) {
+    mindmapEditor?.destroy()
+    mindmapEditor = null
+  }
+}
+
+function mountActiveMindMap(documentValue) {
+  mindmapEditor?.destroy()
+  mindmapEditor = mountMindMap(elements.mindmapHost, {
+    documentValue,
+    inspectorRoot: elements.mindmapProperties,
+    controlsRoot: elements.mindmapRailActions,
+    createIcons: () => createIcons({ icons }),
+    onChange: () => queueSave(),
+  })
 }
 
 const PREFERENCES_KEY = 'personal-note.preferences.v1'
@@ -990,8 +1106,9 @@ function closePageScan() {
   elements.pageScanCard.classList.remove('open')
   elements.pageScanCard.hidden = true
   const trigger = document.querySelector('#page-scan-trigger')
-  trigger.hidden = false
+  trigger.hidden = true
   trigger.classList.remove('active')
+  elements.voiceButton.classList.remove('scan-active')
 }
 
 function addPageScanFinding(icon, title, detail, { priority = false } = {}) {
@@ -1112,15 +1229,17 @@ function refineScannedDrawing() {
   closePageScan()
 }
 
-async function scanCurrentPage() {
+async function scanCurrentPage({ prioritizeSelection = true } = {}) {
   const noteId = state.activeNoteId
   if (!noteId) return
   setSettingsOpen(false)
   setPropertiesOpen(false)
   quietContextualIntelligence()
   const activeObjects = canvas.getActiveObjects()
-  const explicitFocus = activeObjects.length ? activeObjects : attentionSelection
-  pageScanFocusedObjects = [...new Set([...explicitFocus, ...objectsUnderHighlights()])]
+  const explicitFocus = prioritizeSelection ? (activeObjects.length ? activeObjects : attentionSelection) : []
+  pageScanFocusedObjects = prioritizeSelection
+    ? [...new Set([...explicitFocus, ...objectsUnderHighlights()])]
+    : []
   pageScanSourceId = null
   pageScanDiagramCandidates = []
   pageScanConceptProposal = null
@@ -1138,6 +1257,7 @@ async function scanCurrentPage() {
   const trigger = document.querySelector('#page-scan-trigger')
   trigger.classList.add('active')
   trigger.hidden = true
+  elements.voiceButton.classList.add('scan-active')
   document.querySelector('#open-scan-source').hidden = true
   const focusedSegments = focusedTextSegments()
   const text = focusedSegments.length ? `${focusedSegments.join(' ')} ${activeTextSnapshot()}` : activeTextSnapshot()
@@ -1515,7 +1635,7 @@ function renderNoteList() {
   const selectedNotes = state.notes.filter((note) => note.notebookId === selectedNotebook?.id)
   elements.noteList.innerHTML = selectedNotes.length ? selectedNotes.map((note) => `
     <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''}" data-note-id="${note.id}" draggable="true">
-      <i data-lucide="file-text"></i>
+      <i data-lucide="${note.noteType === 'mindmap' ? 'git-fork' : 'file-text'}"></i>
       <span>${escapeHtml(note.title || 'Untitled note')}</span>
     </button>
   `).join('') : '<div class="empty-notebook"><i data-lucide="file-plus-2"></i><span>No notes yet</span></div>'
@@ -1560,15 +1680,24 @@ let renderedPaperWidth = PAGE_WIDTH
 let renderedPaperHeight = PAGE_HEIGHT
 function getDisplayScale() {
   if (window.innerWidth > 800) return 1
-  return Math.min(1, Math.max(220, elements.workspace.clientWidth - 24) / PAGE_WIDTH)
+  return Math.min(1, (elements.workspace.clientWidth - 24) / PAGE_WIDTH)
+}
+
+function getCanvasScale() {
+  return state.displayScale * state.canvasZoom
+}
+
+function getInputFontSize() {
+  return window.innerWidth <= 800 ? Math.max(32, state.fontSize) : state.fontSize
 }
 
 function setCanvasDisplaySize(width, height) {
-  const scaledWidth = (width + CANVAS_OVERSCAN) * state.displayScale
-  const scaledHeight = (height + CANVAS_OVERSCAN) * state.displayScale
+  const scale = getCanvasScale()
+  const scaledWidth = (width + CANVAS_OVERSCAN) * scale
+  const scaledHeight = (height + CANVAS_OVERSCAN) * scale
   canvas.setDimensions({ width: scaledWidth, height: scaledHeight })
   canvas.setViewportTransform([
-    state.displayScale, 0, 0, state.displayScale,
+    scale, 0, 0, scale,
     viewportOffsetX, viewportOffsetY,
   ])
 }
@@ -1576,15 +1705,15 @@ function setCanvasDisplaySize(width, height) {
 function setCanvasViewportOffset(offsetX = 0, offsetY = 0) {
   viewportOffsetX = offsetX
   viewportOffsetY = offsetY
-  const zoom = state.displayScale
+  const zoom = getCanvasScale()
   canvas.setViewportTransform([zoom, 0, 0, zoom, offsetX, offsetY])
   canvas.requestRenderAll()
 }
 
 function animateViewportCompensation(deltaX, deltaY, duration = PAGE_EXPAND_DURATION) {
   cancelAnimationFrame(viewportMotionFrame)
-  const scaledDeltaX = deltaX * state.displayScale
-  const scaledDeltaY = deltaY * state.displayScale
+  const scaledDeltaX = deltaX * getCanvasScale()
+  const scaledDeltaY = deltaY * getCanvasScale()
   if (!scaledDeltaX && !scaledDeltaY) return setCanvasViewportOffset()
 
   const startScrollLeft = elements.workspace.scrollLeft
@@ -1647,10 +1776,11 @@ function resizePaper(animate = false) {
 
   renderedPaperWidth = width
   renderedPaperHeight = height
-  elements.paper.style.width = `${width * state.displayScale}px`
-  elements.paper.style.height = `${height * state.displayScale}px`
-  elements.paper.style.setProperty('--page-width', `${PAGE_WIDTH * state.displayScale}px`)
-  elements.paper.style.setProperty('--page-height', `${PAGE_HEIGHT * state.displayScale}px`)
+  const scale = getCanvasScale()
+  elements.paper.style.width = `${width * scale}px`
+  elements.paper.style.height = `${height * scale}px`
+  elements.paper.style.setProperty('--page-width', `${PAGE_WIDTH * scale}px`)
+  elements.paper.style.setProperty('--page-height', `${PAGE_HEIGHT * scale}px`)
   const count = state.pages.columns * state.pages.rows
   elements.pageCount.textContent = `${state.pages.columns} x ${state.pages.rows} / ${count} ${count === 1 ? 'page' : 'pages'}`
 }
@@ -1858,7 +1988,7 @@ function addText(point, value = '', beginEditing = true) {
     top: point.y,
     fill: state.color,
     fontFamily: state.fontFamily,
-    fontSize: state.fontSize,
+    fontSize: getInputFontSize(),
     lineHeight: 1.45,
     padding: 8,
     cornerColor: '#1c70a8',
@@ -2068,7 +2198,7 @@ function setTool(tool) {
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
   canvas.isDrawingMode = tool === 'pen' || tool === 'highlight'
   canvas.selection = tool === 'select'
-  canvas.defaultCursor = tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : 'default'
+  canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : 'default'
   canvas.forEachObject((object) => {
     const textEditable = tool === 'text' && isEditableText(object)
     object.selectable = tool === 'select' || textEditable
@@ -2106,13 +2236,14 @@ async function saveActiveNote() {
   const noteId = state.activeNoteId
   const note = state.notes.find((item) => item.id === noteId)
   try {
-    ensureCanvasObjectIds()
+    if (state.activeNoteType === 'canvas') ensureCanvasObjectIds()
     const title = elements.title.value.trim() || 'Untitled note'
+    if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
     const result = await api(`/notes/${noteId}`, {
       method: 'PUT',
       body: JSON.stringify({
         title,
-        content: canvas.toJSON(),
+        content: state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : canvas.toJSON(),
         pageState: state.pages,
         notebookId: note?.notebookId,
         revision: note?.revision,
@@ -2149,6 +2280,7 @@ function queueSave({ contextual = false } = {}) {
 let historyTimer
 let historyContextual = false
 function snapshot() {
+  if (state.activeNoteType === 'mindmap') return JSON.stringify({ content: mindmapEditor?.getDocument() })
   ensureCanvasObjectIds()
   return JSON.stringify({ content: canvas.toJSON(), pages: state.pages })
 }
@@ -2174,6 +2306,7 @@ function recordHistory({ contextual = false } = {}) {
 }
 
 async function restoreHistory(index) {
+  if (state.activeNoteType === 'mindmap') return
   if (state.loading || index < 0 || index >= state.history.length) return
   state.loading = true
   state.historyIndex = index
@@ -2184,7 +2317,7 @@ async function restoreHistory(index) {
   bindCanvasTextObjects()
   attentionSelection = objectsUnderHighlights()
   syncAttentionSelection()
-  setTool('text')
+  setTool(window.innerWidth <= 800 ? 'hand' : 'text')
   state.loading = false
   canvas.requestRenderAll()
   queueSave()
@@ -2211,28 +2344,38 @@ async function selectNote(id) {
   state.activeNoteId = id
   renderNoteList()
   state.loading = true
+  mindmapEditor?.destroy()
+  mindmapEditor = null
   let normalizedNote = false
   try {
     const note = await api(`/notes/${id}`)
     const summary = state.notes.find((item) => item.id === id)
     if (summary) Object.assign(summary, {
       notebookId: note.notebookId,
+      noteType: note.noteType,
       resourceId: note.resourceId,
       revision: note.revision,
     })
     state.selectedNotebookId = note.notebookId
     elements.title.value = note.title
-    state.pages = note.pageState || { columns: 1, rows: 1 }
-    resizePaper()
-    await canvas.loadFromJSON(note.content || { objects: [] })
-    bindCanvasTextObjects()
-    attentionSelection = objectsUnderHighlights()
-    syncAttentionSelection()
-    normalizedNote = normalizeNotebookFonts()
-    normalizedNote = reconcilePages(true) || normalizedNote
-    state.history = [snapshot()]
-    state.historyIndex = 0
-    setTool('text')
+    setActiveNoteType(note.noteType)
+    if (state.activeNoteType === 'mindmap') {
+      mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
+      state.history = []
+      state.historyIndex = -1
+    } else {
+      state.pages = note.pageState || { columns: 1, rows: 1 }
+      resizePaper()
+      await canvas.loadFromJSON(note.content || { objects: [] })
+      bindCanvasTextObjects()
+      attentionSelection = objectsUnderHighlights()
+      syncAttentionSelection()
+      normalizedNote = normalizeNotebookFonts()
+      normalizedNote = reconcilePages(true) || normalizedNote
+      state.history = [snapshot()]
+      state.historyIndex = 0
+      setTool(window.innerWidth <= 800 ? 'hand' : 'text')
+    }
     setSaveState('Saved')
     renderNoteList()
     requestAnimationFrame(() => {
@@ -2250,7 +2393,7 @@ async function selectNote(id) {
   }
 }
 
-async function createNote(notebookId) {
+async function createNote(notebookId, noteType = 'canvas') {
   if (state.creatingNote) return
   state.creatingNote = true
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
@@ -2258,14 +2401,18 @@ async function createNote(notebookId) {
   try {
     const note = await api('/notes', {
       method: 'POST',
-      body: JSON.stringify({ title: 'Untitled note', notebookId: destinationId }),
+      body: JSON.stringify({
+        title: noteType === 'mindmap' ? 'Untitled mind map' : 'Untitled note',
+        notebookId: destinationId,
+        noteType,
+      }),
     })
     state.notes.unshift(note)
     state.selectedNotebookId = note.notebookId
     state.activeNoteId = null
     await selectNote(note.id)
     setSidebarOpen(false)
-    addText({ x: 72, y: 72 })
+    if (noteType === 'canvas') addText({ x: 72, y: 72 })
   } finally {
     state.creatingNote = false
   }
@@ -2483,6 +2630,7 @@ async function renderPrintPreview(sequence) {
 }
 
 async function openPrintPreview() {
+  if (state.activeNoteType !== 'canvas') return
   const sequence = ++printRenderSequence
   setSidebarOpen(false)
   setPropertiesOpen(false)
@@ -2548,19 +2696,65 @@ function voiceInsertPoint() {
   }
 }
 
+function createVoiceTextBox() {
+  const layout = pageBoundedTextLayout(voiceInsertPoint(), { pageWidth: PAGE_WIDTH })
+  const text = new Textbox('', {
+    left: layout.x,
+    top: layout.y,
+    width: layout.width,
+    fill: state.color,
+    fontFamily: state.fontFamily,
+    fontSize: getInputFontSize(),
+    lineHeight: 1.45,
+    padding: 8,
+    cornerColor: '#1c70a8',
+    cornerStyle: 'circle',
+    transparentCorners: false,
+  })
+  text.__voiceDictationBox = true
+  bindTextEditingLifecycle(text)
+  canvas.add(text)
+  canvas.setActiveObject(text)
+  text.enterEditing()
+  canvas.requestRenderAll()
+  return text
+}
+
+function removeEmptyVoiceTextBox() {
+  const target = dictationSession.target
+  if (dictationSession.active && dictationSession.partial) {
+    updateVoiceTextBox(dictationSession.preview(''), { create: false })
+  }
+  if (!target?.__voiceDictationBox || target.text.trim() || !canvas.getObjects().includes(target)) return
+  target.exitEditing()
+  canvas.remove(target)
+  canvas.discardActiveObject()
+  reconcilePages()
+}
+
+function updateVoiceTextBox(text, { record = false, create = true } = {}) {
+  if (!dictationSession.target || !canvas.getObjects().includes(dictationSession.target)) {
+    if (!create) return
+    dictationSession.target = createVoiceTextBox()
+    dictationSession.committed = ''
+  }
+  dictationSession.target.set('text', text)
+  dictationSession.target.initDimensions()
+  dictationSession.target.setSelectionStart(text.length)
+  dictationSession.target.setSelectionEnd(text.length)
+  dictationSession.target.setCoords()
+  canvas.requestRenderAll()
+  reconcilePages()
+  if (record) recordHistory({ contextual: true })
+}
+
+function previewVoiceTranscript(transcript, options) {
+  updateVoiceTextBox(dictationSession.preview(transcript, options))
+}
+
 function insertVoiceTranscript(transcript) {
   if (!transcript) return
-  if (!state.voiceTarget || !canvas.getObjects().includes(state.voiceTarget)) {
-    state.voiceTarget = addText(voiceInsertPoint(), transcript, false)
-    setTool('select')
-  } else {
-    const separator = state.voiceTarget.text.trim() ? ' ' : ''
-    state.voiceTarget.set('text', `${state.voiceTarget.text}${separator}${transcript}`)
-    state.voiceTarget.setCoords()
-    canvas.requestRenderAll()
-  }
-  reconcilePages()
-  recordHistory()
+  updateVoiceTextBox(dictationSession.commit(transcript), { record: true })
 }
 
 function showVoiceNotice(message) {
@@ -2572,55 +2766,289 @@ function showVoiceNotice(message) {
   }, 2600)
 }
 
-function setupVoiceInput() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-  if (!SpeechRecognition) {
-    elements.voiceButton.addEventListener('click', () => showVoiceNotice('Voice input is unavailable in this browser'))
+function completeLocalDictation(message = '') {
+  clearTimeout(state.localFinishTimer)
+  state.localTranscription?.disconnect()
+  state.localTranscription = null
+  state.microphoneCapture = null
+  state.voiceMode = null
+  removeEmptyVoiceTextBox()
+  dictationSession.finish()
+  setVoiceListening(false)
+  if (message) showVoiceNotice(message)
+}
+
+async function finishAudioCaptureSession(status) {
+  const session = state.audioCaptureSession
+  state.audioCaptureSession = null
+  if (!session) return
+  try {
+    await session.finish(status)
+  } catch {
+    console.warn('event=voice.audio_store outcome=write_failed')
+  }
+}
+
+async function stopLocalDictation({ cancel = false } = {}) {
+  state.voiceAttempt += 1
+  await state.microphoneCapture?.stop()
+  state.microphoneCapture = null
+  if (cancel) {
+    await finishAudioCaptureSession('cancelled')
+    state.localTranscription?.cancel()
+    state.localTranscription = null
+    state.voiceMode = null
+    removeEmptyVoiceTextBox()
+    dictationSession.cancel()
+    setVoiceListening(false)
     return
   }
 
-  const recognition = new SpeechRecognition()
-  recognition.continuous = true
-  recognition.interimResults = true
-  recognition.lang = navigator.language || 'en-US'
-  state.recognition = recognition
+  await finishAudioCaptureSession('completed')
+  state.localTranscription?.finish()
+  elements.voiceStatus.textContent = 'Finishing locally'
+  state.localFinishTimer = setTimeout(() => completeLocalDictation(), 4000)
+}
 
-  recognition.onstart = () => setVoiceListening(true)
-  recognition.onresult = (event) => {
-    let interim = ''
-    let finalText = ''
-    for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      const transcript = event.results[index][0].transcript.trim()
-      if (event.results[index].isFinal) finalText += `${transcript} `
-      else interim += `${transcript} `
-    }
-    elements.voiceStatus.textContent = interim.trim() || finalText.trim() || 'Listening'
-    if (finalText.trim()) insertVoiceTranscript(finalText.trim())
-  }
-  recognition.onerror = (event) => {
-    state.voiceError = event.error === 'not-allowed' ? 'Microphone permission is required' : 'Voice input stopped'
-  }
-  recognition.onend = () => {
-    setVoiceListening(false)
-    if (state.voiceError) {
-      showVoiceNotice(state.voiceError)
-      state.voiceError = null
-    }
+async function startLocalDictation(attempt) {
+  const endpoint = import.meta.env.VITE_LOCAL_ASR_ENDPOINT || undefined
+  const provider = new LocalTranscriptionProvider({ endpoint })
+  state.localTranscription = provider
+  await provider.connect({
+    language: (navigator.language || 'en').split('-')[0],
+    onPartial: (text) => {
+      elements.voiceStatus.textContent = text || 'Listening locally'
+      previewVoiceTranscript(text, { append: true })
+    },
+    onFinal: (text) => {
+      if (!dictationSession.active) return
+      elements.voiceStatus.textContent = text || 'Listening locally'
+      insertVoiceTranscript(text)
+      if (!state.microphoneCapture) completeLocalDictation()
+    },
+    onError: async () => {
+      await state.microphoneCapture?.stop()
+      await finishAudioCaptureSession('interrupted')
+      completeLocalDictation('Local voice input stopped')
+    },
+  })
+  if (attempt !== state.voiceAttempt) {
+    provider.cancel()
+    return false
   }
 
-  elements.voiceButton.addEventListener('click', () => {
-    if (state.listening) {
-      recognition.stop()
+  const capture = new MicrophonePcmCapture()
+  state.microphoneCapture = capture
+  state.audioStorageFailed = false
+  try {
+    state.audioCaptureSession = await DurableAudioSession.start({ noteId: state.activeNoteId })
+  } catch {
+    state.audioCaptureSession = null
+    state.audioStorageFailed = true
+    console.warn('event=voice.audio_store outcome=unavailable')
+  }
+  await capture.start((audio) => {
+    const session = state.audioCaptureSession
+    if (!session) {
+      provider.sendAudio(audio)
       return
     }
-    state.voiceTarget = selectedTextObject()
+    void session.append(audio).then(
+      () => provider.sendAudio(audio),
+      () => {
+        provider.sendAudio(audio)
+        if (state.audioStorageFailed) return
+        state.audioStorageFailed = true
+        console.warn('event=voice.audio_store outcome=write_failed')
+      },
+    )
+  })
+  if (attempt !== state.voiceAttempt) {
+    await capture.stop()
+    provider.cancel()
+    return false
+  }
+  state.voiceMode = 'local'
+  setVoiceListening(true, 'Listening locally')
+  return true
+}
+
+function setupVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+  let recognition = null
+  const scanGesture = new VoiceScanGesture()
+  let scanHoldTimer = null
+  let ignoreClickUntil = 0
+  if (SpeechRecognition) {
+    recognition = new SpeechRecognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = navigator.language || 'en-US'
+    state.recognition = recognition
+
+    recognition.onstart = () => {
+      state.voiceMode = 'browser'
+      setVoiceListening(true, 'Listening with browser voice')
+    }
+    recognition.onresult = (event) => {
+      const update = dictationSession.accept(event.results, event.resultIndex)
+      elements.voiceStatus.textContent = update.partial || update.stable.at(-1) || 'Listening'
+      update.stable.forEach(insertVoiceTranscript)
+      previewVoiceTranscript(update.partial)
+    }
+    recognition.onerror = (event) => {
+      state.voiceError = event.error === 'not-allowed' ? 'Microphone permission is required' : 'Voice input stopped'
+      if (event.error === 'not-allowed') dictationSession.cancel()
+    }
+    recognition.onend = () => {
+      state.voiceMode = null
+      removeEmptyVoiceTextBox()
+      dictationSession.finish()
+      setVoiceListening(false)
+      if (state.voiceError) {
+        showVoiceNotice(state.voiceError)
+        state.voiceError = null
+      }
+    }
+  }
+
+  const toggleVoiceDictation = async () => {
+    if (state.listening) {
+      if (state.voiceMode === 'browser') recognition.stop()
+      else await stopLocalDictation({ cancel: state.voiceMode !== 'local' })
+      return
+    }
+
+    dictationSession.start(createVoiceTextBox())
+    const attempt = state.voiceAttempt + 1
+    state.voiceAttempt = attempt
+    state.voiceMode = 'connecting'
+    setVoiceListening(true, 'Connecting local voice')
+    try {
+      if (await startLocalDictation(attempt)) return
+    } catch (error) {
+      state.localTranscription?.cancel()
+      state.localTranscription = null
+      await state.microphoneCapture?.stop()
+      state.microphoneCapture = null
+      await finishAudioCaptureSession('cancelled')
+      if (attempt !== state.voiceAttempt) return
+      if (error?.name === 'NotAllowedError') {
+        state.voiceMode = null
+        removeEmptyVoiceTextBox()
+        dictationSession.cancel()
+        setVoiceListening(false)
+        showVoiceNotice('Microphone permission is required')
+        return
+      }
+    }
+
+    if (!recognition) {
+      state.voiceMode = null
+      removeEmptyVoiceTextBox()
+      dictationSession.cancel()
+      setVoiceListening(false)
+      showVoiceNotice('Start the local voice service to use dictation')
+      return
+    }
     try {
       recognition.start()
     } catch {
-      recognition.stop()
+      state.voiceMode = null
+      removeEmptyVoiceTextBox()
+      dictationSession.cancel()
+      setVoiceListening(false)
+      showVoiceNotice('Voice input could not start')
     }
+  }
+
+  const clearScanHoldVisuals = () => {
+    clearTimeout(scanHoldTimer)
+    scanHoldTimer = null
+    elements.voiceButton.classList.remove('is-scan-holding', 'is-scan-ready')
+    elements.voiceButton.style.removeProperty('--voice-scan-hold-duration')
+  }
+
+  elements.voiceButton.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || state.listening) return
+    scanGesture.begin(event.clientX, event.clientY)
+    elements.voiceButton.classList.add('is-scan-holding')
+    elements.voiceButton.setAttribute('aria-label', 'Keep holding to scan this page')
+    elements.voiceButton.style.setProperty('--voice-scan-hold-duration', `${VOICE_SCAN_HOLD_MS}ms`)
+    try { elements.voiceButton.setPointerCapture?.(event.pointerId) } catch {}
+    scanHoldTimer = setTimeout(() => {
+      if (!scanGesture.completeHold()) return
+      elements.voiceButton.classList.add('is-scan-ready')
+      elements.voiceButton.setAttribute('aria-label', 'Release to scan this page')
+      navigator.vibrate?.(18)
+    }, VOICE_SCAN_HOLD_MS)
+  })
+
+  elements.voiceButton.addEventListener('pointermove', (event) => {
+    if (scanGesture.move(event.clientX, event.clientY)) return
+    ignoreClickUntil = performance.now() + 500
+    clearScanHoldVisuals()
+  })
+
+  elements.voiceButton.addEventListener('pointerup', (event) => {
+    if (!scanGesture.origin) return
+    const intent = scanGesture.release()
+    clearScanHoldVisuals()
+    elements.voiceButton.setAttribute('aria-label', 'Start voice dictation. Hold to scan this page')
+    try { elements.voiceButton.releasePointerCapture?.(event.pointerId) } catch {}
+    if (!intent) {
+      ignoreClickUntil = performance.now() + 500
+      event.preventDefault()
+      return
+    }
+    if (intent !== 'scan') return
+    ignoreClickUntil = performance.now() + 500
+    event.preventDefault()
+    if (elements.pageScanCard.classList.contains('open')) closePageScan()
+    void scanCurrentPage({ prioritizeSelection: false })
+  })
+
+  elements.voiceButton.addEventListener('pointercancel', () => {
+    scanGesture.reset()
+    ignoreClickUntil = performance.now() + 500
+    clearScanHoldVisuals()
+    elements.voiceButton.setAttribute('aria-label', 'Start voice dictation. Hold to scan this page')
+  })
+  elements.voiceButton.addEventListener('contextmenu', (event) => event.preventDefault())
+
+  elements.voiceButton.addEventListener('click', async (event) => {
+    if (performance.now() < ignoreClickUntil) {
+      event.preventDefault()
+      return
+    }
+    await toggleVoiceDictation()
   })
 }
+
+function closeMobileDictation() {
+  dictationSession.cancel()
+  elements.mobileDictationText.value = ''
+  elements.mobileDictationDialog.close()
+}
+
+function openMobileDictation() {
+  dictationSession.start(selectedTextObject())
+  elements.mobileDictationText.value = ''
+  elements.mobileDictationDialog.showModal()
+  requestAnimationFrame(() => elements.mobileDictationText.focus())
+}
+
+document.querySelector('#mobile-dictation-form').addEventListener('submit', (event) => {
+  event.preventDefault()
+  const transcript = elements.mobileDictationText.value.trim()
+  if (!transcript) return
+  insertVoiceTranscript(transcript)
+  dictationSession.finish()
+  elements.mobileDictationText.value = ''
+  elements.mobileDictationDialog.close()
+})
+document.querySelector('#close-mobile-dictation').addEventListener('click', closeMobileDictation)
+document.querySelector('#cancel-mobile-dictation').addEventListener('click', closeMobileDictation)
 
 function renderSearchResults(results, query = '') {
   if (!results.length) {
@@ -2632,7 +3060,7 @@ function renderSearchResults(results, query = '') {
       <p class="search-results-label">${query ? `${results.length} ${results.length === 1 ? 'result' : 'results'}` : 'Recently edited'}</p>
       ${results.map((result) => `
         <button class="search-result" data-search-note-id="${result.id}">
-          <span class="search-result-icon" style="--notebook-color:${result.notebookColor}"><i data-lucide="file-text"></i></span>
+          <span class="search-result-icon" style="--notebook-color:${result.notebookColor}"><i data-lucide="${result.noteType === 'mindmap' ? 'git-fork' : 'file-text'}"></i></span>
           <span class="search-result-copy">
             <strong>${escapeHtml(result.title || 'Untitled note')}</strong>
             ${result.excerpt ? `<small>${escapeHtml(result.excerpt)}</small>` : ''}
@@ -2689,6 +3117,13 @@ async function deleteActiveNote() {
 }
 
 function clearActiveNote() {
+  if (state.activeNoteType === 'mindmap') {
+    if (!state.activeNoteId) return elements.clearNoteDialog.close()
+    mountActiveMindMap(structuredClone(DEFAULT_MINDMAP_DOCUMENT))
+    queueSave()
+    elements.clearNoteDialog.close()
+    return
+  }
   if (!state.activeNoteId || !canvas.getObjects().length) return elements.clearNoteDialog.close()
   clearTimeout(historyTimer)
   canvas.discardActiveObject()
@@ -2718,6 +3153,104 @@ function finishErasing() {
   }
   state.eraserChanged = false
 }
+
+const canvasTouchPointers = new Map()
+let canvasPinchGesture = null
+let canvasPanGesture = null
+
+function beginCanvasPinch() {
+  const [first, second] = [...canvasTouchPointers.values()]
+  if (!first || !second) return
+  const rect = canvas.upperCanvasEl.getBoundingClientRect()
+  const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 }
+  const scale = getCanvasScale()
+  canvasPinchGesture = {
+    distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+    center,
+    zoom: state.canvasZoom,
+    worldX: (center.x - rect.left - viewportOffsetX) / scale,
+    worldY: (center.y - rect.top - viewportOffsetY) / scale,
+    drawing: canvas.isDrawingMode,
+  }
+  state.drawingGesture = null
+  canvasPanGesture = null
+  canvas.isDrawingMode = false
+  canvas.clearContext(canvas.contextTop)
+  finishErasing()
+}
+
+function updateCanvasPinch() {
+  if (!canvasPinchGesture || canvasTouchPointers.size < 2) return false
+  const [first, second] = [...canvasTouchPointers.values()]
+  const rect = canvas.upperCanvasEl.getBoundingClientRect()
+  const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 }
+  const ratio = Math.hypot(second.x - first.x, second.y - first.y) / canvasPinchGesture.distance
+  state.canvasZoom = Math.min(2.5, Math.max(0.75, canvasPinchGesture.zoom * ratio))
+  const scale = getCanvasScale()
+  const offsetX = center.x - rect.left - canvasPinchGesture.worldX * scale
+  const offsetY = center.y - rect.top - canvasPinchGesture.worldY * scale
+  resizePaper()
+  setCanvasViewportOffset(offsetX, offsetY)
+  return true
+}
+
+canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
+  if (event.pointerType !== 'touch' || window.innerWidth > 800) return
+  canvasTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  if (canvasTouchPointers.size === 2) {
+    beginCanvasPinch()
+    canvas.upperCanvasEl.setPointerCapture(event.pointerId)
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    return
+  }
+  if (state.tool !== 'hand') return
+  canvasPanGesture = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    offsetX: viewportOffsetX,
+    offsetY: viewportOffsetY,
+  }
+  canvas.upperCanvasEl.setPointerCapture(event.pointerId)
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true })
+
+canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
+  if (!canvasTouchPointers.has(event.pointerId)) return
+  canvasTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  if (canvasPinchGesture) updateCanvasPinch()
+  else if (canvasPanGesture?.pointerId === event.pointerId) {
+    setCanvasViewportOffset(
+      canvasPanGesture.offsetX + event.clientX - canvasPanGesture.startX,
+      canvasPanGesture.offsetY + event.clientY - canvasPanGesture.startY,
+    )
+  } else return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true })
+
+canvas.upperCanvasEl.addEventListener('pointerup', (event) => {
+  if (!canvasTouchPointers.has(event.pointerId)) return
+  canvasTouchPointers.delete(event.pointerId)
+  if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
+  if (canvasPinchGesture && !canvasTouchPointers.size) {
+    canvasPinchGesture = null
+    canvas.isDrawingMode = state.tool === 'pen' || state.tool === 'highlight'
+  }
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true })
+
+canvas.upperCanvasEl.addEventListener('pointercancel', (event) => {
+  canvasTouchPointers.delete(event.pointerId)
+  if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
+  if (canvasPinchGesture && !canvasTouchPointers.size) {
+    canvasPinchGesture = null
+    canvas.isDrawingMode = state.tool === 'pen' || state.tool === 'highlight'
+  }
+}, { capture: true })
 
 canvas.on('before:path:created', ({ path }) => {
   const points = canvas.freeDrawingBrush?._points || []
@@ -2875,7 +3408,6 @@ elements.strokeWidths.addEventListener('click', (event) => {
   closeInkOptions()
 })
 
-document.querySelector('#new-note').addEventListener('click', () => createNote())
 document.querySelector('#new-notebook').addEventListener('click', () => openNotebookDialog())
 document.querySelector('#clear-note').addEventListener('click', () => {
   elements.clearNoteDialog.showModal()
@@ -2911,7 +3443,6 @@ function setSidebarOpen(open, mobileView = 'notebooks') {
 document.querySelector('#toggle-sidebar').addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
 document.querySelector('#rail-notebooks').addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
-document.querySelector('#rail-new-note').addEventListener('click', () => createNote())
 document.querySelector('#mobile-editor-back').addEventListener('click', () => {
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
   if (activeNote) state.selectedNotebookId = activeNote.notebookId
@@ -2919,6 +3450,72 @@ document.querySelector('#mobile-editor-back').addEventListener('click', () => {
   setSidebarOpen(true, 'notes')
 })
 document.querySelector('#mobile-library-back').addEventListener('click', () => setMobileLibraryView('notebooks'))
+
+const desktopNewNoteButtons = [document.querySelector('#rail-new-note'), document.querySelector('#new-note')]
+const suppressedNewNoteClicks = new WeakSet()
+
+function setNoteCreateMenuOpen(open, anchor) {
+  elements.noteCreateMenu.hidden = !open
+  desktopNewNoteButtons.forEach((button) => button.setAttribute('aria-expanded', String(open && button === anchor)))
+  if (!open || !anchor) return
+  const rect = anchor.getBoundingClientRect()
+  const menuWidth = 168
+  elements.noteCreateMenu.style.left = `${Math.min(window.innerWidth - menuWidth - 10, rect.right + 10)}px`
+  elements.noteCreateMenu.style.top = `${Math.min(window.innerHeight - 108, Math.max(10, rect.top - 4))}px`
+  requestAnimationFrame(() => elements.noteCreateMenu.querySelector('button')?.focus())
+}
+
+desktopNewNoteButtons.forEach((button) => {
+  let holdTimer
+  let startPoint
+
+  const cancelHold = () => {
+    clearTimeout(holdTimer)
+    startPoint = null
+    button.classList.remove('is-holding')
+  }
+
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return
+    cancelHold()
+    startPoint = { x: event.clientX, y: event.clientY }
+    button.classList.add('is-holding')
+    holdTimer = setTimeout(() => {
+      suppressedNewNoteClicks.add(button)
+      button.classList.remove('is-holding')
+      setNoteCreateMenuOpen(true, button)
+      navigator.vibrate?.(8)
+    }, 420)
+  })
+  button.addEventListener('pointermove', (event) => {
+    if (startPoint && Math.hypot(event.clientX - startPoint.x, event.clientY - startPoint.y) > 10) cancelHold()
+  })
+  button.addEventListener('pointerup', cancelHold)
+  button.addEventListener('pointercancel', cancelHold)
+  button.addEventListener('contextmenu', (event) => {
+    event.preventDefault()
+    cancelHold()
+    setNoteCreateMenuOpen(true, button)
+  })
+  button.addEventListener('click', (event) => {
+    if (suppressedNewNoteClicks.delete(button)) return event.preventDefault()
+    setNoteCreateMenuOpen(false)
+    createNote()
+  })
+})
+
+elements.noteCreateMenu.addEventListener('click', (event) => {
+  const option = event.target.closest('[data-create-note-type]')
+  if (!option) return
+  setNoteCreateMenuOpen(false)
+  createNote(undefined, option.dataset.createNoteType)
+})
+document.addEventListener('pointerdown', (event) => {
+  const trigger = event.target.closest('button')
+  if (!elements.noteCreateMenu.hidden && !elements.noteCreateMenu.contains(event.target) && !desktopNewNoteButtons.includes(trigger)) {
+    setNoteCreateMenuOpen(false)
+  }
+})
 
 const mobileCaptureIsland = document.querySelector('#mobile-capture-island')
 const mobileCaptureMenu = document.querySelector('#mobile-capture-menu')
@@ -2979,7 +3576,15 @@ mobileNewNote.addEventListener('click', (event) => {
 })
 document.querySelector('#mobile-dictate').addEventListener('click', () => {
   setMobileCaptureMenuOpen(false)
-  elements.voiceButton.click()
+  openMobileDictation()
+})
+document.querySelector('#mobile-draw').addEventListener('click', () => {
+  setMobileCaptureMenuOpen(false)
+  setTool('pen')
+})
+document.querySelector('#mobile-mindmap').addEventListener('click', () => {
+  setMobileCaptureMenuOpen(false)
+  createNote(undefined, 'mindmap')
 })
 document.querySelector('#mobile-scan').addEventListener('click', () => {
   setMobileCaptureMenuOpen(false)
@@ -3151,8 +3756,13 @@ document.addEventListener('pointerdown', (event) => {
   ) setSettingsOpen(false)
 })
 elements.title.addEventListener('input', () => {
-  scheduleContextualChecks()
-  queueSave({ contextual: true })
+  if (state.activeNoteType === 'mindmap') {
+    mindmapEditor?.setTitle(elements.title.value.trim())
+    queueSave()
+  } else {
+    scheduleContextualChecks()
+    queueSave({ contextual: true })
+  }
 })
 elements.intelligencePresence.addEventListener('click', () => {
   if (state.relatedSuggestion) showRelatedNote(state.relatedSuggestion)
@@ -3310,6 +3920,8 @@ document.addEventListener('keydown', (event) => {
     closeInkOptions()
   } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open')) {
     setSidebarOpen(false)
+  } else if (state.activeNoteType === 'mindmap') {
+    return
   } else if (event.key === 'Escape' && activeText?.isEditing) {
     event.preventDefault()
     activeText.exitEditing()
@@ -3356,7 +3968,9 @@ async function initialize() {
 
 document.fonts.ready.then(refreshCanvasTextMetrics)
 document.fonts.addEventListener('loadingdone', refreshCanvasTextMetrics)
-window.addEventListener('resize', () => resizePaper())
+window.addEventListener('resize', () => {
+  if (state.activeNoteType === 'canvas') resizePaper()
+})
 setupVoiceInput()
 setupToolOptionGestures()
 setupToolDockMagnification()

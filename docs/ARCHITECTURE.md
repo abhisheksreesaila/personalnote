@@ -6,13 +6,17 @@ External and embedded agents integrate through the [Agent Workspace Protocol](./
 
 ## Runtime Overview
 
-Three processes run in development (`npm run dev`):
+Three core processes run in development (`npm run dev`). Windows local voice adds a separately started loopback service (`npm run voice:start`):
 
 ```mermaid
 flowchart TB
     subgraph Browser["Browser (:5173 dev / served from :3137 prod)"]
-        UI[src/main.js + Fabric.js canvas]
+        UI[src/main.js + typed note lifecycle]
+        Canvas[Fabric.js canvas editor]
+        Map[SVG mind-map editor]
         Intel[src/intelligence/*.js]
+        UI --> Canvas
+        UI --> Map
         UI --> Intel
     end
 
@@ -36,7 +40,16 @@ flowchart TB
         Server --> Agent
     end
 
+    subgraph Voice["Local voice service (:8080, Windows)"]
+        Capture[16 kHz mono PCM16 capture]
+        Audio[(IndexedDB sessions + chunks)]
+        Nemotron[Nemotron 3.5 ASR Q8]
+        Capture --> Audio
+        Capture -->|"/v1/realtime WebSocket"| Nemotron
+    end
+
     Browser -->|"/api/* REST"| API
+    Browser --> Voice
     Agent[Local external agent] -->|"POST /api/workspace/v1 + bearer token"| API
     Bridge -->|"POST /rank"| Worker
     Agent -.->|optional| Model[OpenAI-compatible / Azure OpenAI]
@@ -44,9 +57,10 @@ flowchart TB
 
 | Process | Port | Technology | Responsibility |
 |---------|------|------------|----------------|
-| Vite UI | 5173 | Vanilla JS, Fabric.js 7, Vite 8 | Canvas interaction, ambient orchestration, local scan/diagram logic |
+| Vite UI | 5173 | Vanilla JS, Fabric.js 7, native SVG, Vite 8 | Typed note lifecycle, canvas and mind-map interaction, ambient orchestration |
 | FastHTML API | 3137 | Python FastHTML, uvicorn | REST API, SQLite persistence, local retrieval, worker bridge |
 | Intelligence worker | 4112 | TypeScript, `@mastra/core` | Optional one-step rerank + phrasing for related notes |
+| Local voice service | 8080 | `NVIDIA/NeMo-Speech.cpp`, Nemotron 3.5 ASR Q8 | Optional Windows realtime local transcription; audio capture remains browser-owned |
 
 Vite proxies `/api` to FastHTML during development. Production serves the built `dist/` bundle from FastHTML.
 
@@ -74,7 +88,7 @@ flowchart LR
 
 **Product boundary invariants:**
 
-- Raw Fabric canvas JSON in SQLite is canonical.
+- Each note has an immutable type. Fabric JSON is canonical for `canvas`; normalized map JSON is canonical for `mindmap`.
 - Every surfaced observation cites a stored source (note ID, excerpt, timestamp).
 - Model failure degrades to local retrieval; the app never fails because the worker is down.
 - No consequential write without explicit user approval (calendar `.ics`, Tidy, diagram refine).
@@ -104,6 +118,7 @@ erDiagram
         string resource_id UK
         int revision
         int notebook_id FK
+        string note_type
         string title
         text content
         datetime updated_at
@@ -132,7 +147,9 @@ erDiagram
     }
 ```
 
-On every note write, `NoteService.index_note()` updates FTS5 and `note_people` in the same transaction. Canonical writes increment resource revisions and append an ordered workspace change; deletion records a tombstone. Canvas text is extracted from Fabric JSON for indexing; the full JSON blob is stored as `content`. Stable `semanticId` values on Fabric objects let the protocol project text blocks without exposing canvas internals.
+On every note write, `NoteService.index_note()` updates FTS5 and `note_people` in the same transaction. Canonical writes increment resource revisions and append an ordered workspace change; deletion records a tombstone. Canvas text is extracted from Fabric JSON; mind-map text is extracted from normalized node labels. The complete type-specific JSON remains in `content`. Stable `semanticId` values on Fabric objects let the protocol project canvas text blocks without exposing editor internals; richer agent projection for mind-map nodes remains a separate protocol capability.
+
+`src/main.js` owns the shared note lifecycle and switches editors by `noteType`. A normal New note click creates a canvas note. Holding or right-clicking New note opens the typed chooser. Both types share notebooks, titles, save/delete/clear behavior, and FTS search; editor-only controls are gated by the active type.
 
 ## Agent Workspace Protocol
 
@@ -179,6 +196,12 @@ flowchart TD
 | Diagram refine | Page Scan approval | No | Undoable stroke → shape conversion |
 
 Each exact calendar, person, or related suggestion surfaces **once per note per browser session**. Page Scan bypasses that ledger and assembles current findings on demand.
+
+## Voice Capture Lane
+
+Windows voice is independent of the intelligence worker. `MicrophonePcmCapture` resamples browser microphone frames to mono 16 kHz PCM16. `DurableAudioSession` serializes each chunk into IndexedDB before `LocalTranscriptionProvider` sends it to the loopback realtime WebSocket. Partial text is display-only; final text is inserted into Fabric and records contextual history, which reuses normal persistence, FTS5 indexing, and quiet ambient checks.
+
+The runtime and model live under `%LOCALAPPDATA%\PersonalNote`, not in the repository. `npm run voice:setup` checks out the pinned native source, builds the CPU ASR/HTTP target, downloads the exact Q8 model, and runs runtime/model validation. Mobile keyboard dictation produces text without app-owned audio. Browser `SpeechRecognition` remains a best-effort fallback.
 
 ## Related-Note Data Flow (Detail)
 
