@@ -114,7 +114,7 @@ The browser stores Fabric.js canvas JSON through a FastHTML REST interface. `mai
 
 ## Connect a local agent
 
-Slice 1 of the Agent Workspace Protocol is available at `POST http://127.0.0.1:3137/api/workspace/v1`. It is read-only, accepts loopback clients only, and supports `workspace.describe`, `resource.get`, and `workspace.query`. On first API startup, a random bearer token is written to `data/workspace.token` unless `PERSONAL_NOTE_AGENT_TOKEN` or `PERSONAL_NOTE_AGENT_TOKEN_FILE` is configured.
+Slice 2 of the Agent Workspace Protocol is available at `POST http://127.0.0.1:3137/api/workspace/v1`. It accepts loopback clients only and supports discovery, resource reads, queries, proposal lifecycle operations, and activity reads. Agents can propose only revision-checked derived links and note classifications; they cannot directly alter canonical note content. On first API startup, a random bearer token is written to `data/workspace.token` unless `PERSONAL_NOTE_AGENT_TOKEN` or `PERSONAL_NOTE_AGENT_TOKEN_FILE` is configured.
 
 ```powershell
 $token = (Get-Content data/workspace.token -Raw).Trim()

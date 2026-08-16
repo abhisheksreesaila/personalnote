@@ -43,10 +43,11 @@ class ApiContractTests(unittest.TestCase):
         description_response = self.workspace_request(fixtures["describeRequest"])
         self.assertEqual(description_response.status_code, 200)
         description = description_response.json()["result"]
-        self.assertEqual(description["operations"], [
+        self.assertEqual(description["operations"][:3], [
             "workspace.describe", "resource.get", "workspace.query"
         ])
-        self.assertEqual(description["scopes"], ["workspace:read"])
+        self.assertIn("proposal.create", description["operations"])
+        self.assertEqual(description["scopes"], ["workspace:read", "workspace:propose"])
 
         notebook = self.client.get("/api/notebooks").json()[0]
         note = self.client.post(
@@ -130,6 +131,156 @@ class ApiContractTests(unittest.TestCase):
             [(row["change_type"], row["revision"]) for row in changes],
             [("created", 1), ("updated", 2)],
         )
+
+    def test_workspace_proposals_are_idempotent_revision_checked_and_auditable(self):
+        notebook = self.client.get("/api/notebooks").json()[0]
+        source = self.client.post(
+            "/api/notes", json={"title": "Launch plan", "notebookId": notebook["id"]}
+        ).json()
+        target = self.client.post(
+            "/api/notes", json={"title": "Partner notes", "notebookId": notebook["id"]}
+        ).json()
+        updated_source = self.client.put(
+            f"/api/notes/{source['id']}",
+            json={
+                "title": source["title"],
+                "notebookId": notebook["id"],
+                "revision": source["revision"],
+                "content": {"objects": [{"type": "IText", "text": "Maya confirmed the partner launch plan."}]},
+            },
+        ).json()
+        source_document = self.client.get(f"/api/notes/{source['id']}").json()
+        block_id = source_document["content"]["objects"][0]["semanticId"]
+        source_ref = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_proposal_source",
+            "operation": "resource.get",
+            "input": {"id": block_id},
+        }).json()["result"]["resource"]["evidence"][0]
+
+        classify_request = {
+            "protocolVersion": "1",
+            "requestId": "req_classify",
+            "operation": "proposal.create",
+            "input": {
+                "idempotencyKey": "classify-launch-plan",
+                "proposal": {
+                    "type": "classify_note",
+                    "noteId": source["resourceId"],
+                    "category": "project",
+                    "expectedRevisions": {source["resourceId"]: updated_source["revision"]},
+                    "evidence": [source_ref],
+                },
+            },
+        }
+        created = self.workspace_request(classify_request)
+        self.assertEqual(created.status_code, 200)
+        replay = self.workspace_request(classify_request)
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual(created.json()["result"], replay.json()["result"])
+        classify_proposal_id = created.json()["result"]["proposal"]["id"]
+
+        conflict = self.workspace_request(
+            classify_request | {
+                "requestId": "req_classify_conflict",
+                "input": {
+                    **classify_request["input"],
+                    "proposal": {**classify_request["input"]["proposal"], "category": "area"},
+                },
+            }
+        )
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(conflict.json()["error"]["code"], "idempotency_conflict")
+
+        accepted = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_classify_accept",
+            "operation": "proposal.decide",
+            "input": {"id": classify_proposal_id, "decision": "accept", "idempotencyKey": "accept-classify-launch-plan"},
+        })
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.json()["result"]["proposal"]["state"], "applied")
+        with self.app.state.note_service.connection() as connection:
+            classification = connection.execute(
+                "SELECT category FROM note_classifications WHERE note_resource_id = ?",
+                (source["resourceId"],),
+            ).fetchone()
+        self.assertEqual(classification["category"], "project")
+
+        link_request = {
+            "protocolVersion": "1",
+            "requestId": "req_link",
+            "operation": "proposal.create",
+            "input": {
+                "idempotencyKey": "link-launch-partner",
+                "proposal": {
+                    "type": "link_resources",
+                    "sourceId": source["resourceId"],
+                    "targetId": target["resourceId"],
+                    "relationshipType": "supports",
+                    "expectedRevisions": {
+                        source["resourceId"]: updated_source["revision"],
+                        target["resourceId"]: target["revision"],
+                    },
+                    "evidence": [source_ref],
+                },
+            },
+        }
+        link_proposal = self.workspace_request(link_request).json()["result"]["proposal"]
+        linked = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_link_accept",
+            "operation": "proposal.decide",
+            "input": {"id": link_proposal["id"], "decision": "accept", "idempotencyKey": "accept-link-launch-partner"},
+        })
+        self.assertEqual(linked.status_code, 200)
+        self.assertEqual(linked.json()["result"]["proposal"]["state"], "applied")
+
+        stale_request = link_request | {
+            "requestId": "req_stale",
+            "input": {
+                **link_request["input"],
+                "idempotencyKey": "stale-classify",
+                "proposal": {
+                    **classify_request["input"]["proposal"],
+                    "category": "archive",
+                },
+            },
+        }
+        stale_proposal_id = self.workspace_request(stale_request).json()["result"]["proposal"]["id"]
+        self.client.put(
+            f"/api/notes/{source['id']}",
+            json={
+                "title": source_document["title"],
+                "notebookId": notebook["id"],
+                "revision": updated_source["revision"],
+                "content": source_document["content"],
+            },
+        )
+        stale_accept = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_stale_accept",
+            "operation": "proposal.decide",
+            "input": {"id": stale_proposal_id, "decision": "accept", "idempotencyKey": "accept-stale-classify"},
+        })
+        self.assertEqual(stale_accept.status_code, 409)
+        self.assertEqual(stale_accept.json()["error"]["code"], "revision_conflict")
+        stale_status = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_stale_status",
+            "operation": "proposal.get",
+            "input": {"id": stale_proposal_id},
+        }).json()["result"]["proposal"]
+        self.assertEqual(stale_status["state"], "conflicted")
+
+        activity = self.workspace_request({
+            "protocolVersion": "1",
+            "requestId": "req_activity",
+            "operation": "activity.list",
+            "input": {"limit": 20},
+        }).json()["result"]["items"]
+        self.assertIn("proposal.applied", [item["type"] for item in activity])
+        self.assertIn("proposal.conflicted", [item["type"] for item in activity])
 
     def test_note_and_notebook_contract(self):
         health = self.client.get("/health")

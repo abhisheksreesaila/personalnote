@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import time
+import uuid
 from pathlib import Path
 
 from services import NoteService, WORD_PATTERN
@@ -17,6 +18,9 @@ MAX_QUERY_RESULTS = 20
 MAX_BLOCK_CHARS = 8_000
 MAX_EXCERPT_CHARS = 280
 CURSOR_RETENTION_SECONDS = 86_400
+ACTOR_ID = "local-agent"
+PROPOSAL_TYPES = {"link_resources", "classify_note"}
+CLASSIFICATION_CATEGORIES = {"inbox", "project", "area", "resource", "archive"}
 
 
 class WorkspaceProtocolError(Exception):
@@ -153,9 +157,18 @@ class WorkspaceProtocol:
         return {
             "workspaceId": workspace["workspace_id"],
             "protocolVersions": [WORKSPACE_PROTOCOL_VERSION],
-            "operations": ["workspace.describe", "resource.get", "workspace.query"],
-            "resourceKinds": ["workspace", "notebook", "note", "block"],
-            "scopes": ["workspace:read"],
+            "operations": [
+                "workspace.describe",
+                "resource.get",
+                "workspace.query",
+                "proposal.create",
+                "proposal.get",
+                "proposal.cancel",
+                "proposal.decide",
+                "activity.list",
+            ],
+            "resourceKinds": ["workspace", "notebook", "note", "block", "proposal", "activity"],
+            "scopes": ["workspace:read", "workspace:propose"],
             "inferenceTiers": ["local-only", "local-first"],
             "limits": {
                 "queryChars": MAX_QUERY_CHARS,
@@ -164,6 +177,7 @@ class WorkspaceProtocol:
                 "excerptChars": MAX_EXCERPT_CHARS,
             },
             "cursorRetentionSeconds": CURSOR_RETENTION_SECONDS,
+            "proposalTypes": sorted(PROPOSAL_TYPES),
             "adapter": {"transport": "http", "mode": "loopback-capability"},
         }
 
@@ -360,6 +374,388 @@ class WorkspaceProtocol:
             )
         return {"items": page, "nextCursor": next_cursor}
 
+    @staticmethod
+    def json_value(value) -> str:
+        return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+    @classmethod
+    def request_digest(cls, operation: str, input_data: dict) -> str:
+        return cls.value_hash(cls.json_value({"operation": operation, "input": input_data}))
+
+    def idempotent_response(self, connection, operation: str, input_data: dict):
+        key = input_data.get("idempotencyKey")
+        if not isinstance(key, str) or not 0 < len(key) <= 128:
+            raise WorkspaceProtocolError(
+                "invalid_request", "A valid idempotencyKey is required"
+            )
+        digest = self.request_digest(operation, input_data)
+        existing = connection.execute(
+            """
+            SELECT request_digest, response_json FROM workspace_idempotency
+            WHERE actor_id = ? AND operation = ? AND idempotency_key = ?
+            """,
+            (ACTOR_ID, operation, key),
+        ).fetchone()
+        if existing is None:
+            return key, digest, None
+        if existing["request_digest"] != digest:
+            raise WorkspaceProtocolError(
+                "idempotency_conflict",
+                "The idempotency key was already used with a different request",
+                409,
+            )
+        return key, digest, self.note_service.parse_json(existing["response_json"], {})
+
+    @staticmethod
+    def record_idempotent_response(
+        connection, operation: str, key: str, digest: str, response: dict
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO workspace_idempotency
+                (actor_id, operation, idempotency_key, request_digest, response_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (ACTOR_ID, operation, key, digest, json.dumps(response, separators=(",", ":"))),
+        )
+
+    @staticmethod
+    def record_activity(
+        connection, activity_type: str, detail: dict, proposal_id: str | None = None
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO workspace_activity (actor_id, activity_type, proposal_id, detail_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            (ACTOR_ID, activity_type, proposal_id, json.dumps(detail, separators=(",", ":"))),
+        )
+
+    @staticmethod
+    def utf16_slice(value: str, start: int, end: int) -> str | None:
+        if start < 0 or end < start:
+            return None
+        offsets = [0]
+        for character in value:
+            offsets.append(offsets[-1] + len(character.encode("utf-16-le")) // 2)
+        try:
+            start_index = offsets.index(start)
+            end_index = offsets.index(end)
+        except ValueError:
+            return None
+        return value[start_index:end_index]
+
+    def validate_evidence(self, connection, evidence: list, expected_revisions: dict) -> None:
+        for source_ref in evidence:
+            if not isinstance(source_ref, dict) or source_ref.get("type") != "block_text":
+                raise WorkspaceProtocolError("invalid_request", "Evidence must use block_text source references")
+            note_id = source_ref.get("noteId")
+            block_id = source_ref.get("blockId")
+            span = source_ref.get("textSpan")
+            if not isinstance(note_id, str) or not isinstance(block_id, str) or not isinstance(span, dict):
+                raise WorkspaceProtocolError("invalid_request", "Evidence is incomplete")
+            note = connection.execute(
+                "SELECT revision, content FROM notes WHERE resource_id = ?", (note_id,)
+            ).fetchone()
+            if note is None or expected_revisions.get(note_id) != note["revision"]:
+                raise WorkspaceProtocolError("revision_conflict", "Proposal evidence is stale", 409)
+            document = self.note_service.parse_json(note["content"], {"objects": []})
+            block = next(
+                (
+                    item for item in document.get("objects", [])
+                    if isinstance(item, dict) and item.get("semanticId") == block_id
+                ),
+                None,
+            )
+            if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+                raise WorkspaceProtocolError("revision_conflict", "Proposal evidence is stale", 409)
+            value = self.utf16_slice(block["text"], span.get("start"), span.get("end"))
+            if value is None or source_ref.get("valueHash") != self.value_hash(value):
+                raise WorkspaceProtocolError("revision_conflict", "Proposal evidence is stale", 409)
+
+    def validate_proposal(self, connection, proposal: dict) -> tuple[str, dict, list, dict]:
+        if not isinstance(proposal, dict):
+            raise WorkspaceProtocolError("invalid_request", "A proposal is required")
+        proposal_type = proposal.get("type")
+        if proposal_type not in PROPOSAL_TYPES:
+            raise WorkspaceProtocolError("invalid_request", "Unsupported proposal type")
+        expected_revisions = proposal.get("expectedRevisions")
+        evidence = proposal.get("evidence")
+        if not isinstance(expected_revisions, dict) or not isinstance(evidence, list) or not evidence:
+            raise WorkspaceProtocolError("invalid_request", "Expected revisions and evidence are required")
+        normalized_revisions = {}
+        for resource_id, revision in expected_revisions.items():
+            if not isinstance(resource_id, str) or not isinstance(revision, int) or revision < 1:
+                raise WorkspaceProtocolError("invalid_request", "Expected revisions are invalid")
+            normalized_revisions[resource_id] = revision
+        self.validate_evidence(connection, evidence, normalized_revisions)
+        if proposal_type == "classify_note":
+            note_id = proposal.get("noteId")
+            category = proposal.get("category")
+            if not isinstance(note_id, str) or category not in CLASSIFICATION_CATEGORIES:
+                raise WorkspaceProtocolError("invalid_request", "Note classification is invalid")
+            note = connection.execute(
+                "SELECT revision FROM notes WHERE resource_id = ?", (note_id,)
+            ).fetchone()
+            if note is None or normalized_revisions.get(note_id) != note["revision"]:
+                raise WorkspaceProtocolError("revision_conflict", "Proposal source is stale", 409)
+            normalized = {"noteId": note_id, "category": category}
+            preview = {"kind": "note_classification", "noteId": note_id, "category": category}
+        else:
+            source_id = proposal.get("sourceId")
+            target_id = proposal.get("targetId")
+            relationship_type = proposal.get("relationshipType", "related")
+            if (
+                not isinstance(source_id, str)
+                or not isinstance(target_id, str)
+                or source_id == target_id
+                or not isinstance(relationship_type, str)
+                or not re.fullmatch(r"[a-z][a-z0-9_]{0,47}", relationship_type)
+            ):
+                raise WorkspaceProtocolError("invalid_request", "Resource link is invalid")
+            for resource_id in (source_id, target_id):
+                note = connection.execute(
+                    "SELECT revision FROM notes WHERE resource_id = ?", (resource_id,)
+                ).fetchone()
+                if note is None or normalized_revisions.get(resource_id) != note["revision"]:
+                    raise WorkspaceProtocolError("revision_conflict", "Proposal source is stale", 409)
+            normalized = {
+                "sourceId": source_id,
+                "targetId": target_id,
+                "relationshipType": relationship_type,
+            }
+            preview = {"kind": "relationship", **normalized}
+        normalized["expectedRevisions"] = normalized_revisions
+        return proposal_type, normalized, evidence, preview
+
+    def proposal_view(self, row) -> dict:
+        return {
+            "id": row["id"],
+            "type": row["proposal_type"],
+            "state": row["state"],
+            "input": self.note_service.parse_json(row["input_json"], {}),
+            "evidence": self.note_service.parse_json(row["evidence_json"], []),
+            "preview": self.note_service.parse_json(row["preview_json"], {}),
+            "decision": self.note_service.parse_json(row["decision_json"], None),
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+            "decidedAt": row["decided_at"],
+            "appliedAt": row["applied_at"],
+        }
+
+    def proposal_create(self, input_data: dict) -> dict:
+        with self.note_service.connection() as connection:
+            key, digest, replay = self.idempotent_response(connection, "proposal.create", input_data)
+            if replay is not None:
+                return replay
+            proposal_type, normalized, evidence, preview = self.validate_proposal(
+                connection, input_data.get("proposal")
+            )
+            proposal_id = f"proposal_{uuid.uuid4().hex}"
+            response = {
+                "proposal": {
+                    "id": proposal_id,
+                    "type": proposal_type,
+                    "state": "pending",
+                    "input": normalized,
+                    "evidence": evidence,
+                    "preview": preview,
+                }
+            }
+            connection.execute(
+                """
+                INSERT INTO workspace_proposals
+                    (id, actor_id, proposal_type, state, input_json, evidence_json, preview_json,
+                     idempotency_key, request_digest, response_json)
+                VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    proposal_id, ACTOR_ID, proposal_type, self.json_value(normalized),
+                    self.json_value(evidence), self.json_value(preview), key, digest,
+                    self.json_value(response),
+                ),
+            )
+            self.record_activity(connection, "proposal.created", {"type": proposal_type}, proposal_id)
+            self.record_idempotent_response(connection, "proposal.create", key, digest, response)
+            connection.commit()
+        return response
+
+    def proposal_get(self, input_data: dict) -> dict:
+        proposal_id = input_data.get("id")
+        if not isinstance(proposal_id, str):
+            raise WorkspaceProtocolError("invalid_request", "A proposal id is required")
+        with self.note_service.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM workspace_proposals WHERE id = ? AND actor_id = ?",
+                (proposal_id, ACTOR_ID),
+            ).fetchone()
+        if row is None:
+            raise WorkspaceProtocolError("not_found", "Proposal not found", 404)
+        return {"proposal": self.proposal_view(row)}
+
+    def proposal_cancel(self, input_data: dict) -> dict:
+        proposal_id = input_data.get("id")
+        if not isinstance(proposal_id, str):
+            raise WorkspaceProtocolError("invalid_request", "A proposal id is required")
+        with self.note_service.connection() as connection:
+            key, digest, replay = self.idempotent_response(connection, "proposal.cancel", input_data)
+            if replay is not None:
+                return replay
+            row = connection.execute(
+                "SELECT * FROM workspace_proposals WHERE id = ? AND actor_id = ?", (proposal_id, ACTOR_ID)
+            ).fetchone()
+            if row is None:
+                raise WorkspaceProtocolError("not_found", "Proposal not found", 404)
+            if row["state"] != "pending":
+                raise WorkspaceProtocolError("invalid_request", "Only pending proposals may be cancelled")
+            connection.execute(
+                "UPDATE workspace_proposals SET state = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (proposal_id,),
+            )
+            response = {"proposal": {**self.proposal_view(row), "state": "cancelled"}}
+            self.record_activity(connection, "proposal.cancelled", {}, proposal_id)
+            self.record_idempotent_response(connection, "proposal.cancel", key, digest, response)
+            connection.commit()
+        return response
+
+    def apply_proposal(self, connection, row, decision: dict) -> tuple[dict, dict]:
+        proposal = self.note_service.parse_json(row["input_json"], {})
+        evidence = self.note_service.parse_json(row["evidence_json"], [])
+        expected_revisions = proposal.get("expectedRevisions", {})
+        if not isinstance(expected_revisions, dict):
+            raise WorkspaceProtocolError("revision_conflict", "Proposal source is stale", 409)
+        for resource_id, revision in expected_revisions.items():
+            note = connection.execute(
+                "SELECT revision FROM notes WHERE resource_id = ?", (resource_id,)
+            ).fetchone()
+            if note is None or note["revision"] != revision:
+                raise WorkspaceProtocolError("revision_conflict", "Proposal source is stale", 409)
+        self.validate_evidence(connection, evidence, expected_revisions)
+        if row["proposal_type"] == "classify_note":
+            previous = connection.execute(
+                "SELECT category, proposal_id FROM note_classifications WHERE note_resource_id = ?",
+                (proposal["noteId"],),
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO note_classifications (note_resource_id, category, proposal_id)
+                VALUES (?, ?, ?)
+                ON CONFLICT(note_resource_id) DO UPDATE SET
+                    category = excluded.category, proposal_id = excluded.proposal_id, updated_at = CURRENT_TIMESTAMP
+                """,
+                (proposal["noteId"], proposal["category"], row["id"]),
+            )
+            forward = {"action": "set_classification", **proposal}
+            inverse = (
+                {"action": "clear_classification", "noteId": proposal["noteId"]}
+                if previous is None
+                else {"action": "set_classification", "noteId": proposal["noteId"], "category": previous["category"], "proposalId": previous["proposal_id"]}
+            )
+            self.note_service.record_change(connection, "classification", proposal["noteId"], 1, "updated")
+        else:
+            relationship = connection.execute(
+                """
+                SELECT id FROM workspace_relationships
+                WHERE source_resource_id = ? AND target_resource_id = ? AND relationship_type = ?
+                """,
+                (proposal["sourceId"], proposal["targetId"], proposal["relationshipType"]),
+            ).fetchone()
+            if relationship is None:
+                relationship_id = f"relationship_{uuid.uuid4().hex}"
+                connection.execute(
+                    """
+                    INSERT INTO workspace_relationships
+                        (id, source_resource_id, target_resource_id, relationship_type, proposal_id)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (relationship_id, proposal["sourceId"], proposal["targetId"], proposal["relationshipType"], row["id"]),
+                )
+                forward = {"action": "create_relationship", "relationshipId": relationship_id, **proposal}
+                inverse = {"action": "delete_relationship", "relationshipId": relationship_id}
+                self.note_service.record_change(connection, "relationship", relationship_id, 1, "created")
+            else:
+                forward = {"action": "relationship_already_exists", "relationshipId": relationship["id"]}
+                inverse = {"action": "none"}
+        connection.execute(
+            """
+            UPDATE workspace_proposals
+            SET state = 'applied', decision_json = ?, forward_change_json = ?, inverse_change_json = ?,
+                updated_at = CURRENT_TIMESTAMP, decided_at = CURRENT_TIMESTAMP, applied_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (self.json_value(decision), self.json_value(forward), self.json_value(inverse), row["id"]),
+        )
+        self.record_activity(connection, "proposal.applied", {"decision": decision, "forwardChange": forward}, row["id"])
+        return forward, inverse
+
+    def proposal_decide(self, input_data: dict) -> dict:
+        proposal_id = input_data.get("id")
+        decision_name = input_data.get("decision")
+        if not isinstance(proposal_id, str) or decision_name not in {"accept", "reject"}:
+            raise WorkspaceProtocolError("invalid_request", "A proposal id and valid decision are required")
+        with self.note_service.connection() as connection:
+            key, digest, replay = self.idempotent_response(connection, "proposal.decide", input_data)
+            if replay is not None:
+                return replay
+            row = connection.execute(
+                "SELECT * FROM workspace_proposals WHERE id = ? AND actor_id = ?", (proposal_id, ACTOR_ID)
+            ).fetchone()
+            if row is None:
+                raise WorkspaceProtocolError("not_found", "Proposal not found", 404)
+            if row["state"] != "pending":
+                raise WorkspaceProtocolError("invalid_request", "Only pending proposals may be decided")
+            decision = {"decision": decision_name, "actorId": ACTOR_ID}
+            if decision_name == "reject":
+                connection.execute(
+                    """
+                    UPDATE workspace_proposals
+                    SET state = 'rejected', decision_json = ?, updated_at = CURRENT_TIMESTAMP, decided_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (self.json_value(decision), proposal_id),
+                )
+                self.record_activity(connection, "proposal.rejected", {"decision": decision}, proposal_id)
+            else:
+                try:
+                    self.apply_proposal(connection, row, decision)
+                except WorkspaceProtocolError as error:
+                    if error.code == "revision_conflict":
+                        connection.execute(
+                            "UPDATE workspace_proposals SET state = 'conflicted', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            (proposal_id,),
+                        )
+                        self.record_activity(connection, "proposal.conflicted", {"reason": error.code}, proposal_id)
+                        connection.commit()
+                    raise
+            updated = connection.execute(
+                "SELECT * FROM workspace_proposals WHERE id = ?", (proposal_id,)
+            ).fetchone()
+            response = {"proposal": self.proposal_view(updated)}
+            self.record_idempotent_response(connection, "proposal.decide", key, digest, response)
+            connection.commit()
+        return response
+
+    def activity_list(self, input_data: dict) -> dict:
+        try:
+            limit = min(50, max(1, int(input_data.get("limit", 20))))
+        except (TypeError, ValueError):
+            raise WorkspaceProtocolError("invalid_request", "Limit must be an integer") from None
+        with self.note_service.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM workspace_activity WHERE actor_id = ?
+                ORDER BY id DESC LIMIT ?
+                """,
+                (ACTOR_ID, limit),
+            ).fetchall()
+        return {"items": [
+            {
+                "id": row["id"], "type": row["activity_type"], "proposalId": row["proposal_id"],
+                "detail": self.note_service.parse_json(row["detail_json"], {}), "createdAt": row["created_at"],
+            }
+            for row in rows
+        ]}
+
     def execute(self, operation: str, input_data: dict) -> dict:
         if operation == "workspace.describe":
             return self.describe()
@@ -367,6 +763,16 @@ class WorkspaceProtocol:
             return {"resource": self.resource_get(str(input_data.get("id") or ""))}
         if operation == "workspace.query":
             return self.query(input_data)
+        if operation == "proposal.create":
+            return self.proposal_create(input_data)
+        if operation == "proposal.get":
+            return self.proposal_get(input_data)
+        if operation == "proposal.cancel":
+            return self.proposal_cancel(input_data)
+        if operation == "proposal.decide":
+            return self.proposal_decide(input_data)
+        if operation == "activity.list":
+            return self.activity_list(input_data)
         raise WorkspaceProtocolError(
             "unsupported_operation", f"Unsupported operation: {operation}", 400
         )

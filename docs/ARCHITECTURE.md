@@ -2,7 +2,7 @@
 
 Personal Note is a **local-first spatial notepad** with **ambient intelligence**: contextual suggestions that appear briefly during writing and disappear, rather than a permanent chat assistant. The product owns retrieval, permissions, provenance, and UI. **Mastra** is an optional, replaceable worker for bounded model execution only.
 
-External and embedded agents integrate through the [Agent Workspace Protocol](./AGENT-WORKSPACE-PROTOCOL.md), a semantic boundary above persistence and below transport adapters. Slice 1 exposes authenticated, read-only stable resources without exposing Fabric JSON, SQLite, or worker internals. Proposals and runtime-specific adapters remain planned.
+External and embedded agents integrate through the [Agent Workspace Protocol](./AGENT-WORKSPACE-PROTOCOL.md), a semantic boundary above persistence and below transport adapters. Slice 2 exposes authenticated stable resources plus revision-checked, derived-only link/classification proposals without exposing Fabric JSON, SQLite, or worker internals. Runtime-specific adapters remain planned.
 
 ## Runtime Overview
 
@@ -153,9 +153,9 @@ On every note write, `NoteService.index_note()` updates FTS5 and `note_people` i
 
 ## Agent Workspace Protocol
 
-`workspace_protocol.py` owns the transport-neutral Slice 1 reads. `routes.py` exposes them at loopback-only `POST /api/workspace/v1` with a bearer capability token. `workspace.describe` advertises the exact supported surface; `resource.get` projects workspace, notebook, note, and block envelopes; `workspace.query` uses FTS5 and signed, actor-bound cursors. Evidence uses note revisions, stable block IDs, zero-based UTF-16 spans, and SHA-256 value hashes.
+`workspace_protocol.py` owns the transport-neutral Slice 2 surface. `routes.py` exposes it at loopback-only `POST /api/workspace/v1` with a bearer capability token. `workspace.describe` advertises the exact supported surface; `resource.get` projects workspace, notebook, note, and block envelopes; `workspace.query` uses FTS5 and signed, actor-bound cursors; proposal operations apply only revision-checked derived links and classifications. Evidence uses note revisions, stable block IDs, zero-based UTF-16 spans, and SHA-256 value hashes.
 
-This path is independent of the optional Mastra worker and works with no model configured. It is read-only: proposals, `changes.since`, derived graph resources, MCP, and OpenClaw adapters are not shipped.
+This path is independent of the optional Mastra worker and works with no model configured. It supports only product-approved derived proposals (`link_resources` and `classify_note`), recording idempotent decisions, inverse changes, workspace changes, and activity atomically. Canonical block edits, `changes.since`, MCP, and OpenClaw adapters are not shipped.
 
 ## Ambient Intelligence Lanes
 

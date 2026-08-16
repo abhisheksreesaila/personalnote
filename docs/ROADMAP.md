@@ -51,6 +51,7 @@ Capture must remain immediate. Intelligence should feel present through timely, 
 - Project workspace, notebook, note, and block resources without exposing Fabric JSON. **Complete.**
 - Add capability discovery, bounded lexical query, source references, and cursor pagination. **Complete.**
 - Add cross-language protocol fixtures and contract tests. **Complete.**
+- Add revision-checked, idempotent `link_resources` and `classify_note` proposals with durable inverse records and activity ledger. **Complete.**
 - Extract people, dates, commitments, decisions, and topics into derived records.
 - Introduce Inbox, Projects, Areas, Resources, and Archive as suggested states.
 - Keep raw captures canonical; all cleanup and classification remains reversible.

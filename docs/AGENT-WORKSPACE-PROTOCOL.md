@@ -1,6 +1,6 @@
 # Agent Workspace Protocol
 
-Status: Slice 1 shipped, 2026-08-08. The read-only semantic boundary is implemented; proposals, derived graph resources, synchronization, MCP, and OpenClaw adapters remain planned.
+Status: Slice 2 safe derived proposals shipped, 2026-08-15. The read-only semantic boundary, revision-checked `link_resources` and `classify_note` proposals, idempotency, and append-only activity records are implemented. Broader derived graph resources, synchronization, MCP, and OpenClaw adapters remain planned.
 
 ## Decision
 
@@ -49,7 +49,7 @@ The existing Intelligence Protocol and the Agent Workspace Protocol are compleme
 | Contract | Purpose | Typical caller | Authority |
 |----------|---------|----------------|-----------|
 | Intelligence Protocol `/v1/execute` | Execute one bounded internal reasoning task | Personal Note backend | Returns task output only |
-| Agent Workspace Protocol `/api/workspace/v1` | Discover, read, and query workspace meaning; proposals are planned | External or embedded agent | Slice 1: `workspace:read` |
+| Agent Workspace Protocol `/api/workspace/v1` | Discover, read, query, and propose derived workspace meaning | External or embedded agent | Slice 2: `workspace:read`, `workspace:propose` |
 
 An Agent Workspace Protocol implementation may call `/v1/execute` internally, but agents do not need to know that worker contract exists.
 
@@ -140,7 +140,7 @@ Derived resources never overwrite canonical material. Deterministic extractors r
 
 Agents start with `workspace.describe`, which returns protocol versions, supported operations, resource kinds, current scopes, inference tiers, limits, cursor retention, and proposal types. Unsupported capabilities are absent, not guessed.
 
-Slice 1 advertises exactly `workspace.describe`, `resource.get`, and `workspace.query`, plus `workspace`, `notebook`, `note`, and text `block` resources. The broader tables below define the target contract; operations not returned by discovery are unavailable.
+Slice 2 advertises `workspace.describe`, `resource.get`, `workspace.query`, `proposal.create`, `proposal.get`, `proposal.cancel`, `proposal.decide`, and `activity.list`. It supports only `link_resources` and `classify_note` proposals; broader operations remain unavailable.
 
 ### Read operations
 
@@ -287,13 +287,15 @@ Exit criterion: a standalone client can discover the workspace, find a phrase, a
 
 ### Slice 2: Safe proposals
 
-1. Add proposal, policy-grant, and activity tables.
-2. Implement `link_resources` and `classify_note` proposals.
-3. Define the proposal state machine and validate evidence revisions and idempotency.
-4. Add a product-owned transactional mutation executor that stores forward and inverse changes.
-5. Keep `insert_blocks`, `replace_block_text`, and `arrange_blocks` unavailable until durable undo passes recovery tests.
+**Shipped.**
 
-Exit criterion: two retries create one proposal, stale evidence produces a conflict, accepted low-risk semantic changes apply atomically, and no agent call can mutate a note without a decision record and durable inverse.
+1. Proposal, policy-grant, activity, relationship, classification, and idempotency records are durable SQLite resources.
+2. `link_resources` and `classify_note` validate grounded `block_text` evidence and all declared note revisions.
+3. Idempotent retries replay the original response; a reused key with a different request fails closed.
+4. Acceptance atomically records the decision, derived forward operation, inverse operation, workspace change, and activity entry. Stale acceptance records a conflicted proposal without applying a change.
+5. `insert_blocks`, `replace_block_text`, and `arrange_blocks` remain unavailable until durable canonical undo passes recovery tests.
+
+Exit criterion: met for derived links and classifications. Two retries create one proposal, stale evidence produces a conflict, accepted low-risk semantic changes apply atomically, and no agent call can mutate a note without a decision record and durable inverse.
 
 ### Slice 3: Derived semantic graph
 

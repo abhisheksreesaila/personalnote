@@ -13,13 +13,13 @@ test('shared workspace protocol requests satisfy the TypeScript contract', () =>
   assert.equal(workspaceRequestSchema.parse(fixtures.queryRequest).operation, 'workspace.query')
 })
 
-test('the Slice 1 contract rejects mutation operations', () => {
+test('the Slice 2 contract accepts proposal operations', () => {
   const result = workspaceRequestSchema.safeParse({
     protocolVersion: '1',
     requestId: 'req_mutation',
     operation: 'proposal.create',
-    input: {},
+    input: { idempotencyKey: 'classify-launch-plan', proposal: {} },
   })
 
-  assert.equal(result.success, false)
+  assert.equal(result.success, true)
 })

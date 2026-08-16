@@ -7,6 +7,11 @@ export const workspaceOperationSchema = z.enum([
   'workspace.describe',
   'resource.get',
   'workspace.query',
+  'proposal.create',
+  'proposal.get',
+  'proposal.cancel',
+  'proposal.decide',
+  'activity.list',
 ])
 
 export const workspaceRequestSchema = z.object({
@@ -38,9 +43,11 @@ export const workspaceErrorSchema = z.object({
       'authentication_required',
       'cursor_expired',
       'internal_error',
+      'idempotency_conflict',
       'invalid_cursor',
       'invalid_request',
       'not_found',
+      'revision_conflict',
       'scope_denied',
       'unsupported_operation',
       'unsupported_version',
