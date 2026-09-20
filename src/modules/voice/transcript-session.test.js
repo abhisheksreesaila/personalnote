@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DictationSession } from './dictation-session.js'
+import { DictationSession } from './transcript-session.js'
 
 function speechResult(transcript, isFinal = false) {
   return Object.assign([{ transcript }], { isFinal })
