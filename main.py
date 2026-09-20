@@ -4,7 +4,6 @@ import sys
 
 import uvicorn
 from dotenv import load_dotenv
-from fh_saas.utils_log import configure_logging
 
 load_dotenv()
 
@@ -12,7 +11,6 @@ from routes import create_app
 from startup import check_existing_server
 
 
-configure_logging(level=os.getenv("FH_SAAS_LOG_LEVEL", "WARNING"))
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",

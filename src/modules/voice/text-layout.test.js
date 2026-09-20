@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { pageBoundedTextLayout } from './voice-text-layout.js'
+import { pageBoundedTextLayout } from './text-layout.js'
 
 test('sizes voice text to the current page right margin', () => {
   assert.deepEqual(pageBoundedTextLayout({ x: 96, y: 140 }), {

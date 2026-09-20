@@ -1,0 +1,210 @@
+/* Flat, terminal-inspired chrome uses the landing page palette. Note content,
+   ink colors and printable paper deliberately keep their original appearance. */
+@media screen {
+  :root {
+    color-scheme: dark;
+    color: var(--ink);
+    background: var(--canvas);
+    font-family: var(--ui-font);
+    --ui-font: "IBM Plex Mono", "DejaVu Sans Mono", monospace;
+    --ink: #f1f2ec;
+    --muted: #a5b2ad;
+    --line: #34443e;
+    --accent: #72b58a;
+    --canvas: #0a100f;
+    --surface: #111816;
+    --surface-cool: #1c2923;
+    --sidebar: #0d1412;
+    --rail: #08100e;
+    --blue: #60bad8;
+    --blue-soft: #152b32;
+    --terracotta: #ef765d;
+    --terracotta-soft: #291713;
+    --green: #72b58a;
+    --gold: #deb25e;
+    --radius-row: 3px;
+    --radius-panel: 3px;
+    --radius-pill: 3px;
+    --shadow-panel: none;
+  }
+
+  /* Scope geometry to controls, not color swatches, ink previews or canvas objects. */
+  .rail-brand, .rail-button, .icon-button, .tool-button, .sidebar-add,
+  .tool-dock, .properties-trigger,
+  .search-button, .voice-button, .notebook-tab, .note-list-item,
+  .search-result, .search-result-icon, .notebook-picker-menu, .spotlight,
+  .notebook-dialog, .voice-caption, .ink-options-popover, .note-create-menu,
+  .mobile-new-note, .mobile-action-icon, .mindmap-branch-chooser,
+  .mindmap-zoom, .mindmap-minimap, .mindmap-segments {
+    border-radius: 3px;
+    box-shadow: none;
+  }
+
+  .side-rail, .sidebar, .topbar, .tool-dock, .properties-panel,
+  .settings-panel, .search-button, .voice-button, .properties-trigger,
+  .ink-options-popover, .voice-caption, .print-preview-bar, .mindmap-hint,
+  .note-title:hover, .note-title:focus {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .side-rail { background: var(--rail); border-color: var(--line); }
+  .sidebar, .notebook-pane { background: var(--sidebar); }
+  .note-pane { background: var(--surface); }
+  .sidebar, .notebook-pane, .brand-row, .note-pane-heading, .sidebar-footer,
+  .properties-heading, .property-section, .settings-section,
+  .mindmap-inspector section, .spotlight-input-row, .search-footer,
+  .print-summary { border-color: var(--line); }
+  .sidebar, .properties-panel, .settings-panel { box-shadow: none; }
+  .topbar { background: var(--rail); border-bottom: 1px solid var(--line); }
+  .workspace { background-image: none; scrollbar-color: var(--line) var(--canvas); }
+  .paper { color-scheme: light; box-shadow: 0 0 0 1px var(--line); animation: none; }
+
+  .rail-brand, .brand-name, .note-title, .note-pane-title strong,
+  .note-list-item span, .mobile-library-heading, .properties-heading h2,
+  .dialog-heading-row h2, .dialog-note,
+  .spotlight-input-row input, .search-result-copy strong, .search-empty strong,
+  .search-button span, .search-button kbd, .notebook-name-input,
+  .print-preview-title strong, .print-summary > strong, .print-error strong,
+  .mindmap-inspector header strong, .mindmap-branch-chooser button,
+  .empty-notebook { font-family: var(--ui-font); font-style: normal; }
+  .brand-name { font-size: 14px; }
+  .note-title { font-size: 14px; text-shadow: none; }
+  .note-title:hover, .note-title:focus { background: var(--surface-cool); }
+  .properties-heading h2 { font-size: 15px; }
+  .spotlight-input-row input { font-size: 18px; }
+  .dialog-heading-row h2 { font-size: 20px; }
+
+  .rail-brand, .rail-brand:hover { color: var(--rail); background: var(--green); }
+  #rail-new-note, #rail-notebooks, #rail-print, #rail-settings {
+    --rail-accent: var(--muted);
+    --rail-border: transparent;
+    --rail-tint: transparent;
+    --rail-hover: var(--surface-cool);
+  }
+  .side-rail .rail-button:hover, .side-rail .rail-button:focus-visible,
+  .side-rail .rail-button.active {
+    color: var(--green); background: var(--surface-cool); border-color: var(--green); box-shadow: none;
+  }
+  .rail-brand, .rail-button, .properties-trigger, .voice-button { transform: none; will-change: auto; }
+  .rail-brand:hover, .rail-brand:focus-visible, .rail-brand[aria-expanded="true"] {
+    box-shadow: none; outline: 1px solid var(--green); outline-offset: 2px;
+  }
+  .rail-brand::after, .rail-button::after {
+    color: var(--ink); background: var(--surface); border-color: var(--line);
+    border-radius: 3px; box-shadow: none; font-family: var(--ui-font);
+    transform: translateY(-50%);
+  }
+  .rail-brand:hover::after, .rail-button:hover::after,
+  .rail-brand:focus-visible::after, .rail-button:focus-visible::after { transform: translateY(-50%); }
+  .hold-create-button, .hold-create-button.is-holding, .hold-create-button.is-pressing,
+  .hold-create-button[aria-expanded="true"] { box-shadow: none; }
+  .sidebar-create-control #new-note { border: 1px solid var(--line); border-radius: 3px; color: var(--green); background: var(--surface-cool); }
+
+  .note-pane-title strong, .note-list-item, .notebook-tab, .notebook-picker,
+  .property-note-info strong, .setting-row, .setting-field-heading,
+  .clear-note-copy, .spotlight-input-row input, .search-result-copy strong,
+  .search-empty strong, .mindmap-inspector header strong, .print-summary dd,
+  .paper-select select { color: var(--ink); }
+  .ink-options-heading > span, .ink-options-heading button, .stroke-options > span,
+  .pane-heading, .notebook-count, .notebook-tab .notebook-count, .note-pane-title small,
+  .note-list-item svg, .empty-notebook, .properties-heading span,
+  .property-label, .property-section-title > span, .property-section-title small,
+  .property-note-info span, .font-size-row, .settings-section-label,
+  .setting-field-heading small, .setting-row small, .setting-row svg,
+  .settings-footer-status,
+  .dialog-eyebrow, .field-label, .color-fieldset legend, .dialog-note,
+  .search-button kbd, .search-results-label, .search-result-copy small,
+  .search-result-notebook, .search-empty, .search-loading, .search-footer,
+  .spotlight-input-row > svg, .search-empty svg, .print-preview-title span,
+  .print-summary > p, .print-summary dt,
+  .print-sheet-number, .print-sheet-card footer, .print-error span,
+  .mindmap-inspector header span, .mindmap-inspector section > label,
+  .mindmap-inspector output, .mindmap-zoom .mindmap-zoom-label { color: var(--muted); }
+
+  .notebook-tab:hover, .note-list-item:hover, .notebook-picker:hover,
+  .notebook-picker[aria-expanded="true"], .notebook-picker-menu button:hover,
+  .notebook-picker-menu button.active, .icon-button:hover, .tool-button:hover,
+  .sidebar-add:hover, .search-result:hover, .search-result:focus-visible,
+  .mindmap-zoom button:hover, .mindmap-inspector button:hover,
+  .mindmap-branch-chooser button:hover, .mindmap-branch-chooser button.active {
+    color: var(--ink); background: var(--surface-cool);
+  }
+  .notebook-tab.active { color: var(--blue); background: var(--blue-soft); box-shadow: inset 2px 0 var(--blue); }
+  .note-list-item.active { color: var(--green); background: var(--surface-cool); box-shadow: inset 2px 0 var(--green); }
+  .note-list-item.active svg { color: var(--green); }
+  .storage-dot, .save-state > span:not(.saving-spinner) { background: var(--green); }
+  .save-state.error, .delete-note-action, .delete-notebook, .print-error { color: var(--terracotta); }
+  .save-state.error > span { background: var(--terracotta); }
+
+  .note-create-menu, .notebook-picker-menu, .tool-dock, .ink-options-popover,
+  .search-button, .voice-button, .properties-trigger, .voice-caption, .page-count,
+  .properties-panel, .settings-panel, .spotlight, .notebook-dialog,
+  .mindmap-branch-chooser, .mindmap-zoom, .mindmap-minimap, .mindmap-hint,
+  .print-preview-bar, .print-summary, .mobile-action-label {
+    color: var(--ink); background: var(--surface); border-color: var(--line); box-shadow: none;
+  }
+  .tool-dock { border-color: var(--line); }
+  .tool-dock .tool-button:hover, .ink-options-trigger[aria-expanded="true"] { background: var(--surface-cool); box-shadow: none; }
+  .tool-dock .tool-button.active,
+  .font-family-control button.active, .mindmap-segments button.active {
+    color: var(--rail); background: var(--green); box-shadow: none;
+  }
+  .dock-divider { background: var(--line); }
+  .voice-button, .properties-trigger { color: var(--green); border-color: var(--green); }
+  .search-button:hover, .search-button:focus-visible,
+  .voice-button:hover { color: var(--green); background: var(--surface-cool); border-color: var(--green); box-shadow: none; }
+  .properties-trigger:hover, .properties-trigger.active,
+  .voice-button.active { color: var(--rail); background: var(--green); box-shadow: none; }
+  .voice-button.active { animation: none; }
+  .paper.voice-listening::after { border-color: var(--green); box-shadow: none; animation: none; }
+
+  .stroke-width-button, .search-close, .search-button kbd, .search-result-icon,
+  .notebook-name-input, .mobile-dictation-dialog textarea,
+  .property-section .notebook-picker, .font-family-control, .font-size-row output,
+  .clear-note-action, .delete-note-action, .dialog-cancel,
+  .paper-select, .print-summary-mark, .mindmap-segments,
+  .mindmap-format button, .mindmap-inspector footer button {
+    color: var(--ink); background: var(--surface-cool); border-color: var(--line); box-shadow: none;
+  }
+  .font-family-control button, .mindmap-segments button, .mindmap-zoom button,
+  .mindmap-inspector button, .mindmap-branch-chooser button, .print-back { color: var(--muted); }
+  .stroke-width-button:hover { background: var(--line); }
+  .font-size-row input, .mindmap-inspector input[type="range"], .mindmap-toggle input { accent-color: var(--green); }
+  .delete-note-action, .mindmap-inspector footer .danger { color: var(--terracotta); background: var(--terracotta-soft); border-color: var(--terracotta); }
+  .danger-button:hover, .delete-note-action:hover, .delete-notebook:hover { color: var(--terracotta); background: var(--terracotta-soft); }
+  .clear-note-action { color: var(--green); }
+  .clear-note-action:hover, .dialog-primary, .print-button {
+    color: var(--rail); background: var(--green); border-color: var(--green);
+  }
+  .dialog-primary:hover, .print-button:hover { color: var(--rail); background: #8bc99f; }
+  .dialog-danger { color: var(--rail); background: var(--terracotta); border-color: var(--terracotta); }
+  .dialog-danger:hover { background: #ff927b; }
+  .notebook-color input:checked + span { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--notebook-color); }
+  .search-backdrop.open, .notebook-dialog::backdrop { background: rgba(0, 0, 0, .65); backdrop-filter: none; }
+  .print-preview { color: var(--ink); background: var(--canvas); }
+  .print-sheet-card { color-scheme: light; box-shadow: none; }
+  .mindmap-hint { backdrop-filter: none; }
+  .mindmap-branch-chooser button + button { border-color: var(--line); }
+  .mindmap-inspector header strong { font-size: 17px; }
+  .mindmap-host, .mindmap-stage { color-scheme: light; }
+
+  button:not(:disabled):active { scale: 1; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible,
+  select:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+  @media (max-width: 800px) {
+    .mobile-library-heading { font-size: 16px; }
+    .mobile-new-note { color: var(--rail); background: var(--green); border: 1px solid var(--green); box-shadow: none; }
+    .mobile-new-note.is-pressing { box-shadow: none; }
+    .mobile-action-icon { color: var(--green); background: var(--surface); border: 1px solid var(--line); box-shadow: none; }
+    .mobile-action-label { border: 1px solid var(--line); }
+    .search-button { justify-content: center; }
+    .note-title { max-width: min(25vw, 100px, calc(44vw - 80px)); font-size: 12px; }
+  }
+
+  @media (prefers-contrast: more) {
+    :root { --line: #84988d; --muted: #d0dbd5; }
+    .tool-dock, .search-button { border-color: var(--ink); }
+  }
+}

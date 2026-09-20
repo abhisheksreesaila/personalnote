@@ -1,23 +1,11 @@
 import './style.css'
+import './workspace-theme.css'
 import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox } from 'fabric'
 import { createIcons, icons } from 'lucide'
-import { AmbientTelemetry } from './intelligence/ambient-telemetry.js'
-import { calendarDraftToIcs, parseCalendarDraft } from './intelligence/calendar-draft.js'
-import {
-  conceptEdgePath,
-  conceptNodePath,
-  proposeConceptDiagram,
-  wrapConceptLabel,
-} from './intelligence/concept-diagram.js'
-import { analyzeDiagramStroke, diagramGuidePath } from './intelligence/diagram-assist.js'
-import { DictationSession } from './intelligence/dictation-session.js'
-import { planObstacleAwareLayout } from './intelligence/layout-cleanup.js'
-import { DurableAudioSession } from './intelligence/local-audio-store.js'
-import { LocalTranscriptionProvider } from './intelligence/local-transcription-provider.js'
-import { MicrophonePcmCapture } from './intelligence/microphone-pcm-capture.js'
-import { pageBoundedTextLayout } from './intelligence/voice-text-layout.js'
-import { VOICE_SCAN_HOLD_MS, VoiceScanGesture } from './intelligence/voice-scan-gesture.js'
-import { mountMindMap } from './mindmap/editor.js'
+import { api, downloadWorkspaceFile } from './core/api.js'
+import { mountMindMapModule } from './modules/mindmap.js'
+import { DictationSession } from './modules/voice/transcript-session.js'
+import { pageBoundedTextLayout } from './modules/voice/text-layout.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
@@ -162,7 +150,6 @@ document.querySelector('#app').innerHTML = `
             <button id="mobile-mindmap" aria-label="Create a mind map note"><span class="mobile-action-icon"><i data-lucide="git-fork"></i></span><span class="mobile-action-label">Mind map</span></button>
             <button id="mobile-dictate" aria-label="Dictate into this note"><span class="mobile-action-icon"><i data-lucide="mic"></i></span><span class="mobile-action-label">Dictate</span></button>
             <button id="mobile-draw" aria-label="Draw on this note"><span class="mobile-action-icon"><i data-lucide="pencil"></i></span><span class="mobile-action-label">Draw</span></button>
-            <button id="mobile-scan" aria-label="Scan this page"><span class="mobile-action-icon"><i data-lucide="scan-search"></i></span><span class="mobile-action-label">Scan page</span></button>
           </div>
         </div>
         <section class="ink-options-popover" id="ink-options-popover" role="dialog" aria-label="Ink options" hidden>
@@ -180,63 +167,9 @@ document.querySelector('#app').innerHTML = `
         </section>
 
         <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i><span>Search notes</span><kbd>Ctrl K</kbd></button>
-        <button class="voice-button" id="voice-button" title="Press to dictate · hold to scan this page" aria-label="Start voice dictation. Hold to scan this page" aria-pressed="false"><span class="voice-button-icon voice-mic-icon"><i data-lucide="mic"></i></span><span class="voice-button-icon voice-scan-icon"><i data-lucide="scan-search"></i></span></button>
-        <button id="page-scan-trigger" hidden aria-label="Scan this page"></button>
+        <button class="voice-button" id="voice-button" title="Dictate into this note" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon"><i data-lucide="mic"></i></span></button>
         <div class="voice-caption" id="voice-caption" role="status" hidden><span class="voice-pulse"></span><span id="voice-status">Listening</span></div>
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
-        <button class="intelligence-presence" id="intelligence-presence" title="Related note available" aria-label="Show related note" hidden><i data-lucide="sparkles"></i></button>
-        <aside class="intelligence-card" id="intelligence-card" aria-live="polite" hidden>
-          <header>
-            <span><i data-lucide="sparkles"></i>Related thought</span>
-            <button id="dismiss-intelligence" title="Dismiss" aria-label="Dismiss related note"><i data-lucide="x"></i></button>
-          </header>
-          <strong id="intelligence-title"></strong>
-          <p id="intelligence-excerpt"></p>
-          <div class="intelligence-reason" id="intelligence-reason"></div>
-          <footer>
-            <span id="intelligence-source"></span>
-            <button id="open-intelligence-source"><span>Open note</span><i data-lucide="arrow-up-right"></i></button>
-          </footer>
-        </aside>
-        <button class="intelligence-presence entity-presence" id="entity-presence" title="Person context available" aria-label="Show person context" hidden><i data-lucide="user-round"></i></button>
-        <aside class="intelligence-card entity-card" id="entity-card" aria-live="polite" hidden>
-          <header>
-            <span><i data-lucide="user-round"></i>Person</span>
-            <button id="dismiss-entity" title="Dismiss" aria-label="Dismiss person context"><i data-lucide="x"></i></button>
-          </header>
-          <strong id="entity-name"></strong>
-          <p id="entity-context"></p>
-          <footer>
-            <span id="entity-source"></span>
-            <button id="open-entity-source"><span>Open note</span><i data-lucide="arrow-up-right"></i></button>
-          </footer>
-        </aside>
-        <button class="intelligence-presence calendar-presence" id="calendar-presence" title="Calendar draft available" aria-label="Show calendar draft" hidden><i data-lucide="calendar-clock"></i></button>
-        <aside class="intelligence-card calendar-card" id="calendar-card" aria-live="polite" hidden>
-          <header>
-            <span><i data-lucide="calendar-clock"></i>Calendar draft</span>
-            <button id="dismiss-calendar" title="Dismiss" aria-label="Dismiss calendar draft"><i data-lucide="x"></i></button>
-          </header>
-          <strong id="calendar-title"></strong>
-          <p id="calendar-when"></p>
-          <footer>
-            <span>Draft · Not added</span>
-            <button id="download-calendar"><span>Download .ics</span><i data-lucide="download"></i></button>
-          </footer>
-        </aside>
-        <aside class="intelligence-card page-scan-card" id="page-scan-card" aria-live="polite" hidden>
-          <header>
-            <span><i data-lucide="scan-search"></i>Page scan</span>
-            <button id="close-page-scan" title="Close" aria-label="Close page scan"><i data-lucide="x"></i></button>
-          </header>
-          <strong>What needs attention</strong>
-          <div class="page-scan-results" id="page-scan-results"></div>
-          <div class="page-scan-actions" id="page-scan-actions"></div>
-          <footer>
-            <span>Local · On request</span>
-            <button id="open-scan-source" hidden><span>Open source</span><i data-lucide="arrow-up-right"></i></button>
-          </footer>
-        </aside>
 
         <div class="paper" id="paper">
           <canvas id="note-canvas"></canvas>
@@ -300,20 +233,24 @@ document.querySelector('#app').innerHTML = `
         </label>
       </section>
       <section class="settings-section">
-        <p class="settings-section-label">Intelligence</p>
-        <div class="setting-row"><span><i data-lucide="scan-search"></i>Page analysis</span><small>On request</small></div>
-        <div class="setting-row"><span><i data-lucide="sparkles"></i>Framework</span><small>Mastra</small></div>
-        <div class="setting-row"><span><i data-lucide="cpu"></i>Provider</span><small id="settings-intelligence-provider">Checking</small></div>
-        <div class="setting-row"><span><i data-lucide="key-round"></i>Bring your own key</span><small id="settings-intelligence-key">Checking</small></div>
-        <div class="setting-row"><span><i data-lucide="timer"></i>Last response</span><small id="settings-intelligence-latency">No sample</small></div>
+        <p class="settings-section-label">Built-in modules</p>
+        <div class="setting-row"><span><i data-lucide="git-fork"></i>Mind maps</span><small id="settings-mindmap">On demand</small></div>
+        <div class="setting-row"><span><i data-lucide="mic"></i>Voice capture</span><small id="settings-voice">Transcript only</small></div>
+        <div class="setting-row"><span><i data-lucide="audio-lines"></i>Audio retention</span><small>None</small></div>
       </section>
       <section class="settings-section">
-        <p class="settings-section-label">Privacy & access</p>
-        <div class="setting-row"><span><i data-lucide="log-in"></i>Google sign-in</span><small id="settings-auth-mode">Checking</small></div>
-        <div class="setting-row"><span><i data-lucide="hard-drive"></i>Storage</span><small id="settings-storage">SQLite</small></div>
-        <div class="setting-row"><span><i data-lucide="lock-keyhole"></i>Encryption</span><small id="settings-encryption">Checking</small></div>
+        <p class="settings-section-label">Workspace data</p>
+        <div class="setting-row"><span><i data-lucide="hard-drive"></i>Storage</span><small id="settings-storage">SQLite · This device</small></div>
+        <div class="portability-actions">
+          <button id="download-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
+          <button id="export-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
+          <button id="import-backup"><i data-lucide="folder-input"></i><span>Import backup</span></button>
+          <input id="import-backup-file" type="file" accept="application/json,.json" hidden />
+        </div>
+        <p class="portability-help">Backup JSON preserves editable canvas and mind-map data. Import merges copies without replacing existing notes.</p>
+        <p class="portability-status" id="portability-status" role="status" aria-live="polite"></p>
       </section>
-      <div class="settings-footer-status" id="settings-footer-status"><span></span>Configuration stays on the server</div>
+      <div class="settings-footer-status" id="settings-footer-status"><span></span>Saved locally · exports stay under your control</div>
     </aside>
   </div>
 
@@ -476,24 +413,8 @@ const elements = {
   strokeOptions: document.querySelector('#stroke-options'),
   strokeOptionsLabel: document.querySelector('#stroke-options-label'),
   strokeWidths: document.querySelector('#stroke-widths'),
-  intelligenceCard: document.querySelector('#intelligence-card'),
-  intelligencePresence: document.querySelector('#intelligence-presence'),
-  intelligenceTitle: document.querySelector('#intelligence-title'),
-  intelligenceExcerpt: document.querySelector('#intelligence-excerpt'),
-  intelligenceReason: document.querySelector('#intelligence-reason'),
-  intelligenceSource: document.querySelector('#intelligence-source'),
-  entityCard: document.querySelector('#entity-card'),
-  entityPresence: document.querySelector('#entity-presence'),
-  entityName: document.querySelector('#entity-name'),
-  entityContext: document.querySelector('#entity-context'),
-  entitySource: document.querySelector('#entity-source'),
-  calendarCard: document.querySelector('#calendar-card'),
-  calendarPresence: document.querySelector('#calendar-presence'),
-  calendarTitle: document.querySelector('#calendar-title'),
-  calendarWhen: document.querySelector('#calendar-when'),
-  pageScanCard: document.querySelector('#page-scan-card'),
-  pageScanResults: document.querySelector('#page-scan-results'),
-  pageScanActions: document.querySelector('#page-scan-actions'),
+  portabilityStatus: document.querySelector('#portability-status'),
+  importBackupFile: document.querySelector('#import-backup-file'),
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
@@ -523,8 +444,6 @@ const state = {
   voiceMode: null,
   localTranscription: null,
   microphoneCapture: null,
-  audioCaptureSession: null,
-  audioStorageFailed: false,
   localFinishTimer: null,
   voiceAttempt: 0,
   drawingGesture: null,
@@ -535,16 +454,6 @@ const state = {
   loading: false,
   history: [],
   historyIndex: -1,
-  relatedSuggestion: null,
-  dismissedRelated: new Set(),
-  seenRelated: new Set(),
-  entitySuggestion: null,
-  dismissedEntities: new Set(),
-  seenEntities: new Set(),
-  calendarDraft: null,
-  dismissedCalendarDrafts: new Set(),
-  seenCalendarDrafts: new Set(),
-  intelligenceConnectionConfigured: false,
 }
 
 let mindmapEditor = null
@@ -574,9 +483,9 @@ function setActiveNoteType(noteType) {
   }
 }
 
-function mountActiveMindMap(documentValue) {
+async function mountActiveMindMap(documentValue) {
   mindmapEditor?.destroy()
-  mindmapEditor = mountMindMap(elements.mindmapHost, {
+  mindmapEditor = await mountMindMapModule(elements.mindmapHost, {
     documentValue,
     inspectorRoot: elements.mindmapProperties,
     controlsRoot: elements.mindmapRailActions,
@@ -651,855 +560,6 @@ async function prepareCanvasFonts() {
 }
 
 canvas.freeDrawingBrush = new PencilBrush(canvas)
-
-function api(path, options = {}) {
-  return fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-  }).then(async (response) => {
-    if (!response.ok) throw new Error((await response.json()).error || 'Request failed')
-    return response.status === 204 ? null : response.json()
-  })
-}
-
-let ambientTimer
-let ambientCollapseTimer
-let ambientRequest
-let ambientEnrichmentRequest
-let ambientSequence = 0
-const ambientTelemetry = new AmbientTelemetry()
-let entityPrefetchTimer
-let entityPresentTimer
-let entityCollapseTimer
-let entityRequest
-let entitySequence = 0
-let entityQueuedAt = 0
-let entityCandidate = null
-let calendarPresentTimer
-let calendarCollapseTimer
-let pageScanSourceId = null
-let pageScanDiagramCandidates = []
-let pageScanConceptProposal = null
-let pageScanConceptPreview = []
-let pageScanCalendarDrafts = []
-let pageScanFocusedObjects = []
-let attentionSelection = []
-
-function publishAmbientTelemetry(event, snapshot = ambientTelemetry.snapshot()) {
-  const sample = snapshot.last
-  const latency = sample
-    ? `${sample.presentationMs ?? sample.requestMs ?? sample.server?.serverMs ?? 0} ms · ${sample.server?.mode || 'local'}`
-    : 'No sample'
-  document.querySelector('#settings-intelligence-latency').textContent = latency
-  console.debug('event=intelligence.latency', { event, ...snapshot })
-}
-
-function cancelAmbientWork() {
-  const hadPendingWork = Boolean(ambientTimer || ambientRequest || ambientEnrichmentRequest)
-  clearTimeout(ambientTimer)
-  ambientTimer = null
-  ambientRequest?.abort()
-  ambientRequest = null
-  ambientEnrichmentRequest?.abort()
-  ambientEnrichmentRequest = null
-  ambientSequence += 1
-  if (hadPendingWork) publishAmbientTelemetry('cancelled', ambientTelemetry.cancel())
-}
-
-function quietContextualIntelligence() {
-  cancelAmbientWork()
-  clearTimeout(entityPrefetchTimer)
-  clearTimeout(entityPresentTimer)
-  entityRequest?.abort()
-  entityRequest = null
-  entityCandidate = null
-  entitySequence += 1
-  clearTimeout(calendarPresentTimer)
-  state.relatedSuggestion = null
-  state.entitySuggestion = null
-  state.calendarDraft = null
-  clearRelatedNote()
-  clearEntityPeek()
-  clearCalendarDraft()
-}
-
-function clearEntityPeek({ keepPresence = false } = {}) {
-  clearTimeout(entityCollapseTimer)
-  elements.entityCard.classList.remove('open')
-  elements.entityCard.hidden = true
-  elements.entityPresence.hidden = !keepPresence || !state.entitySuggestion
-}
-
-function calendarDraftKey(draft) {
-  return draft ? `${draft.title}:${draft.startAt}` : ''
-}
-
-function clearCalendarDraft({ keepPresence = false } = {}) {
-  clearTimeout(calendarCollapseTimer)
-  elements.calendarCard.classList.remove('open')
-  elements.calendarCard.hidden = true
-  elements.calendarPresence.hidden = !keepPresence || !state.calendarDraft
-}
-
-function createRefinedDiagramGuide(source, analysis) {
-  const guide = new Path(diagramGuidePath(analysis), {
-    fill: null,
-    stroke: source.stroke || state.color,
-    strokeWidth: Math.max(2, source.strokeWidth || state.penWidth),
-    strokeLineCap: 'round',
-    strokeLineJoin: 'round',
-    opacity: Math.max(0.72, source.opacity || 1),
-    selectable: false,
-    evented: false,
-  })
-  guide.isInk = true
-  guide.inkTool = 'pen'
-  return guide
-}
-
-function conceptDiagramOrigin(plan) {
-  if (!pageScanFocusedObjects.length) return { left: 72, top: 120 }
-  const bounds = pageScanFocusedObjects.map(object => object.getBoundingRect())
-  const left = Math.max(48, Math.min(...bounds.map(item => item.left)))
-  const bottom = Math.max(...bounds.map(item => item.top + item.height))
-  return {
-    left: Math.min(left, Math.max(48, state.pages.columns * PAGE_WIDTH - plan.width - 48)),
-    top: bottom + 56,
-  }
-}
-
-function createConceptDiagramObjects(plan, origin, { preview = false } = {}) {
-  const common = {
-    opacity: preview ? 0.34 : 1,
-    selectable: !preview,
-    evented: !preview,
-    excludeFromExport: preview,
-  }
-  const edges = plan.edges.map(edge => new Path(conceptEdgePath(plan, edge, origin), {
-    ...common,
-    fill: null,
-    stroke: '#2d756d',
-    strokeWidth: 2.5,
-    strokeLineCap: 'round',
-    strokeDashArray: preview ? [8, 7] : null,
-  }))
-  const nodes = plan.nodes.flatMap((node) => {
-    const shape = new Path(conceptNodePath(node, origin), {
-      ...common,
-      fill: preview ? 'rgba(223, 241, 236, 0.28)' : '#eef7f3',
-      stroke: node.role === 'topic' ? '#245f59' : '#2d756d',
-      strokeWidth: node.role === 'topic' ? 3 : 2,
-      strokeLineCap: 'round',
-      strokeLineJoin: 'round',
-    })
-    const label = new IText(wrapConceptLabel(node.text, node.role === 'topic' ? 24 : 20), {
-      ...common,
-      left: origin.left + node.left + node.width / 2,
-      top: origin.top + node.top + node.height / 2,
-      originX: 'center',
-      originY: 'center',
-      textAlign: 'center',
-      fill: '#183b37',
-      fontFamily: 'IBM Plex Sans',
-      fontSize: node.role === 'topic' ? 20 : 17,
-      fontWeight: node.role === 'topic' ? 600 : 400,
-      lineHeight: 1.18,
-      padding: 5,
-    })
-    if (!preview) bindTextEditingLifecycle(label)
-    return [shape, label]
-  })
-  return [...edges, ...nodes]
-}
-
-function clearConceptDiagramPreview() {
-  pageScanConceptPreview.forEach((object) => canvas.remove(object))
-  pageScanConceptPreview = []
-  canvas.requestRenderAll()
-}
-
-function showConceptDiagramPreview(plan) {
-  clearConceptDiagramPreview()
-  const origin = conceptDiagramOrigin(plan)
-  pageScanConceptProposal = { plan, origin }
-  pageScanConceptPreview = createConceptDiagramObjects(plan, origin, { preview: true })
-  canvas.add(...pageScanConceptPreview)
-  canvas.requestRenderAll()
-}
-
-function acceptConceptDiagram() {
-  if (!pageScanConceptProposal) return
-  const { plan, origin } = pageScanConceptProposal
-  clearConceptDiagramPreview()
-  commitHistorySnapshot()
-  canvas.discardActiveObject()
-  canvas.add(...createConceptDiagramObjects(plan, origin))
-  reconcilePages()
-  if (commitHistorySnapshot()) queueSave()
-  closePageScan()
-}
-
-function collapseCalendarDraft() {
-  if (!state.calendarDraft) return clearCalendarDraft()
-  elements.calendarCard.classList.remove('open')
-  setTimeout(() => {
-    if (!elements.calendarCard.classList.contains('open')) {
-      state.calendarDraft = null
-      clearCalendarDraft()
-    }
-  }, 180)
-}
-
-function showCalendarDraft(draft) {
-  const date = new Date(draft.startAt)
-  const dateOptions = draft.hasExplicitTime
-    ? { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
-    : { weekday: 'short', month: 'short', day: 'numeric' }
-  elements.calendarTitle.textContent = draft.title
-  elements.calendarWhen.textContent = new Intl.DateTimeFormat(undefined, dateOptions).format(date)
-  state.seenCalendarDrafts.add(calendarDraftKey(draft))
-  state.entitySuggestion = null
-  entityCandidate = null
-  entitySequence += 1
-  clearTimeout(entityPresentTimer)
-  entityRequest?.abort()
-  clearEntityPeek()
-  clearRelatedNote()
-  elements.calendarPresence.hidden = true
-  elements.calendarCard.hidden = false
-  requestAnimationFrame(() => elements.calendarCard.classList.add('open'))
-  clearTimeout(calendarCollapseTimer)
-  calendarCollapseTimer = setTimeout(collapseCalendarDraft, 8500)
-}
-
-function queueCalendarCheck() {
-  clearTimeout(calendarPresentTimer)
-  clearCalendarDraft()
-  const draft = parseCalendarDraft(activePhraseSnapshot())
-  const draftKey = calendarDraftKey(draft)
-  state.calendarDraft = draft
-    && !state.dismissedCalendarDrafts.has(draftKey)
-    && !state.seenCalendarDrafts.has(draftKey)
-    ? draft
-    : null
-  if (state.calendarDraft) {
-    calendarPresentTimer = setTimeout(() => showCalendarDraft(state.calendarDraft), 850)
-  }
-}
-
-function collapseEntityPeek() {
-  if (!state.entitySuggestion) return clearEntityPeek()
-  elements.entityCard.classList.remove('open')
-  setTimeout(() => {
-    if (!elements.entityCard.classList.contains('open')) {
-      state.entitySuggestion = null
-      clearEntityPeek()
-    }
-  }, 180)
-}
-
-function showEntityPeek(person) {
-  const source = person.sources[0]
-  if (!source) return
-  state.entitySuggestion = { ...person, source }
-  state.seenEntities.add(`${state.activeNoteId}:${person.name.toLocaleLowerCase()}:${source.noteId}`)
-  elements.entityName.textContent = person.name
-  elements.entityContext.textContent = source.context
-  elements.entitySource.textContent = `${source.notebookName} · ${person.sourceCount} source${person.sourceCount === 1 ? '' : 's'}`
-  clearRelatedNote()
-  elements.entityPresence.hidden = true
-  elements.entityCard.hidden = false
-  requestAnimationFrame(() => elements.entityCard.classList.add('open'))
-  clearTimeout(entityCollapseTimer)
-  entityCollapseTimer = setTimeout(collapseEntityPeek, 8500)
-}
-
-function presentEntityCandidate(sequence) {
-  if (sequence !== entitySequence || !entityCandidate || state.calendarDraft) return
-  const source = entityCandidate.sources[0]
-  const dismissalKey = source ? `${state.activeNoteId}:${entityCandidate.name.toLocaleLowerCase()}:${source.noteId}` : ''
-  if (!source || state.dismissedEntities.has(dismissalKey) || state.seenEntities.has(dismissalKey)) return
-  showEntityPeek(entityCandidate)
-}
-
-async function prefetchEntityContext(sequence) {
-  const noteId = state.activeNoteId
-  const text = activePhraseSnapshot()
-  if (sequence !== entitySequence || !noteId || text.length < 4) return
-  entityRequest = new AbortController()
-  const request = entityRequest
-  try {
-    const result = await api('/intelligence/entities', {
-      method: 'POST',
-      body: JSON.stringify({ noteId, text }),
-      signal: request.signal,
-    })
-    if (sequence !== entitySequence || noteId !== state.activeNoteId) return
-    entityCandidate = result.people?.[0] || null
-    if (entityCandidate && performance.now() - entityQueuedAt >= 850) presentEntityCandidate(sequence)
-  } catch (error) {
-    if (error.name !== 'AbortError') console.debug('Person listener stayed quiet.', error)
-  } finally {
-    if (entityRequest === request) entityRequest = null
-  }
-}
-
-function queueEntityCheck() {
-  clearTimeout(entityPrefetchTimer)
-  clearTimeout(entityPresentTimer)
-  entityRequest?.abort()
-  entityCandidate = null
-  state.entitySuggestion = null
-  clearEntityPeek()
-  const sequence = ++entitySequence
-  entityQueuedAt = performance.now()
-  entityPrefetchTimer = setTimeout(() => prefetchEntityContext(sequence), 250)
-  entityPresentTimer = setTimeout(() => presentEntityCandidate(sequence), 850)
-}
-
-function activeTextSnapshot() {
-  const canvasText = canvas.getObjects()
-    .map((object) => typeof object.text === 'string' ? object.text : '')
-    .filter(Boolean)
-    .join(' ')
-  return `${elements.title.value.trim()} ${canvasText}`.trim()
-}
-
-function pageTextSegments() {
-  return [
-    elements.title.value.trim(),
-    ...canvas.getObjects()
-      .filter(isEditableText)
-      .map(object => object.text?.trim())
-      .filter(Boolean),
-  ].filter(Boolean)
-}
-
-function activePhraseSnapshot() {
-  if (document.activeElement === elements.title) return elements.title.value.trim()
-  const activeObject = canvas.getActiveObject()
-  if (isEditableText(activeObject) && activeObject.isEditing) return activeObject.text.trim()
-  return activeTextSnapshot()
-}
-
-function clearRelatedNote({ keepPresence = false } = {}) {
-  clearTimeout(ambientCollapseTimer)
-  elements.intelligenceCard.classList.remove('open')
-  elements.intelligenceCard.hidden = true
-  elements.intelligencePresence.hidden = !keepPresence || !state.relatedSuggestion
-}
-
-async function enrichRelatedSuggestion(sequence, noteId, text) {
-  if (!state.intelligenceConnectionConfigured) return
-  ambientEnrichmentRequest?.abort()
-  ambientEnrichmentRequest = new AbortController()
-  const request = ambientEnrichmentRequest
-  try {
-    const result = await api('/intelligence/related/enrich', {
-      method: 'POST',
-      body: JSON.stringify({ noteId, text }),
-      signal: request.signal,
-    })
-    if (
-      sequence !== ambientSequence
-      || noteId !== state.activeNoteId
-      || !state.relatedSuggestion
-      || state.entitySuggestion
-      || state.calendarDraft
-    ) return
-    const suggestion = result.suggestion
-    const dismissalKey = suggestion ? `${noteId}:${suggestion.noteId}` : ''
-    if (!suggestion || state.dismissedRelated.has(dismissalKey)) return
-    showRelatedNote(suggestion)
-    const duration = Math.round(result.timing?.enrichmentMs || result.timing?.serverMs || 0)
-    document.querySelector('#settings-intelligence-latency').textContent = `${duration} ms · ${result.timing?.mode || 'enriched'}`
-    console.debug('event=intelligence.enrichment', result.timing)
-  } catch (error) {
-    if (error.name !== 'AbortError') console.debug('Related-note enrichment stayed quiet.', error)
-  } finally {
-    if (ambientEnrichmentRequest === request) ambientEnrichmentRequest = null
-  }
-}
-
-function collapseRelatedNote() {
-  if (!state.relatedSuggestion) return clearRelatedNote()
-  elements.intelligenceCard.classList.remove('open')
-  setTimeout(() => {
-    if (!elements.intelligenceCard.classList.contains('open')) {
-      state.relatedSuggestion = null
-      clearRelatedNote()
-    }
-  }, 180)
-}
-
-function showRelatedNote(suggestion) {
-  state.relatedSuggestion = suggestion
-  state.seenRelated.add(`${state.activeNoteId}:${suggestion.noteId}`)
-  elements.intelligenceTitle.textContent = suggestion.title
-  elements.intelligenceExcerpt.textContent = suggestion.excerpt || 'A previous note touches the same thought.'
-  elements.intelligenceReason.textContent = suggestion.reason
-  elements.intelligenceSource.textContent = suggestion.notebookName
-  elements.intelligencePresence.hidden = true
-  elements.intelligenceCard.hidden = false
-  requestAnimationFrame(() => elements.intelligenceCard.classList.add('open'))
-  clearTimeout(ambientCollapseTimer)
-  ambientCollapseTimer = setTimeout(collapseRelatedNote, 8500)
-}
-
-async function refreshRelatedNote() {
-  const noteId = state.activeNoteId
-  const text = activeTextSnapshot()
-  ambientTimer = null
-  if (!noteId || state.notes.length < 2 || text.length < 24) {
-    publishAmbientTelemetry('silent', ambientTelemetry.silent())
-    return clearRelatedNote()
-  }
-  ambientRequest?.abort()
-  ambientRequest = new AbortController()
-  const request = ambientRequest
-  const sequence = ++ambientSequence
-  ambientTelemetry.requestStarted()
-  try {
-    const result = await api('/intelligence/related', {
-      method: 'POST',
-      body: JSON.stringify({ noteId, text }),
-      signal: request.signal,
-    })
-    ambientTelemetry.response(result.timing)
-    if (sequence !== ambientSequence || noteId !== state.activeNoteId) {
-      publishAmbientTelemetry('cancelled', ambientTelemetry.cancel())
-      return
-    }
-    const suggestion = result.suggestion
-    const dismissalKey = suggestion ? `${noteId}:${suggestion.noteId}` : ''
-    if (!suggestion || state.dismissedRelated.has(dismissalKey) || state.seenRelated.has(dismissalKey)) {
-      publishAmbientTelemetry('silent', ambientTelemetry.silent())
-      return clearRelatedNote()
-    }
-    if (state.entitySuggestion || state.calendarDraft) {
-      publishAmbientTelemetry('silent', ambientTelemetry.silent())
-      return
-    }
-    showRelatedNote(suggestion)
-    publishAmbientTelemetry('presented', ambientTelemetry.presented())
-    void enrichRelatedSuggestion(sequence, noteId, text)
-  } catch (error) {
-    if (error.name !== 'AbortError') {
-      publishAmbientTelemetry('failed', ambientTelemetry.silent())
-      console.debug('Related-note listener stayed quiet.', error)
-    }
-  } finally {
-    if (ambientRequest === request) ambientRequest = null
-  }
-}
-
-function queueAmbientCheck() {
-  clearTimeout(ambientTimer)
-  ambientTelemetry.queue()
-  ambientTimer = setTimeout(refreshRelatedNote, 1100)
-}
-
-function closePageScan() {
-  clearConceptDiagramPreview()
-  pageScanConceptProposal = null
-  elements.paper.classList.remove('is-page-scanning')
-  elements.pageScanCard.classList.remove('open')
-  elements.pageScanCard.hidden = true
-  const trigger = document.querySelector('#page-scan-trigger')
-  trigger.hidden = true
-  trigger.classList.remove('active')
-  elements.voiceButton.classList.remove('scan-active')
-}
-
-function addPageScanFinding(icon, title, detail, { priority = false } = {}) {
-  const finding = document.createElement('div')
-  finding.className = `page-scan-finding${priority ? ' is-priority' : ''}`
-  const mark = document.createElement('i')
-  mark.dataset.lucide = icon
-  const copy = document.createElement('div')
-  const heading = document.createElement('strong')
-  heading.textContent = title
-  const description = document.createElement('span')
-  description.textContent = detail
-  copy.append(heading, description)
-  finding.append(mark, copy)
-  elements.pageScanResults.append(finding)
-}
-
-function addPageScanAction(icon, title, detail, action, { priority = false } = {}) {
-  const proposal = document.createElement('div')
-  proposal.className = `page-scan-action${priority ? ' is-priority' : ''}`
-  const mark = document.createElement('i')
-  mark.dataset.lucide = icon
-  const copy = document.createElement('div')
-  const heading = document.createElement('strong')
-  heading.textContent = title
-  const description = document.createElement('span')
-  description.textContent = detail
-  copy.append(heading, description)
-  const approve = document.createElement('button')
-  approve.dataset.scanAction = action
-  approve.textContent = 'Approve'
-  proposal.append(mark, copy, approve)
-  elements.pageScanActions.append(proposal)
-}
-
-function activeNoteResourceId() {
-  return state.notes.find((note) => note.id === state.activeNoteId)?.resourceId || null
-}
-
-function agentProposalCopy(proposal) {
-  const input = proposal.input || {}
-  if (proposal.type === 'classify_note') {
-    return {
-      title: `Classify note as ${input.category || 'organize'}`,
-      detail: 'A local agent proposed a reversible note classification from cited text.',
-    }
-  }
-  const target = state.notes.find((note) => note.resourceId === input.targetId)
-  return {
-    title: `Link with ${target?.title || 'another note'}`,
-    detail: `A local agent proposed a ${input.relationshipType || 'related'} connection from cited text.`,
-  }
-}
-
-function addAgentProposalAction(proposal) {
-  const copy = agentProposalCopy(proposal)
-  const item = document.createElement('div')
-  item.className = 'page-scan-action agent-proposal-action'
-  item.dataset.agentProposalId = proposal.id
-  const mark = document.createElement('i')
-  mark.dataset.lucide = 'sparkles'
-  const content = document.createElement('div')
-  const heading = document.createElement('strong')
-  heading.textContent = copy.title
-  const detail = document.createElement('span')
-  detail.textContent = copy.detail
-  content.append(heading, detail)
-  const controls = document.createElement('div')
-  controls.className = 'page-scan-action-controls'
-  ;[['accept', 'Approve'], ['reject', 'Dismiss']].forEach(([decision, label]) => {
-    const button = document.createElement('button')
-    button.dataset.scanAction = 'agent-proposal-decision'
-    button.dataset.proposalId = proposal.id
-    button.dataset.proposalDecision = decision
-    button.textContent = label
-    controls.append(button)
-  })
-  item.append(mark, content, controls)
-  elements.pageScanActions.append(item)
-}
-
-async function loadAgentProposalActions() {
-  const resourceId = activeNoteResourceId()
-  if (!resourceId) return
-  try {
-    const response = await api(`/agent/proposals/${encodeURIComponent(resourceId)}`)
-    response.items?.forEach(addAgentProposalAction)
-    if (response.items?.length) createIcons({ icons })
-  } catch (error) {
-    console.debug('Agent proposal review stayed quiet.', error)
-  }
-}
-
-async function decideAgentProposal(button) {
-  const resourceId = activeNoteResourceId()
-  const proposalId = button.dataset.proposalId
-  const decision = button.dataset.proposalDecision
-  if (!resourceId || !proposalId || !decision) return
-  const action = button.closest('.agent-proposal-action')
-  action?.querySelectorAll('button').forEach((control) => { control.disabled = true })
-  try {
-    await api(`/agent/proposals/${encodeURIComponent(proposalId)}/decision`, {
-      method: 'POST',
-      body: JSON.stringify({ noteId: resourceId, decision }),
-    })
-    action?.remove()
-    addPageScanFinding(
-      decision === 'accept' ? 'check' : 'x',
-      decision === 'accept' ? 'Proposal applied' : 'Proposal dismissed',
-      decision === 'accept' ? 'The derived workspace change is now recorded.' : 'Your note was left unchanged.',
-    )
-    createIcons({ icons })
-  } catch (error) {
-    action?.querySelectorAll('button').forEach((control) => { control.disabled = false })
-    console.debug('Agent proposal decision failed.', error)
-  }
-}
-
-function syncAttentionSelection() {
-  const trigger = document.querySelector('#page-scan-trigger')
-  const hasAttention = attentionSelection.length > 0
-  trigger.classList.toggle('has-attention', hasAttention)
-  trigger.setAttribute('aria-label', hasAttention ? 'Scan selected objects first' : 'Scan this page')
-  trigger.title = hasAttention ? `${attentionSelection.length} selected object${attentionSelection.length === 1 ? '' : 's'} get priority` : 'Scan this page'
-}
-
-function scanDiagramCandidates() {
-  const focused = new Set(pageScanFocusedObjects)
-  return canvas.getObjects()
-    .filter(object => object instanceof Path && !isHighlighterStroke(object) && Array.isArray(object.inkPoints) && object.inkPoints.length >= 5)
-    .map((source) => ({ source, analysis: analyzeDiagramStroke(getPathScenePoints(source)), priority: focused.has(source) }))
-    .filter(candidate => candidate.analysis)
-    .sort((left, right) => Number(right.priority) - Number(left.priority))
-}
-
-function focusedTextSegments() {
-  return pageScanFocusedObjects
-    .filter(isEditableText)
-    .map(object => object.text?.trim())
-    .filter(Boolean)
-}
-
-function boundsOverlap(left, right) {
-  return !(
-    left.left + left.width < right.left
-    || right.left + right.width < left.left
-    || left.top + left.height < right.top
-    || right.top + right.height < left.top
-  )
-}
-
-function isHighlighterStroke(object) {
-  return object instanceof Path && (
-    object.inkTool === 'highlight'
-    || ((object.strokeWidth || 0) >= 10 && typeof object.stroke === 'string' && object.stroke.endsWith('55'))
-  )
-}
-
-function objectsUnderHighlights() {
-  const objects = canvas.getObjects()
-  const highlights = objects.filter(isHighlighterStroke)
-  if (!highlights.length) return []
-  const focused = new Set()
-  highlights.forEach((highlight) => {
-    const highlightBounds = highlight.getBoundingRect()
-    objects.forEach((object) => {
-      if (object !== highlight && !isHighlighterStroke(object) && boundsOverlap(highlightBounds, object.getBoundingRect())) {
-        focused.add(object)
-      }
-    })
-  })
-  return [...focused]
-}
-
-function downloadCalendarDraft(draft) {
-  if (!draft) return
-  const blob = new Blob([calendarDraftToIcs(draft)], { type: 'text/calendar;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${draft.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'event'}.ics`
-  document.body.append(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-function refineScannedDrawing() {
-  const priorityCandidates = pageScanDiagramCandidates.filter(candidate => candidate.priority)
-  const targets = priorityCandidates.length ? priorityCandidates : pageScanDiagramCandidates
-  const candidates = targets.filter(candidate => canvas.getObjects().includes(candidate.source))
-  if (!candidates.length) return
-  commitHistorySnapshot()
-  candidates.forEach(({ source, analysis }) => {
-    const sourceIndex = canvas.getObjects().indexOf(source)
-    canvas.remove(source)
-    canvas.insertAt(Math.max(0, sourceIndex), createRefinedDiagramGuide(source, analysis))
-  })
-  canvas.requestRenderAll()
-  if (commitHistorySnapshot()) queueSave()
-  closePageScan()
-}
-
-async function scanCurrentPage({ prioritizeSelection = true } = {}) {
-  const noteId = state.activeNoteId
-  if (!noteId) return
-  setSettingsOpen(false)
-  setPropertiesOpen(false)
-  quietContextualIntelligence()
-  const activeObjects = canvas.getActiveObjects()
-  const explicitFocus = prioritizeSelection ? (activeObjects.length ? activeObjects : attentionSelection) : []
-  pageScanFocusedObjects = prioritizeSelection
-    ? [...new Set([...explicitFocus, ...objectsUnderHighlights()])]
-    : []
-  pageScanSourceId = null
-  pageScanDiagramCandidates = []
-  pageScanConceptProposal = null
-  clearConceptDiagramPreview()
-  pageScanCalendarDrafts = []
-  elements.pageScanResults.replaceChildren()
-  elements.pageScanActions.replaceChildren()
-  const focusDetail = pageScanFocusedObjects.length
-    ? `Prioritizing ${pageScanFocusedObjects.length} selected object${pageScanFocusedObjects.length === 1 ? '' : 's'}, then reading the rest of the page.`
-    : 'Reading text, dates, people, and related notes through the intelligence layer.'
-  addPageScanFinding('loader-circle', 'Scanning this page', focusDetail)
-  elements.pageScanCard.hidden = false
-  elements.paper.classList.add('is-page-scanning')
-  requestAnimationFrame(() => elements.pageScanCard.classList.add('open'))
-  const trigger = document.querySelector('#page-scan-trigger')
-  trigger.classList.add('active')
-  trigger.hidden = true
-  elements.voiceButton.classList.add('scan-active')
-  document.querySelector('#open-scan-source').hidden = true
-  const focusedSegments = focusedTextSegments()
-  const text = focusedSegments.length ? `${focusedSegments.join(' ')} ${activeTextSnapshot()}` : activeTextSnapshot()
-  const minimumSweep = new Promise(resolve => setTimeout(resolve, 1400))
-  const textObjectCount = canvas.getObjects().filter(isEditableText).length
-  const focusedTextCount = pageScanFocusedObjects.filter(isEditableText).length
-  const allSegments = pageTextSegments()
-  try {
-    const [scanResponse] = await Promise.all([
-      api('/intelligence/scan', {
-        method: 'POST',
-        body: JSON.stringify({
-          noteId,
-          text,
-          segments: allSegments,
-          focusSegments: focusedSegments,
-          textObjectCount,
-          focusedTextCount,
-        }),
-      }),
-      minimumSweep,
-    ])
-    const scan = scanResponse.scan || {}
-    elements.paper.classList.remove('is-page-scanning')
-    elements.pageScanResults.replaceChildren()
-    pageScanCalendarDrafts = scan.calendarDrafts || []
-    pageScanCalendarDrafts.forEach((draft) => {
-      const when = new Intl.DateTimeFormat(undefined, {
-        weekday: 'short', month: 'short', day: 'numeric',
-        ...(draft.hasExplicitTime ? { hour: 'numeric', minute: '2-digit' } : {}),
-      }).format(new Date(draft.startAt))
-      addPageScanFinding(
-        draft.priority ? 'scan-eye' : 'calendar-clock',
-        draft.title,
-        draft.priority ? `Selected · ${when}` : when,
-        { priority: Boolean(draft.priority) },
-      )
-    })
-    focusedSegments
-      .filter(segment => !parseCalendarDraft(segment))
-      .forEach(segment => addPageScanFinding('scan-eye', 'Selected text', segment.slice(0, 140), { priority: true }))
-    scan.people?.forEach((person) => {
-      addPageScanFinding('user-round', person.name, person.sources[0]?.context || `${person.sourceCount} related sources`)
-    })
-    pageScanDiagramCandidates = scanDiagramCandidates()
-    if (pageScanDiagramCandidates.length) {
-      const kinds = [...new Set(pageScanDiagramCandidates.map(candidate => candidate.analysis.kind.replace('-', ' ')))]
-      const priorityCount = pageScanDiagramCandidates.filter(candidate => candidate.priority).length
-      const title = priorityCount
-        ? `${priorityCount} selected diagram gesture${priorityCount === 1 ? '' : 's'}`
-        : `${pageScanDiagramCandidates.length} diagram gestures`
-      addPageScanFinding(priorityCount ? 'scan-eye' : 'shapes', title, kinds.join(', '), { priority: priorityCount > 0 })
-    }
-    if (scan.related) {
-      pageScanSourceId = scan.related.noteId
-      addPageScanFinding('notebook-tabs', scan.related.title, scan.related.reason)
-      document.querySelector('#open-scan-source').hidden = false
-    }
-    if (scan.scanSummary) {
-      addPageScanFinding('sparkles', 'Scan insight', scan.scanSummary)
-    }
-    if (!elements.pageScanResults.children.length) {
-      addPageScanFinding('check', 'Nothing pressing', 'No dates, known people, or grounded related notes stood out.')
-    }
-    const actions = scan.actions || {}
-    const conceptPlan = proposeConceptDiagram(focusedSegments)
-    if (conceptPlan) {
-      addPageScanFinding('network', 'Concept map ready', conceptPlan.summary, { priority: true })
-      addPageScanAction(
-        'wand-sparkles',
-        'Create editable concept map',
-        'Add the preview as separate Fabric shapes, connectors, and editable labels. One Undo removes it.',
-        'create-concept-map',
-        { priority: true },
-      )
-      showConceptDiagramPreview(conceptPlan)
-    }
-    if (actions.canTidy) {
-      addPageScanAction(
-        'layout-grid',
-        actions.tidyFocused ? 'Tidy selected text' : 'Tidy text around drawing',
-        actions.tidyFocused
-          ? `Arrange the ${actions.tidyCount} selected text blocks first.`
-          : `Arrange ${actions.tidyCount} text blocks without moving ink.`,
-        'tidy-text',
-        { priority: Boolean(actions.tidyFocused) },
-      )
-    }
-    if (pageScanDiagramCandidates.length) {
-      const priorityCount = pageScanDiagramCandidates.filter(candidate => candidate.priority).length
-      addPageScanAction(
-        'wand-sparkles',
-        priorityCount ? 'Refine selected drawing' : 'Refine drawing gestures',
-        `Replace ${priorityCount || pageScanDiagramCandidates.length} recognized shapes or arrows. One Undo restores the originals.`,
-        'refine-drawing',
-        { priority: priorityCount > 0 },
-      )
-    }
-    if (pageScanCalendarDrafts.length) {
-      addPageScanAction('calendar-plus', 'Prepare calendar file', `Create an .ics file for “${pageScanCalendarDrafts[0].title}”.`, 'export-calendar')
-    }
-    await loadAgentProposalActions()
-    createIcons({ icons })
-  } catch (error) {
-    await minimumSweep
-    elements.paper.classList.remove('is-page-scanning')
-    elements.pageScanResults.replaceChildren()
-    elements.pageScanActions.replaceChildren()
-    addPageScanFinding('circle-alert', 'Scan unavailable', 'Your note is unchanged. Try again when the local service is available.')
-    createIcons({ icons })
-    console.debug('Page scan stayed quiet.', error)
-  }
-}
-
-function tidyPageText() {
-  const focusedTextObjects = pageScanFocusedObjects.filter(object => isEditableText(object) && canvas.getObjects().includes(object))
-  const textObjects = focusedTextObjects.length >= 2 ? focusedTextObjects : canvas.getObjects().filter(isEditableText)
-  const textObjectSet = new Set(textObjects)
-  const objectsById = new Map()
-  const items = textObjects.map((object, index) => {
-    const id = String(index)
-    objectsById.set(id, object)
-    const bounds = object.getBoundingRect()
-    return {
-      id,
-      left: bounds.left,
-      top: bounds.top,
-      width: bounds.width,
-      height: bounds.height,
-      offsetLeft: (object.left || 0) - bounds.left,
-      offsetTop: (object.top || 0) - bounds.top,
-    }
-  })
-  const obstacles = canvas.getObjects()
-    .filter(object => !textObjectSet.has(object))
-    .map(object => object.getBoundingRect())
-  const plan = planObstacleAwareLayout(items, {
-    obstacles,
-    maxWidth: state.pages.columns * PAGE_WIDTH - 48,
-    maxHeight: state.pages.rows * PAGE_HEIGHT - 48,
-  })
-  if (!plan.length) {
-    addPageScanFinding('layout-grid', 'Nothing to tidy', 'Add at least two text objects before arranging the page.')
-    createIcons({ icons })
-    return
-  }
-  commitHistorySnapshot()
-  canvas.discardActiveObject()
-  plan.forEach(({ id, left, top }) => {
-    const object = objectsById.get(id)
-    const item = items.find(candidate => candidate.id === id)
-    object.set({ left: left + item.offsetLeft, top: top + item.offsetTop })
-    object.setCoords()
-  })
-  canvas.requestRenderAll()
-  reconcilePages()
-  if (commitHistorySnapshot()) queueSave()
-  closePageScan()
-}
 
 let inkOptionsCloseTimer
 
@@ -1607,89 +667,6 @@ function setupToolOptionGestures() {
     })
     button.addEventListener('contextmenu', (event) => event.preventDefault())
   })
-}
-
-function setupToolDockMagnification() {
-  const dock = document.querySelector('.tool-dock')
-  const controls = [...dock.querySelectorAll('.tool-button, .color-swatch')]
-  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)')
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-  let frame
-  let restingRects = []
-
-  controls.forEach((control) => control.classList.add('dock-control'))
-
-  const reset = () => {
-    cancelAnimationFrame(frame)
-    dock.classList.remove('is-magnifying')
-    restingRects = []
-    controls.forEach((control) => {
-      control.classList.remove('is-dock-magnified', 'is-dock-peak')
-      control.style.removeProperty('--dock-control-scale')
-      control.style.removeProperty('--dock-control-shift')
-      control.style.removeProperty('--dock-control-layer')
-    })
-  }
-
-  const magnifyAt = (pointerX) => {
-    if (window.innerWidth <= 800 || !finePointer.matches || reducedMotion.matches) return reset()
-    if (!restingRects.length) {
-      restingRects = controls.map((control) => {
-        const rect = control.getBoundingClientRect()
-        return { center: rect.left + rect.width / 2, width: rect.width }
-      })
-    }
-    cancelAnimationFrame(frame)
-    frame = requestAnimationFrame(() => {
-      dock.classList.add('is-magnifying')
-      const influences = restingRects.map(({ center }) => {
-        const distance = Math.abs(pointerX - center)
-        return distance < 82 ? (1 + Math.cos(Math.PI * distance / 82)) / 2 : 0
-      })
-      const scales = influences.map((influence) => 1 + influence * 0.32)
-      const peakIndex = influences.indexOf(Math.max(...influences))
-      const centers = restingRects.map(({ center }) => center)
-
-      for (let index = peakIndex - 1; index >= 0; index -= 1) {
-        const baseGap = restingRects[index + 1].center - restingRects[index].center
-          - (restingRects[index].width + restingRects[index + 1].width) / 2
-        const requiredDistance = restingRects[index].width * scales[index] / 2
-          + restingRects[index + 1].width * scales[index + 1] / 2
-          + Math.max(2, baseGap)
-        centers[index] = Math.min(restingRects[index].center, centers[index + 1] - requiredDistance)
-      }
-      for (let index = peakIndex + 1; index < controls.length; index += 1) {
-        const baseGap = restingRects[index].center - restingRects[index - 1].center
-          - (restingRects[index].width + restingRects[index - 1].width) / 2
-        const requiredDistance = restingRects[index].width * scales[index] / 2
-          + restingRects[index - 1].width * scales[index - 1] / 2
-          + Math.max(2, baseGap)
-        centers[index] = Math.max(restingRects[index].center, centers[index - 1] + requiredDistance)
-      }
-
-      controls.forEach((control, index) => {
-        const influence = influences[index]
-        control.style.setProperty('--dock-control-scale', scales[index].toFixed(3))
-        control.style.setProperty('--dock-control-shift', `${(centers[index] - restingRects[index].center).toFixed(2)}px`)
-        control.style.setProperty('--dock-control-layer', String(Math.round(10 + influence * 90)))
-        control.classList.toggle('is-dock-magnified', influence > 0.08)
-        control.classList.toggle('is-dock-peak', influence > 0.78)
-      })
-    })
-  }
-
-  dock.addEventListener('pointermove', (event) => magnifyAt(event.clientX))
-  dock.addEventListener('pointerleave', reset)
-  dock.addEventListener('focusin', (event) => {
-    const control = event.target.closest('.tool-button, .color-swatch')
-    if (control) magnifyAt(control.getBoundingClientRect().left + control.getBoundingClientRect().width / 2)
-  })
-  dock.addEventListener('focusout', (event) => {
-    if (!dock.contains(event.relatedTarget)) reset()
-  })
-  finePointer.addEventListener('change', reset)
-  reducedMotion.addEventListener('change', reset)
-  window.addEventListener('resize', reset)
 }
 
 function escapeHtml(value) {
@@ -1905,16 +882,6 @@ function findEditableTextAt(point) {
   return [...canvas.getObjects()].reverse().find((object) => (
     isEditableText(object) && object.containsPoint(point)
   ))
-}
-
-let contextualCheckTimer
-
-function scheduleContextualChecks() {
-  clearTimeout(contextualCheckTimer)
-  contextualCheckTimer = setTimeout(() => {
-    queueCalendarCheck()
-    queueEntityCheck()
-  }, 220)
 }
 
 function bindTextEditingLifecycle(text) {
@@ -2348,21 +1315,14 @@ async function saveActiveNote() {
   }
 }
 
-function queueSave({ contextual = false } = {}) {
+function queueSave() {
   if (state.loading) return
-  if (contextual) {
-    cancelAmbientWork()
-    queueCalendarCheck()
-    queueEntityCheck()
-    queueAmbientCheck()
-  }
   setSaveState('Saving')
   clearTimeout(saveTimer)
   saveTimer = setTimeout(saveActiveNote, 650)
 }
 
 let historyTimer
-let historyContextual = false
 function snapshot() {
   if (state.activeNoteType === 'mindmap') return JSON.stringify({ content: mindmapEditor?.getDocument() })
   ensureCanvasObjectIds()
@@ -2378,14 +1338,11 @@ function commitHistorySnapshot() {
   return true
 }
 
-function recordHistory({ contextual = false } = {}) {
+function recordHistory() {
   if (state.loading) return
-  historyContextual = historyContextual || contextual
   clearTimeout(historyTimer)
   historyTimer = setTimeout(() => {
-    const shouldCheckContext = historyContextual
-    historyContextual = false
-    if (commitHistorySnapshot()) queueSave({ contextual: shouldCheckContext })
+    if (commitHistorySnapshot()) queueSave()
   }, 180)
 }
 
@@ -2399,8 +1356,6 @@ async function restoreHistory(index) {
   resizePaper(true)
   await canvas.loadFromJSON(entry.content)
   bindCanvasTextObjects()
-  attentionSelection = objectsUnderHighlights()
-  syncAttentionSelection()
   setTool(window.innerWidth <= 800 ? 'hand' : 'text')
   state.loading = false
   canvas.requestRenderAll()
@@ -2409,22 +1364,7 @@ async function restoreHistory(index) {
 
 async function selectNote(id) {
   if (id === state.activeNoteId) return
-  closePageScan()
   clearTimeout(saveTimer)
-  cancelAmbientWork()
-  clearTimeout(entityPrefetchTimer)
-  clearTimeout(entityPresentTimer)
-  entityRequest?.abort()
-  entityRequest = null
-  entityCandidate = null
-  entitySequence += 1
-  state.entitySuggestion = null
-  clearEntityPeek()
-  clearTimeout(calendarPresentTimer)
-  state.calendarDraft = null
-  clearCalendarDraft()
-  state.relatedSuggestion = null
-  clearRelatedNote()
   state.activeNoteId = id
   renderNoteList()
   state.loading = true
@@ -2444,7 +1384,7 @@ async function selectNote(id) {
     elements.title.value = note.title
     setActiveNoteType(note.noteType)
     if (state.activeNoteType === 'mindmap') {
-      mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
+      await mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
       state.history = []
       state.historyIndex = -1
     } else {
@@ -2452,8 +1392,6 @@ async function selectNote(id) {
       resizePaper()
       await canvas.loadFromJSON(note.content || { objects: [] })
       bindCanvasTextObjects()
-      attentionSelection = objectsUnderHighlights()
-      syncAttentionSelection()
       normalizedNote = normalizeNotebookFonts()
       normalizedNote = reconcilePages(true) || normalizedNote
       state.history = [snapshot()]
@@ -2608,34 +1546,67 @@ function syncDefaultTypographySettings() {
 }
 
 function updateCapabilitySettings(capabilities) {
-  const providerNames = {
-    'azure-openai': 'Azure OpenAI',
-    'openai-compatible': 'OpenAI compatible',
-    'local-retrieval': 'Local retrieval',
-  }
-  const intelligence = capabilities.intelligence || {}
-  const authentication = capabilities.authentication || {}
   const storage = capabilities.storage || {}
-  document.querySelector('#settings-intelligence-provider').textContent = providerNames[intelligence.provider] || 'Unavailable'
-  state.intelligenceConnectionConfigured = Boolean(intelligence.connectionConfigured)
-  document.querySelector('#settings-intelligence-key').textContent = intelligence.provider === 'local-retrieval'
-    ? 'Not required'
-    : intelligence.credentialsConfigured ? 'Configured' : 'Needs setup'
-  document.querySelector('#settings-auth-mode').textContent = authentication.enabled
-    ? authentication.configured ? 'Google OAuth' : 'Needs setup'
-    : 'Off in development'
-  document.querySelector('#settings-storage').textContent = storage.engine === 'sqlite' ? 'SQLite · This device' : 'Unavailable'
-  document.querySelector('#settings-encryption').textContent = storage.encryption === 'not-enabled' ? 'Not enabled' : 'Enabled'
+  const modules = capabilities.modules || {}
+  document.querySelector('#settings-storage').textContent = storage.engine === 'sqlite'
+    ? 'SQLite · This device'
+    : 'Unavailable'
+  document.querySelector('#settings-mindmap').textContent = modules.mindmap?.available
+    ? 'On demand'
+    : 'Unavailable'
+  document.querySelector('#settings-voice').textContent = modules.voice?.available
+    ? 'Transcript only'
+    : 'Unavailable'
 }
 
 async function loadCapabilitySettings() {
   try {
     updateCapabilitySettings(await api('/settings/capabilities'))
   } catch {
-    document.querySelector('#settings-intelligence-provider').textContent = 'Unavailable'
-    document.querySelector('#settings-intelligence-key').textContent = 'Unavailable'
-    document.querySelector('#settings-auth-mode').textContent = 'Unavailable'
-    document.querySelector('#settings-encryption').textContent = 'Unavailable'
+    document.querySelector('#settings-storage').textContent = 'Unavailable'
+    document.querySelector('#settings-mindmap').textContent = 'Unavailable'
+    document.querySelector('#settings-voice').textContent = 'Unavailable'
+  }
+}
+
+function setPortabilityStatus(message, error = false) {
+  elements.portabilityStatus.textContent = message
+  elements.portabilityStatus.classList.toggle('error', error)
+}
+
+async function downloadWorkspaceExport(path, fileName) {
+  setPortabilityStatus('Preparing export…')
+  try {
+    await saveActiveNote()
+    await downloadWorkspaceFile(path, fileName)
+    setPortabilityStatus('Export downloaded')
+  } catch (error) {
+    console.error(error)
+    setPortabilityStatus('Export failed. Your workspace was not changed.', true)
+  }
+}
+
+async function importWorkspaceFile(file) {
+  if (!file) return
+  if (file.size > 100 * 1024 * 1024) {
+    setPortabilityStatus('Backup is larger than the 100 MB import limit.', true)
+    return
+  }
+  setPortabilityStatus('Checking backup…')
+  try {
+    const backup = JSON.parse(await file.text())
+    const result = await api('/import/workspace', {
+      method: 'POST',
+      body: JSON.stringify(backup),
+    })
+    setPortabilityStatus(`Imported ${result.notesImported} notes into ${result.notebooksImported} notebooks.`)
+    ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
+    renderNoteList()
+  } catch (error) {
+    console.error(error)
+    setPortabilityStatus(`Import failed: ${error.message}`, true)
+  } finally {
+    elements.importBackupFile.value = ''
   }
 }
 
@@ -2829,7 +1800,7 @@ function updateVoiceTextBox(text, { record = false, create = true } = {}) {
   dictationSession.target.setCoords()
   canvas.requestRenderAll()
   reconcilePages()
-  if (record) recordHistory({ contextual: true })
+  if (record) recordHistory()
 }
 
 function previewVoiceTranscript(transcript, options) {
@@ -2862,23 +1833,11 @@ function completeLocalDictation(message = '') {
   if (message) showVoiceNotice(message)
 }
 
-async function finishAudioCaptureSession(status) {
-  const session = state.audioCaptureSession
-  state.audioCaptureSession = null
-  if (!session) return
-  try {
-    await session.finish(status)
-  } catch {
-    console.warn('event=voice.audio_store outcome=write_failed')
-  }
-}
-
 async function stopLocalDictation({ cancel = false } = {}) {
   state.voiceAttempt += 1
   await state.microphoneCapture?.stop()
   state.microphoneCapture = null
   if (cancel) {
-    await finishAudioCaptureSession('cancelled')
     state.localTranscription?.cancel()
     state.localTranscription = null
     state.voiceMode = null
@@ -2888,15 +1847,14 @@ async function stopLocalDictation({ cancel = false } = {}) {
     return
   }
 
-  await finishAudioCaptureSession('completed')
   state.localTranscription?.finish()
-  elements.voiceStatus.textContent = 'Finishing locally'
+  elements.voiceStatus.textContent = 'Finishing transcript'
   state.localFinishTimer = setTimeout(() => completeLocalDictation(), 4000)
 }
 
 async function startLocalDictation(attempt) {
-  const endpoint = import.meta.env.VITE_LOCAL_ASR_ENDPOINT || undefined
-  const provider = new LocalTranscriptionProvider({ endpoint })
+  const { LocalTranscriptionProvider, MicrophonePcmCapture } = await import('./modules/voice/capture.js')
+  const provider = new LocalTranscriptionProvider()
   state.localTranscription = provider
   await provider.connect({
     language: (navigator.language || 'en').split('-')[0],
@@ -2912,8 +1870,7 @@ async function startLocalDictation(attempt) {
     },
     onError: async () => {
       await state.microphoneCapture?.stop()
-      await finishAudioCaptureSession('interrupted')
-      completeLocalDictation('Local voice input stopped')
+      completeLocalDictation('Local transcription became unavailable; no audio was saved')
     },
   })
   if (attempt !== state.voiceAttempt) {
@@ -2923,30 +1880,7 @@ async function startLocalDictation(attempt) {
 
   const capture = new MicrophonePcmCapture()
   state.microphoneCapture = capture
-  state.audioStorageFailed = false
-  try {
-    state.audioCaptureSession = await DurableAudioSession.start({ noteId: state.activeNoteId })
-  } catch {
-    state.audioCaptureSession = null
-    state.audioStorageFailed = true
-    console.warn('event=voice.audio_store outcome=unavailable')
-  }
-  await capture.start((audio) => {
-    const session = state.audioCaptureSession
-    if (!session) {
-      provider.sendAudio(audio)
-      return
-    }
-    void session.append(audio).then(
-      () => provider.sendAudio(audio),
-      () => {
-        provider.sendAudio(audio)
-        if (state.audioStorageFailed) return
-        state.audioStorageFailed = true
-        console.warn('event=voice.audio_store outcome=write_failed')
-      },
-    )
-  })
+  await capture.start((audio) => provider.sendAudio(audio))
   if (attempt !== state.voiceAttempt) {
     await capture.stop()
     provider.cancel()
@@ -2960,9 +1894,6 @@ async function startLocalDictation(attempt) {
 function setupVoiceInput() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
   let recognition = null
-  const scanGesture = new VoiceScanGesture()
-  let scanHoldTimer = null
-  let ignoreClickUntil = 0
   if (SpeechRecognition) {
     recognition = new SpeechRecognition()
     recognition.continuous = true
@@ -2972,7 +1903,7 @@ function setupVoiceInput() {
 
     recognition.onstart = () => {
       state.voiceMode = 'browser'
-      setVoiceListening(true, 'Listening with browser voice')
+      setVoiceListening(true, 'Local service unavailable · using browser voice; Personal Note retains transcript only')
     }
     recognition.onresult = (event) => {
       const update = dictationSession.accept(event.results, event.resultIndex)
@@ -3015,7 +1946,6 @@ function setupVoiceInput() {
       state.localTranscription = null
       await state.microphoneCapture?.stop()
       state.microphoneCapture = null
-      await finishAudioCaptureSession('cancelled')
       if (attempt !== state.voiceAttempt) return
       if (error?.name === 'NotAllowedError') {
         state.voiceMode = null
@@ -3032,7 +1962,7 @@ function setupVoiceInput() {
       removeEmptyVoiceTextBox()
       dictationSession.cancel()
       setVoiceListening(false)
-      showVoiceNotice('Start the local voice service to use dictation')
+      showVoiceNotice('Voice is unavailable. Start the loopback transcription service; no audio was retained.')
       return
     }
     try {
@@ -3046,67 +1976,7 @@ function setupVoiceInput() {
     }
   }
 
-  const clearScanHoldVisuals = () => {
-    clearTimeout(scanHoldTimer)
-    scanHoldTimer = null
-    elements.voiceButton.classList.remove('is-scan-holding', 'is-scan-ready')
-    elements.voiceButton.style.removeProperty('--voice-scan-hold-duration')
-  }
-
-  elements.voiceButton.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || state.listening) return
-    scanGesture.begin(event.clientX, event.clientY)
-    elements.voiceButton.classList.add('is-scan-holding')
-    elements.voiceButton.setAttribute('aria-label', 'Keep holding to scan this page')
-    elements.voiceButton.style.setProperty('--voice-scan-hold-duration', `${VOICE_SCAN_HOLD_MS}ms`)
-    try { elements.voiceButton.setPointerCapture?.(event.pointerId) } catch {}
-    scanHoldTimer = setTimeout(() => {
-      if (!scanGesture.completeHold()) return
-      elements.voiceButton.classList.add('is-scan-ready')
-      elements.voiceButton.setAttribute('aria-label', 'Release to scan this page')
-      navigator.vibrate?.(18)
-    }, VOICE_SCAN_HOLD_MS)
-  })
-
-  elements.voiceButton.addEventListener('pointermove', (event) => {
-    if (scanGesture.move(event.clientX, event.clientY)) return
-    ignoreClickUntil = performance.now() + 500
-    clearScanHoldVisuals()
-  })
-
-  elements.voiceButton.addEventListener('pointerup', (event) => {
-    if (!scanGesture.origin) return
-    const intent = scanGesture.release()
-    clearScanHoldVisuals()
-    elements.voiceButton.setAttribute('aria-label', 'Start voice dictation. Hold to scan this page')
-    try { elements.voiceButton.releasePointerCapture?.(event.pointerId) } catch {}
-    if (!intent) {
-      ignoreClickUntil = performance.now() + 500
-      event.preventDefault()
-      return
-    }
-    if (intent !== 'scan') return
-    ignoreClickUntil = performance.now() + 500
-    event.preventDefault()
-    if (elements.pageScanCard.classList.contains('open')) closePageScan()
-    void scanCurrentPage({ prioritizeSelection: false })
-  })
-
-  elements.voiceButton.addEventListener('pointercancel', () => {
-    scanGesture.reset()
-    ignoreClickUntil = performance.now() + 500
-    clearScanHoldVisuals()
-    elements.voiceButton.setAttribute('aria-label', 'Start voice dictation. Hold to scan this page')
-  })
-  elements.voiceButton.addEventListener('contextmenu', (event) => event.preventDefault())
-
-  elements.voiceButton.addEventListener('click', async (event) => {
-    if (performance.now() < ignoreClickUntil) {
-      event.preventDefault()
-      return
-    }
-    await toggleVoiceDictation()
-  })
+  elements.voiceButton.addEventListener('click', toggleVoiceDictation)
 }
 
 function closeMobileDictation() {
@@ -3200,10 +2070,10 @@ async function deleteActiveNote() {
   else await selectNote(state.notes[0].id)
 }
 
-function clearActiveNote() {
+async function clearActiveNote() {
   if (state.activeNoteType === 'mindmap') {
     if (!state.activeNoteId) return elements.clearNoteDialog.close()
-    mountActiveMindMap(structuredClone(DEFAULT_MINDMAP_DOCUMENT))
+    await mountActiveMindMap(structuredClone(DEFAULT_MINDMAP_DOCUMENT))
     queueSave()
     elements.clearNoteDialog.close()
     return
@@ -3215,7 +2085,6 @@ function clearActiveNote() {
   state.pages = { columns: 1, rows: 1 }
   resizePaper(true)
   setTool('text')
-  clearRelatedNote()
   if (commitHistorySnapshot()) queueSave()
   elements.clearNoteDialog.close()
 }
@@ -3345,26 +2214,18 @@ canvas.on('before:path:created', ({ path }) => {
   path.evented = false
 })
 
-canvas.on('path:created', ({ path }) => {
+canvas.on('path:created', () => {
   if (state.drawingGesture) state.drawingGesture.created = true
-  if (isHighlighterStroke(path)) {
-    attentionSelection = objectsUnderHighlights()
-    syncAttentionSelection()
-  }
 })
 
 canvas.on('mouse:down', (event) => {
   if (canvas.isDrawingMode) {
-    closePageScan()
-    quietContextualIntelligence()
     state.drawingGesture = {
       point: { x: event.scenePoint.x, y: event.scenePoint.y },
       tool: state.tool,
       created: false,
     }
   } else if (state.tool === 'eraser') {
-    closePageScan()
-    quietContextualIntelligence()
     updateEraserCursor(event)
     state.eraserActive = true
     state.eraserLastPoint = { x: event.scenePoint.x, y: event.scenePoint.y }
@@ -3422,8 +2283,7 @@ canvas.on('text:changed', () => {
   elements.paper.classList.remove('is-dragging')
   elements.workspace.classList.remove('is-object-dragging')
   reconcilePages()
-  scheduleContextualChecks()
-  recordHistory({ contextual: true })
+  recordHistory()
 })
 ;['object:moving', 'object:scaling', 'object:rotating'].forEach((eventName) => {
   canvas.on(eventName, expandPagesDuringTransform)
@@ -3449,12 +2309,7 @@ canvas.on('mouse:out', () => {
 })
 document.addEventListener('pointerup', finishErasing)
 ;['selection:created', 'selection:updated', 'selection:cleared'].forEach((eventName) => {
-  canvas.on(eventName, () => {
-    if (eventName === 'selection:cleared') attentionSelection = []
-    else attentionSelection = [...canvas.getActiveObjects()]
-    syncAttentionSelection()
-    syncTypographyControls()
-  })
+  canvas.on(eventName, syncTypographyControls)
 })
 
 document.querySelectorAll('[data-tool]').forEach((button) => button.addEventListener('click', () => {
@@ -3670,10 +2525,6 @@ document.querySelector('#mobile-mindmap').addEventListener('click', () => {
   setMobileCaptureMenuOpen(false)
   createNote(undefined, 'mindmap')
 })
-document.querySelector('#mobile-scan').addEventListener('click', () => {
-  setMobileCaptureMenuOpen(false)
-  document.querySelector('#page-scan-trigger').click()
-})
 document.addEventListener('pointerdown', (event) => {
   if (!mobileCaptureMenu.hidden && !mobileCaptureIsland.contains(event.target)) setMobileCaptureMenuOpen(false)
 })
@@ -3756,29 +2607,20 @@ reducedMotionSearch.addEventListener('change', () => {
   }
   setSearchRevealTarget(targetSearchReveal)
 })
-document.querySelector('#page-scan-trigger').addEventListener('click', () => {
-  if (elements.pageScanCard.classList.contains('open')) closePageScan()
-  else scanCurrentPage()
-})
 document.querySelector('#rail-print').addEventListener('click', () => openPrintPreview())
 document.querySelector('#rail-settings').addEventListener('click', () => setSettingsOpen(!elements.settings.classList.contains('open')))
 document.querySelector('#top-properties').addEventListener('click', () => setPropertiesOpen(!elements.properties.classList.contains('open')))
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#close-settings').addEventListener('click', () => setSettingsOpen(false))
-document.querySelector('#close-page-scan').addEventListener('click', closePageScan)
-elements.pageScanActions.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-scan-action]')
-  if (!button) return
-  if (button.dataset.scanAction === 'tidy-text') tidyPageText()
-  else if (button.dataset.scanAction === 'refine-drawing') refineScannedDrawing()
-  else if (button.dataset.scanAction === 'create-concept-map') acceptConceptDiagram()
-  else if (button.dataset.scanAction === 'export-calendar') downloadCalendarDraft(pageScanCalendarDrafts[0])
-  else if (button.dataset.scanAction === 'agent-proposal-decision') void decideAgentProposal(button)
+document.querySelector('#download-backup').addEventListener('click', () => {
+  void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
 })
-document.querySelector('#open-scan-source').addEventListener('click', () => {
-  const sourceId = pageScanSourceId
-  closePageScan()
-  if (sourceId) selectNote(sourceId)
+document.querySelector('#export-markdown').addEventListener('click', () => {
+  void downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip')
+})
+document.querySelector('#import-backup').addEventListener('click', () => elements.importBackupFile.click())
+elements.importBackupFile.addEventListener('change', () => {
+  void importWorkspaceFile(elements.importBackupFile.files?.[0])
 })
 document.querySelector('#close-print').addEventListener('click', closePrintPreview)
 document.querySelector('#print-note').addEventListener('click', printNote)
@@ -3841,58 +2683,8 @@ document.addEventListener('pointerdown', (event) => {
   ) setSettingsOpen(false)
 })
 elements.title.addEventListener('input', () => {
-  if (state.activeNoteType === 'mindmap') {
-    mindmapEditor?.setTitle(elements.title.value.trim())
-    queueSave()
-  } else {
-    scheduleContextualChecks()
-    queueSave({ contextual: true })
-  }
-})
-elements.intelligencePresence.addEventListener('click', () => {
-  if (state.relatedSuggestion) showRelatedNote(state.relatedSuggestion)
-})
-document.querySelector('#dismiss-intelligence').addEventListener('click', () => {
-  const suggestion = state.relatedSuggestion
-  if (suggestion) state.dismissedRelated.add(`${state.activeNoteId}:${suggestion.noteId}`)
-  publishAmbientTelemetry('dismissed', ambientTelemetry.interaction('dismiss'))
-  state.relatedSuggestion = null
-  clearRelatedNote()
-})
-document.querySelector('#open-intelligence-source').addEventListener('click', () => {
-  const sourceId = state.relatedSuggestion?.noteId
-  publishAmbientTelemetry('opened', ambientTelemetry.interaction('open'))
-  state.relatedSuggestion = null
-  clearRelatedNote()
-  if (sourceId) selectNote(sourceId)
-})
-elements.entityPresence.addEventListener('click', () => {
-  if (state.entitySuggestion) showEntityPeek(state.entitySuggestion)
-})
-document.querySelector('#dismiss-entity').addEventListener('click', () => {
-  const suggestion = state.entitySuggestion
-  if (suggestion) {
-    state.dismissedEntities.add(`${state.activeNoteId}:${suggestion.name.toLocaleLowerCase()}:${suggestion.source.noteId}`)
-  }
-  state.entitySuggestion = null
-  clearEntityPeek()
-})
-document.querySelector('#open-entity-source').addEventListener('click', () => {
-  const sourceId = state.entitySuggestion?.source.noteId
-  state.entitySuggestion = null
-  clearEntityPeek()
-  if (sourceId) selectNote(sourceId)
-})
-elements.calendarPresence.addEventListener('click', () => {
-  if (state.calendarDraft) showCalendarDraft(state.calendarDraft)
-})
-document.querySelector('#dismiss-calendar').addEventListener('click', () => {
-  if (state.calendarDraft) state.dismissedCalendarDrafts.add(calendarDraftKey(state.calendarDraft))
-  state.calendarDraft = null
-  clearCalendarDraft()
-})
-document.querySelector('#download-calendar').addEventListener('click', () => {
-  downloadCalendarDraft(state.calendarDraft)
+  if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(elements.title.value.trim())
+  queueSave()
 })
 elements.list.addEventListener('click', (event) => {
   const item = event.target.closest('[data-note-id]')
@@ -4058,5 +2850,4 @@ window.addEventListener('resize', () => {
 })
 setupVoiceInput()
 setupToolOptionGestures()
-setupToolDockMagnification()
 initialize()

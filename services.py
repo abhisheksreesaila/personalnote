@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from app_schema import initialize_schema
-from calendar_parse import parse_calendar_segments
 
 
 DEFAULT_CONTENT = {"objects": []}
@@ -36,21 +35,6 @@ NOTE_TYPES = {"canvas", "mindmap"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
-PERSON_TOKEN = r"[A-Z][A-Za-zÀ-ÖØ-öø-ÿ'-]{1,40}"
-PERSON_CUE_PATTERN = re.compile(
-    rf"\b(?i:talk(?:ed|ing)? to|meet(?:ing)? with|met with|call|email|ask|tell|spoke with|follow up with)\s+({PERSON_TOKEN}(?:\s+{PERSON_TOKEN}){{0,2}})"
-)
-PERSON_SUBJECT_PATTERN = re.compile(
-    rf"\b({PERSON_TOKEN}(?:\s+{PERSON_TOKEN})?)\s+(?i:said|says|asked|preferred|mentioned|agreed|decided|wants|needs|will|has|was)\b"
-)
-PERSON_TRAILING_WORDS = {"About", "At", "For", "Next", "On", "The", "Today", "Tomorrow", "With"}
-RELATED_STOP_WORDS = {
-    "about", "after", "again", "also", "because", "before", "being", "could",
-    "from", "have", "into", "just", "more", "note", "only", "other", "should",
-    "some", "that", "their", "them", "then", "there", "these", "they", "this",
-    "through", "very", "what", "when", "where", "which", "while", "with", "would",
-    "your",
-}
 
 
 class NotFoundError(Exception):
@@ -58,6 +42,10 @@ class NotFoundError(Exception):
 
 
 class ConflictError(Exception):
+    pass
+
+
+class WorkspaceImportError(ValueError):
     pass
 
 
@@ -256,33 +244,6 @@ class NoteService:
         return document
 
     @staticmethod
-    def extract_people(text: str) -> list[str]:
-        people = []
-        seen = set()
-        for pattern in (PERSON_CUE_PATTERN, PERSON_SUBJECT_PATTERN):
-            for match in pattern.finditer(text):
-                parts = match.group(1).strip().split()
-                while len(parts) > 1 and parts[-1] in PERSON_TRAILING_WORDS:
-                    parts.pop()
-                name = " ".join(parts)
-                normalized = name.casefold()
-                if name and normalized not in seen:
-                    people.append(name)
-                    seen.add(normalized)
-        return people
-
-    @staticmethod
-    def person_context(text: str, name: str, length: int = 180) -> str:
-        position = text.casefold().find(name.casefold())
-        start = max(0, position - 44)
-        excerpt = text[start:start + length].strip()
-        if start > 0:
-            excerpt = f"...{excerpt}"
-        if start + length < len(text):
-            excerpt = f"{excerpt}..."
-        return excerpt
-
-    @staticmethod
     def fts_query(terms, operator: str = "AND") -> str:
         escaped = [f'"{str(term).replace(chr(34), chr(34) * 2)}"' for term in terms]
         return f" {operator} ".join(escaped)
@@ -302,21 +263,10 @@ class NoteService:
             "INSERT INTO note_search (note_id, title, body) VALUES (?, ?, ?)",
             (note_id, title, body),
         )
-        connection.execute("DELETE FROM note_people WHERE note_id = ?", (note_id,))
-        combined_text = f"{title}. {body}".strip()
-        for person in cls.extract_people(combined_text):
-            connection.execute(
-                """
-                INSERT INTO note_people (note_id, name, normalized_name, context)
-                VALUES (?, ?, ?, ?)
-                """,
-                (note_id, person, person.casefold(), cls.person_context(combined_text, person)),
-            )
 
     @classmethod
     def rebuild_derived_indexes(cls, connection: sqlite3.Connection) -> None:
         connection.execute("DELETE FROM note_search")
-        connection.execute("DELETE FROM note_people")
         notes = connection.execute(
             "SELECT id, title, note_type, content FROM notes"
         ).fetchall()
@@ -338,26 +288,6 @@ class NoteService:
         }
         if note_ids != indexed_ids:
             cls.rebuild_derived_indexes(connection)
-
-    @staticmethod
-    def related_terms(text: str) -> set[str]:
-        return {
-            word.casefold()
-            for word in WORD_PATTERN.findall(text)
-            if len(word) >= 4 and word.casefold() not in RELATED_STOP_WORDS
-        }
-
-    @staticmethod
-    def related_excerpt(body: str, terms: set[str], length: int = 180) -> str:
-        folded = body.casefold()
-        positions = [folded.find(term) for term in terms if folded.find(term) >= 0]
-        start = max(0, min(positions, default=0) - 36)
-        excerpt = body[start:start + length].strip()
-        if start > 0:
-            excerpt = f"...{excerpt}"
-        if start + length < len(body):
-            excerpt = f"{excerpt}..."
-        return excerpt
 
     def notebook_exists(self, connection: sqlite3.Connection, notebook_id: int) -> bool:
         return connection.execute(
@@ -628,6 +558,145 @@ class NoteService:
             )
             connection.commit()
 
+    def workspace_snapshot(self) -> dict:
+        """Return canonical notebook and note data without local database IDs."""
+        with self.connection() as connection:
+            workspace = connection.execute(
+                "SELECT workspace_id FROM workspace_state WHERE id = 1"
+            ).fetchone()
+            notebooks = connection.execute(
+                "SELECT resource_id, name, color, created_at, updated_at FROM notebooks ORDER BY id"
+            ).fetchall()
+            notes = connection.execute(
+                "SELECT resource_id, note_type, title, content, page_state, notebook_id, created_at, updated_at FROM notes ORDER BY id"
+            ).fetchall()
+            notebook_resources = {
+                row["id"]: row["resource_id"]
+                for row in connection.execute("SELECT id, resource_id FROM notebooks")
+            }
+        return {
+            "workspaceId": workspace["workspace_id"],
+            "notebooks": [
+                {
+                    "resourceId": row["resource_id"],
+                    "name": row["name"],
+                    "color": row["color"],
+                    "createdAt": row["created_at"],
+                    "updatedAt": row["updated_at"],
+                }
+                for row in notebooks
+            ],
+            "notes": [
+                {
+                    "resourceId": row["resource_id"],
+                    "notebookResourceId": notebook_resources[row["notebook_id"]],
+                    "noteType": row["note_type"],
+                    "title": row["title"],
+                    "content": self.parse_json(row["content"], DEFAULT_CONTENT),
+                    "pageState": self.parse_json(row["page_state"], DEFAULT_PAGE_STATE),
+                    "createdAt": row["created_at"],
+                    "updatedAt": row["updated_at"],
+                }
+                for row in notes
+            ],
+        }
+
+    def import_workspace_snapshot(self, snapshot: dict) -> dict:
+        """Merge a validated backup into the workspace without overwriting data."""
+        notebooks = snapshot.get("notebooks")
+        notes = snapshot.get("notes")
+        if not isinstance(notebooks, list) or not isinstance(notes, list):
+            raise WorkspaceImportError("Backup must contain notebooks and notes")
+        if len(notebooks) > 1_000 or len(notes) > 20_000:
+            raise WorkspaceImportError("Backup exceeds the supported workspace size")
+
+        encoded_size = len(json.dumps(snapshot, ensure_ascii=False).encode("utf-8"))
+        if encoded_size > 100 * 1024 * 1024:
+            raise WorkspaceImportError("Backup exceeds the 100 MB import limit")
+
+        notebook_keys: set[str] = set()
+        for notebook in notebooks:
+            if not isinstance(notebook, dict):
+                raise WorkspaceImportError("Each notebook must be an object")
+            key = notebook.get("resourceId")
+            if not isinstance(key, str) or not key or key in notebook_keys:
+                raise WorkspaceImportError("Notebook resource IDs must be unique")
+            notebook_keys.add(key)
+        for note in notes:
+            if not isinstance(note, dict):
+                raise WorkspaceImportError("Each note must be an object")
+            if note.get("notebookResourceId") not in notebook_keys:
+                raise WorkspaceImportError("Every note must reference an included notebook")
+            if note.get("noteType", "canvas") not in NOTE_TYPES:
+                raise WorkspaceImportError("Backup contains an unsupported note type")
+            if not isinstance(note.get("content"), dict):
+                raise WorkspaceImportError("Every note must contain a document object")
+
+        imported_notebooks: dict[str, int] = {}
+        imported_note_ids: list[int] = []
+        with self.connection() as connection:
+            reserved_ids = self.reserved_block_ids(connection, -1)
+            for notebook in notebooks:
+                name = str(notebook.get("name") or "Imported notebook").strip()[:80]
+                color_value = notebook.get("color")
+                color = color_value if isinstance(color_value, str) and NOTEBOOK_COLOR_PATTERN.fullmatch(color_value) else DEFAULT_NOTEBOOK_COLOR
+                resource_id = self.new_resource_id()
+                cursor = connection.execute(
+                    "INSERT INTO notebooks (resource_id, name, color) VALUES (?, ?, ?)",
+                    (resource_id, name or "Imported notebook", color),
+                )
+                imported_notebooks[notebook["resourceId"]] = cursor.lastrowid
+                self.record_change(connection, "notebook", resource_id, 1, "created")
+
+            for note in notes:
+                note_type = note.get("noteType", "canvas")
+                document = json.loads(json.dumps(note["content"]))
+                if note_type == "mindmap":
+                    document = self.normalize_mindmap_document(document)
+                else:
+                    document, _ = self.normalize_canvas_document(document, reserved_ids)
+                    reserved_ids.update(
+                        item["semanticId"]
+                        for item in document.get("objects", [])
+                        if isinstance(item, dict) and isinstance(item.get("semanticId"), str)
+                    )
+                page_state_value = note.get("pageState")
+                page_state = page_state_value if isinstance(page_state_value, dict) else DEFAULT_PAGE_STATE
+                title = str(note.get("title") or "Untitled note")[:180]
+                resource_id = self.new_resource_id()
+                cursor = connection.execute(
+                    """
+                    INSERT INTO notes
+                        (resource_id, note_type, title, content, page_state, notebook_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        resource_id,
+                        note_type,
+                        title,
+                        json.dumps(document, separators=(",", ":")),
+                        json.dumps(page_state, separators=(",", ":")),
+                        imported_notebooks[note["notebookResourceId"]],
+                    ),
+                )
+                note_id = cursor.lastrowid
+                imported_note_ids.append(note_id)
+                self.index_note(
+                    connection,
+                    note_id,
+                    title,
+                    json.dumps(document, separators=(",", ":")),
+                    note_type,
+                )
+                self.record_change(connection, "note", resource_id, 1, "created")
+            connection.commit()
+        return {
+            "mode": "merge",
+            "notebooksImported": len(imported_notebooks),
+            "notesImported": len(imported_note_ids),
+            "noteIds": imported_note_ids,
+        }
+
     def search(self, query: str) -> list[dict]:
         terms = WORD_PATTERN.findall(query.strip())
         if not terms:
@@ -660,127 +729,3 @@ class NoteService:
             }
             for note in rows
         ]
-
-    def find_people(self, text: str, exclude_note_id: int | None = None) -> list[dict]:
-        people = self.extract_people(text)[:4]
-        if not people:
-            return []
-        matches = []
-        with self.connection() as connection:
-            for person in people:
-                rows = connection.execute(
-                    """
-                    SELECT note_people.name, note_people.context, notes.id, notes.title,
-                      notes.updated_at, notebooks.name AS notebook_name,
-                      notebooks.color AS notebook_color
-                    FROM note_people
-                    JOIN notes ON notes.id = note_people.note_id
-                    JOIN notebooks ON notebooks.id = notes.notebook_id
-                    WHERE note_people.normalized_name = ?
-                      AND (? IS NULL OR notes.id != ?)
-                    ORDER BY notes.updated_at DESC, notes.id DESC
-                    LIMIT 4
-                    """,
-                    (person.casefold(), exclude_note_id, exclude_note_id),
-                ).fetchall()
-                if not rows:
-                    continue
-                matches.append(
-                    {
-                        "name": rows[0]["name"],
-                        "sourceCount": len(rows),
-                        "sources": [
-                            {
-                                "noteId": row["id"],
-                                "title": row["title"],
-                                "context": row["context"],
-                                "notebookName": row["notebook_name"],
-                                "notebookColor": row["notebook_color"],
-                                "sourceUpdatedAt": row["updated_at"],
-                            }
-                            for row in rows
-                        ],
-                    }
-                )
-        return matches
-
-    def related_candidates(self, note_id: int, current_text: str) -> list[dict]:
-        current_terms = self.related_terms(current_text)
-        if len(current_terms) < 2:
-            return []
-        match_query = self.fts_query(sorted(current_terms), "OR")
-        with self.connection() as connection:
-            rows = connection.execute(
-                """
-                SELECT notes.*, notebooks.name AS notebook_name, notebooks.color AS notebook_color,
-                  note_search.body AS indexed_body
-                FROM note_search
-                JOIN notes ON notes.id = CAST(note_search.note_id AS INTEGER)
-                JOIN notebooks ON notebooks.id = notes.notebook_id
-                WHERE note_search MATCH ? AND notes.id != ?
-                ORDER BY bm25(note_search), notes.updated_at DESC
-                LIMIT 40
-                """,
-                (match_query, note_id),
-            ).fetchall()
-
-        candidates = []
-        for note in rows:
-            body = note["indexed_body"]
-            body_terms = self.related_terms(body)
-            title_terms = self.related_terms(note["title"])
-            shared_body = current_terms & body_terms
-            shared_title = current_terms & title_terms
-            shared_terms = shared_body | shared_title
-            score = len(shared_body) + len(shared_title) * 2
-            if score < 2 or len(shared_terms) < 2:
-                continue
-            labels = sorted(shared_terms, key=lambda term: (-len(term), term))[:3]
-            display_labels = []
-            for label in labels:
-                original = re.search(rf"\b{re.escape(label)}\b", current_text, re.IGNORECASE)
-                display_labels.append(original.group(0) if original else label)
-            reason = f"Connected through {', '.join(display_labels[:-1])} and {display_labels[-1]}." if len(display_labels) > 1 else f"Connected through {display_labels[0]}."
-            candidates.append(
-                {
-                    "noteId": note["id"],
-                    "title": note["title"],
-                    "notebookName": note["notebook_name"],
-                    "notebookColor": note["notebook_color"],
-                    "excerpt": self.related_excerpt(body, shared_terms),
-                    "reason": reason,
-                    "sourceUpdatedAt": note["updated_at"],
-                    "score": score,
-                    "confidence": min(0.96, 0.48 + score * 0.09),
-                    "mode": "local-retrieval",
-                }
-            )
-        return sorted(candidates, key=lambda item: (-item["score"], item["sourceUpdatedAt"]))[:5]
-
-    def scan_page(
-        self,
-        note_id: int,
-        text: str,
-        segments: list[str],
-        focus_segments: list[str],
-        text_object_count: int,
-        focused_text_count: int,
-    ) -> dict:
-        calendar_drafts = parse_calendar_segments(segments, focus_segments)
-        people = self.find_people(text, note_id)
-        candidates = self.related_candidates(note_id, text)
-        related = candidates[0] if candidates else None
-        tidy_focused = focused_text_count >= 2
-        tidy_count = focused_text_count if tidy_focused else text_object_count
-        return {
-            "calendarDrafts": calendar_drafts,
-            "people": people,
-            "related": related,
-            "relatedCandidates": candidates,
-            "actions": {
-                "canTidy": text_object_count >= 2,
-                "tidyFocused": tidy_focused,
-                "tidyCount": tidy_count,
-            },
-            "mode": "local-retrieval",
-        }
