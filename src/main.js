@@ -2600,7 +2600,31 @@ document.querySelector('#mobile-dictate').addEventListener('click', () => {
   setMobileCaptureMenuOpen(false)
   elements.mobileTranscript.focus()
 })
-elements.mobileSpeak.addEventListener('click', () => toggleVoiceDictation())
+let mobileSpeakHoldTimer
+let suppressMobileSpeakClick = false
+elements.mobileSpeak.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || state.listening) return
+  mobileSpeakHoldTimer = setTimeout(() => {
+    mobileSpeakHoldTimer = null
+    suppressMobileSpeakClick = true
+    toggleVoiceDictation()
+  }, 300)
+})
+;['pointerup', 'pointercancel', 'pointerleave'].forEach((eventName) => elements.mobileSpeak.addEventListener(eventName, () => {
+  if (mobileSpeakHoldTimer) {
+    clearTimeout(mobileSpeakHoldTimer)
+    mobileSpeakHoldTimer = null
+    return
+  }
+  if (suppressMobileSpeakClick && state.listening) toggleVoiceDictation()
+}))
+elements.mobileSpeak.addEventListener('click', () => {
+  if (suppressMobileSpeakClick) {
+    suppressMobileSpeakClick = false
+    return
+  }
+  toggleVoiceDictation()
+})
 document.querySelector('#mobile-draw').addEventListener('click', () => {
   setMobileCaptureMenuOpen(false)
   setTool('pen')
