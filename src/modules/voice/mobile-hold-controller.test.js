@@ -16,6 +16,22 @@ test('starts voice capture on a primary press and finalizes it on release', asyn
   assert.deepEqual(events, ['start', 'finish'])
 })
 
+test('waits for capture startup before finalizing a released hold', async () => {
+  const events = []
+  let resolveStart
+  const controller = createMobileHoldController({
+    start: () => new Promise((resolve) => { resolveStart = () => { events.push('start'); resolve() } }),
+    finish: async () => events.push('finish'),
+  })
+
+  const press = controller.press({ button: 0 })
+  const release = controller.release()
+  resolveStart()
+  await Promise.all([press, release])
+
+  assert.deepEqual(events, ['start', 'finish'])
+})
+
 test('does not start capture for a non-primary press', async () => {
   const events = []
   const controller = createMobileHoldController({
