@@ -6,6 +6,7 @@ import { api, downloadWorkspaceFile } from './core/api.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
 import { pageBoundedTextLayout } from './modules/voice/text-layout.js'
+import { flushPendingHistory } from './modules/editor/history.js'
 import { prettifySelection } from './modules/editor/prettify.js'
 
 const PAGE_WIDTH = 860
@@ -1671,9 +1672,17 @@ function prettifyActiveNote() {
   const hasSelection = activeText && activeText.selectionStart !== activeText.selectionEnd
   const textObjects = hasSelection ? [activeText] : canvas.getObjects().filter(isEditableText)
   let changed = false
+  let historyFlushed = false
   textObjects.forEach((text) => {
     const selection = prettifySelection(text.text, text.selectionStart, text.selectionEnd)
     if (selection.text === text.text) return
+    if (!historyFlushed) {
+      flushPendingHistory({
+        cancel: () => clearTimeout(historyTimer),
+        commit: commitHistorySnapshot,
+      })
+      historyFlushed = true
+    }
     text.set('text', selection.text)
     text.initDimensions()
     text.setCoords()
@@ -1687,7 +1696,6 @@ function prettifyActiveNote() {
   if (!changed) return
   reconcilePages()
   canvas.requestRenderAll()
-  clearTimeout(historyTimer)
   if (commitHistorySnapshot()) queueSave()
   syncMobileTranscript()
 }
