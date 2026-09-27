@@ -1668,7 +1668,8 @@ function syncTypographyControls() {
 function prettifyActiveNote() {
   if (state.activeNoteType !== 'canvas') return
   const activeText = selectedTextObject()
-  const textObjects = activeText ? [activeText] : canvas.getObjects().filter(isEditableText)
+  const hasSelection = activeText && activeText.selectionStart !== activeText.selectionEnd
+  const textObjects = hasSelection ? [activeText] : canvas.getObjects().filter(isEditableText)
   let changed = false
   textObjects.forEach((text) => {
     const selection = prettifySelection(text.text, text.selectionStart, text.selectionEnd)
@@ -1677,8 +1678,9 @@ function prettifyActiveNote() {
     text.initDimensions()
     text.setCoords()
     if (text === activeText && text.isEditing) {
-      text.setSelectionStart(selection.start)
-      text.setSelectionEnd(selection.end)
+      const caret = hasSelection ? selection.start : Math.min(text.selectionStart, selection.text.length)
+      text.setSelectionStart(caret)
+      text.setSelectionEnd(hasSelection ? selection.end : caret)
     }
     changed = true
   })
