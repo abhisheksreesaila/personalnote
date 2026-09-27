@@ -42,7 +42,7 @@ python main.py
 - Print preview with one physical sheet per logical canvas page
 - Whole-workspace JSON backup and non-destructive import
 - Readable Markdown-plus-assets ZIP export
-- Omarchy-inspired, screen-only workspace chrome; saved canvas content and printed output are unchanged
+- Screen-only dark neutral/violet workspace chrome; saved canvas content and printed output are unchanged
 
 ## Internal module boundaries
 
@@ -69,7 +69,7 @@ npm run voice:start
 
 If the loopback service is unavailable, the interface says so. When the browser offers `SpeechRecognition`, Personal Note explicitly labels that fallback as browser voice; provider and network behavior then follow the browser's own privacy policy. If neither path is available, capture stops and the note remains unchanged.
 
-Mobile browser dictation uses the operating-system keyboard through the text entry dialog. Desktop remains the v1 release target.
+On screens at or below 560px, the white paper canvas is the only capture surface. Hold **Hold to speak** to stream and finalize into selected canvas text (or a new text object); **Draw** explicitly enables the pen. Desktop remains the v1 release target.
 
 ## Backup, export, and restore
 

@@ -5,6 +5,7 @@ import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
+import { createMobileHoldController } from './modules/voice/mobile-hold-controller.js'
 import { pageBoundedTextLayout } from './modules/voice/text-layout.js'
 import { flushPendingHistory } from './modules/editor/history.js'
 import { prettifySelection } from './modules/editor/prettify.js'
@@ -147,18 +148,9 @@ document.querySelector('#app').innerHTML = `
             <button class="tool-button" id="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
           </div>
         </div>
-        <section class="mobile-capture-composer" aria-label="Quick text capture">
-          <label for="mobile-transcript">Quick capture</label>
-          <textarea id="mobile-transcript" rows="3" enterkeyhint="done" autocapitalize="sentences" placeholder="Type a thought…"></textarea>
-        </section>
-        <button class="mobile-speak-button" id="mobile-speak" title="Tap or hold to speak" aria-label="Tap or hold to speak" aria-pressed="false"><i data-lucide="mic"></i></button>
-        <div class="mobile-capture-island" id="mobile-capture-island">
-          <button class="mobile-new-note hold-create-button" id="mobile-new-note" title="New note - hold for more" aria-label="Create new note. Press and hold for more capture options" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square-pen"></i></button>
-          <div class="mobile-capture-menu" id="mobile-capture-menu" hidden>
-            <button id="mobile-mindmap" aria-label="Create a mind map note"><span class="mobile-action-icon"><i data-lucide="git-fork"></i></span><span class="mobile-action-label">Mind map</span></button>
-            <button id="mobile-dictate" aria-label="Dictate into this note"><span class="mobile-action-icon"><i data-lucide="mic"></i></span><span class="mobile-action-label">Dictate</span></button>
-            <button id="mobile-draw" aria-label="Draw on this note"><span class="mobile-action-icon"><i data-lucide="pencil"></i></span><span class="mobile-action-label">Draw</span></button>
-          </div>
+        <div class="mobile-capture-controls" aria-label="Canvas capture controls">
+          <button class="mobile-draw-button" id="mobile-draw" aria-label="Enable drawing"><i data-lucide="pencil"></i><span>Draw</span></button>
+          <button class="mobile-speak-button" id="mobile-speak" title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
         </div>
         <section class="ink-options-popover" id="ink-options-popover" role="dialog" aria-label="Ink options" hidden>
           <div class="ink-options-heading">
@@ -356,25 +348,8 @@ document.querySelector('#app').innerHTML = `
     </form>
   </dialog>
 
-  <dialog class="notebook-dialog mobile-dictation-dialog" id="mobile-dictation-dialog" aria-labelledby="mobile-dictation-title">
-    <form id="mobile-dictation-form">
-      <div class="dialog-heading-row">
-        <div>
-          <p class="dialog-eyebrow">Phone keyboard</p>
-          <h2 id="mobile-dictation-title">Dictation</h2>
-        </div>
-        <button class="icon-button" id="close-mobile-dictation" type="button" aria-label="Cancel dictation"><i data-lucide="x"></i></button>
-      </div>
-      <textarea id="mobile-dictation-text" rows="7" enterkeyhint="done" autocapitalize="sentences" placeholder="Speak or type..."></textarea>
-      <div class="dialog-actions">
-        <button class="dialog-cancel" id="cancel-mobile-dictation" type="button">Cancel</button>
-        <button class="dialog-primary" type="submit">Add to note</button>
-      </div>
-    </form>
-  </dialog>
   <style id="editor-polish-screen">
-    .writing-guide{position:absolute;z-index:1;pointer-events:none;opacity:.28;background:repeating-linear-gradient(to bottom,transparent 0 calc(1.45em - 1px),#8ca1a0 calc(1.45em - 1px) 1.45em)}.writing-guide[hidden],.mobile-capture-composer,.mobile-speak-button{display:none}
-    @media screen and (max-width:560px){.workspace{padding:118px 12px 196px}.mobile-capture-composer{position:fixed;z-index:14;left:12px;right:12px;bottom:calc(80px + env(safe-area-inset-bottom));display:grid;gap:5px;padding:10px 12px;border:1px solid rgba(99,86,67,.2);border-radius:8px;color:var(--ink);background:rgba(255,254,250,.98);box-shadow:0 8px 24px rgba(54,50,42,.14)}.mobile-capture-composer label{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.mobile-capture-composer textarea{width:100%;min-height:64px;resize:none;padding:0;border:0;outline:0;color:var(--ink);background:transparent;font:400 16px/1.45 "Source Serif 4",serif}.mobile-speak-button{position:fixed;z-index:22;right:12px;bottom:max(12px,env(safe-area-inset-bottom));width:56px;height:56px;display:grid;place-items:center;padding:0;border:1px solid var(--accent);border-radius:50%;color:#fff;background:var(--accent);box-shadow:0 6px 20px rgba(54,50,42,.2);cursor:pointer}.mobile-speak-button.active{background:var(--green);border-color:var(--green)}.mobile-speak-button svg{width:22px;height:22px}.mobile-capture-island,.mobile-new-note{width:56px;height:56px}.tool-dock{left:50%;bottom:max(12px,env(safe-area-inset-bottom))}.topbar .icon-button,.topbar .properties-trigger,.search-button,.page-count{min-width:44px;min-height:44px}.mobile-editor-back{width:44px!important;height:44px!important;flex-basis:44px!important}}
+    .writing-guide{position:absolute;z-index:1;pointer-events:none;opacity:.28;background:repeating-linear-gradient(to bottom,transparent 0 calc(1.45em - 1px),#8ca1a0 calc(1.45em - 1px) 1.45em)}.writing-guide[hidden]{display:none}
   </style>
 `
 
@@ -400,9 +375,6 @@ const elements = {
   searchResults: document.querySelector('#search-results'),
   notebookDialog: document.querySelector('#notebook-dialog'),
   clearNoteDialog: document.querySelector('#clear-note-dialog'),
-  mobileDictationDialog: document.querySelector('#mobile-dictation-dialog'),
-  mobileDictationText: document.querySelector('#mobile-dictation-text'),
-  mobileTranscript: document.querySelector('#mobile-transcript'),
   mobileSpeak: document.querySelector('#mobile-speak'),
   notebookForm: document.querySelector('#notebook-form'),
   notebookName: document.querySelector('#notebook-name'),
@@ -1388,7 +1360,6 @@ async function restoreHistory(index) {
   await canvas.loadFromJSON(entry.content)
   bindCanvasTextObjects()
   setTool('text')
-  syncMobileTranscript()
   state.loading = false
   canvas.requestRenderAll()
   queueSave()
@@ -1428,7 +1399,6 @@ async function selectNote(id) {
       normalizedNote = reconcilePages(true) || normalizedNote
       state.history = [snapshot()]
       state.historyIndex = 0
-      syncMobileTranscript()
       setTool('text')
     }
     setSaveState('Saved')
@@ -1648,12 +1618,6 @@ function selectedTextObject() {
   return isEditableText(active) ? active : null
 }
 
-function syncMobileTranscript() {
-  if (window.innerWidth > 560) return
-  const text = selectedTextObject() || canvas.getObjects().find(isEditableText)
-  elements.mobileTranscript.value = text?.text || ''
-}
-
 function syncTypographyControls() {
   const text = selectedTextObject()
   const fontFamily = text?.fontFamily || state.fontFamily
@@ -1697,7 +1661,6 @@ function prettifyActiveNote() {
   reconcilePages()
   canvas.requestRenderAll()
   if (commitHistorySnapshot()) queueSave()
-  syncMobileTranscript()
 }
 
 function applyTypography(property, value) {
@@ -1812,7 +1775,7 @@ function setVoiceListening(listening, message = 'Listening') {
   elements.voiceButton.setAttribute('aria-label', listening ? 'Stop voice dictation' : 'Start voice dictation')
   elements.mobileSpeak.classList.toggle('active', listening)
   elements.mobileSpeak.setAttribute('aria-pressed', String(listening))
-  elements.mobileSpeak.setAttribute('aria-label', listening ? 'Stop speaking' : 'Tap or hold to speak')
+  elements.mobileSpeak.setAttribute('aria-label', listening ? 'Release to finish speaking' : 'Hold to speak')
   elements.paper.classList.toggle('voice-listening', listening)
   elements.voiceCaption.hidden = !listening
   elements.voiceStatus.textContent = message
@@ -1828,6 +1791,8 @@ function voiceInsertPoint() {
 }
 
 function createVoiceTextBox() {
+  const selected = selectedTextObject()
+  if (selected) return selected
   const layout = pageBoundedTextLayout(voiceInsertPoint(), { pageWidth: PAGE_WIDTH })
   const text = new Textbox('', {
     left: layout.x,
@@ -2056,42 +2021,6 @@ function setupVoiceInput() {
 
   elements.voiceButton.addEventListener('click', toggleVoiceDictation)
 }
-
-function closeMobileDictation() {
-  dictationSession.cancel()
-  elements.mobileDictationText.value = ''
-  elements.mobileDictationDialog.close()
-}
-
-function openMobileDictation() {
-  dictationSession.start(selectedTextObject())
-  elements.mobileDictationText.value = ''
-  elements.mobileDictationDialog.showModal()
-  requestAnimationFrame(() => elements.mobileDictationText.focus())
-}
-
-document.querySelector('#mobile-dictation-form').addEventListener('submit', (event) => {
-  event.preventDefault()
-  const transcript = elements.mobileDictationText.value.trim()
-  if (!transcript) return
-  insertVoiceTranscript(transcript)
-  dictationSession.finish()
-  elements.mobileDictationText.value = ''
-  elements.mobileDictationDialog.close()
-})
-document.querySelector('#close-mobile-dictation').addEventListener('click', closeMobileDictation)
-document.querySelector('#cancel-mobile-dictation').addEventListener('click', closeMobileDictation)
-elements.mobileTranscript.addEventListener('input', () => {
-  if (state.activeNoteType !== 'canvas') return
-  const text = selectedTextObject() || canvas.getObjects().find(isEditableText) || addText({ x: 72, y: 72 }, '', false)
-  text.set('text', elements.mobileTranscript.value)
-  text.initDimensions()
-  text.setCoords()
-  canvas.setActiveObject(text)
-  reconcilePages()
-  canvas.requestRenderAll()
-  recordHistory()
-})
 
 function renderSearchResults(results, query = '') {
   if (!results.length) {
@@ -2549,103 +2478,32 @@ document.addEventListener('pointerdown', (event) => {
   }
 })
 
-const mobileCaptureIsland = document.querySelector('#mobile-capture-island')
-const mobileCaptureMenu = document.querySelector('#mobile-capture-menu')
-const mobileNewNote = document.querySelector('#mobile-new-note')
-const MOBILE_ACTION_HOLD_MS = 450
-const MOBILE_ACTION_MOVE_TOLERANCE = 12
-let mobileActionHoldTimer = null
-let mobileActionHoldOrigin = null
-let suppressMobileNewNoteClick = false
+const mobileHoldController = createMobileHoldController({
+  start: async () => {
+    if (!state.listening) await toggleVoiceDictation()
+  },
+  finish: async () => {
+    if (state.listening) await toggleVoiceDictation()
+  },
+  cancel: async () => {
+    if (state.listening) await toggleVoiceDictation()
+  },
+})
 
-function setMobileCaptureMenuOpen(open) {
-  mobileCaptureMenu.hidden = !open
-  mobileNewNote.setAttribute('aria-expanded', String(open))
-  mobileCaptureIsland.classList.toggle('menu-open', open)
-}
-
-function cancelMobileActionHold() {
-  clearTimeout(mobileActionHoldTimer)
-  mobileActionHoldTimer = null
-  mobileActionHoldOrigin = null
-  mobileNewNote.classList.remove('is-pressing')
-}
-
-mobileNewNote.addEventListener('pointerdown', (event) => {
+elements.mobileSpeak.addEventListener('pointerdown', async (event) => {
   if (event.button !== 0) return
-  cancelMobileActionHold()
-  mobileNewNote.setPointerCapture(event.pointerId)
-  mobileActionHoldOrigin = { x: event.clientX, y: event.clientY }
-  mobileNewNote.classList.add('is-pressing')
-  mobileActionHoldTimer = setTimeout(() => {
-    suppressMobileNewNoteClick = true
-    setMobileCaptureMenuOpen(true)
-    mobileNewNote.classList.remove('is-pressing')
-    navigator.vibrate?.(12)
-  }, MOBILE_ACTION_HOLD_MS)
-})
-mobileNewNote.addEventListener('pointermove', (event) => {
-  if (!mobileActionHoldOrigin) return
-  const moved = Math.hypot(event.clientX - mobileActionHoldOrigin.x, event.clientY - mobileActionHoldOrigin.y)
-  if (moved > MOBILE_ACTION_MOVE_TOLERANCE) cancelMobileActionHold()
-})
-mobileNewNote.addEventListener('pointerup', cancelMobileActionHold)
-mobileNewNote.addEventListener('pointercancel', cancelMobileActionHold)
-mobileNewNote.addEventListener('contextmenu', (event) => {
   event.preventDefault()
-  suppressMobileNewNoteClick = true
-  cancelMobileActionHold()
-  setMobileCaptureMenuOpen(true)
+  elements.mobileSpeak.setPointerCapture?.(event.pointerId)
+  await mobileHoldController.press(event)
 })
-mobileNewNote.addEventListener('click', (event) => {
-  if (suppressMobileNewNoteClick) {
-    event.preventDefault()
-    suppressMobileNewNoteClick = false
-    return
-  }
-  setMobileCaptureMenuOpen(false)
-  createNote()
+elements.mobileSpeak.addEventListener('pointerup', async (event) => {
+  event.preventDefault()
+  elements.mobileSpeak.releasePointerCapture?.(event.pointerId)
+  await mobileHoldController.release()
 })
-document.querySelector('#mobile-dictate').addEventListener('click', () => {
-  setMobileCaptureMenuOpen(false)
-  elements.mobileTranscript.focus()
-})
-let mobileSpeakHoldTimer
-let suppressMobileSpeakClick = false
-elements.mobileSpeak.addEventListener('pointerdown', (event) => {
-  if (event.button !== 0 || state.listening) return
-  mobileSpeakHoldTimer = setTimeout(() => {
-    mobileSpeakHoldTimer = null
-    suppressMobileSpeakClick = true
-    toggleVoiceDictation()
-  }, 300)
-})
-;['pointerup', 'pointercancel', 'pointerleave'].forEach((eventName) => elements.mobileSpeak.addEventListener(eventName, () => {
-  if (mobileSpeakHoldTimer) {
-    clearTimeout(mobileSpeakHoldTimer)
-    mobileSpeakHoldTimer = null
-    return
-  }
-  if (suppressMobileSpeakClick && state.listening) toggleVoiceDictation()
-}))
-elements.mobileSpeak.addEventListener('click', () => {
-  if (suppressMobileSpeakClick) {
-    suppressMobileSpeakClick = false
-    return
-  }
-  toggleVoiceDictation()
-})
-document.querySelector('#mobile-draw').addEventListener('click', () => {
-  setMobileCaptureMenuOpen(false)
-  setTool('pen')
-})
-document.querySelector('#mobile-mindmap').addEventListener('click', () => {
-  setMobileCaptureMenuOpen(false)
-  createNote(undefined, 'mindmap')
-})
-document.addEventListener('pointerdown', (event) => {
-  if (!mobileCaptureMenu.hidden && !mobileCaptureIsland.contains(event.target)) setMobileCaptureMenuOpen(false)
-})
+elements.mobileSpeak.addEventListener('pointercancel', async () => mobileHoldController.cancel())
+elements.mobileSpeak.addEventListener('contextmenu', (event) => event.preventDefault())
+document.querySelector('#mobile-draw').addEventListener('click', () => setTool('pen'))
 const searchButton = document.querySelector('#search-button')
 const SEARCH_REVEAL_LERP = 0.18
 const SEARCH_HIDE_DISTANCE = 52

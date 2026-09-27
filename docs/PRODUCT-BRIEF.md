@@ -40,8 +40,8 @@ V1 is a notebook product, not an assistant product. It ships no automatic sugges
 | Voice | Loopback local transcription plus labeled browser fallback; editable final transcript only |
 | Portability | Versioned JSON workspace backup, transactional merge import, Markdown-plus-assets ZIP |
 | Print | Canvas-to-paper preview and browser printing, unaffected by the screen theme |
-| Theme | Flat green-black shell, monospaced controls, restrained focus states, responsive layout |
-| Small screens | Capture-first editable field, explicit 56px voice activation, and deliberate secondary canvas tools |
+| Theme | Screen-only dark neutral/violet shell, monospaced controls, restrained focus states, responsive layout |
+| Small screens | White paper is the only capture surface; explicit 56px hold-to-speak and 54px Draw controls avoid accidental capture |
 
 ## Voice retention decision
 
