@@ -2,6 +2,22 @@
  * Apply mechanical, reversible formatting without interpreting note content.
  * Callers decide whether this operates on a selection or an entire text object.
  */
+export function prettifySelection(value, start, end) {
+  const text = String(value)
+  const selectionStart = Math.max(0, Math.min(text.length, Number(start) || 0))
+  const selectionEnd = Math.max(selectionStart, Math.min(text.length, Number(end) || 0))
+  const selected = selectionStart === selectionEnd ? text : text.slice(selectionStart, selectionEnd)
+  const formatted = prettifyText(selected)
+  const nextText = selectionStart === selectionEnd
+    ? formatted
+    : `${text.slice(0, selectionStart)}${formatted}${text.slice(selectionEnd)}`
+  return {
+    text: nextText,
+    start: selectionStart,
+    end: selectionStart + formatted.length,
+  }
+}
+
 export function prettifyText(value) {
   const lines = String(value).replaceAll('\r\n', '\n').split('\n')
   const formatted = lines.map((line) => {

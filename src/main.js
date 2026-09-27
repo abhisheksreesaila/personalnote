@@ -6,6 +6,7 @@ import { api, downloadWorkspaceFile } from './core/api.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
 import { pageBoundedTextLayout } from './modules/voice/text-layout.js'
+import { prettifySelection } from './modules/editor/prettify.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
@@ -140,10 +141,16 @@ document.querySelector('#app').innerHTML = `
           <button class="tool-button ink-options-trigger" id="ink-options-trigger" title="Ink options" aria-label="Open ink options" aria-haspopup="dialog" aria-expanded="false"><span class="ink-options-dot" id="ink-options-dot"></span></button>
           <div class="dock-divider"></div>
           <div class="tool-group">
+            <button class="tool-button prettify-button" id="prettify" title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
             <button class="tool-button" id="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
             <button class="tool-button" id="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
           </div>
         </div>
+        <section class="mobile-capture-composer" aria-label="Quick text capture">
+          <label for="mobile-transcript">Quick capture</label>
+          <textarea id="mobile-transcript" rows="3" enterkeyhint="done" autocapitalize="sentences" placeholder="Type a thought…"></textarea>
+        </section>
+        <button class="mobile-speak-button" id="mobile-speak" title="Tap or hold to speak" aria-label="Tap or hold to speak" aria-pressed="false"><i data-lucide="mic"></i></button>
         <div class="mobile-capture-island" id="mobile-capture-island">
           <button class="mobile-new-note hold-create-button" id="mobile-new-note" title="New note - hold for more" aria-label="Create new note. Press and hold for more capture options" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square-pen"></i></button>
           <div class="mobile-capture-menu" id="mobile-capture-menu" hidden>
@@ -172,6 +179,7 @@ document.querySelector('#app').innerHTML = `
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
 
         <div class="paper" id="paper">
+          <div class="writing-guide" id="writing-guide" aria-hidden="true"></div>
           <canvas id="note-canvas"></canvas>
         </div>
         <div class="mindmap-host" id="mindmap-host" hidden></div>
@@ -363,6 +371,10 @@ document.querySelector('#app').innerHTML = `
       </div>
     </form>
   </dialog>
+  <style id="editor-polish-screen">
+    .writing-guide{position:absolute;z-index:1;pointer-events:none;opacity:.28;background:repeating-linear-gradient(to bottom,transparent 0 calc(1.45em - 1px),#8ca1a0 calc(1.45em - 1px) 1.45em)}.writing-guide[hidden],.mobile-capture-composer,.mobile-speak-button{display:none}
+    @media screen and (max-width:560px){.workspace{padding:118px 12px 196px}.mobile-capture-composer{position:fixed;z-index:14;left:12px;right:12px;bottom:calc(80px + env(safe-area-inset-bottom));display:grid;gap:5px;padding:10px 12px;border:1px solid rgba(99,86,67,.2);border-radius:8px;color:var(--ink);background:rgba(255,254,250,.98);box-shadow:0 8px 24px rgba(54,50,42,.14)}.mobile-capture-composer label{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.mobile-capture-composer textarea{width:100%;min-height:64px;resize:none;padding:0;border:0;outline:0;color:var(--ink);background:transparent;font:400 16px/1.45 "Source Serif 4",serif}.mobile-speak-button{position:fixed;z-index:22;right:12px;bottom:max(12px,env(safe-area-inset-bottom));width:56px;height:56px;display:grid;place-items:center;padding:0;border:1px solid var(--accent);border-radius:50%;color:#fff;background:var(--accent);box-shadow:0 6px 20px rgba(54,50,42,.2);cursor:pointer}.mobile-speak-button.active{background:var(--green);border-color:var(--green)}.mobile-speak-button svg{width:22px;height:22px}.mobile-capture-island,.mobile-new-note{width:56px;height:56px}.tool-dock{left:50%;bottom:max(12px,env(safe-area-inset-bottom))}.topbar .icon-button,.topbar .properties-trigger,.search-button,.page-count{min-width:44px;min-height:44px}.mobile-editor-back{width:44px!important;height:44px!important;flex-basis:44px!important}}
+  </style>
 `
 
 createIcons({ icons })
@@ -371,6 +383,7 @@ const elements = {
   shell: document.querySelector('.app-shell'),
   workspace: document.querySelector('#workspace'),
   paper: document.querySelector('#paper'),
+  writingGuide: document.querySelector('#writing-guide'),
   mindmapHost: document.querySelector('#mindmap-host'),
   title: document.querySelector('#note-title'),
   list: document.querySelector('#notebook-navigator'),
@@ -388,6 +401,8 @@ const elements = {
   clearNoteDialog: document.querySelector('#clear-note-dialog'),
   mobileDictationDialog: document.querySelector('#mobile-dictation-dialog'),
   mobileDictationText: document.querySelector('#mobile-dictation-text'),
+  mobileTranscript: document.querySelector('#mobile-transcript'),
+  mobileSpeak: document.querySelector('#mobile-speak'),
   notebookForm: document.querySelector('#notebook-form'),
   notebookName: document.querySelector('#notebook-name'),
   sidebarToggle: document.querySelector('#toggle-sidebar'),
@@ -884,10 +899,25 @@ function findEditableTextAt(point) {
   ))
 }
 
+function showWritingGuide(text) {
+  const scale = getCanvasScale()
+  elements.writingGuide.style.left = `${text.left * scale}px`
+  elements.writingGuide.style.top = `${(text.top + text.padding) * scale}px`
+  elements.writingGuide.style.width = `${Math.max(120, text.getScaledWidth() * scale)}px`
+  elements.writingGuide.style.height = `${Math.max(text.fontSize * text.lineHeight * scale, text.getScaledHeight() * scale)}px`
+  elements.writingGuide.hidden = false
+}
+
+function hideWritingGuide() {
+  elements.writingGuide.hidden = true
+}
+
 function bindTextEditingLifecycle(text) {
   if (text.__personalNoteTextBound) return
   text.__personalNoteTextBound = true
+  text.on('editing:entered', () => showWritingGuide(text))
   text.on('editing:exited', () => {
+    hideWritingGuide()
     if (isPlaceholderText(text.text) && canvas.getObjects().includes(text)) {
       canvas.remove(text)
       canvas.discardActiveObject()
@@ -1356,7 +1386,8 @@ async function restoreHistory(index) {
   resizePaper(true)
   await canvas.loadFromJSON(entry.content)
   bindCanvasTextObjects()
-  setTool(window.innerWidth <= 800 ? 'hand' : 'text')
+  setTool('text')
+  syncMobileTranscript()
   state.loading = false
   canvas.requestRenderAll()
   queueSave()
@@ -1396,7 +1427,8 @@ async function selectNote(id) {
       normalizedNote = reconcilePages(true) || normalizedNote
       state.history = [snapshot()]
       state.historyIndex = 0
-      setTool(window.innerWidth <= 800 ? 'hand' : 'text')
+      syncMobileTranscript()
+      setTool('text')
     }
     setSaveState('Saved')
     renderNoteList()
@@ -1615,6 +1647,12 @@ function selectedTextObject() {
   return isEditableText(active) ? active : null
 }
 
+function syncMobileTranscript() {
+  if (window.innerWidth > 560) return
+  const text = selectedTextObject() || canvas.getObjects().find(isEditableText)
+  elements.mobileTranscript.value = text?.text || ''
+}
+
 function syncTypographyControls() {
   const text = selectedTextObject()
   const fontFamily = text?.fontFamily || state.fontFamily
@@ -1625,6 +1663,31 @@ function syncTypographyControls() {
   })
   elements.fontSize.value = fontSize
   elements.fontSizeValue.value = fontSize
+}
+
+function prettifyActiveNote() {
+  if (state.activeNoteType !== 'canvas') return
+  const activeText = selectedTextObject()
+  const textObjects = activeText ? [activeText] : canvas.getObjects().filter(isEditableText)
+  let changed = false
+  textObjects.forEach((text) => {
+    const selection = prettifySelection(text.text, text.selectionStart, text.selectionEnd)
+    if (selection.text === text.text) return
+    text.set('text', selection.text)
+    text.initDimensions()
+    text.setCoords()
+    if (text === activeText && text.isEditing) {
+      text.setSelectionStart(selection.start)
+      text.setSelectionEnd(selection.end)
+    }
+    changed = true
+  })
+  if (!changed) return
+  reconcilePages()
+  canvas.requestRenderAll()
+  clearTimeout(historyTimer)
+  if (commitHistorySnapshot()) queueSave()
+  syncMobileTranscript()
 }
 
 function applyTypography(property, value) {
@@ -1737,6 +1800,9 @@ function setVoiceListening(listening, message = 'Listening') {
   elements.voiceButton.classList.toggle('active', listening)
   elements.voiceButton.setAttribute('aria-pressed', String(listening))
   elements.voiceButton.setAttribute('aria-label', listening ? 'Stop voice dictation' : 'Start voice dictation')
+  elements.mobileSpeak.classList.toggle('active', listening)
+  elements.mobileSpeak.setAttribute('aria-pressed', String(listening))
+  elements.mobileSpeak.setAttribute('aria-label', listening ? 'Stop speaking' : 'Tap or hold to speak')
   elements.paper.classList.toggle('voice-listening', listening)
   elements.voiceCaption.hidden = !listening
   elements.voiceStatus.textContent = message
@@ -1891,6 +1957,8 @@ async function startLocalDictation(attempt) {
   return true
 }
 
+let toggleVoiceDictation = async () => {}
+
 function setupVoiceInput() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
   let recognition = null
@@ -1927,7 +1995,7 @@ function setupVoiceInput() {
     }
   }
 
-  const toggleVoiceDictation = async () => {
+  toggleVoiceDictation = async () => {
     if (state.listening) {
       if (state.voiceMode === 'browser') recognition.stop()
       else await stopLocalDictation({ cancel: state.voiceMode !== 'local' })
@@ -2003,6 +2071,17 @@ document.querySelector('#mobile-dictation-form').addEventListener('submit', (eve
 })
 document.querySelector('#close-mobile-dictation').addEventListener('click', closeMobileDictation)
 document.querySelector('#cancel-mobile-dictation').addEventListener('click', closeMobileDictation)
+elements.mobileTranscript.addEventListener('input', () => {
+  if (state.activeNoteType !== 'canvas') return
+  const text = selectedTextObject() || canvas.getObjects().find(isEditableText) || addText({ x: 72, y: 72 }, '', false)
+  text.set('text', elements.mobileTranscript.value)
+  text.initDimensions()
+  text.setCoords()
+  canvas.setActiveObject(text)
+  reconcilePages()
+  canvas.requestRenderAll()
+  recordHistory()
+})
 
 function renderSearchResults(results, query = '') {
   if (!results.length) {
@@ -2283,6 +2362,9 @@ canvas.on('text:changed', () => {
   elements.paper.classList.remove('is-dragging')
   elements.workspace.classList.remove('is-object-dragging')
   reconcilePages()
+  syncMobileTranscript()
+  const activeText = selectedTextObject()
+  if (activeText?.isEditing) showWritingGuide(activeText)
   recordHistory()
 })
 ;['object:moving', 'object:scaling', 'object:rotating'].forEach((eventName) => {
@@ -2357,6 +2439,7 @@ document.querySelector('#confirm-clear-note').addEventListener('click', (event) 
   clearActiveNote()
 })
 document.querySelector('#delete-note').addEventListener('click', deleteActiveNote)
+document.querySelector('#prettify').addEventListener('click', prettifyActiveNote)
 document.querySelector('#undo').addEventListener('click', () => restoreHistory(state.historyIndex - 1))
 document.querySelector('#redo').addEventListener('click', () => restoreHistory(state.historyIndex + 1))
 const mobileLayout = window.matchMedia('(max-width: 800px)')
@@ -2515,8 +2598,9 @@ mobileNewNote.addEventListener('click', (event) => {
 })
 document.querySelector('#mobile-dictate').addEventListener('click', () => {
   setMobileCaptureMenuOpen(false)
-  openMobileDictation()
+  elements.mobileTranscript.focus()
 })
+elements.mobileSpeak.addEventListener('click', () => toggleVoiceDictation())
 document.querySelector('#mobile-draw').addEventListener('click', () => {
   setMobileCaptureMenuOpen(false)
   setTool('pen')
