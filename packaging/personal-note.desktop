@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Personal Note
+Comment=Local spatial notebook
+Exec=@REPO@/packaging/personal-note-desktop.sh
+Icon=@REPO@/public/favicon.svg
+Terminal=false
+Categories=Office;Utility;
+StartupWMClass=desktop.py
