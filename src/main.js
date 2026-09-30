@@ -2304,7 +2304,6 @@ canvas.on('text:changed', () => {
   elements.paper.classList.remove('is-dragging')
   elements.workspace.classList.remove('is-object-dragging')
   reconcilePages()
-  syncMobileTranscript()
   const activeText = selectedTextObject()
   if (activeText?.isEditing) showWritingGuide(activeText)
   recordHistory()
