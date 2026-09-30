@@ -3,90 +3,238 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#111114" />
-  <meta name="description" content="Personal Note is a fast local notebook for spatial writing, drawing, voice transcripts, and mind maps." />
-  <title>Personal Note — A fast local notebook</title>
+  <meta name="theme-color" content="#F2F2F7" />
+  <meta name="description" content="Personal Note is a local notebook where pages grow as you write. Think big, page by page." />
+  <title>Personal Note — Think big. Page by page.</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Geist:wght@400;500&family=Geist+Mono:wght@400&family=Caveat:wght@600&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500&family=Instrument+Serif:ital@1&text=Aa&display=swap" />
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:ital,wght@0,500;0,650;1,500&display=swap');
-    :root { color-scheme:dark; --canvas:#111114; --rail:#0D0D0F; --surface:#18181C; --surface-cool:#202026; --line:#2C2C34; --line-strong:#41414C; --ink:#F0EFF4; --muted:#B5B3BE; --text-dim:#8E8C98; --accent:#A78BFA; --accent-dim:#221B38; --blue:#82B6D9; --blue-soft:#132634; --focus:#C4B5FD; --terracotta:#E08A93; --terracotta-soft:#351C25; --saved:#8DBA9C; --gold:#DAB56D; --bg:var(--canvas); --panel:var(--surface); --panel-2:var(--surface-cool); font-family:"IBM Plex Mono","DejaVu Sans Mono",monospace; color:var(--ink); background:var(--bg); }
-    * { box-sizing:border-box; }
-    html { scroll-behavior:smooth; }
-    body { margin:0; min-width:320px; background:var(--bg); }
+    :root {
+      color-scheme: light;
+      --desk:#F2F2F7; --paper:#FFFFFF; --paper-edge:#E3E3EA; --ink:#111114; --ink-soft:#3A3A42; --muted:#62626C; --line:#E6E6EC;
+      --accent:#0A6CFF; --accent-ink:#FFFFFF; --accent-text:#0055D6;
+      --c1:#FFD60A; --c2:#30D158; --c3:#64B5FF; --c4:#BF5AF2; --c5:#FF6B3D;
+      --display:'Bricolage Grotesque',system-ui,sans-serif; --body:'Geist',system-ui,-apple-system,sans-serif;
+      --mono:'Geist Mono',ui-monospace,SFMono-Regular,monospace; --hand:'Caveat',cursive;
+      --shadow:0 1px 2px rgba(0,0,30,.05),0 16px 40px -16px rgba(0,0,60,.22);
+      --ease:cubic-bezier(.2,.9,.25,1.08);
+      --gutter:clamp(20px,5vw,72px);
+    }
+    *,*::before,*::after { box-sizing:border-box; }
+    html { scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
+    body { margin:0; min-width:320px; background:var(--desk); color:var(--ink); font:400 17px/1.55 var(--body); -webkit-font-smoothing:antialiased; }
     a { color:inherit; }
-    .shell { width:min(1160px,calc(100% - 40px)); margin-inline:auto; }
-    .skip-link { position:fixed; z-index:20; top:8px; left:8px; padding:9px 12px; border:1px solid var(--accent); border-radius:3px; color:var(--rail); background:var(--accent); font-size:12px; font-weight:600; transform:translateY(-150%); }
-    .skip-link:focus { transform:none; }
-    header { position:sticky; top:0; z-index:10; border-bottom:1px solid var(--line); background:var(--rail); }
-    nav { min-height:52px; display:flex; align-items:center; gap:24px; }
-    .brand { margin-right:auto; color:var(--accent); font-size:13px; font-weight:600; text-decoration:none; letter-spacing:.04em; }
-    .nav-link { color:var(--muted); font-size:11px; text-decoration:none; }
-    .nav-link:hover,.nav-link:focus-visible { color:var(--ink); }
-    .button { min-height:34px; display:inline-flex; align-items:center; justify-content:center; padding:0 13px; border:1px solid var(--accent); border-radius:3px; color:var(--rail); background:var(--accent); font:600 11px/1 inherit; text-decoration:none; }
-    .button:hover { background:#C4B5FD; border-color:#C4B5FD; }
-    .button.secondary { color:var(--accent); background:transparent; }
-    .button.secondary:hover { color:var(--ink); background:var(--panel-2); border-color:var(--accent); }
-    .hero { min-height:640px; display:grid; grid-template-columns:minmax(0,1.08fr) minmax(400px,.92fr); align-items:center; gap:72px; padding-block:84px 76px; }
-    .eyebrow { margin:0 0 18px; color:var(--accent); font-size:10px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; }
-    h1,h2 { margin:0; font-family:inherit; font-weight:500; letter-spacing:-.055em; text-wrap:balance; }
-    h1 { max-width:700px; font-size:clamp(48px,5.5vw,72px); line-height:1.02; }
-    h1 em,h2 em { color:var(--accent); font-style:normal; }
-    .lede { max-width:640px; margin:26px 0 30px; color:#B5B3BE; font-size:14px; line-height:1.75; }
-    .actions { display:flex; flex-wrap:wrap; gap:10px; }
-    .workspace-demo { position:relative; min-height:430px; border:1px solid var(--line); border-radius:3px; background:var(--rail); overflow:hidden; }
-    .demo-bar { height:38px; display:flex; align-items:center; gap:7px; padding:0 12px; border-bottom:1px solid var(--line); color:var(--muted); background:var(--rail); font-size:9px; }
-    .demo-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); }
-    .paper { position:absolute; inset:66px 32px 34px 64px; padding:40px; color:#20201e; background:#fbfaf5; box-shadow:0 0 0 1px var(--line); }
-    .paper h3 { margin:0 0 24px; font:600 27px/1.1 "Source Serif 4",Georgia,serif; }
-    .paper p { max-width:390px; font:500 16px/1.6 "Source Serif 4",Georgia,serif; }
-    .ink-line { width:66%; height:48px; margin-top:28px; border:3px solid #76669A; border-top:0; transform:skewX(-8deg); }
-    .rail { position:absolute; inset:38px auto 0 0; width:36px; display:grid; align-content:start; gap:10px; padding:14px 7px; border-right:1px solid var(--line); background:var(--rail); }
-    .rail span { width:20px; height:20px; display:block; border:1px solid #41414C; border-radius:3px; }
-    .rail span:first-child { background:var(--accent); border-color:var(--accent); }
-    section { border-top:1px solid var(--line); }
-    .section { padding-block:80px; }
-    .section-heading { max-width:760px; margin-bottom:40px; }
-    h2 { font-size:clamp(34px,4vw,50px); line-height:1.1; }
-    .section-heading p { max-width:700px; color:var(--muted); font-size:13px; line-height:1.75; }
-    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; border:1px solid var(--line); border-radius:3px; background:var(--line); overflow:hidden; }
-    article { min-height:218px; padding:26px; background:var(--panel); }
-    article .number { color:var(--accent); font-size:10px; }
-    article h3 { margin:40px 0 12px; color:var(--ink); font-size:15px; font-weight:600; }
-    article p { margin:0; color:var(--muted); font-size:11px; line-height:1.7; }
-    .flow { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:3px; overflow:hidden; }
-    .flow div { min-height:150px; padding:24px; border-right:1px solid var(--line); background:var(--panel); }
-    .flow div:last-child { border:0; }
-    .flow strong { display:block; margin-bottom:10px; color:var(--accent); font-size:12px; }
-    .flow span { color:var(--muted); font-size:11px; line-height:1.6; }
-    .privacy { display:grid; grid-template-columns:1fr 1fr; gap:56px; align-items:start; }
-    .facts { display:grid; gap:10px; }
-    .fact { display:grid; grid-template-columns:18px 1fr; gap:12px; padding:15px; border:1px solid var(--line); border-radius:3px; background:var(--panel); color:var(--muted); font-size:12px; line-height:1.55; }
-    .fact b { color:var(--accent); }
-    footer { border-top:1px solid var(--line); }
-    .footer { min-height:110px; display:flex; align-items:center; justify-content:space-between; gap:24px; color:var(--muted); font-size:11px; }
-    :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
-    @media (max-width:800px) { .shell{width:min(100% - 24px,620px)} .nav-link{display:none}.hero{min-height:0;grid-template-columns:1fr;gap:48px;padding-block:64px}.workspace-demo{min-height:390px}.paper{inset:58px 18px 24px 48px;padding:30px 24px}.grid,.privacy{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}.flow div:nth-child(2){border-right:0}.flow div:nth-child(-n+2){border-bottom:1px solid var(--line)}.section{padding-block:64px}.footer{align-items:flex-start;flex-direction:column;justify-content:center} }
-    @media (max-width:480px) { nav{gap:12px}.brand{font-size:11px}.button{padding-inline:10px}h1{font-size:clamp(38px,12vw,48px)}h2{font-size:32px}.hero{padding-block:52px}.workspace-demo{min-height:350px}.paper{padding:24px 18px}.paper h3{font-size:24px}.flow{grid-template-columns:1fr}.flow div,.flow div:nth-child(2){border-right:0;border-bottom:1px solid var(--line)}.flow div:last-child{border-bottom:0} }
-    @media (prefers-reduced-motion:reduce) { html{scroll-behavior:auto} }
-    @media (prefers-contrast:more) { :root{--line:#84988d;--muted:#d0dbd5}.button{border-color:var(--ink)} }
+    ul,ol { list-style:none; margin:0; padding:0; }
+    h1,h2,h3,p { margin:0; }
+    :focus-visible { outline:3px solid var(--accent); outline-offset:3px; border-radius:6px; }
+    .wrap { width:min(1296px,100% - 2*var(--gutter)); margin-inline:auto; }
+    .skip { position:fixed; z-index:30; left:12px; top:12px; padding:10px 14px; border-radius:10px; background:var(--ink); color:var(--paper); text-decoration:none; transform:translateY(-200%); }
+    .skip:focus { transform:none; }
+
+    .display { font-family:var(--display); font-weight:700; letter-spacing:-.035em; line-height:.98; text-wrap:balance; }
+    .eyebrow { font:400 12px/1.4 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+    .lead { font-size:clamp(17px,1.4vw,19px); line-height:1.55; color:var(--ink-soft); text-wrap:pretty; }
+
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:52px; padding:0 24px; border-radius:14px; background:var(--accent); color:var(--accent-ink); font:500 15px/1 var(--body); text-decoration:none; transition:transform .25s var(--ease),box-shadow .25s,background .2s; box-shadow:0 1px 2px rgba(0,40,120,.25),0 10px 24px -10px rgba(10,108,255,.6); }
+    .btn:hover { transform:translateY(-2px); background:#0059D6; }
+    .btn:active { transform:translateY(0) scale(.98); }
+    .btn.sm { min-height:38px; padding:0 16px; border-radius:11px; font-size:13.5px; }
+    .link { font-size:15px; font-weight:500; color:var(--ink); text-decoration:none; border-bottom:1.5px solid var(--accent); padding-bottom:2px; }
+    .link:hover { color:var(--accent-text); }
+
+    /* nav */
+    .nav { position:sticky; top:0; z-index:20; background:rgba(242,242,247,.78); -webkit-backdrop-filter:saturate(1.6) blur(18px); backdrop-filter:saturate(1.6) blur(18px); }
+    .nav .wrap { display:flex; align-items:center; gap:32px; height:68px; font-size:14px; }
+    .logo { display:flex; align-items:center; gap:10px; margin-right:auto; font:700 20px/1 var(--display); letter-spacing:-.035em; text-decoration:none; }
+    .mark { position:relative; width:22px; height:26px; border-radius:3px 6px 6px 3px; background:var(--accent); box-shadow:inset 3px 0 0 #0050C8; }
+    .mark::after { content:""; position:absolute; right:4px; inset-block:0; width:2.5px; background:var(--ink); opacity:.85; }
+    .nav a:not(.logo):not(.btn) { color:var(--ink-soft); text-decoration:none; }
+    .nav a:not(.logo):not(.btn):hover { color:var(--ink); }
+
+    /* hero */
+    main { overflow-x:clip; }
+    .hero { position:relative; text-align:center; padding-block:clamp(48px,8vw,96px) 0; }
+    .hero h1 { margin-top:22px; font-size:clamp(46px,8.4vw,120px); }
+    .hero h1 span { color:var(--accent); display:block; }
+    .hero .lead { max-width:40em; margin:26px auto 0; }
+    .ctas { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:18px 28px; margin-top:34px; }
+    .fine { display:flex; flex-wrap:wrap; justify-content:center; gap:6px 20px; margin-top:22px; font-size:13px; color:var(--muted); }
+    .fine li::before { content:""; display:inline-block; width:6px; height:6px; margin-right:8px; border-radius:99px; background:var(--c2); vertical-align:1px; }
+
+    .fan { --ov:-3.2em; --u:min(15.7px,calc((100vw - 2*var(--gutter))/62)); display:flex; justify-content:center; align-items:flex-end; font-size:var(--u); padding:calc(var(--u)*4) 0 calc(var(--u)*5); }
+    .cover { position:relative; flex:none; width:14em; height:18.5em; margin-left:var(--ov); transform-origin:50% 100%; transform:translateY(var(--y)) rotate(var(--tilt)); transition:transform .45s var(--ease); animation:settle .9s var(--ease) backwards; animation-delay:calc(.15s + var(--i)*.09s); }
+    .cover:first-child { margin-left:0; }
+    .cover:hover { transform:translateY(calc(var(--y) - 1.6em)) rotate(calc(var(--tilt)*.35)) scale(1.03); z-index:9 !important; }
+    .cover .face,.cover .pages { position:absolute; inset:0; border-radius:.55em 1.25em 1.25em .55em; }
+    .cover .pages { inset:.25em -.55em -.55em .7em; background:var(--paper-edge); }
+    .cover .pages::after { content:""; position:absolute; inset:-.25em .55em .55em -.4em; border-radius:inherit; background:#FBF8F1; box-shadow:inset -.14em 0 0 var(--line); }
+    .cover .face { display:block; background:var(--face); color:var(--ink); box-shadow:inset 1em 0 0 var(--spine),inset 1.13em 0 0 rgba(255,255,255,.12),0 2.6em 4.4em -2em rgba(0,0,0,.5); padding:3em 3.3em 0 2em; }
+    .cover .sub { display:block; font:400 .72em var(--mono); letter-spacing:.14em; text-transform:uppercase; }
+    .cover .title { display:block; margin-top:.6em; font:700 1.95em/.95 var(--display); letter-spacing:-.035em; }
+    .cover .rule { display:block; width:2.3em; height:2px; margin-top:1em; background:var(--ink); opacity:.5; }
+    .cover .band { position:absolute; right:1.7em; top:-.4em; bottom:-.4em; width:1em; border-radius:3px; background:#111114; box-shadow:0 2px 6px rgba(0,0,0,.35); }
+    .cover .ribbon { position:absolute; left:3.9em; bottom:-2.4em; width:1.3em; height:4.6em; background:var(--c1); clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%); }
+    @keyframes settle { from { opacity:0; transform:translateY(3em) rotate(0) scale(.92); } }
+    .hand { font:600 30px/1 var(--hand); color:var(--accent-text); }
+
+    /* sections */
+    .band2 { background:var(--paper); border-block:1px solid var(--line); padding-block:clamp(64px,9vw,112px); }
+    .head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:20px 48px; margin-bottom:clamp(32px,4vw,52px); }
+    .head h2 { font-size:clamp(38px,5vw,64px); }
+    .head .lead { max-width:27em; }
+    .steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:32px; }
+    .step { container-type:inline-size; }
+    .stage { --px:calc(100cqw/416); position:relative; height:calc(220*var(--px)); border-radius:18px; background:var(--desk); border:1px solid var(--line); overflow:hidden; }
+    .pg { position:absolute; top:calc(36*var(--px)); left:var(--l); width:calc(118*var(--px)); height:calc(148*var(--px)); background:var(--paper); border-radius:4px; box-shadow:0 0 0 1px var(--paper-edge),0 10px 20px -12px rgba(0,0,0,.3); }
+    .pg.mid { left:calc(50% - 59*var(--px)); }
+    .pg.gh { background:transparent; border:1.5px dashed var(--accent); box-shadow:none; animation:ghost 2.4s ease-in-out infinite; }
+    .pg.seam { border-left:1px dashed var(--line); }
+    .ln { position:absolute; left:calc(14*var(--px)); top:calc(var(--t)*var(--px)); width:calc(var(--w)*var(--px)); height:calc(5*var(--px)); border-radius:9px; background:var(--line); }
+    .obj { position:absolute; left:var(--l); top:var(--t); width:calc(var(--w)*var(--px)); height:calc(var(--h)*var(--px)); border-radius:6px; background:var(--c5); }
+    .obj.pg-in { left:calc(62*var(--px)); top:calc(96*var(--px)); }
+    .obj.drag { box-shadow:0 10px 18px -8px rgba(0,0,0,.4); transform:rotate(3deg); }
+    .fold { position:absolute; left:calc(230*var(--px)); top:calc(92*var(--px)); width:calc(60*var(--px)); height:calc(40*var(--px)); }
+    @keyframes ghost { 50% { opacity:.35; } }
+    .st { margin-top:18px; }
+    .num { font:400 12px var(--mono); color:var(--accent-text); }
+    .st h3 { margin:6px 0; font:700 26px/1.1 var(--display); letter-spacing:-.035em; }
+    .st p { font-size:15px; line-height:1.55; color:var(--ink-soft); }
+
+    .duo { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:clamp(40px,6vw,88px); padding-block:clamp(64px,9vw,112px); }
+    .duo > section { display:flex; flex-direction:column; gap:22px; min-width:0; }
+    .duo h2 { font-size:clamp(36px,4.2vw,52px); }
+    .term { border-radius:18px; background:#0F1115; color:#D6DBE3; font:400 clamp(12px,1.05vw,13.5px)/1.75 var(--mono); padding:22px 26px; box-shadow:var(--shadow); overflow-x:auto; }
+    .term .d { display:flex; gap:7px; margin-bottom:16px; }
+    .term .d i { width:11px; height:11px; border-radius:99px; background:#3A3F48; }
+    .term > div { white-space:pre; }
+    .term .c { color:#7EE7C8; } .term .m { color:#9AA3B2; } .term .y { color:#FFC877; }
+    .skins { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .skin { border-radius:16px; overflow:hidden; border:1px solid var(--line); background:var(--paper); transition:transform .35s var(--ease),box-shadow .3s; }
+    .skin:hover { transform:translateY(-4px); box-shadow:var(--shadow); }
+    .swatch { position:relative; height:92px; background:var(--desk-s); }
+    .sp { position:absolute; left:8%; top:16px; width:30%; height:62px; border-radius:3px; background:var(--paper-s); box-shadow:0 0 0 1px var(--edge); }
+    .sc { position:absolute; left:44%; top:22px; width:16%; height:44px; border-radius:2px 5px 5px 2px; background:var(--cover); box-shadow:inset 3px 0 0 var(--cd); }
+    .dots { position:absolute; left:66%; top:24px; display:flex; gap:3px; }
+    .dots i { display:block; width:8px; height:8px; border-radius:99px; }
+    .aa { position:absolute; left:66%; top:44px; font-size:22px; color:var(--sink); line-height:1.2; }
+    .lab { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 14px; font-size:14px; font-weight:500; }
+    .lab small { font:400 11px var(--mono); color:var(--muted); }
+
+    .foot { text-align:center; padding-block:clamp(72px,10vw,128px) 40px; border-top:1px solid var(--line); display:flex; flex-direction:column; align-items:center; gap:22px; }
+    .foot h2 { font-size:clamp(38px,6vw,72px); max-width:12em; }
+    .foot .fine { margin-top:6px; }
+    .legal { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 24px; width:100%; margin-top:clamp(48px,7vw,88px); padding-top:24px; border-top:1px solid var(--line); font-size:13px; color:var(--muted); text-align:left; }
+
+    /* entrance motion: load reveal, plus scroll reveal where supported */
+    @media (prefers-reduced-motion:no-preference) {
+      .rise { animation:rise .8s var(--ease) backwards; animation-delay:calc(var(--d,0)*.08s); }
+      @keyframes rise { from { opacity:0; transform:translateY(18px); } }
+      @supports (animation-timeline:view()) {
+        .reveal { animation:rise linear both; animation-timeline:view(); animation-range:entry 0% entry 55%; }
+      }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      html { scroll-behavior:auto; }
+      .cover { animation:none; }
+      .btn,.skin,.cover { transition:none; }
+      .pg.gh { animation:none; }
+    }
+
+    @media (max-width:860px) {
+      .steps { grid-template-columns:1fr; gap:40px; }
+      .duo { grid-template-columns:1fr; }
+      .nav a:not(.logo):not(.btn) { display:none; }
+      .nav .wrap { gap:16px; }
+    }
+    @media (max-width:600px) {
+      .fan { --ov:-5em; --u:calc((100vw - 24px)/50); }
+      .cover .sub { font-size:max(8px,.72em); }
+    }
+    @media (max-width:480px) {
+      body { font-size:16px; }
+      .skins { gap:10px; }
+      .lab { flex-direction:column; align-items:flex-start; gap:2px; padding:10px; font-size:13px; }
+      .aa { font-size:17px; top:48px; }
+      .term { padding:18px; }
+      .hero .btn { width:100%; }
+    }
   </style>
 </head>
 <body>
-  <a class="skip-link" href="#main-content">Skip to content</a>
-  <header><nav class="shell" aria-label="Primary"><a class="brand" href="/">PERSONAL NOTE</a><a class="nav-link" href="#workspace">Workspace</a><a class="nav-link" href="#portable">Portability</a><a class="button" href="/notes">Open notebook →</a></nav></header>
-  <main id="main-content">
-    <section><div class="shell hero">
-      <div><p class="eyebrow">Local notebook · desktop first</p><h1>Make room for <em>unfinished thinking.</em></h1><p class="lede">Write, sketch, dictate, and branch ideas without waiting on setup or a network. Personal Note keeps the canvas immediate and the data in a local SQLite workspace.</p><div class="actions"><a class="button" href="/notes">Start writing →</a><a class="button secondary" href="#workspace">See the core</a></div></div>
-      <div class="workspace-demo" role="img" aria-label="A dark neutral violet notebook shell around a light spatial page"><div class="demo-bar"><span class="demo-dot"></span>workspace / project-notes</div><div class="rail"><span></span><span></span><span></span><span></span></div><div class="paper"><h3>Prototype the retry path</h3><p>Keep the rough diagram beside the decision notes. The page grows when the idea does.</p><div class="ink-line"></div></div></div>
-    </div></section>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap">
+      <a class="logo" href="/"><span class="mark" aria-hidden="true"></span>Personal Note</a>
+      <a href="#grow">How pages grow</a><a href="#agents">For agents</a><a href="#skins">Skins</a>
+      <a class="btn sm" href="/notes">Open notebook</a>
+    </div>
+  </header>
 
-    <section id="workspace"><div class="shell section"><div class="section-heading"><p class="eyebrow">01 · One notebook core</p><h2>Text and ink stay <em>close to the thought.</em></h2><p>The default canvas supports direct writing, drawing, arranging, undo, print, and fast local search. Mind maps are an optional built-in note type and load only when opened.</p></div><div class="grid"><article><span class="number">01 / CANVAS</span><h3>Spatial by default</h3><p>Place editable text and ink anywhere. Pages expand around the work while familiar paper boundaries remain visible.</p></article><article><span class="number">02 / VOICE</span><h3>Transcript, not recordings</h3><p>Local voice capture streams temporary audio for transcription. Personal Note saves only editable final text and never retains audio media.</p></article><article><span class="number">03 / MAPS</span><h3>Branch when useful</h3><p>Create an infinite SVG mind map inside the same notebook library, storage contract, and search index.</p></article></div></div></section>
+  <main id="main">
+    <div class="hero wrap">
+      <p class="eyebrow rise">Projects · Areas · Resources · Archive</p>
+      <h1 class="display rise" style="--d:1">Think big.<span>Page by page.</span></h1>
+      <p class="lead rise" style="--d:2">A local notebook for everything you know. Pages grow as you write, notebooks keep it all in order, and agents can read along.</p>
+      <div class="ctas rise" style="--d:3"><a class="btn" href="/notes">Open your notebook</a><a class="link" href="#grow">See a page grow</a></div>
+      <ul class="fine rise" style="--d:4"><li>Local-first</li><li>No account</li><li>Agents welcome</li></ul>
+      <ol class="fan" aria-label="Your notebooks: Projects, Areas, Resources, Archive, Inbox">
+<li class="cover" style="--face:#64B5FF;--spine:#0A6CFF;--ink:#06294F;--tilt:-14deg;--y:1.05em;--i:0;z-index:3"><span class="pages" aria-hidden="true"></span><span class="ribbon" aria-hidden="true"></span><span class="face"><span class="sub">No. 01</span><span class="title">Projects</span><span class="rule"></span></span><span class="band" aria-hidden="true"></span></li>
+<li class="cover" style="--face:#30D158;--spine:#1FA84A;--ink:#053D18;--tilt:-7deg;--y:0.3em;--i:1;z-index:4"><span class="pages" aria-hidden="true"></span><span class="ribbon" aria-hidden="true"></span><span class="face"><span class="sub">No. 02</span><span class="title">Areas</span><span class="rule"></span></span><span class="band" aria-hidden="true"></span></li>
+<li class="cover" style="--face:#FFD60A;--spine:#E0B800;--ink:#3A2E00;--tilt:0deg;--y:0em;--i:2;z-index:5"><span class="pages" aria-hidden="true"></span><span class="ribbon" aria-hidden="true"></span><span class="face"><span class="sub">No. 03</span><span class="title">Resources</span><span class="rule"></span></span><span class="band" aria-hidden="true"></span></li>
+<li class="cover" style="--face:#BF5AF2;--spine:#9B3FD1;--ink:#1A0429;--tilt:7deg;--y:0.3em;--i:3;z-index:4"><span class="pages" aria-hidden="true"></span><span class="ribbon" aria-hidden="true"></span><span class="face"><span class="sub">No. 04</span><span class="title">Archive</span><span class="rule"></span></span><span class="band" aria-hidden="true"></span></li>
+<li class="cover" style="--face:#FF6B3D;--spine:#E2531F;--ink:#3B0F00;--tilt:14deg;--y:1.05em;--i:4;z-index:3"><span class="pages" aria-hidden="true"></span><span class="ribbon" aria-hidden="true"></span><span class="face"><span class="sub">No. 05</span><span class="title">Inbox</span><span class="rule"></span></span><span class="band" aria-hidden="true"></span></li>
+      </ol>
+    </div>
 
-    <section id="portable"><div class="shell section"><div class="section-heading"><p class="eyebrow">02 · Your workspace, portable</p><h2>A backup you can restore.<br/><em>An export you can read.</em></h2><p>Use versioned JSON to preserve editable notebook data. Use Markdown plus extracted assets for durable reading and interchange.</p></div><div class="flow"><div><strong>01 · Capture</strong><span>Canvas notes and mind maps save into one local SQLite database.</span></div><div><strong>02 · Search</strong><span>FTS5 indexes titles, canvas text, and mind-map labels without a network.</span></div><div><strong>03 · Back up</strong><span>Download canonical JSON while the app is running.</span></div><div><strong>04 · Restore</strong><span>Validated imports merge copies without deleting existing work.</span></div></div></div></section>
+    <section class="band2" id="grow">
+      <div class="wrap">
+        <div class="head reveal">
+          <h2 class="display">A page that grows.<br>And gives it back.</h2>
+          <p class="lead">Like the best diagram tools, but for your thinking. There is always room, and never a blank infinity staring back at you.</p>
+        </div>
+        <div class="steps">
+          <div class="step reveal"><div class="stage" role="img" aria-label="One page with a small orange block on it"><div class="pg mid"><i class="ln" style="--t:18;--w:80"></i><i class="ln" style="--t:30;--w:64"></i><i class="ln" style="--t:42;--w:88"></i><i class="ln" style="--t:54;--w:52"></i><i class="ln" style="--t:66;--w:70"></i><i class="ln" style="--t:78;--w:40"></i><i class="obj pg-in" style="--w:44;--h:30"></i></div></div><div class="st"><span class="num">01</span><h3>Start on a page</h3><p>Type, sketch, drop an image. It feels like paper because it is shaped like paper.</p></div></div>
+          <div class="step reveal"><div class="stage" role="img" aria-label="Three pages side by side; the third is a dashed outline as an orange block is dragged onto it"><div class="pg" style="--l:calc(44*var(--px))"><i class="ln" style="--t:18;--w:80"></i><i class="ln" style="--t:30;--w:64"></i><i class="ln" style="--t:42;--w:88"></i><i class="ln" style="--t:54;--w:52"></i><i class="ln" style="--t:66;--w:70"></i><i class="ln" style="--t:78;--w:40"></i></div><div class="pg seam" style="--l:calc(162*var(--px))"></div><div class="pg gh" style="--l:calc(280*var(--px))"></div><i class="obj drag" style="--l:calc(250*var(--px));--t:calc(120*var(--px));--w:56;--h:34"></i></div><div class="st"><span class="num">02</span><h3>Drag past the edge</h3><p>A new page slides in beside it, right where you need it. Keep going, it never runs out.</p></div></div>
+          <div class="step reveal"><div class="stage" role="img" aria-label="Back to one page, with an arrow curling in"><div class="pg mid"><i class="ln" style="--t:18;--w:80"></i><i class="ln" style="--t:30;--w:64"></i><i class="ln" style="--t:42;--w:88"></i><i class="ln" style="--t:54;--w:52"></i><i class="ln" style="--t:66;--w:70"></i><i class="ln" style="--t:78;--w:40"></i></div><svg class="fold" viewBox="0 0 60 40" fill="none" aria-hidden="true"><path d="M50 10C40 30 20 34 8 24M8 24l2-9M8 24l9 1" stroke="#0A6CFF" stroke-width="2" stroke-linecap="round"/></svg></div><div class="st"><span class="num">03</span><h3>Clear it, it folds back</h3><p>Delete what you don't need and the empty pages quietly tuck themselves away.</p></div></div>
+        </div>
+      </div>
+    </section>
 
-    <section><div class="shell section privacy"><div><p class="eyebrow">03 · Bounded by design</p><h2>The notebook works <em>on its own.</em></h2></div><div class="facts"><div class="fact"><b>✓</b><span>No account, sync service, or network is required for writing and search.</span></div><div class="fact"><b>✓</b><span>Voice failure is visible, and the note remains editable.</span></div><div class="fact"><b>✓</b><span>Canvas content and printed pages keep their light-paper appearance.</span></div><div class="fact"><b>✓</b><span>Optional integrations are outside the v1 core and cannot delay capture.</span></div></div></div></section>
-
-    <section><div class="shell section"><div class="section-heading"><p class="eyebrow">Ready</p><h2>Open the page.<br/><em>Keep the momentum.</em></h2></div><a class="button" href="/notes">Open Personal Note →</a></div></section>
+    <div class="wrap duo">
+      <section id="agents" class="reveal">
+        <p class="eyebrow">For your agents</p>
+        <h2 class="display">Your agents can<br>read it too.</h2>
+        <p class="lead">Claude Code, or any agent with a terminal, can search, read and append to your notes through one small command-line tool. Everything stays on your computer.</p>
+        <div class="term" role="group" aria-label="Example terminal session">
+          <div class="d" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div><span class="m">$</span> <span class="c">bin/personal-note search</span> "passport" <span class="c">--text</span></div>
+          <div class="m">#42 <span class="y">Passport renewal</span> [Resources] - Renew by March</div>
+          <div><span class="m">$</span> <span class="c">bin/personal-note notes read</span> 42 <span class="c">--text</span></div>
+          <div class="m">Renew by March. Photos at the pharmacy...</div>
+        </div>
+      </section>
+      <section id="skins" class="reveal">
+        <p class="eyebrow">Skins</p>
+        <h2 class="display">Make it yours.</h2>
+        <p class="lead">Change the cover, the paper and the ink. Three skins to start, the same notes underneath.</p>
+        <ul class="skins">
+<li class="skin"><div class="swatch" style="--desk-s:#F2F2F7;--paper-s:#FFFFFF;--edge:#E3E3EA;--cover:#0A6CFF;--cd:#0050C8;--sink:#111114"><span class="sp"></span><span class="sc"></span><span class="dots"><i style="background:#FFD60A"></i><i style="background:#30D158"></i><i style="background:#64B5FF"></i><i style="background:#BF5AF2"></i><i style="background:#FF6B3D"></i></span><span class="aa" style="font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:700;font-style:normal">Aa</span></div><div class="lab"><span>Crayon</span><small>Default</small></div></li>
+<li class="skin"><div class="swatch" style="--desk-s:#EFEBE3;--paper-s:#FFFDF8;--edge:#E4DDCF;--cover:#E5533D;--cd:#B93A27;--sink:#1F1B16"><span class="sp"></span><span class="sc"></span><span class="dots"><i style="background:#FFD66B"></i><i style="background:#9FE0C0"></i><i style="background:#A9CFFF"></i><i style="background:#CDB8FF"></i><i style="background:#FF9C85"></i></span><span class="aa" style="font-family:'Fraunces',Georgia,serif;font-weight:500;font-style:normal">Aa</span></div><div class="lab"><span>Paper</span><small>Skin</small></div></li>
+<li class="skin"><div class="swatch" style="--desk-s:#0D1015;--paper-s:#161B23;--edge:#232A35;--cover:#1B2130;--cd:#12161F;--sink:#ECEFF4"><span class="sp"></span><span class="sc"></span><span class="dots"><i style="background:#FFC877"></i><i style="background:#7EE7C8"></i><i style="background:#9DB4FF"></i><i style="background:#D3A6FF"></i><i style="background:#FF8FB1"></i></span><span class="aa" style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-style:italic">Aa</span></div><div class="lab"><span>Night</span><small>Skin</small></div></li>
+        </ul>
+      </section>
+    </div>
   </main>
-  <footer><div class="shell footer"><strong>PERSONAL NOTE</strong><span>Fast local capture for technical and creative project work.</span></div></footer>
+
+  <footer class="wrap foot">
+    <p class="hand reveal">start with one page</p>
+    <h2 class="display reveal">Open it. Write something.</h2>
+    <a class="btn reveal" href="/notes">Open your notebook</a>
+    <ul class="fine"><li>Your notes live in one file on your computer</li><li>Export anytime</li></ul>
+    <div class="legal"><span>Personal Note</span><span>Fast local capture for technical and creative project work.</span></div>
+  </footer>
 </body>
 </html>
