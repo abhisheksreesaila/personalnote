@@ -32,14 +32,14 @@ Design: docs/design/personal-note.md · Needs: none
 - [x] print output stays white paper regardless of skin
 Open: Night keeps ivory paper on screen (invariant 9); captain to decide on dark paper.
 
-## F-004 New canvas chrome [doing]
+## F-004 New canvas chrome [done]
 Design: docs/design/personal-note.md (Layout) · Needs: F-003
-- [ ] sidebar with Quick note (⌘N), Inbox and Projects / Areas / Resources / Archive notebooks with colored dots
-- [ ] top bar with note title, "Saved on this Mac" state, search pill (⌘K) and share/export
-- [ ] floating bottom dock with tools, ink swatches, undo and the hold-to-talk mic
-- [ ] page minimap with page count, and zoom control
-- [ ] a ghost "+ Page N" appears while dragging past the edge; dragged objects lift with tilt and shadow
-- [ ] keyboard panning (arrows, PageUp/PageDown, Space) and a scroll indicator, since the window-sized canvas (F-002) has no native scrolling
+- [x] sidebar with Quick note (⌘N), Inbox and Projects / Areas / Resources / Archive notebooks with colored dots
+- [x] top bar with note title, "Saved on this Mac" state, search pill (⌘K) and share/export
+- [x] floating bottom dock with tools, ink swatches, undo and the hold-to-talk mic
+- [x] page minimap with page count, and zoom control
+- [x] a ghost "+ Page N" appears while dragging past the edge; dragged objects lift with tilt and shadow
+- [x] keyboard panning (arrows, PageUp/PageDown, Space) and a scroll indicator, since the window-sized canvas (F-002) has no native scrolling
 
 ## F-005 Connectors [done]
 Needs: F-002
@@ -74,6 +74,11 @@ Needs: F-002
 - [ ] after fold-back or undo the view settles inside the content without a later snap
 - [ ] the writing guide draws under the text, not over it
 - [ ] on a real retina Mac: zoom-out on the 600-object note stays smooth; decide objectCaching for ink paths
+
+## F-010 Save pending edits on close [done]
+- [x] edits made just before a reload or close are saved (flush on pagehide / hidden, keepalive under 64 KiB)
+- [x] a close-time save never overwrites a newer revision (uses the last confirmed revision)
+Known limit: if a save is in flight at close, later edits can be lost; notes over ~60 KiB save on close best-effort.
 
 ## F-011 Desktop app [doing]
 Brief: docs/brief.md (local desktop app, v1) · Needs: none
