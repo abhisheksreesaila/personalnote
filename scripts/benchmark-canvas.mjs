@@ -203,8 +203,9 @@ async function runDpr(browser, baseUrl, dpr, content) {
   await page.waitForFunction(() => window.__personalNote?.canvas.getObjects().length > 0, null, { timeout: 30000 })
   await page.waitForTimeout(600)
   const setup = await page.evaluate(() => {
-    const { canvas, state } = window.__personalNote
+    const { canvas, state, getCanvasScale } = window.__personalNote
     return {
+      openingZoom: +getCanvasScale().toFixed(2),
       objects: canvas.getObjects().length,
       pages: `${state.pages.columns}x${state.pages.rows}`,
       canvasPx: `${canvas.lowerCanvasEl.width}x${canvas.lowerCanvasEl.height}`,
@@ -226,6 +227,16 @@ async function runDpr(browser, baseUrl, dpr, content) {
   })
   const rows = []
   if (args.debug) await measure(page, 'idle 3s', () => page.waitForTimeout(3000))
+  // Measure the view a note opens at (a dense note opens at full size), then reset to 100% for the editing scenarios.
+  rows.push(await measure(page, 'pan at the opening view (dense note)', async () => {
+    await page.mouse.move(700, 450)
+    for (let i = 0; i < 120; i += 1) { await page.mouse.wheel(i < 60 ? 6 : -6, i < 60 ? 24 : -24); await nextFrame(page) }
+  }))
+  await page.evaluate(() => {
+    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+    state.canvasZoom = 1
+    setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104)
+  })
   rows.push(await measure(page, 'drag inside note (6 connectors follow)', () => dragScenario(page, 3, 2, 90)))
   const attached = await connectorsAttached(page)
   if (!args['no-connectors'] && (!attached.count || attached.worst > 8)) { console.error(`connectors did not follow the drag: ${JSON.stringify(attached)}`); process.exitCode = 1 }
@@ -346,7 +357,7 @@ let worstAny = 0
 try {
   for (const dpr of dprs) {
     const result = await runDpr(browser, baseUrl, dpr, content)
-    console.log(`\n== devicePixelRatio ${dpr}: ${result.setup.objects} objects, ${result.setup.pages} pages, canvas ${result.setup.canvasPx}px ==`)
+    console.log(`\n== devicePixelRatio ${dpr}: ${result.setup.objects} objects, ${result.setup.pages} pages, opens at ${result.setup.openingZoom}x, canvas ${result.setup.canvasPx}px ==`)
     console.table(result.rows)
     console.log(`page growth: ${result.columnsBefore} -> ${result.grown.columns} columns, canvas stayed ${result.grown.canvasPx}px`)
     console.log(`zoom 4x probe: canvas ${result.probe.canvasPx}px, pixel alpha at object centre ${result.probe.alpha} (${result.probe.alpha > 0 ? 'painted' : 'BLANK'})`)

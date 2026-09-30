@@ -312,6 +312,37 @@ class ApiContractTests(unittest.TestCase):
             manifest = json.loads(archive.read("manifest.json"))
             self.assertEqual(manifest["format"], "personal-note-markdown")
 
+    def test_sticky_notes_are_searchable_and_exported_while_shapes_add_no_text(self):
+        notebook = self.client.get("/api/notebooks").json()[0]
+        note = self.client.post(
+            "/api/notes", json={"title": "Desk board", "notebookId": notebook["id"]}
+        ).json()
+        content = {"objects": [
+            {"type": "Sticky", "text": "Renew the passport", "stickyColor": "#ffd60a", "fontFamily": "Caveat", "top": 40, "left": 10},
+            {"type": "Rect", "fill": "#64b5ff", "rx": 28, "ry": 28, "top": 300, "left": 10},
+            {"type": "Sticky", "text": "", "stickyColor": "#30d158", "top": 500, "left": 10},
+            {"type": "Image", "src": "data:image/webp;base64,aGVsbG8=", "top": 700, "left": 10},
+        ]}
+        saved = self.client.put(
+            f"/api/notes/{note['id']}",
+            json={"title": "Desk board", "revision": note["revision"], "notebookId": notebook["id"], "content": content},
+        )
+        self.assertEqual(saved.status_code, 200)
+
+        found = self.client.get("/api/search", params={"q": "passport"}).json()
+        self.assertEqual([item["id"] for item in found], [note["id"]])
+        self.assertIn("Renew the passport", found[0]["excerpt"])
+
+        reloaded = self.client.get(f"/api/notes/{note['id']}").json()
+        self.assertEqual([item["type"] for item in reloaded["content"]["objects"]], ["Sticky", "Rect", "Sticky", "Image"])
+        self.assertEqual(reloaded["content"]["objects"][0]["stickyColor"], "#ffd60a")
+
+        with zipfile.ZipFile(io.BytesIO(self.client.get("/api/export/markdown").content)) as archive:
+            names = archive.namelist()
+            markdown = archive.read(next(name for name in names if name.endswith("desk-board.md"))).decode("utf-8")
+            self.assertIn("Renew the passport", markdown)
+            self.assertTrue(any(name.startswith("assets/") and name.endswith(".webp") for name in names))
+
 
 if __name__ == "__main__":
     unittest.main()

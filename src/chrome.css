@@ -8,7 +8,7 @@
     --glass: color-mix(in srgb, var(--sk-panel) 78%, transparent);
     --glass-solid: var(--sk-panel);
     --glass-border: var(--sk-edge);
-    --ink-soft: color-mix(in srgb, var(--sk-ink) 74%, var(--sk-panel));
+    --ink-soft: var(--sk-ink-soft);
     /* Chrome text tokens: skin colors nudged toward the ink so small labels and white-on-accent text reach 4.5:1. */
     --ui-muted: color-mix(in srgb, var(--sk-muted) 70%, var(--sk-ink));
     --accent-fill: color-mix(in srgb, var(--sk-accent) 85%, var(--sk-ink));
@@ -39,7 +39,7 @@
   .app-shell .workspace, .app-shell.mindmap-active .workspace { position: absolute; inset: 0; background: transparent; }
 
   /* Shared glass surface. */
-  .app-shell .topbar-title, .app-shell .search-button, .app-shell .glass-button, .app-shell .agent-chip,
+  .app-shell .search-button, .app-shell .glass-button, .app-shell .agent-chip,
   .app-shell .tool-dock, .app-shell .page-minimap, .app-shell .zoom-control, .app-shell .share-menu,
   .app-shell .note-create-menu, .app-shell .ink-options-popover, .app-shell .voice-caption {
     background: var(--glass);
@@ -53,7 +53,7 @@
   /* ---------- Sidebar ---------- */
   .app-shell .sidebar {
     position: fixed; inset: 12px auto 12px 12px; width: var(--sidebar-width);
-    display: flex; flex-direction: column; gap: 2px; padding: 14px 10px 10px;
+    display: flex; flex-direction: column; gap: 2px; padding: 14px 10px;
     background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--sk-radius);
     box-shadow: var(--sk-shadow); transform: none; z-index: 23;
     -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
@@ -70,10 +70,10 @@
   .app-shell .quick-note {
     position: relative; flex: none; width: 100%; height: 38px; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 12px;
     border: 0; border-radius: 12px; color: var(--sk-accent-ink); background: var(--accent-fill);
-    box-shadow: 0 6px 16px -8px var(--accent-fill); font-size: 13px; font-weight: 500; cursor: pointer; text-align: left;
+    font-size: 13px; font-weight: 500; cursor: pointer; text-align: left;
     transition: transform 160ms var(--ease-out), filter 160ms ease, box-shadow 160ms ease;
   }
-  .app-shell .quick-note:hover { filter: brightness(1.07); box-shadow: 0 8px 20px -8px var(--accent-fill); }
+  .app-shell .quick-note:hover { filter: brightness(1.07); }
   .app-shell .quick-note:active, .app-shell .quick-note.is-holding { transform: scale(.975); filter: brightness(.96); }
   .app-shell .quick-note:focus-visible { outline: none; box-shadow: var(--ring); }
   .app-shell .quick-note svg { width: 16px; height: 16px; stroke-width: 2; flex: none; }
@@ -152,19 +152,20 @@
 
   /* ---------- Top bar ---------- */
   .app-shell .topbar {
-    position: absolute; inset: 14px 16px auto 8px; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0;
+    position: absolute; inset: 14px 16px auto 4px; height: 48px; display: flex; align-items: center; gap: 12px; padding: 0;
     background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; z-index: 10;
   }
   .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }
-  .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 14px; pointer-events: auto; }
+  .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0; pointer-events: auto; }
   .app-shell .crumb { flex: none; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font-size: 12.5px; white-space: nowrap; }
   .app-shell .crumb b { font-weight: 500; color: var(--ink-soft); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
   .app-shell .note-title {
-    min-width: 7ch; width: 22ch; max-width: 34ch; height: 32px; margin: 0 0 0 2px; padding: 0 8px; border: 0; border-radius: 9px; outline: none;
+    min-width: 7ch; width: 22ch; max-width: 34ch; height: 32px; margin: 0 0 0 6px; padding: 0 4px; border: 0; border-radius: 9px; outline: none;
     background: transparent; color: var(--sk-ink); text-shadow: none; text-overflow: ellipsis; field-sizing: content;
-    font-family: var(--sk-display); font-weight: var(--sk-display-weight); font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track); font-size: 20px; line-height: 1;
+    font-family: var(--sk-display); font-weight: var(--sk-display-weight); font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track); font-size: 22px; line-height: 1;
     transition: background-color 140ms ease, box-shadow 140ms ease;
   }
+  @supports (field-sizing: content) { .app-shell .note-title { width: auto; } }
   .app-shell .note-title:hover { background: var(--hover); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .app-shell .note-title:focus { background: var(--sk-panel); box-shadow: 0 0 0 2px var(--sk-accent); backdrop-filter: none; }
   .app-shell .save-state { flex: none; margin: 0 0 0 2px; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font: 400 11.5px/1 var(--ui-font); white-space: nowrap; }
@@ -174,8 +175,8 @@
   .app-shell .topbar-actions { margin-left: auto; flex: none; display: flex; align-items: center; gap: 10px; pointer-events: none; }
 
   .app-shell .search-button {
-    position: relative; top: auto; left: auto; width: 300px; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px;
-    border-radius: 13px; color: var(--ui-muted); opacity: 1; transform: none; visibility: visible; overflow: hidden; white-space: nowrap; cursor: pointer; will-change: auto;
+    position: relative; top: auto; left: auto; width: 300px; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px;
+    border-radius: 12px; color: var(--ui-muted); opacity: 1; transform: none; visibility: visible; overflow: hidden; white-space: nowrap; cursor: pointer; will-change: auto;
     transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
   }
   .app-shell .search-button span { opacity: 1; transform: none; min-width: 0; flex: 1; text-align: left; font: 400 13px/1 var(--ui-font); transition: none; }
@@ -185,7 +186,7 @@
   .app-shell .search-button kbd { opacity: 1; transform: none; color: var(--ui-muted); }
 
   .app-shell .glass-button, .app-shell .properties-trigger {
-    width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; padding: 0; border-radius: 13px; color: var(--ink-soft); cursor: pointer;
+    width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; padding: 0; border-radius: 11px; color: var(--ink-soft); cursor: pointer;
     transform: none; will-change: auto; transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out), border-color 140ms ease;
   }
   .app-shell .glass-button:hover, .app-shell .properties-trigger:hover { background: var(--glass); color: var(--sk-ink); border-color: color-mix(in srgb, var(--sk-ink) 22%, var(--glass-border)); box-shadow: var(--sk-shadow); }
@@ -196,7 +197,7 @@
   .app-shell .glass-button.sidebar-toggle { display: none; }
 
   .app-shell .agent-chip {
-    order: -1; height: 40px; margin: 0; padding: 0 14px 0 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px;
+    order: -1; height: 36px; margin: 0; padding: 0 14px 0 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px;
     font-size: 12.5px; color: var(--ink-soft); max-width: 260px;
   }
   .app-shell .agent-chip::before { width: 7px; height: 7px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--sk-c2) 22%, transparent); }
@@ -225,7 +226,6 @@
   }
   .app-shell .dock-canvas, .app-shell .mindmap-dock-actions, .app-shell .tool-group, .app-shell .ink-swatches { display: flex; align-items: center; gap: 2px; min-width: 0; }
   .app-shell .dock-canvas[hidden], .app-shell .mindmap-dock-actions[hidden] { display: none; }
-  .app-shell .dock-slot { display: contents; }
   .app-shell .tool-dock .tool-button {
     position: relative; width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 12px;
     color: var(--ink-soft); background: transparent; box-shadow: none; cursor: pointer;
@@ -273,6 +273,7 @@
   .app-shell .workspace.is-object-dragging :is(.page-minimap, .zoom-control) { opacity: .3; pointer-events: none; }
   .app-shell .workspace.is-object-dragging .tool-dock { opacity: .14; pointer-events: none; transform: translateX(-50%) translateY(6px); }
 
+  .app-shell .workspace.is-drop-target::after { content: ""; position: absolute; inset: 8px; z-index: 6; pointer-events: none; border: 2px dashed var(--sk-accent); border-radius: var(--sk-radius); background: color-mix(in srgb, var(--sk-accent) 6%, transparent); }
   .app-shell .ink-options-popover { position: fixed; bottom: 92px; border-radius: 16px; background: var(--glass-solid); }
   .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - var(--rail-width) - 24px)); font-size: 11px; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); bottom: 92px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
   .app-shell .voice-pulse { background: var(--sk-accent); }
@@ -284,7 +285,7 @@
 
   /* ---------- Minimap, zoom, scroll indicator ---------- */
   .app-shell .page-minimap {
-    position: absolute; left: 16px; bottom: 30px; right: auto; height: 40px; max-width: 240px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 13px;
+    position: absolute; left: 4px; bottom: 30px; right: auto; height: 40px; max-width: 240px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 13px;
     color: var(--ink-soft); font: 400 12px/1 var(--ui-font); z-index: 5; transition: opacity 200ms ease;
   }
   .app-shell .page-minimap[hidden], .app-shell .zoom-control[hidden], .app-shell .scroll-indicator[hidden] { display: none; }
@@ -302,7 +303,7 @@
   }
 
   .app-shell .zoom-control {
-    position: absolute; right: 18px; bottom: 30px; height: 40px; display: flex; align-items: center; gap: 2px; padding: 0 6px; border-radius: 13px; z-index: 5;
+    position: absolute; right: 18px; bottom: 30px; height: 40px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: 13px; z-index: 5;
     transition: opacity 200ms ease;
   }
   .app-shell .zoom-control .icon-button {
@@ -362,7 +363,7 @@
     .app-shell .agent-chip { font-size: 0; gap: 0; padding: 0 13px; }
     .app-shell .page-minimap .mini-grid { display: none; }
   }
-  @media (min-width: 801px) and (max-width: 960px) {
+  @media (min-width: 801px) and (max-width: 1340px) {
     .app-shell .page-minimap, .app-shell .zoom-control { bottom: 92px; }
   }
 
@@ -388,7 +389,10 @@
 
     .app-shell .topbar { inset: 8px 8px auto 8px; height: 40px; gap: 8px; }
     .app-shell .glass-button.sidebar-toggle { display: grid; flex: 0 0 40px; }
-    .app-shell .topbar-title { flex: 1 1 auto; height: 40px; padding: 0 6px 0 4px; border-radius: 13px; }
+    .app-shell .topbar-title {
+      flex: 1 1 auto; height: 40px; padding: 0 6px 0 4px; border-radius: 13px; background: var(--glass); border: 1px solid var(--glass-border);
+      box-shadow: var(--sk-shadow); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+    }
     .app-shell .crumb { display: none; }
     .app-shell .note-title { min-width: 0; flex: 1 1 auto; width: auto; max-width: none; font-size: 17px; field-sizing: fixed; }
     .app-shell .save-state { font-size: 0; gap: 0; margin-right: 6px; }

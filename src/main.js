@@ -3,7 +3,7 @@ import './workspace-theme.css'
 import './skins.css'
 import './chrome.css'
 import { mountSkinSwitcher, startSkins } from './skins.js'
-import { ActiveSelection, cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox, util } from 'fabric'
+import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { mountMindMapModule } from './modules/mindmap.js'
@@ -15,6 +15,16 @@ import { mountAgentSync } from './modules/sync/index.js'
 import { mergeRemoteAppends, pickFlagBlock } from './modules/sync/changes.js'
 import { prettifySelection } from './modules/editor/prettify.js'
 import { Connector, drawArrow } from './modules/editor/connector-object.js'
+import { Sticky } from './modules/editor/sticky-object.js'
+import { dockIcon } from './modules/editor/dock-icons.js'
+import {
+  fitImage,
+  imageEncoding,
+  imageFiles,
+  objectPalette,
+  shapeDefaults,
+  stickyDefaults,
+} from './modules/editor/objects.js'
 import {
   ConnectorIndex,
   connectorBox,
@@ -28,7 +38,7 @@ import { bindPageLifecycle, canKeepAlive, confirmedRevision, settleSaves } from 
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { createLiftEffect } from './modules/editor/lift.js'
-import { fitView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
+import { chooseOpeningView, fitView, openingView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
 import {
   clampView,
   easeInOut,
@@ -74,6 +84,7 @@ const QUICK_INK_COLORS = [
   ['Blue', '#1c70a8'],
 ]
 const GHOST_REACH = 160
+const PAGE_FOLD_COLOR = 'rgba(31, 27, 22, .13)' // paper is light in every skin
 const STROKE_WIDTHS = {
   pen: [1, 3, 6, 10],
   highlight: [10, 20, 32, 48],
@@ -152,13 +163,17 @@ document.querySelector('#app').innerHTML = `
           <div class="dock-canvas" id="dock-canvas">
             <div class="tool-group dock-tools">
               <button class="tool-button mobile-hand-tool" data-tool="hand" title="Move canvas" aria-label="Move canvas"><i data-lucide="hand"></i></button>
-              <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select"><i data-lucide="mouse-pointer-2"></i></button>
-              <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text"><i data-lucide="type"></i></button>
-              <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen"><i data-lucide="pencil"></i></button>
-              <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (H) - hold for color and width" aria-label="Highlighter"><i data-lucide="highlighter"></i></button>
-              <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
-              <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser"><i data-lucide="eraser"></i></button>
+              <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select">${dockIcon('select')}</button>
+              <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text">${dockIcon('text')}</button>
+              <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen">${dockIcon('pen')}</button>
+              <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (H) - hold for color and width" aria-label="Highlighter">${dockIcon('marker')}</button>
+              <button class="tool-button" data-tool="shape" data-tool-options title="Shape (R) - click the page to place, hold for color" aria-label="Shape">${dockIcon('shape')}</button>
+              <button class="tool-button" data-tool="sticky" data-tool-options title="Sticky note (N) - click the page to place, hold for color" aria-label="Sticky note">${dockIcon('sticky')}</button>
+              <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect">${dockIcon('connect')}</button>
+              <button class="tool-button" id="add-image" title="Image (I) - choose a file, or drop one on the page" aria-label="Add image">${dockIcon('image')}</button>
+              <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser">${dockIcon('eraser')}</button>
             </div>
+            <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
             <div class="dock-divider"></div>
             <div class="ink-swatches" role="group" aria-label="Ink color">
               ${QUICK_INK_COLORS.map(([name, color]) => `<button class="ink-swatch ${color === '#20201e' ? 'active' : ''}" data-color="${color}" style="--swatch:${color}" title="${name}" aria-label="${name}"></button>`).join('')}
@@ -167,10 +182,10 @@ document.querySelector('#app').innerHTML = `
             <div class="dock-divider"></div>
             <div class="tool-group dock-history">
               <button class="tool-button prettify-button" id="prettify" title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
-              <button class="tool-button" id="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
-              <button class="tool-button" id="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
+              <button class="tool-button" id="undo" title="Undo" aria-label="Undo">${dockIcon("undo")}</button>
+              <button class="tool-button" id="redo" title="Redo" aria-label="Redo">${dockIcon("redo")}</button>
             </div>
-            <button class="voice-button" id="voice-button" title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon"><i data-lucide="mic"></i></span></button>
+            <button class="voice-button" id="voice-button" title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon">${dockIcon("mic", 2)}</span></button>
           </div>
           <div class="mindmap-dock-actions mindmap-rail-actions" id="mindmap-rail-actions" aria-label="Mind map tools" hidden>
             <button class="tool-button" data-map-action="image" title="Add image" aria-label="Add image"><i data-lucide="image-plus"></i></button>
@@ -198,6 +213,7 @@ document.querySelector('#app').innerHTML = `
           <div class="ink-palette" id="ink-palette" aria-label="Common colors">
             ${INK_COLORS.map(([name, color]) => `<button class="palette-swatch ${color === '#20201e' ? 'active' : ''}" data-color="${color}" style="--swatch:${color}" title="${name}" aria-label="${name}"></button>`).join('')}
           </div>
+          <div class="ink-palette" id="object-palette" aria-label="Note and shape colors" hidden></div>
           <div class="stroke-options" id="stroke-options" hidden>
             <span id="stroke-options-label">Pen width</span>
             <div class="stroke-widths" id="stroke-widths"></div>
@@ -469,6 +485,9 @@ const elements = {
   eraserCursor: document.querySelector('#eraser-cursor'),
   inkOptionsTrigger: document.querySelector('#ink-options-trigger'),
   inkOptionsDot: document.querySelector('#ink-options-dot'),
+  inkPalette: document.querySelector('#ink-palette'),
+  objectPalette: document.querySelector('#object-palette'),
+  imageFile: document.querySelector('#image-file'),
   inkOptionsPopover: document.querySelector('#ink-options-popover'),
   inkColorLabel: document.querySelector('#ink-color-label'),
   strokeOptions: document.querySelector('#stroke-options'),
@@ -495,6 +514,7 @@ const state = {
   pages: { columns: 1, rows: 1 },
   tool: 'text',
   color: '#20201e',
+  objectColor: 0,
   penWidth: 3,
   highlightWidth: 20,
   fontFamily: 'Source Serif 4',
@@ -588,6 +608,7 @@ const CANVAS_FONT_SPECS = [
   '600 24px "Source Serif 4"',
   '400 24px "IBM Plex Sans"',
   '600 24px "IBM Plex Sans"',
+  '500 34px "Caveat"',
 ]
 let canvasFontLoadPromise
 
@@ -620,6 +641,11 @@ canvas.freeDrawingBrush = new PencilBrush(canvas)
 
 let inkOptionsCloseTimer
 
+function currentObjectPalette() {
+  const styles = getComputedStyle(document.documentElement)
+  return objectPalette((name) => styles.getPropertyValue(name))
+}
+
 function closeInkOptions() {
   clearTimeout(inkOptionsCloseTimer)
   elements.inkOptionsPopover.hidden = true
@@ -634,8 +660,18 @@ function scheduleInkOptionsClose(delay = 750) {
 
 function updateInkOptions() {
   elements.inkOptionsDot.style.setProperty('--active-ink', state.color)
-  elements.inkColorLabel.textContent = state.tool === 'text' ? 'Text color' : 'Ink color'
-  document.querySelectorAll('.palette-swatch, .ink-swatch').forEach((swatch) => {
+  const placing = state.tool === 'sticky' || state.tool === 'shape'
+  elements.inkPalette.hidden = placing
+  elements.objectPalette.hidden = !placing
+  if (placing) {
+    elements.inkColorLabel.textContent = state.tool === 'sticky' ? 'Note color' : 'Shape color'
+    elements.objectPalette.innerHTML = currentObjectPalette().map(({ fill }, index) => `
+      <button class="palette-swatch object-swatch ${index === state.objectColor ? 'active' : ''}" data-object-color="${index}" style="--swatch:${fill}" aria-label="Color ${index + 1}"></button>
+    `).join('')
+  } else {
+    elements.inkColorLabel.textContent = state.tool === 'text' ? 'Text color' : 'Ink color'
+  }
+  document.querySelectorAll('.palette-swatch:not(.object-swatch), .ink-swatch').forEach((swatch) => {
     swatch.classList.toggle('active', swatch.dataset.color === state.color)
   })
 
@@ -851,7 +887,7 @@ let viewportOffsetX = 0
 let viewportOffsetY = 0
 let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
 let pageAnimation = null
-let pageColors = { paper: '#fbfaf5', grid: '#c9c5bc', edge: '#2c2c34', accent: '#0a6cff', accentInk: '#ffffff', shadows: [] }
+let pageColors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', accent: '#0a6cff', accentInk: '#ffffff', shadows: [] }
 let edgeGhost = null
 let voiceOutline = false
 
@@ -884,7 +920,8 @@ function refreshPageColors() {
   const highContrast = window.matchMedia('(prefers-contrast: more)').matches
   pageColors = {
     paper: read('--paper', '#fbfaf5'),
-    grid: '#c9c5bc',
+    label: read('--ui-muted', '#6e6e78'),
+    radius: Number.parseFloat(read('--sk-page-radius', '6')) || 0,
     accent: read('--accent', '#4D839C'),
     accentInk: read('--sk-accent-ink', '#ffffff'),
     edge: highContrast ? read('--line', '#2c2c34') : read('--sk-edge', read('--line', '#2c2c34')),
@@ -1065,6 +1102,33 @@ function goToPage(index) {
   animateViewTo({ x: clamped.x, y: clamped.y, scale })
 }
 
+const OPEN_ZOOM_MIN = 0.4
+const OPEN_OBJECT_LIMIT = 150
+
+// A note opens with its whole page grid on the desk (zoomed out). A dense note would pan at a crawl with hundreds of
+// objects on screen, so it opens on its first page, or at full size if even that is crowded. Phones keep the
+// full-width first page.
+function openCanvasView() {
+  if (window.innerWidth <= 800) return resetCanvasView()
+  const target = pageExtentsTarget()
+  const margins = viewMargins(window.innerWidth)
+  const viewW = canvas.getWidth()
+  const viewH = canvas.getHeight()
+  const min = state.displayScale * OPEN_ZOOM_MIN
+  const max = state.displayScale
+  const whole = openingView({
+    viewW, viewH, contentW: target.right, contentH: target.bottom,
+    margins: { ...margins, left: 72, right: 72, bottom: margins.bottom + 10 }, min, max,
+  })
+  const firstPage = fitView({ viewW, viewH, contentW: PAGE_WIDTH, contentH: PAGE_HEIGHT, margins, min, max })
+  const actual = { scale: max, x: (viewW - PAGE_WIDTH * max) / 2, y: margins.top }
+  const boxes = canvas.getObjects().filter((object) => !isConnector(object)).map((object) => object.getBoundingRect())
+  const view = chooseOpeningView([whole, firstPage, actual], viewW, viewH, boxes, OPEN_OBJECT_LIMIT, { width: target.right, height: target.bottom })
+  cancelViewAnimation()
+  state.canvasZoom = view.scale / state.displayScale
+  setCanvasViewportOffset(view.x, view.y)
+}
+
 function resetCanvasView() {
   const scale = getCanvasScale()
   const target = pageExtentsTarget()
@@ -1163,6 +1227,29 @@ function drawEdgeGhost(ctx, ghost, scale) {
   ctx.restore()
 }
 
+// "Page N" under each page of the bottom row; upper rows touch the page below, so theirs sit inside the corner.
+function drawPageLabels(ctx, scale) {
+  const { columns, rows } = state.pages
+  if (columns * rows > 400) return
+  ctx.save()
+  ctx.font = `400 ${10.5 / scale}px "Geist Mono", ui-monospace, monospace`
+  ctx.fillStyle = pageColors.label
+  ctx.textBaseline = 'top'
+  const v = canvas.viewportTransform
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const screenX = v[4] + column * PAGE_WIDTH * v[0]
+      const screenY = v[5] + (row + 1) * PAGE_HEIGHT * v[3]
+      if (screenX > canvas.getWidth() || screenX + PAGE_WIDTH * v[0] < 0 || screenY > canvas.getHeight() + 40 || screenY < -40) continue
+      const last = row === rows - 1
+      const x = column * PAGE_WIDTH + (last ? 0 : 14 / scale)
+      const y = (row + 1) * PAGE_HEIGHT + (last ? 11 : -26) / scale
+      ctx.fillText(`Page ${row * columns + column + 1}`, x, y)
+    }
+  }
+  ctx.restore()
+}
+
 function drawPageTiles(ctx) {
   const extents = pageExtentsNow
   const width = extents.right - extents.left
@@ -1177,26 +1264,40 @@ function drawPageTiles(ctx) {
   for (const layer of pageColors.shadows) {
     ctx.fillStyle = layer.rgb
     const previousAlpha = ctx.globalAlpha
-    for (const band of shadowBands({ blur: layer.blur, spread: layer.spread, alpha: layer.peak })) {
+    for (const band of shadowBands({ blur: layer.blur, spread: layer.spread, alpha: layer.peak }, 32)) {
       const grow = band.grow / scale
       ctx.globalAlpha = band.alpha
       ctx.fillRect(extents.left - grow + layer.x / scale, extents.top - grow + layer.y / scale, width + grow * 2, height + grow * 2)
     }
     ctx.globalAlpha = previousAlpha
   }
+  const radius = pageColors.radius / scale
   ctx.fillStyle = pageColors.edge
-  ctx.fillRect(extents.left - hairline, extents.top - hairline, width + hairline * 2, height + hairline * 2)
+  ctx.beginPath()
+  ctx.roundRect(extents.left - hairline, extents.top - hairline, width + hairline * 2, height + hairline * 2, radius + hairline)
+  ctx.fill()
   ctx.fillStyle = pageColors.paper
-  ctx.fillRect(extents.left, extents.top, width, height)
-  ctx.fillStyle = pageColors.grid
+  ctx.beginPath()
+  ctx.roundRect(extents.left, extents.top, width, height, radius)
+  ctx.fill()
+  // Fold lines between pages are dashed, as on the desk in the design.
+  ctx.strokeStyle = PAGE_FOLD_COLOR
+  ctx.lineWidth = 1.5 / scale
+  ctx.setLineDash([6 / scale, 5 / scale])
+  ctx.beginPath()
   const firstColumn = Math.max(1, Math.ceil((extents.left + 1) / PAGE_WIDTH))
   for (let x = firstColumn * PAGE_WIDTH; x < extents.right; x += PAGE_WIDTH) {
-    ctx.fillRect(x - hairline, extents.top, hairline, height)
+    ctx.moveTo(x, extents.top)
+    ctx.lineTo(x, extents.bottom)
   }
   const firstRow = Math.max(1, Math.ceil((extents.top + 1) / PAGE_HEIGHT))
   for (let y = firstRow * PAGE_HEIGHT; y < extents.bottom; y += PAGE_HEIGHT) {
-    ctx.fillRect(extents.left, y - hairline, width, hairline)
+    ctx.moveTo(extents.left, y)
+    ctx.lineTo(extents.right, y)
   }
+  ctx.stroke()
+  ctx.setLineDash([])
+  drawPageLabels(ctx, scale)
   if (edgeGhost) drawEdgeGhost(ctx, edgeGhost, scale)
   if (voiceOutline) {
     // Voice-listening outline follows the page extents, not the whole workspace.
@@ -1272,7 +1373,7 @@ function bindTextEditingLifecycle(text) {
   text.on('editing:entered', () => showWritingGuide(text))
   text.on('editing:exited', () => {
     hideWritingGuide()
-    if (isPlaceholderText(text.text) && canvas.getObjects().includes(text)) {
+    if (!(text instanceof Sticky) && isPlaceholderText(text.text) && canvas.getObjects().includes(text)) {
       canvas.remove(text)
       canvas.discardActiveObject()
       reconcilePages()
@@ -1290,7 +1391,7 @@ function bindCanvasTextObjects() {
 function normalizeNotebookFonts() {
   let changed = false
   canvas.getObjects().forEach((object) => {
-    if (isEditableText(object) && isPlaceholderText(object.text)) {
+    if (isEditableText(object) && !(object instanceof Sticky) && isPlaceholderText(object.text)) {
       canvas.remove(object)
       changed = true
       return
@@ -1631,7 +1732,7 @@ function setTool(tool) {
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
   canvas.isDrawingMode = tool === 'pen' || tool === 'highlight'
   canvas.selection = tool === 'select'
-  canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : tool === 'connect' ? 'crosshair' : 'default'
+  canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : tool === 'connect' || tool === 'sticky' || tool === 'shape' ? 'crosshair' : 'default'
   canvas.forEachObject((object) => {
     const textEditable = tool === 'text' && isEditableText(object)
     object.selectable = tool === 'select' || textEditable
@@ -1650,6 +1751,110 @@ function setTool(tool) {
   connectHover = null
   canvas.discardActiveObject()
   canvas.requestRenderAll()
+}
+
+// Sticky notes, shapes and images. Each is an ordinary canvas object, so it saves, undoes, prints and
+// takes connectors exactly like text; stickies are Textboxes, so their words are searched and exported.
+function centerOn(object, point) {
+  object.setPositionByOrigin(new Point(point.x, point.y), 'center', 'center')
+  object.setCoords()
+}
+
+function finishPlacing(object) {
+  canvas.add(object)
+  setTool('select')
+  canvas.setActiveObject(object)
+  reconcilePages()
+  canvas.requestRenderAll()
+  recordHistory()
+}
+
+function placeObject(kind, point) {
+  const color = currentObjectPalette()[state.objectColor]
+  if (kind === 'sticky') {
+    const sticky = new Sticky('', stickyDefaults(color))
+    centerOn(sticky, point)
+    finishPlacing(sticky)
+    bindTextEditingLifecycle(sticky)
+    sticky.enterEditing()
+    return sticky
+  }
+  const defaults = shapeDefaults(color)
+  const shape = new Rect(defaults)
+  centerOn(shape, point)
+  finishPlacing(shape)
+  return shape
+}
+
+function viewCenterPoint() {
+  const scale = getCanvasScale()
+  return { x: (canvas.getWidth() / 2 - viewportOffsetX) / scale, y: (canvas.getHeight() / 2 - viewportOffsetY) / scale }
+}
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+// Pictures are stored inside the note as data URLs, so very large ones are shrunk first.
+async function preparedImageSource(file) {
+  const source = await readAsDataUrl(file)
+  const element = await new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Could not read that picture'))
+    image.src = source
+  })
+  const target = fitImage({ width: element.naturalWidth, height: element.naturalHeight })
+  const resized = target.width !== element.naturalWidth || target.height !== element.naturalHeight
+  const plan = imageEncoding({ dataUrlLength: source.length, resized, hasAlpha: false, type: file.type })
+  if (!plan) return source
+  const scratch = document.createElement('canvas')
+  scratch.width = target.width
+  scratch.height = target.height
+  const context = scratch.getContext('2d', { willReadFrequently: true })
+  context.drawImage(element, 0, 0, target.width, target.height)
+  const { data } = context.getImageData(0, 0, target.width, target.height)
+  let hasAlpha = false
+  for (let index = 3; index < data.length; index += 4) if (data[index] < 255) { hasAlpha = true; break }
+  const encoding = imageEncoding({ dataUrlLength: source.length, resized, hasAlpha, type: file.type })
+  if (!hasAlpha) {
+    context.globalCompositeOperation = 'destination-over'
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, target.width, target.height)
+  }
+  return scratch.toDataURL(encoding.type, encoding.quality)
+}
+
+async function placeImageFiles(files, point = viewCenterPoint()) {
+  const pictures = imageFiles(files)
+  if (!pictures.length || state.activeNoteType !== 'canvas') return 0
+  let placed = 0
+  for (const file of pictures) {
+    try {
+      const picture = await FabricImage.fromURL(await preparedImageSource(file))
+      const { width, height } = fitImage({ width: picture.width, height: picture.height }, 520)
+      picture.set({ scaleX: width / picture.width, scaleY: height / picture.height })
+      centerOn(picture, { x: point.x + placed * 28, y: point.y + placed * 28 })
+      canvas.add(picture)
+      placed += 1
+    } catch (error) {
+      console.error(error)
+      setSaveState('Could not add that picture', true)
+    }
+  }
+  if (!placed) return 0
+  setTool('select')
+  const last = canvas.getObjects().at(-1)
+  canvas.setActiveObject(last)
+  reconcilePages()
+  canvas.requestRenderAll()
+  recordHistory()
+  return placed
 }
 
 // Connectors: arrows between two canvas objects, joined by semanticId. The index maps
@@ -1991,7 +2196,7 @@ async function selectNote(id) {
     } else {
       state.pages = note.pageState || { columns: 1, rows: 1 }
       resizePaper()
-      resetCanvasView()
+      openCanvasView()
       await canvas.loadFromJSON(note.content || { objects: [] })
       bindCanvasTextObjects()
       normalizedNote = normalizeNotebookFonts()
@@ -2004,7 +2209,7 @@ async function selectNote(id) {
     }
     setSaveState('Saved')
     renderNoteList()
-    requestAnimationFrame(resetCanvasView)
+    requestAnimationFrame(openCanvasView)
   } catch (error) {
     console.error(error)
     setSaveState('Could not load', true)
@@ -2976,6 +3181,9 @@ canvas.on('mouse:down', (event) => {
     state.eraserActive = true
     state.eraserLastPoint = { x: event.scenePoint.x, y: event.scenePoint.y }
     state.eraserChanged = eraseAt(state.eraserLastPoint)
+  } else if (state.tool === 'sticky' || state.tool === 'shape') {
+    if (event.e.button > 0) return
+    placeObject(state.tool, event.scenePoint)
   } else if (state.tool === 'text') {
     const textTarget = isEditableText(event.target) ? event.target : findEditableTextAt(event.scenePoint)
     if (textTarget) {
@@ -3127,6 +3335,43 @@ document.querySelectorAll('[data-color]').forEach((button) => button.addEventLis
   if (state.tool === 'text') closeInkOptions()
   else scheduleInkOptionsClose()
 }))
+elements.objectPalette.addEventListener('click', (event) => {
+  const swatch = event.target.closest('[data-object-color]')
+  if (!swatch) return
+  state.objectColor = Number(swatch.dataset.objectColor)
+  const color = currentObjectPalette()[state.objectColor]
+  const active = canvas.getActiveObject()
+  if (active instanceof Sticky) active.set({ stickyColor: color.fill, fill: color.ink })
+  else if (active instanceof Rect) active.set('fill', color.fill)
+  if (active) {
+    canvas.requestRenderAll()
+    recordHistory()
+  }
+  updateInkOptions()
+  scheduleInkOptionsClose()
+})
+document.querySelector('#add-image').addEventListener('click', () => elements.imageFile.click())
+elements.imageFile.addEventListener('change', async () => {
+  const files = [...elements.imageFile.files]
+  elements.imageFile.value = ''
+  await placeImageFiles(files)
+})
+const hasFiles = (event) => [...(event.dataTransfer?.types || [])].includes('Files')
+elements.workspace.addEventListener('dragover', (event) => {
+  if (state.activeNoteType !== 'canvas' || !hasFiles(event)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+  elements.workspace.classList.add('is-drop-target')
+})
+elements.workspace.addEventListener('dragleave', (event) => {
+  if (!elements.workspace.contains(event.relatedTarget)) elements.workspace.classList.remove('is-drop-target')
+})
+elements.workspace.addEventListener('drop', (event) => {
+  elements.workspace.classList.remove('is-drop-target')
+  if (state.activeNoteType !== 'canvas' || !hasFiles(event)) return
+  event.preventDefault()
+  placeImageFiles(event.dataTransfer.files, canvas.getScenePoint(event))
+})
 elements.inkOptionsTrigger.addEventListener('click', toggleInkOptions)
 document.querySelector('#close-ink-options').addEventListener('click', closeInkOptions)
 elements.strokeWidths.addEventListener('click', (event) => {
@@ -3544,8 +3789,9 @@ document.addEventListener('keydown', (event) => {
   } else if (!isTyping && canPanFromKeyboard(activeElement) && panWithKeyboard(event)) {
     event.preventDefault()
   } else if (!isTyping && !event.ctrlKey && !event.metaKey) {
-    const shortcuts = { v: 'select', t: 'text', p: 'pen', d: 'pen', h: 'highlight', e: 'eraser', c: 'connect' }
+    const shortcuts = { v: 'select', t: 'text', p: 'pen', d: 'pen', h: 'highlight', e: 'eraser', c: 'connect', r: 'shape', n: 'sticky' }
     if (shortcuts[event.key.toLowerCase()]) setTool(shortcuts[event.key.toLowerCase()])
+    else if (event.key.toLowerCase() === 'i' && state.activeNoteType === 'canvas' && elements.printPreview.hidden) elements.imageFile.click()
   }
 })
 

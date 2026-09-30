@@ -114,7 +114,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 }
 .icon-button:hover, .tool-button:hover { background: #e7e4dc; }
 .icon-button svg, .tool-button svg { width: 18px; height: 18px; stroke-width: 1.8; }
-.danger-button:hover { color: #a43f36; background: #f4dedb; }
 
 .workspace {
   position: relative;

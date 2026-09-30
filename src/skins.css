@@ -6,10 +6,11 @@
     color-scheme: light;
     --sk-desk: #f2f2f7; --sk-desk-dot: rgba(0, 0, 40, .07);
     --sk-panel: #ffffff; --sk-edge: #e3e3ea;
-    --sk-ink: #111114; --sk-muted: #6e6e78; --sk-line: #e6e6ec;
+    --sk-ink: #111114; --sk-ink-soft: #3a3a42; --sk-muted: #6e6e78; --sk-line: #e6e6ec;
     --sk-accent: #0a6cff; --sk-accent-ink: #ffffff; --sk-accent-soft: #e1ecff;
     --sk-c1: #ffd60a; --sk-c2: #30d158; --sk-c3: #64b5ff; --sk-c4: #bf5af2; --sk-c5: #ff6b3d;
     --sk-danger: #d6391f;
+    --paper: #ffffff; --sk-page-radius: 10px;
     --sk-display: "Bricolage Grotesque", system-ui, sans-serif; --sk-display-weight: 700;
     --sk-display-style: normal; --sk-title-track: -.035em;
     --sk-radius: 18px; --sk-radius-control: 10px;
@@ -19,10 +20,11 @@
     color-scheme: light;
     --sk-desk: #efebe3; --sk-desk-dot: rgba(60, 45, 20, .10);
     --sk-panel: #fffdf8; --sk-edge: #e4ddcf;
-    --sk-ink: #1f1b16; --sk-muted: #857c6e; --sk-line: #e7e0d3;
+    --sk-ink: #1f1b16; --sk-ink-soft: #4a443b; --sk-muted: #857c6e; --sk-line: #e7e0d3;
     --sk-accent: #e5533d; --sk-accent-ink: #ffffff; --sk-accent-soft: #fbe3dd;
     --sk-c1: #ffd66b; --sk-c2: #9fe0c0; --sk-c3: #a9cfff; --sk-c4: #cdb8ff; --sk-c5: #ff9c85;
     --sk-danger: #b93a27;
+    --paper: #fbfaf5; --sk-page-radius: 4px;
     --sk-display: "Fraunces", Georgia, serif; --sk-display-weight: 500;
     --sk-display-style: normal; --sk-title-track: -.02em;
     --sk-radius: 14px; --sk-radius-control: 8px;
@@ -32,10 +34,11 @@
     color-scheme: dark;
     --sk-desk: #0d1015; --sk-desk-dot: rgba(160, 190, 255, .07);
     --sk-panel: #161b23; --sk-edge: #232a35;
-    --sk-ink: #eceff4; --sk-muted: #7d8796; --sk-line: #262e3a;
+    --sk-ink: #eceff4; --sk-ink-soft: #b9c1cd; --sk-muted: #7d8796; --sk-line: #262e3a;
     --sk-accent: #7ee7c8; --sk-accent-ink: #07261d; --sk-accent-soft: rgba(126, 231, 200, .14);
     --sk-c1: #ffc877; --sk-c2: #7ee7c8; --sk-c3: #9db4ff; --sk-c4: #d3a6ff; --sk-c5: #ff8fb1;
     --sk-danger: #ff8fb1;
+    --paper: #fbfaf5; --sk-page-radius: 6px;
     --sk-display: "Instrument Serif", Georgia, serif; --sk-display-weight: 400;
     --sk-display-style: italic; --sk-title-track: -.01em;
     --sk-radius: 14px; --sk-radius-control: 8px;
@@ -74,8 +77,7 @@
   /* Text sitting on the accent color uses the skin's own ink, not the (now light) rail. */
   .tool-dock .tool-button.active, .font-family-control button.active, .mindmap-segments button.active,
   .properties-trigger:hover, .properties-trigger.active, .voice-button.active,
-  .clear-note-action:hover, .dialog-primary, .print-button,
-  .mobile-new-note { color: var(--skin-on-accent); }
+  .clear-note-action:hover, .dialog-primary, .print-button { color: var(--skin-on-accent); }
   .dialog-primary:hover, .print-button:hover { background: color-mix(in srgb, var(--sk-accent) 88%, var(--sk-ink)); }
   .dialog-danger:hover { background: color-mix(in srgb, var(--sk-danger) 88%, var(--sk-ink)); }
 

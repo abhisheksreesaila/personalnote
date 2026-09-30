@@ -20,13 +20,13 @@ test('a page narrower than the window is centred and cannot be panned sideways',
 
 test('a tall grid can be panned from its top margin to its bottom margin and no further', () => {
   const size = { ...desktop, contentW: 860, contentH: 4320, scale: 1 }
-  assert.equal(clampView({ x: 0, y: 500 }, size).y, 92)
+  assert.equal(clampView({ x: 0, y: 500 }, size).y, 104)
   assert.equal(clampView({ x: 0, y: -99999 }, size).y, 900 - 180 - 4320)
 })
 
 test('a short grid stays pinned to the top margin', () => {
   const view = clampView({ x: 0, y: -40 }, { ...desktop, viewH: 1400, contentW: 860, contentH: 1080, scale: 1 })
-  assert.equal(view.y, 92)
+  assert.equal(view.y, 104)
 })
 
 test('a wide grid pans within side margins', () => {

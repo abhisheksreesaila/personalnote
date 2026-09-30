@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   fitView,
+  objectsInView,
+  chooseOpeningView,
+  openingView,
   pageLabel,
   scrollThumbs,
   stepZoom,
@@ -78,4 +81,66 @@ test('scroll thumbs describe the visible share of the pannable range', () => {
     view: { x: 170, y: 800 - 180 - 4320, scale: 1 }, viewW: 1200, viewH: 800, contentW: 860, contentH: 4320, margins,
   })
   assert.ok(Math.abs(end.y.start + end.y.length - 1) < 1e-9)
+})
+
+const desk = { viewW: 1212, viewH: 900, margins: { left: 140, right: 140, top: 92, bottom: 180 } }
+
+test('opening a one-page note shows the whole page zoomed out, centred on the desk', () => {
+  const view = openingView({ ...desk, contentW: 860, contentH: 1080, min: 0.4, max: 1 })
+  assert.ok(view.scale < 0.7 && view.scale > 0.5, `scale ${view.scale}`)
+  assert.ok(Math.abs(view.x - (1212 - 860 * view.scale) / 2) < 1e-9)
+  assert.ok(view.y >= desk.margins.top)
+})
+
+test('opening a two-page note fits both pages side by side', () => {
+  const view = openingView({ ...desk, contentW: 1720, contentH: 1080, min: 0.4, max: 1 })
+  assert.ok(view.scale >= 0.5 && view.scale <= 0.56, `scale ${view.scale}`)
+  assert.ok(view.x >= desk.margins.left - 1e-9)
+})
+
+test('a tiny note is never magnified past the maximum', () => {
+  const view = openingView({ viewW: 4000, viewH: 3000, margins: { left: 0, right: 0, top: 0, bottom: 0 }, contentW: 860, contentH: 1080, min: 0.4, max: 1 })
+  assert.equal(view.scale, 1)
+})
+
+test('a huge page grid stops at the floor and starts at the first page instead of shrinking to dots', () => {
+  const view = openingView({ ...desk, contentW: 860 * 8, contentH: 1080 * 4, min: 0.4, max: 1 })
+  assert.equal(view.scale, 0.4)
+  assert.equal(view.x, desk.margins.left)
+  assert.equal(view.y, desk.margins.top)
+})
+
+const box = (left, top) => ({ left, top, width: 100, height: 100 })
+
+test('objects in view are counted by whether their box touches the window', () => {
+  const view = { x: 0, y: 0, scale: 0.5 }
+  const boxes = [box(0, 0), box(1000, 100), box(3000, 100), box(100, 3000)]
+  assert.equal(objectsInView(view, 1212, 900, boxes), 2)
+})
+
+test('a light note keeps the zoomed-out opening view', () => {
+  const far = { x: 0, y: 0, scale: 0.4 }
+  const near = { x: 0, y: 0, scale: 1 }
+  const boxes = Array.from({ length: 20 }, (_, i) => box(i * 50, 10))
+  assert.equal(chooseOpeningView([far, near], 1212, 900, boxes, 150), far)
+})
+
+test('a dense note opens at the first candidate that keeps the visible object count under the limit', () => {
+  const all = { x: 0, y: 0, scale: 0.4 }
+  const page = { x: 0, y: 0, scale: 0.56 }
+  const actual = { x: 0, y: 0, scale: 1 }
+  const boxes = Array.from({ length: 400 }, (_, i) => box((i % 40) * 60, Math.floor(i / 40) * 200))
+  assert.ok(objectsInView(all, 1212, 900, boxes) > 150)
+  assert.equal(chooseOpeningView([all, page, actual], 1212, 900, boxes, 150), actual)
+  assert.equal(chooseOpeningView([all, page, actual], 1212, 900, boxes, 10000), all)
+})
+
+test('the average load while panning counts too, not only what is on screen at the start', () => {
+  const page = { x: 0, y: 0, scale: 0.56 }
+  const actual = { x: 0, y: 0, scale: 1 }
+  // 300 objects spread over a 3 x 4 grid, but the ones near the start happen to be few.
+  const boxes = Array.from({ length: 300 }, (_, i) => box(1000 + (i % 30) * 70, 2000 + Math.floor(i / 30) * 200))
+  const content = { width: 2580, height: 4320 }
+  assert.equal(chooseOpeningView([page, actual], 1212, 900, boxes, 50, content), actual)
+  assert.equal(chooseOpeningView([page, actual], 1212, 900, boxes, 50), page)
 })
