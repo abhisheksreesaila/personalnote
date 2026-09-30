@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from app_paths import default_database_path
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
@@ -27,7 +28,7 @@ class CliError(Exception):
 
 
 def database_path(value: str | None) -> Path:
-    return Path(value or os.getenv("PERSONAL_NOTE_DB", ROOT / "data" / "personal-note.db"))
+    return Path(value) if value else default_database_path()
 
 
 def emit(value: Any) -> None:
@@ -73,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="personal-note",
         description="Personal Note local workspace CLI. Output is JSON unless --text is given on read commands.",
     )
-    parser.add_argument("--database", help="SQLite database path (defaults to PERSONAL_NOTE_DB or data/personal-note.db)")
+    parser.add_argument("--database", help="SQLite database path (defaults to PERSONAL_NOTE_DB, else the app-data folder)")
     parser.add_argument("--agent", default=DEFAULT_AGENT, help=f"Name shown in the app while this agent works (default: {DEFAULT_AGENT})")
     agent_option = argparse.ArgumentParser(add_help=False)
     agent_option.add_argument("--agent", default=argparse.SUPPRESS, help="Name shown in the app while this agent works")
