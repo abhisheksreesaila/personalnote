@@ -32,7 +32,7 @@ Design: docs/design/personal-note.md · Needs: none
 - [x] print output stays white paper regardless of skin
 Open: Night keeps ivory paper on screen (invariant 9); captain to decide on dark paper.
 
-## F-004 New canvas chrome [todo]
+## F-004 New canvas chrome [doing]
 Design: docs/design/personal-note.md (Layout) · Needs: F-003
 - [ ] sidebar with Quick note (⌘N), Inbox and Projects / Areas / Resources / Archive notebooks with colored dots
 - [ ] top bar with note title, "Saved on this Mac" state, search pill (⌘K) and share/export
@@ -41,7 +41,7 @@ Design: docs/design/personal-note.md (Layout) · Needs: F-003
 - [ ] a ghost "+ Page N" appears while dragging past the edge; dragged objects lift with tilt and shadow
 - [ ] keyboard panning (arrows, PageUp/PageDown, Space) and a scroll indicator, since the window-sized canvas (F-002) has no native scrolling
 
-## F-005 Connectors [todo]
+## F-005 Connectors [doing]
 Needs: F-002
 - [ ] a connector tool draws an arrow between two objects
 - [ ] connectors follow both ends live while either object is dragged, including across new pages
@@ -54,7 +54,7 @@ Needs: none
 - [x] while an agent is reading or writing a note, the app shows the "Claude Code is reading" chip and cursor flag
 - [x] AGENTS.md invariant 8 and the product docs updated: agent access is now in scope
 
-## F-007 Cover page (Crayon) [todo]
+## F-007 Cover page (Crayon) [doing]
 Design: Crayon cover artboard · Needs: F-003
 - [ ] landing page with the fanned PARA notebooks hero, "a page that grows" steps, "your agents can read it too", skins, final download call
 - [ ] works at phone width without horizontal scroll
