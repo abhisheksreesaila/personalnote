@@ -45,14 +45,21 @@ Needs: F-002
 - [ ] connectors follow both ends live while either object is dragged, including across new pages
 - [ ] connectors save, reload, undo and export with the note
 
-## F-006 Agent CLI, ready for Claude Code [doing]
+## F-006 Agent CLI, ready for Claude Code [done]
 Needs: none
-- [ ] `personal-note` search, read (as plain text) and write/append work against the live notebook without breaking revisions
-- [ ] an agent write shows up in the open app without a reload
-- [ ] while an agent is reading or writing a note, the app shows the "Claude Code is reading" chip and cursor flag
-- [ ] AGENTS.md invariant 8 and the product docs updated: agent access is now in scope
+- [x] `personal-note` search, read (as plain text) and write/append work against the live notebook without breaking revisions
+- [x] an agent write shows up in the open app without a reload
+- [x] while an agent is reading or writing a note, the app shows the "Claude Code is reading" chip and cursor flag
+- [x] AGENTS.md invariant 8 and the product docs updated: agent access is now in scope
 
 ## F-007 Cover page (Crayon) [todo]
 Design: Crayon cover artboard · Needs: F-003
 - [ ] landing page with the fanned PARA notebooks hero, "a page that grows" steps, "your agents can read it too", skins, final download call
 - [ ] works at phone width without horizontal scroll
+
+## F-008 Agent sync polish [todo]
+Needs: F-006, F-002
+- [ ] undo right after an agent's text is merged in does not remove the agent's text (record a history snapshot after merge)
+- [ ] the agent cursor flag does not cause stutter while dragging on a 600-object note (place it at most once per frame, cache the target block)
+- [ ] the flag clears immediately when switching notes
+- [ ] the flag follows pan and zoom on the window-sized canvas
