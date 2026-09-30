@@ -77,7 +77,7 @@ export function createLiftEffect({
       if (lifted === object) {
         direction = 1
         if (reducedMotion()) progress = 1
-        else schedule()
+        else if (progress < 1) schedule()
         return
       }
       restore()
