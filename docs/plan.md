@@ -74,6 +74,8 @@ Needs: F-002
 - [ ] after fold-back or undo the view settles inside the content without a later snap
 - [ ] the writing guide draws under the text, not over it
 - [ ] on a real retina Mac: zoom-out on the 600-object note stays smooth; decide objectCaching for ink paths
+- [ ] large transparent images in WebKit (Mac app) stay PNG because WebP encoding falls back; check and handle
+- [ ] verify-objects sticky-lock check asserts the sticky count
 
 ## F-010 Save pending edits on close [done]
 - [x] edits made just before a reload or close are saved (flush on pagehide / hidden, keepalive under 64 KiB)
@@ -90,10 +92,11 @@ Decision: pywebview native window around the existing local server (no Rust tool
 - [x] cold start to a usable canvas is measured and reported
 Open: Mac .app build and Mac/Linux microphone to be checked by the captain on real hardware.
 
-## F-012 Match the mockup [doing]
+## F-012 Match the mockup [done]
 Design: Crayon-Canvas artboard (canvas link in docs/design/personal-note.md) · Needs: F-004
 Captain: "the mock-up was way better"; buttons not as intended; nothing to drop on the canvas.
-- [ ] Crayon paper is white on screen as in the mockup (print unchanged; Paper and Night keep their paper)
-- [ ] a note opens zoomed to show whole pages on the dotted desk, with page edges, page labels, and the ghost "+ Page" visible while dragging past an edge
-- [ ] the dock has Sticky note, Shape and Image tools like the mockup; stickies and shapes save, undo, connect and print
-- [ ] dock, top bar, sidebar and zoom buttons match the mockup's sizes, radii, glass and states, checked side by side with screenshots in all three skins
+- [x] Crayon paper is white on screen as in the mockup (print unchanged; Paper and Night keep their paper)
+- [x] a note opens zoomed to show whole pages on the dotted desk, with page edges, page labels, and the ghost "+ Page" visible while dragging past an edge
+- [x] the dock has Sticky note, Shape and Image tools like the mockup; stickies and shapes save, undo, connect and print
+- [x] dock, top bar, sidebar and zoom buttons match the mockup's sizes, radii, glass and states, checked side by side with screenshots in all three skins
+Note: notes with more than ~150 objects open on the first page instead of the zoomed-out desk, to keep panning at 60fps.
