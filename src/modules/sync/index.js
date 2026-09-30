@@ -8,7 +8,7 @@ const NOTICE_MS = 7000
  * Keeps the open note in step with local agent writes and shows agent presence
  * (header chip plus a cursor flag over the block the agent is working on).
  * The host supplies everything that touches the canvas:
- *   api(path), saveStateElement, getActive() -> {id, resourceId, revision, noteType} | null,
+ *   api(path), saveStateElement, chipAnchor (optional element the chip is placed before), getActive() -> {id, resourceId, revision, noteType} | null,
  *   hasUnsavedEdits(), reload(note), merge(note) -> number of objects added,
  *   refreshLists(), locateFlagBlock(action) -> {x, y} in viewport pixels | null,
  *   onLayout(callback) to re-place the flag when the canvas re-renders or scrolls.
@@ -20,7 +20,7 @@ export function mountAgentSync(host) {
   chip.hidden = true
   chip.setAttribute('role', 'status')
   chip.setAttribute('aria-live', 'polite')
-  host.saveStateElement.before(chip)
+  ;(host.chipAnchor || host.saveStateElement).before(chip)
 
   // The flag is a DOM overlay, never a canvas object, so it is not saved or printed.
   const flagElement = document.createElement('div')

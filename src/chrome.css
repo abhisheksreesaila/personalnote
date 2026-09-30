@@ -1,0 +1,461 @@
+/* Canvas chrome (F-004): a floating glass sidebar, top bar, bottom dock, page minimap and zoom control
+   laid over the window-sized canvas. Screen-only (AGENTS.md invariant 9): nothing here touches saved
+   canvas appearance or print output. Loaded last, so it re-lays-out the older chrome in style.css and
+   workspace-theme.css using the skin tokens from skins.css (--sk-*), which keeps Crayon, Paper and Night working. */
+@media screen {
+  :root, :root[data-skin] {
+    --sk-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --glass: color-mix(in srgb, var(--sk-panel) 78%, transparent);
+    --glass-solid: var(--sk-panel);
+    --glass-border: var(--sk-edge);
+    --ink-soft: color-mix(in srgb, var(--sk-ink) 74%, var(--sk-panel));
+    /* Chrome text tokens: skin colors nudged toward the ink so small labels and white-on-accent text reach 4.5:1. */
+    --ui-muted: color-mix(in srgb, var(--sk-muted) 70%, var(--sk-ink));
+    --accent-fill: color-mix(in srgb, var(--sk-accent) 85%, var(--sk-ink));
+    --accent-text: color-mix(in srgb, var(--sk-accent) 65%, var(--sk-ink));
+    --hover: color-mix(in srgb, var(--sk-ink) 7%, transparent);
+    --pressed: color-mix(in srgb, var(--sk-ink) 13%, transparent);
+    --ring: 0 0 0 2px var(--sk-panel), 0 0 0 4px var(--sk-accent);
+    --ease-spring: cubic-bezier(.2, .9, .25, 1.08);
+    --ease-out: cubic-bezier(.22, .75, .25, 1);
+    --sidebar-width: 204px;
+  }
+
+  :root[data-skin="night"] { --accent-fill: var(--sk-accent); --accent-text: var(--sk-accent); }
+
+  .app-shell {
+    --rail-width: 228px;
+    position: relative;
+    display: block;
+    background-color: var(--sk-desk);
+    background-image: radial-gradient(var(--sk-desk-dot) 1px, transparent 1.2px);
+    background-size: 22px 22px;
+    font-family: var(--ui-font);
+    -webkit-font-smoothing: antialiased;
+  }
+  .app-shell button { font: inherit; }
+  .app-shell .voice-button-icon { display: grid; place-items: center; }
+  .app-shell .main-view { position: absolute; inset: 0 0 0 var(--rail-width); display: block; min-width: 0; }
+  .app-shell .workspace, .app-shell.mindmap-active .workspace { position: absolute; inset: 0; background: transparent; }
+
+  /* Shared glass surface. */
+  .app-shell .topbar-title, .app-shell .search-button, .app-shell .glass-button, .app-shell .agent-chip,
+  .app-shell .tool-dock, .app-shell .page-minimap, .app-shell .zoom-control, .app-shell .share-menu,
+  .app-shell .note-create-menu, .app-shell .ink-options-popover, .app-shell .voice-caption {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--sk-shadow);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    backdrop-filter: blur(18px) saturate(1.4);
+    color: var(--ink-soft);
+  }
+
+  /* ---------- Sidebar ---------- */
+  .app-shell .sidebar {
+    position: fixed; inset: 12px auto 12px 12px; width: var(--sidebar-width);
+    display: flex; flex-direction: column; gap: 2px; padding: 14px 10px 10px;
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--sk-radius);
+    box-shadow: var(--sk-shadow); transform: none; z-index: 23;
+    -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+  }
+  .app-shell .brand-row { height: auto; flex: none; display: flex; align-items: center; gap: 9px; padding: 2px 6px 12px; border: 0; }
+  .app-shell .brand-mark {
+    position: relative; width: 26px; height: 30px; flex: none; border-radius: 4px 7px 7px 4px;
+    background: var(--sk-accent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sk-accent) 62%, #000);
+  }
+  .app-shell .brand-mark::after { content: ""; position: absolute; right: 5px; top: 0; bottom: 0; width: 3px; background: var(--sk-accent-ink); opacity: .7; }
+  .app-shell .brand-name { flex: 1; min-width: 0; font-family: var(--sk-display); font-weight: var(--sk-display-weight); font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track); font-size: 17px; color: var(--sk-ink); white-space: nowrap; }
+  .app-shell .sidebar-close { display: none; }
+
+  .app-shell .quick-note {
+    position: relative; flex: none; width: 100%; height: 38px; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 12px;
+    border: 0; border-radius: 12px; color: var(--sk-accent-ink); background: var(--accent-fill);
+    box-shadow: 0 6px 16px -8px var(--accent-fill); font-size: 13px; font-weight: 500; cursor: pointer; text-align: left;
+    transition: transform 160ms var(--ease-out), filter 160ms ease, box-shadow 160ms ease;
+  }
+  .app-shell .quick-note:hover { filter: brightness(1.07); box-shadow: 0 8px 20px -8px var(--accent-fill); }
+  .app-shell .quick-note:active, .app-shell .quick-note.is-holding { transform: scale(.975); filter: brightness(.96); }
+  .app-shell .quick-note:focus-visible { outline: none; box-shadow: var(--ring); }
+  .app-shell .quick-note svg { width: 16px; height: 16px; stroke-width: 2; flex: none; }
+  .app-shell .quick-note kbd, .app-shell .search-button kbd, .app-shell .share-menu kbd {
+    margin-left: auto; padding: 2px 6px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 6px;
+    font: 400 11px/1.3 var(--sk-mono); color: inherit; opacity: .8; background: transparent;
+  }
+
+  .app-shell .notebook-navigator { display: block; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; scrollbar-color: var(--sk-line) transparent; }
+  .app-shell .notebook-list { display: block; padding: 0; overflow: visible; }
+  .app-shell .nav-heading {
+    display: flex; align-items: center; padding: 12px 8px 4px; color: var(--ui-muted); font-size: 10.5px; font-weight: 500;
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  .app-shell .nav-add {
+    width: 22px; height: 22px; margin: -2px -4px -2px auto; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px;
+    color: var(--ui-muted); background: transparent; cursor: pointer; opacity: 0; transition: opacity 140ms ease, background-color 140ms ease;
+  }
+  .app-shell .nav-heading:hover .nav-add, .app-shell .nav-add:focus-visible { opacity: 1; }
+  .app-shell .nav-add:hover { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .nav-add svg { width: 14px; height: 14px; }
+
+  .app-shell .nav-row { position: relative; display: block; }
+  .app-shell .nav-item, .app-shell .notebook-tab {
+    position: relative; width: 100%; min-width: 0; height: 30px; display: flex; align-items: center; gap: 9px; padding: 0 8px; border: 0;
+    border-radius: 9px; background: transparent; box-shadow: none; color: var(--ink-soft); font-size: 13px; font-weight: 400; text-align: left; cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
+  }
+  .app-shell .nav-item:hover, .app-shell .notebook-tab:hover { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .nav-item:active, .app-shell .notebook-tab:active { background: var(--pressed); transform: scale(.985); }
+  .app-shell .nav-item:focus-visible, .app-shell .notebook-tab:focus-visible, .app-shell .note-list-item:focus-visible { outline: 2px solid var(--sk-accent); outline-offset: -2px; }
+  .app-shell .notebook-tab.active, .app-shell .nav-item.active { background: var(--sk-accent-soft); color: var(--sk-ink); font-weight: 500; box-shadow: none; }
+  .app-shell .notebook-tab.drag-over { background: var(--sk-accent-soft); box-shadow: inset 0 0 0 1.5px var(--sk-accent); }
+  .app-shell .nav-item svg { width: 16px; height: 16px; flex: none; color: var(--ink-soft); }
+  .app-shell .notebook-dot { width: 8px; height: 8px; flex: none; margin: 0 1px; border-radius: 3px; background: var(--notebook-color); box-shadow: none; }
+  .app-shell .notebook-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: inherit; }
+  .app-shell .notebook-count, .app-shell .notebook-tab .notebook-count {
+    margin-left: auto; color: var(--ui-muted); font: 400 11px/1 var(--sk-mono); font-variant-numeric: tabular-nums; transition: opacity 120ms ease;
+  }
+  .app-shell .nav-chevron { width: 14px !important; height: 14px !important; transition: transform 200ms var(--ease-out); }
+  .app-shell .nav-chevron.open { transform: rotate(90deg); }
+  .app-shell .nav-edit {
+    position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px;
+    color: var(--ui-muted); background: transparent; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease;
+  }
+  .app-shell .nav-edit svg { width: 15px; height: 15px; }
+  .app-shell .nav-row:hover .nav-edit, .app-shell .nav-edit:focus-visible { opacity: 1; background: color-mix(in srgb, var(--sk-panel) 70%, var(--sk-accent-soft)); }
+  .app-shell .nav-row:hover .notebook-count, .app-shell .nav-edit:focus-visible ~ .notebook-tab .notebook-count { opacity: 0; }
+
+  .app-shell .nav-notes { display: grid; gap: 1px; margin: 2px 0 6px 13px; padding-left: 8px; border-left: 1.5px solid var(--sk-line); }
+  .app-shell .note-list-item {
+    width: 100%; min-width: 0; min-height: 28px; height: auto; display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 0; border-radius: 8px;
+    background: transparent; box-shadow: none; color: var(--ink-soft); text-align: left; cursor: pointer; transition: background-color 140ms ease, color 140ms ease;
+  }
+  .app-shell .note-list-item:hover { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .note-list-item:active { background: var(--pressed); }
+  .app-shell .note-list-item.active { background: var(--pressed); color: var(--accent-text); box-shadow: none; font-weight: 500; }
+  .app-shell .note-list-item > svg { width: 14px; height: 14px; flex: none; color: currentColor; opacity: .65; }
+  .app-shell .note-list-item span:not(.notebook-dot) { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12.5px/1.3 var(--ui-font); }
+  .app-shell .empty-notebook { min-height: 0; display: block; padding: 5px 8px; color: var(--ui-muted); font: 400 12px/1.4 var(--ui-font); }
+
+  .app-shell .sidebar-footer {
+    flex: none; height: auto; display: flex; align-items: center; gap: 8px; margin: 6px -2px 0; padding: 10px 6px 0 8px;
+    border-top: 1px solid var(--sk-line); color: var(--ui-muted); font-size: 12px;
+  }
+  .app-shell .skin-label { flex: none; }
+  .app-shell .skin-switcher { margin-left: auto; gap: 7px; }
+  .app-shell .skin-swatch { width: 18px; height: 18px; border: 2px solid var(--sk-panel); box-shadow: 0 0 0 1px var(--glass-border); transition: transform 180ms var(--ease-spring), box-shadow 160ms ease; }
+  .app-shell .skin-swatch:hover { transform: scale(1.14); }
+  .app-shell .skin-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--sk-accent); }
+  .app-shell .skin-swatch:focus-visible { outline: none; box-shadow: var(--ring); }
+  .app-shell #rail-settings { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 9px; color: var(--ui-muted); }
+  .app-shell #rail-settings:hover, .app-shell #rail-settings.active { background: var(--hover); color: var(--sk-ink); }
+  .app-shell #rail-settings svg { width: 16px; height: 16px; }
+  .app-shell .sidebar-scrim { display: none; }
+
+  /* ---------- Top bar ---------- */
+  .app-shell .topbar {
+    position: absolute; inset: 14px 16px auto 8px; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0;
+    background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; z-index: 10;
+  }
+  .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }
+  .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 14px; pointer-events: auto; }
+  .app-shell .crumb { flex: none; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font-size: 12.5px; white-space: nowrap; }
+  .app-shell .crumb b { font-weight: 500; color: var(--ink-soft); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+  .app-shell .note-title {
+    min-width: 7ch; width: 22ch; max-width: 34ch; height: 32px; margin: 0 0 0 2px; padding: 0 8px; border: 0; border-radius: 9px; outline: none;
+    background: transparent; color: var(--sk-ink); text-shadow: none; text-overflow: ellipsis; field-sizing: content;
+    font-family: var(--sk-display); font-weight: var(--sk-display-weight); font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track); font-size: 20px; line-height: 1;
+    transition: background-color 140ms ease, box-shadow 140ms ease;
+  }
+  .app-shell .note-title:hover { background: var(--hover); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .app-shell .note-title:focus { background: var(--sk-panel); box-shadow: 0 0 0 2px var(--sk-accent); backdrop-filter: none; }
+  .app-shell .save-state { flex: none; margin: 0 0 0 2px; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font: 400 11.5px/1 var(--ui-font); white-space: nowrap; }
+  .app-shell .save-state > span:not(.saving-spinner) { width: 6px; height: 6px; border-radius: 50%; background: var(--sk-c2); }
+  .app-shell .save-state.error { color: var(--accent-text); font-weight: 500; }
+  .app-shell .save-state.error > span { background: var(--sk-accent); }
+  .app-shell .topbar-actions { margin-left: auto; flex: none; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+
+  .app-shell .search-button {
+    position: relative; top: auto; left: auto; width: 300px; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px;
+    border-radius: 13px; color: var(--ui-muted); opacity: 1; transform: none; visibility: visible; overflow: hidden; white-space: nowrap; cursor: pointer; will-change: auto;
+    transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
+  }
+  .app-shell .search-button span { opacity: 1; transform: none; min-width: 0; flex: 1; text-align: left; font: 400 13px/1 var(--ui-font); transition: none; }
+  .app-shell .search-button svg { width: 16px; height: 16px; flex: none; }
+  .app-shell .search-button:hover { color: var(--sk-ink); border-color: color-mix(in srgb, var(--sk-ink) 22%, var(--glass-border)); }
+  .app-shell .search-button:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
+  .app-shell .search-button kbd { opacity: 1; transform: none; color: var(--ui-muted); }
+
+  .app-shell .glass-button, .app-shell .properties-trigger {
+    width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; padding: 0; border-radius: 13px; color: var(--ink-soft); cursor: pointer;
+    transform: none; will-change: auto; transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out), border-color 140ms ease;
+  }
+  .app-shell .glass-button:hover, .app-shell .properties-trigger:hover { background: var(--glass); color: var(--sk-ink); border-color: color-mix(in srgb, var(--sk-ink) 22%, var(--glass-border)); box-shadow: var(--sk-shadow); }
+  .app-shell .glass-button:active, .app-shell .properties-trigger:active { transform: scale(.94); }
+  .app-shell .glass-button:focus-visible, .app-shell .properties-trigger:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
+  .app-shell .properties-trigger.active, .app-shell .share-button[aria-expanded="true"] { color: var(--accent-text); background: var(--sk-accent-soft); border-color: var(--sk-accent); }
+  .app-shell .glass-button svg { width: 18px; height: 18px; }
+  .app-shell .glass-button.sidebar-toggle { display: none; }
+
+  .app-shell .agent-chip {
+    order: -1; height: 40px; margin: 0; padding: 0 14px 0 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--ink-soft); max-width: 260px;
+  }
+  .app-shell .agent-chip::before { width: 7px; height: 7px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--sk-c2) 22%, transparent); }
+
+  .app-shell .share-wrap { position: relative; }
+  .app-shell .share-menu {
+    position: absolute; right: 0; top: calc(100% + 8px); width: 232px; padding: 6px; border-radius: 14px; z-index: 40; background: var(--glass-solid);
+    transform-origin: top right; animation: menu-in 160ms var(--ease-out);
+  }
+  @keyframes menu-in { from { opacity: 0; transform: scale(.96) translateY(-4px); } }
+  .app-shell .share-menu[hidden] { display: none; }
+  .app-shell .share-menu button {
+    width: 100%; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 9px; background: transparent;
+    color: var(--ink-soft); font-size: 13px; text-align: left; cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
+  }
+  .app-shell .share-menu button:hover, .app-shell .share-menu button:focus-visible { background: var(--hover); color: var(--sk-ink); outline: none; }
+  .app-shell .share-menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--sk-accent); }
+  .app-shell .share-menu svg { width: 16px; height: 16px; flex: none; color: var(--ui-muted); }
+  .app-shell .share-menu span { flex: 1; }
+
+  /* ---------- Dock ---------- */
+  .app-shell .tool-dock {
+    position: fixed; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); bottom: 22px; transform: translateX(-50%); height: 58px;
+    display: flex; align-items: center; gap: 2px; padding: 0 8px; border-radius: 20px; overflow: visible; max-width: calc(100vw - var(--rail-width) - 32px);
+    transition: opacity 200ms ease, transform 240ms var(--ease-out); z-index: 12;
+  }
+  .app-shell .dock-canvas, .app-shell .mindmap-dock-actions, .app-shell .tool-group, .app-shell .ink-swatches { display: flex; align-items: center; gap: 2px; min-width: 0; }
+  .app-shell .dock-canvas[hidden], .app-shell .mindmap-dock-actions[hidden] { display: none; }
+  .app-shell .dock-slot { display: contents; }
+  .app-shell .tool-dock .tool-button {
+    position: relative; width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 12px;
+    color: var(--ink-soft); background: transparent; box-shadow: none; cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease, transform 160ms var(--ease-out);
+  }
+  .app-shell .tool-dock .tool-button:hover { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .tool-dock .tool-button:active { background: var(--pressed); transform: scale(.92); }
+  .app-shell .tool-dock .tool-button:focus-visible { outline: none; box-shadow: var(--ring); }
+  .app-shell .tool-dock .tool-button.active { background: var(--sk-ink); color: var(--sk-panel); box-shadow: none; }
+  .app-shell .tool-dock .tool-button.active:hover { background: var(--sk-ink); }
+  .app-shell .tool-dock .mobile-hand-tool { display: none; }
+  .app-shell .tool-dock .tool-button svg { width: 20px; height: 20px; stroke-width: 1.7; }
+  .app-shell .tool-button[data-tool-options]::after { right: 6px; bottom: 6px; }
+  .app-shell .dock-divider { flex: none; width: 1px; height: 24px; margin: 0 6px; background: var(--sk-line); }
+
+  .app-shell .ink-swatch {
+    position: relative; width: 22px; height: 22px; flex: none; margin: 0 3px; padding: 0; border: 0; border-radius: 99px; background: var(--swatch);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1); cursor: pointer; transition: transform 160ms var(--ease-spring), box-shadow 160ms ease;
+  }
+  .app-shell .ink-swatch::after { content: ""; position: absolute; inset: -6px -3px; }
+  .app-shell .ink-swatch:hover { transform: scale(1.14); }
+  .app-shell .ink-swatch.active { box-shadow: 0 0 0 2px var(--glass-solid), 0 0 0 4px var(--sk-ink); }
+  .app-shell .ink-swatch:focus-visible { outline: none; box-shadow: var(--ring); }
+  .app-shell .tool-dock .ink-options-trigger { width: 28px; height: 28px; flex-basis: 28px; border-radius: 99px; margin-left: 2px; }
+  .app-shell .ink-options-dot {
+    position: relative; width: 16px; height: 16px; border: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12);
+    background: conic-gradient(var(--sk-c5), var(--sk-c1), var(--sk-c2), var(--sk-c3), var(--sk-c4), var(--sk-c5));
+  }
+  .app-shell .ink-options-dot::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--active-ink, #20201e); box-shadow: 0 0 0 1.5px var(--glass-solid); }
+
+  .app-shell .voice-button {
+    position: relative; left: auto; bottom: auto; flex: 0 0 44px; width: 44px; height: 44px; margin-left: 4px; display: grid; place-items: center; padding: 0;
+    border: 0; border-radius: 50%; color: var(--sk-accent-ink); background: var(--sk-accent); box-shadow: 0 6px 16px -6px var(--sk-accent);
+    transform: none; touch-action: none; cursor: pointer; isolation: isolate; -webkit-backdrop-filter: none; backdrop-filter: none;
+    transition: transform 160ms var(--ease-out), filter 160ms ease, box-shadow 160ms ease;
+  }
+  .app-shell .voice-button:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 10px 20px -6px var(--sk-accent); }
+  .app-shell .voice-button:active { transform: scale(.93); }
+  .app-shell .voice-button:focus-visible { outline: none; box-shadow: var(--ring); }
+  .app-shell .voice-button svg { width: 20px; height: 20px; stroke-width: 2; }
+  .app-shell .voice-button.active { color: var(--sk-accent-ink); background: var(--sk-accent); animation: mic-pulse 1.3s ease-in-out infinite; }
+  @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sk-accent) 45%, transparent); } 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--sk-accent) 0%, transparent); } }
+
+  .app-shell.mindmap-active .tool-dock { display: flex !important; }
+  .app-shell .workspace.is-object-dragging :is(.page-minimap, .zoom-control) { opacity: .3; pointer-events: none; }
+  .app-shell .workspace.is-object-dragging .tool-dock { opacity: .14; pointer-events: none; transform: translateX(-50%) translateY(6px); }
+
+  .app-shell .ink-options-popover { position: fixed; bottom: 92px; border-radius: 16px; background: var(--glass-solid); }
+  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - var(--rail-width) - 24px)); font-size: 11px; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); bottom: 92px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
+  .app-shell .voice-pulse { background: var(--sk-accent); }
+  .app-shell .note-create-menu { position: fixed; z-index: 60; width: 168px; padding: 6px; border-radius: 14px; background: var(--glass-solid); animation: menu-in 160ms var(--ease-out); }
+  .app-shell .note-create-menu[hidden] { display: none; }
+  .app-shell .note-create-menu button { width: 100%; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-soft); font-size: 13px; text-align: left; cursor: pointer; }
+  .app-shell .note-create-menu button:hover, .app-shell .note-create-menu button:focus-visible { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .note-create-menu svg { width: 16px; color: var(--sk-accent); }
+
+  /* ---------- Minimap, zoom, scroll indicator ---------- */
+  .app-shell .page-minimap {
+    position: absolute; left: 16px; bottom: 30px; right: auto; height: 40px; max-width: 240px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 13px;
+    color: var(--ink-soft); font: 400 12px/1 var(--ui-font); z-index: 5; transition: opacity 200ms ease;
+  }
+  .app-shell .page-minimap[hidden], .app-shell .zoom-control[hidden], .app-shell .scroll-indicator[hidden] { display: none; }
+  .app-shell .mini-grid { display: grid; grid-template-columns: repeat(var(--mini-columns, 1), 14px); grid-auto-rows: 17px; gap: 2px; max-height: 36px; overflow-y: auto; scrollbar-width: none; padding: 1px; margin: -1px; }
+  .app-shell .mini-grid::-webkit-scrollbar { display: none; }
+  .app-shell .mini-page {
+    width: 14px; height: 17px; padding: 0; border: 0; border-radius: 2px; background: var(--sk-line); cursor: pointer;
+    transition: background-color 160ms ease, transform 140ms var(--ease-out);
+  }
+  .app-shell .mini-page.on { background: color-mix(in srgb, var(--ink-soft) 60%, transparent); }
+  .app-shell .mini-page:hover { background: var(--sk-accent); transform: scale(1.12); }
+  .app-shell .mini-page:focus-visible { outline: none; box-shadow: var(--ring); }
+  .app-shell .page-minimap .page-count {
+    position: static; right: auto; bottom: auto; padding: 0; border-radius: 0; background: none; color: inherit; font: 400 12px/1 var(--ui-font); white-space: nowrap;
+  }
+
+  .app-shell .zoom-control {
+    position: absolute; right: 18px; bottom: 30px; height: 40px; display: flex; align-items: center; gap: 2px; padding: 0 6px; border-radius: 13px; z-index: 5;
+    transition: opacity 200ms ease;
+  }
+  .app-shell .zoom-control .icon-button {
+    width: 28px; height: 28px; flex: 0 0 28px; border-radius: 9px; color: var(--ink-soft); background: transparent; transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
+  }
+  .app-shell .zoom-control .icon-button:hover { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .zoom-control .icon-button:active { background: var(--pressed); transform: scale(.92); }
+  .app-shell .zoom-control .icon-button:focus-visible, .app-shell .zoom-value:focus-visible { outline: none; box-shadow: var(--ring); }
+  .app-shell .zoom-control svg { width: 15px; height: 15px; }
+  .app-shell .zoom-value {
+    min-width: 48px; height: 28px; padding: 0 6px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-soft); cursor: pointer;
+    font: 400 11.5px/1 var(--sk-mono); font-variant-numeric: tabular-nums; transition: background-color 140ms ease;
+  }
+  .app-shell .zoom-value:hover { background: var(--hover); }
+  .app-shell .zoom-divider { width: 1px; height: 18px; margin: 0 3px; background: var(--sk-line); }
+
+  .app-shell .scroll-indicator { position: absolute; z-index: 4; pointer-events: none; opacity: 0; transition: opacity 260ms ease; }
+  .app-shell .scroll-indicator.visible { opacity: 1; transition-duration: 80ms; }
+  .app-shell .scroll-indicator > span { display: block; border-radius: 99px; background: color-mix(in srgb, var(--sk-ink) 34%, transparent); }
+  .app-shell .scroll-indicator-y { right: 4px; top: 92px; bottom: 180px; width: 6px; }
+  .app-shell .scroll-indicator-y > span { width: 100%; }
+  .app-shell .scroll-indicator-x { left: 12px; right: 12px; bottom: 5px; height: 6px; }
+  .app-shell .scroll-indicator-x > span { height: 100%; }
+
+  /* ---------- Mind map inside the new chrome ---------- */
+  .app-shell .mindmap-host { inset: 66px 12px 12px 4px; border-radius: var(--sk-radius); overflow: hidden; border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); }
+
+  /* ---------- Side panels float like the sidebar ---------- */
+  .app-shell .properties-panel, .app-shell .settings-panel {
+    inset: 12px 12px 12px auto; padding-top: 16px; border: 1px solid var(--glass-border); border-radius: var(--sk-radius); box-shadow: var(--sk-shadow);
+    background: var(--glass-solid); -webkit-backdrop-filter: blur(24px) saturate(1.1); backdrop-filter: blur(24px) saturate(1.1);
+    transform: translateX(calc(100% + 28px)); transition: transform 260ms var(--ease-out);
+  }
+  .app-shell .properties-panel.open, .app-shell .settings-panel.open { transform: none; }
+
+  /* ---------- Notebook dialog: section picker ---------- */
+  .category-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: color-mix(in srgb, var(--sk-ink) 6%, var(--sk-panel)); }
+  .category-option { position: relative; display: block; cursor: pointer; }
+  .category-option input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .category-option span { display: block; padding: 7px 4px; border-radius: 9px; color: var(--ui-muted); font: 500 12px/1.2 var(--ui-font); text-align: center; transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease; }
+  .category-option:hover span { color: var(--sk-ink); }
+  .category-option input:checked + span { background: var(--sk-panel); color: var(--sk-ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .14), 0 0 0 1px var(--glass-border); }
+  .category-option input:focus-visible + span { outline: 2px solid var(--sk-accent); outline-offset: 1px; }
+
+  /* ---------- Medium windows ---------- */
+  @media (max-width: 1240px) {
+    .app-shell .search-button { width: auto; }
+    .app-shell .search-button span { display: none; }
+  }
+  @media (max-width: 1100px) {
+    .app-shell .ink-swatch, .app-shell .dock-history .prettify-button { display: none; }
+    .app-shell .crumb { display: none; }
+  }
+  @media (max-width: 960px) {
+    .app-shell .search-button kbd { display: none; }
+    .app-shell .search-button { width: 40px; padding: 0; justify-content: center; }
+    .app-shell .agent-chip { font-size: 0; gap: 0; padding: 0 13px; }
+    .app-shell .page-minimap .mini-grid { display: none; }
+  }
+  @media (min-width: 801px) and (max-width: 960px) {
+    .app-shell .page-minimap, .app-shell .zoom-control { bottom: 92px; }
+  }
+
+  /* ---------- Phones and narrow tablets ---------- */
+  @media (max-width: 800px) {
+    .app-shell { --rail-width: 0px; }
+    .app-shell .main-view { inset: 0; }
+    .app-shell .sidebar {
+      inset: 8px auto 8px 8px; width: min(86vw, 330px); transform: translateX(calc(-100% - 24px)); z-index: 40;
+      transition: transform 280ms var(--ease-out); background: var(--glass-solid);
+    }
+    .app-shell .sidebar.open { transform: none; }
+    .app-shell .sidebar-close { display: grid; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 9px; color: var(--ui-muted); }
+    .app-shell .sidebar-scrim {
+      display: block; position: fixed; inset: 0; z-index: 35; background: color-mix(in srgb, var(--sk-ink) 38%, transparent); opacity: 0; pointer-events: none; transition: opacity 240ms ease;
+    }
+    .app-shell.sidebar-open .sidebar-scrim { opacity: 1; pointer-events: auto; }
+    .app-shell .notebook-tab, .app-shell .nav-item { height: 44px; font-size: 14px; }
+    .app-shell .note-list-item { min-height: 40px; }
+    .app-shell .nav-add, .app-shell .nav-edit { opacity: 1; width: 32px; height: 32px; }
+    .app-shell .nav-edit { top: 6px; right: 2px; }
+    .app-shell .nav-row .notebook-count { margin-right: 28px; }
+
+    .app-shell .topbar { inset: 8px 8px auto 8px; height: 40px; gap: 8px; }
+    .app-shell .glass-button.sidebar-toggle { display: grid; flex: 0 0 40px; }
+    .app-shell .topbar-title { flex: 1 1 auto; height: 40px; padding: 0 6px 0 4px; border-radius: 13px; }
+    .app-shell .crumb { display: none; }
+    .app-shell .note-title { min-width: 0; flex: 1 1 auto; width: auto; max-width: none; font-size: 17px; field-sizing: fixed; }
+    .app-shell .save-state { font-size: 0; gap: 0; margin-right: 6px; }
+    .app-shell .save-state.error { font-size: 11px; gap: 6px; }
+    .app-shell .topbar-actions { gap: 6px; }
+    .app-shell .agent-chip { height: 40px; padding: 0 13px; margin: 0; max-width: none; }
+    .app-shell .search-button { width: 40px; height: 40px; padding: 0; justify-content: center; }
+    .app-shell .search-button span, .app-shell .search-button kbd { display: none; }
+    .app-shell .glass-button, .app-shell .properties-trigger { width: 40px; height: 40px; flex-basis: 40px; margin-left: 0; }
+    .app-shell .share-menu { right: -48px; }
+
+    .app-shell .tool-dock {
+      left: 50%; max-width: calc(100vw - 24px); height: 58px; bottom: max(14px, env(safe-area-inset-bottom)); padding: 0 8px; overflow-x: auto; overflow-y: hidden;
+      scrollbar-width: none; overscroll-behavior: contain;
+    }
+    .app-shell .tool-dock::-webkit-scrollbar { display: none; }
+    .app-shell .tool-dock .tool-button { width: 44px; height: 44px; flex-basis: 44px; }
+    .app-shell .tool-dock .mobile-hand-tool { display: grid; }
+    .app-shell .tool-dock .ink-options-trigger { width: 32px; height: 32px; flex-basis: 32px; }
+    .app-shell .voice-button { flex-basis: 46px; width: 46px; height: 46px; }
+    .app-shell .ink-options-popover { bottom: 84px; width: min(266px, calc(100vw - 24px)); }
+    .app-shell .voice-caption { left: 12px; right: auto; bottom: 84px; max-width: calc(100vw - 24px); transform: none; }
+    .app-shell .page-minimap { left: 12px; bottom: 84px; height: 34px; padding: 0 10px; }
+    .app-shell .zoom-control { right: 12px; bottom: 84px; height: 34px; }
+    .app-shell .scroll-indicator-y { top: 64px; bottom: 120px; right: 2px; }
+    .app-shell .properties-panel, .app-shell .settings-panel { inset: 8px 8px 8px auto; width: min(92vw, 340px); max-width: none; transform: translateX(calc(100% + 24px)); }
+    .app-shell .mindmap-host { inset: 0; border: 0; border-radius: 0; box-shadow: none; }
+  }
+
+  /* The capture surface on phones keeps its dedicated controls (F-001): no dock, just Draw and Hold to speak. */
+  @media (max-width: 560px) {
+    .app-shell .tool-dock, .app-shell.mindmap-active .tool-dock { display: none !important; }
+    .app-shell .quick-note kbd { display: none; }
+    .app-shell .page-minimap { left: auto; right: 10px; bottom: auto; top: 56px; height: 28px; padding: 0 10px; border-radius: 99px; font-size: 11px; }
+    .app-shell .page-minimap .mini-grid { display: none; }
+    .app-shell .zoom-control { display: none; }
+    .app-shell .scroll-indicator-x { display: none; }
+    .app-shell .mobile-capture-controls button { border-radius: 16px; border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); transition: transform 140ms var(--ease-out); }
+    .app-shell .mobile-capture-controls button:active { transform: scale(.96); }
+    .app-shell .mobile-draw-button, .app-shell .mobile-connect-button { background: var(--glass-solid); color: var(--sk-ink); }
+    .app-shell .mobile-connect-button { min-width: 54px; min-height: 54px; padding: 0; }
+    .app-shell .mobile-connect-button.active { background: var(--sk-accent-soft); color: var(--sk-accent); border-color: var(--sk-accent); }
+    .app-shell .mobile-speak-button { background: var(--accent-fill); color: var(--sk-accent-ink); border-color: var(--accent-fill) !important; white-space: nowrap; }
+    .app-shell .mobile-capture-controls { bottom: max(14px, env(safe-area-inset-bottom)); }
+  }
+  @media (max-width: 380px) {
+    .app-shell .share-wrap { display: none; }
+  }
+  @media (max-width: 360px) {
+    .app-shell .mobile-connect-button { display: none; }
+  }
+
+  @media (hover: none) {
+    .app-shell .nav-add, .app-shell .nav-edit { opacity: 1; }
+    .app-shell .nav-row .notebook-count { margin-right: 26px; }
+  }
+
+  /* ---------- Preferences ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    .app-shell *, .app-shell *::before, .app-shell *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+    .app-shell .quick-note:active, .app-shell .tool-button:active, .app-shell .glass-button:active, .app-shell .voice-button:active { transform: none; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .app-shell .topbar-title, .app-shell .search-button, .app-shell .glass-button, .app-shell .agent-chip, .app-shell .tool-dock, .app-shell .page-minimap,
+    .app-shell .zoom-control, .app-shell .sidebar { background: var(--glass-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  }
+  @media (prefers-contrast: more) {
+    :root[data-skin] { --glass-border: color-mix(in srgb, var(--sk-ink) 55%, var(--sk-panel)); }
+  }
+}

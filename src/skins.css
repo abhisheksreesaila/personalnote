@@ -72,7 +72,6 @@
   }
 
   /* Text sitting on the accent color uses the skin's own ink, not the (now light) rail. */
-  .rail-brand, .rail-brand:hover,
   .tool-dock .tool-button.active, .font-family-control button.active, .mindmap-segments button.active,
   .properties-trigger:hover, .properties-trigger.active, .voice-button.active,
   .clear-note-action:hover, .dialog-primary, .print-button,
@@ -88,25 +87,16 @@
   }
 
   /* Fonts. */
-  .brand-name, .note-title, .note-pane-title strong, .properties-heading h2,
-  .dialog-heading-row h2, .mobile-library-heading, .mindmap-inspector header strong {
+  .note-title, .properties-heading h2,
+  .dialog-heading-row h2, .mindmap-inspector header strong {
     font-family: var(--sk-display); font-weight: var(--sk-display-weight);
     font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track);
   }
-  .brand-name { font-size: 17px; }
   .note-title { font-size: 17px; }
   .search-button kbd, .save-state, .sidebar-footer, .notebook-count, .print-sheet-number {
     font-family: "Geist Mono", ui-monospace, monospace;
   }
 
-  /* Desk: soft dot grid behind the page. */
-  .workspace {
-    background-image: radial-gradient(var(--sk-desk-dot) 1px, transparent 1.2px);
-    background-size: 22px 22px;
-    background-color: var(--sk-desk);
-  }
-  .side-rail { background: var(--rail); }
-  .topbar { background: color-mix(in srgb, var(--sk-panel) 82%, transparent); backdrop-filter: blur(14px) saturate(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.1); }
   .search-backdrop.open, .notebook-dialog::backdrop { background: color-mix(in srgb, var(--sk-ink) 45%, transparent); }
 
   /* Skin switcher: three swatches in the sidebar footer. */

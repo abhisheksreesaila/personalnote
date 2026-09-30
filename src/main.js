@@ -1,6 +1,7 @@
 import './style.css'
 import './workspace-theme.css'
 import './skins.css'
+import './chrome.css'
 import { mountSkinSwitcher, startSkins } from './skins.js'
 import { ActiveSelection, cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
@@ -20,6 +21,13 @@ import {
   connectorEndpoints,
   connectorsLeftDangling,
 } from './modules/editor/connectors.js'
+import { createPressToTalk } from './modules/voice/press-to-talk.js'
+import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision } from './modules/editor/save-flush.js'
+import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
+import { nextPageGhost } from './modules/editor/edge-ghost.js'
+import { createLiftEffect } from './modules/editor/lift.js'
+import { fitView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
 import {
   clampView,
   easeInOut,
@@ -57,6 +65,14 @@ const INK_COLORS = [
   ['Violet', '#76669a'],
   ['Magenta', '#b45f8c'],
 ]
+const QUICK_INK_COLORS = [
+  ['Charcoal', '#20201e'],
+  ['Red', '#d14b3f'],
+  ['Orange', '#df8437'],
+  ['Green', '#3a7d5a'],
+  ['Blue', '#1c70a8'],
+]
+const GHOST_REACH = 160
 const STROKE_WIDTHS = {
   pen: [1, 3, 6, 10],
   highlight: [10, 20, 32, 48],
@@ -84,96 +100,92 @@ FabricObject.customProperties = Array.from(new Set([
 
 document.querySelector('#app').innerHTML = `
   <div class="app-shell">
-    <nav class="side-rail" aria-label="Workspace">
-      <button class="rail-brand" id="toggle-sidebar" title="Notebooks" aria-label="Open notebooks" aria-expanded="false">P</button>
-      <div class="rail-group">
-        <div class="rail-create-control">
-          <button class="rail-button hold-create-button" id="rail-new-note" title="New canvas note - hold for more types" aria-label="Create new canvas note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square-pen"></i></button>
-        </div>
-        <button class="rail-button" id="rail-notebooks" title="Notebooks" aria-label="Open notebooks"><i data-lucide="notebook-tabs"></i></button>
-      </div>
-      <div class="rail-group mindmap-rail-actions" id="mindmap-rail-actions" aria-label="Mind map tools" hidden>
-        <button class="rail-button" data-map-action="image" title="Add image" aria-label="Add image"><i data-lucide="image-plus"></i></button>
-        <button class="rail-button" data-map-action="import" title="Import JSON" aria-label="Import JSON"><i data-lucide="folder-open"></i></button>
-        <button class="rail-button" data-map-action="export-json" title="Export JSON" aria-label="Export JSON"><i data-lucide="braces"></i></button>
-        <button class="rail-button" data-map-action="export-png" title="Export PNG" aria-label="Export PNG"><i data-lucide="image-down"></i></button>
-        <button class="rail-button" data-map-action="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
-        <button class="rail-button" data-map-action="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
-        <button class="rail-button" data-map-action="clean" title="Clean up layout" aria-label="Clean up layout"><i data-lucide="wand-sparkles"></i></button>
-        <button class="rail-button" data-map-action="fit" title="Fit map" aria-label="Fit map"><i data-lucide="scan"></i></button>
-      </div>
-      <div class="rail-group rail-bottom">
-        <button class="rail-button" id="rail-print" title="Print preview" aria-label="Open print preview"><i data-lucide="printer"></i></button>
-        <button class="rail-button" id="rail-settings" title="Settings" aria-label="Open settings"><i data-lucide="settings"></i></button>
-      </div>
-    </nav>
     <div class="note-create-menu" id="note-create-menu" role="menu" aria-label="Create note as" hidden>
       <button role="menuitem" data-create-note-type="canvas"><i data-lucide="file-text"></i><span>Canvas note</span></button>
       <button role="menuitem" data-create-note-type="mindmap"><i data-lucide="git-fork"></i><span>Mind map</span></button>
     </div>
-    <aside class="sidebar" id="sidebar" inert>
+    <div class="sidebar-scrim" id="sidebar-scrim" aria-hidden="true"></div>
+    <aside class="sidebar" id="sidebar" aria-label="Notebooks">
       <div class="brand-row">
-        <button class="icon-button mobile-library-back" id="mobile-library-back" title="Back to notebooks" aria-label="Back to notebooks"><i data-lucide="arrow-left"></i></button>
-        <span class="brand-name desktop-brand-name">Personal Note</span>
-        <span class="mobile-library-heading" id="mobile-library-heading">Notebooks</span>
-        <button class="icon-button" id="close-sidebar" title="Close notebooks" aria-label="Close notebooks"><i data-lucide="x"></i></button>
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">Personal Note</span>
+        <button class="icon-button sidebar-close" id="close-sidebar" title="Close notebooks" aria-label="Close notebooks"><i data-lucide="x"></i></button>
       </div>
-      <div class="notebook-navigator" id="notebook-navigator">
-        <section class="notebook-pane" aria-label="Notebooks">
-          <div class="pane-heading">
-            <span>Notebooks</span>
-            <button class="sidebar-add" id="new-notebook" title="New notebook" aria-label="New notebook"><i data-lucide="plus"></i></button>
-          </div>
-          <div class="notebook-list" id="notebook-list"></div>
-        </section>
-        <section class="note-pane" aria-label="Notes">
-          <div class="note-pane-heading">
-            <div class="note-pane-title">
-              <span class="notebook-dot" id="selected-notebook-dot"></span>
-              <div><small>Notes</small><strong id="selected-notebook-name">Notebook</strong></div>
-            </div>
-            <div class="note-pane-actions">
-              <div class="sidebar-create-control">
-                <button class="icon-button hold-create-button" id="new-note" title="New canvas note - hold for more types" aria-label="Create new canvas note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square-pen"></i></button>
-              </div>
-              <button class="icon-button" id="edit-selected-notebook" title="Edit notebook" aria-label="Edit selected notebook"><i data-lucide="more-horizontal"></i></button>
-            </div>
-          </div>
-          <div class="note-list" id="note-list"></div>
-        </section>
+      <button class="quick-note hold-create-button" id="rail-new-note" title="New canvas note - hold for more types" aria-label="Quick note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false">
+        <i data-lucide="plus"></i><span>Quick note</span><kbd id="quick-note-kbd">Ctrl N</kbd>
+      </button>
+      <nav class="notebook-navigator" id="notebook-navigator" aria-label="Inbox and notebooks">
+        <div class="notebook-list" id="notebook-list"></div>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="skin-label">Skin</span>
+        <span class="skin-switcher" id="skin-switcher"></span>
+        <button class="icon-button" id="rail-settings" title="Settings" aria-label="Open settings"><i data-lucide="settings"></i></button>
       </div>
-      <div class="sidebar-footer"><span class="storage-dot"></span>Saved on this device<span class="skin-switcher" id="skin-switcher"></span></div>
     </aside>
 
     <main class="main-view">
       <header class="topbar">
-        <button class="icon-button mobile-editor-back" id="mobile-editor-back" title="Back to notes" aria-label="Back to notes"><i data-lucide="arrow-left"></i></button>
-        <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
-        <div class="save-state" id="save-state"><span></span>Saved</div>
-        <button class="icon-button properties-trigger" id="top-properties" title="Note properties" aria-label="Open note properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
+        <button class="icon-button glass-button sidebar-toggle" id="toggle-sidebar" title="Notebooks" aria-label="Open notebooks" aria-expanded="false" aria-controls="sidebar"><i data-lucide="panel-left"></i></button>
+        <div class="topbar-title">
+          <div class="crumb" id="breadcrumb" aria-label="Notebook"><span id="crumb-category">Projects</span><span class="crumb-sep" aria-hidden="true">/</span><b id="crumb-notebook">Notebook</b></div>
+          <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
+          <div class="save-state" id="save-state"><span></span>Saved on this device</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i><span>Search everything</span><kbd id="search-kbd">Ctrl K</kbd></button>
+          <div class="share-wrap">
+            <button class="icon-button glass-button share-button" id="share-button" title="Share or export" aria-label="Share or export" aria-haspopup="menu" aria-expanded="false"><i data-lucide="share"></i></button>
+            <div class="share-menu" id="share-menu" role="menu" aria-label="Share or export" hidden>
+              <button role="menuitem" id="share-print"><i data-lucide="printer"></i><span>Print preview</span><kbd id="print-kbd">Ctrl P</kbd></button>
+              <button role="menuitem" id="share-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
+              <button role="menuitem" id="share-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
+            </div>
+          </div>
+          <button class="icon-button glass-button properties-trigger" id="top-properties" title="Note properties" aria-label="Open note properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
+        </div>
       </header>
 
       <section class="workspace" id="workspace">
         <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
-          <div class="tool-group">
-            <button class="tool-button mobile-hand-tool" data-tool="hand" title="Move canvas" aria-label="Move canvas"><i data-lucide="hand"></i></button>
-            <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select"><i data-lucide="mouse-pointer-2"></i></button>
-            <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text"><i data-lucide="type"></i></button>
-            <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen"><i data-lucide="pencil"></i></button>
-            <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (H) - hold for color and width" aria-label="Highlighter"><i data-lucide="highlighter"></i></button>
-            <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
-            <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser"><i data-lucide="eraser"></i></button>
+          <div class="dock-canvas" id="dock-canvas">
+            <div class="tool-group dock-tools">
+              <button class="tool-button mobile-hand-tool" data-tool="hand" title="Move canvas" aria-label="Move canvas"><i data-lucide="hand"></i></button>
+              <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select"><i data-lucide="mouse-pointer-2"></i></button>
+              <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text"><i data-lucide="type"></i></button>
+              <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen"><i data-lucide="pencil"></i></button>
+              <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (H) - hold for color and width" aria-label="Highlighter"><i data-lucide="highlighter"></i></button>
+              <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
+              <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser"><i data-lucide="eraser"></i></button>
+            </div>
+            <div class="dock-divider"></div>
+            <div class="ink-swatches" role="group" aria-label="Ink color">
+              ${QUICK_INK_COLORS.map(([name, color]) => `<button class="ink-swatch ${color === '#20201e' ? 'active' : ''}" data-color="${color}" style="--swatch:${color}" title="${name}" aria-label="${name}"></button>`).join('')}
+              <button class="tool-button ink-options-trigger" id="ink-options-trigger" title="More colors and widths" aria-label="Open ink options" aria-haspopup="dialog" aria-expanded="false"><span class="ink-options-dot" id="ink-options-dot"></span></button>
+            </div>
+            <div class="dock-divider"></div>
+            <div class="tool-group dock-history">
+              <button class="tool-button prettify-button" id="prettify" title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
+              <button class="tool-button" id="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
+              <button class="tool-button" id="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
+            </div>
+            <button class="voice-button" id="voice-button" title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon"><i data-lucide="mic"></i></span></button>
           </div>
-          <div class="dock-divider"></div>
-          <button class="tool-button ink-options-trigger" id="ink-options-trigger" title="Ink options" aria-label="Open ink options" aria-haspopup="dialog" aria-expanded="false"><span class="ink-options-dot" id="ink-options-dot"></span></button>
-          <div class="dock-divider"></div>
-          <div class="tool-group">
-            <button class="tool-button prettify-button" id="prettify" title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
-            <button class="tool-button" id="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
-            <button class="tool-button" id="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
+          <div class="mindmap-dock-actions mindmap-rail-actions" id="mindmap-rail-actions" aria-label="Mind map tools" hidden>
+            <button class="tool-button" data-map-action="image" title="Add image" aria-label="Add image"><i data-lucide="image-plus"></i></button>
+            <button class="tool-button" data-map-action="import" title="Import JSON" aria-label="Import JSON"><i data-lucide="folder-open"></i></button>
+            <button class="tool-button" data-map-action="export-json" title="Export JSON" aria-label="Export JSON"><i data-lucide="braces"></i></button>
+            <button class="tool-button" data-map-action="export-png" title="Export PNG" aria-label="Export PNG"><i data-lucide="image-down"></i></button>
+            <span class="dock-divider"></span>
+            <button class="tool-button" data-map-action="undo" title="Undo" aria-label="Undo"><i data-lucide="undo-2"></i></button>
+            <button class="tool-button" data-map-action="redo" title="Redo" aria-label="Redo"><i data-lucide="redo-2"></i></button>
+            <span class="dock-divider"></span>
+            <button class="tool-button" data-map-action="clean" title="Clean up layout" aria-label="Clean up layout"><i data-lucide="wand-sparkles"></i></button>
+            <button class="tool-button" data-map-action="fit" title="Fit map" aria-label="Fit map"><i data-lucide="scan"></i></button>
           </div>
         </div>
         <div class="mobile-capture-controls" aria-label="Canvas capture controls">
+          <button class="mobile-connect-button" id="mobile-connect" title="Connect two objects" aria-label="Connect two objects" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
           <button class="mobile-draw-button" id="mobile-draw" aria-label="Enable drawing"><i data-lucide="pencil"></i><span>Draw</span></button>
           <button class="mobile-speak-button" id="mobile-speak" title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
         </div>
@@ -191,8 +203,6 @@ document.querySelector('#app').innerHTML = `
           </div>
         </section>
 
-        <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i><span>Search notes</span><kbd>Ctrl K</kbd></button>
-        <button class="voice-button" id="voice-button" title="Dictate into this note" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon"><i data-lucide="mic"></i></span></button>
         <div class="voice-caption" id="voice-caption" role="status" hidden><span class="voice-pulse"></span><span id="voice-status">Listening</span></div>
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
 
@@ -201,7 +211,19 @@ document.querySelector('#app').innerHTML = `
           <canvas id="note-canvas"></canvas>
         </div>
         <div class="mindmap-host" id="mindmap-host" hidden></div>
-        <div class="page-count" id="page-count">1 page</div>
+        <div class="scroll-indicator scroll-indicator-y" id="scroll-y" aria-hidden="true"><span></span></div>
+        <div class="scroll-indicator scroll-indicator-x" id="scroll-x" aria-hidden="true"><span></span></div>
+        <div class="page-minimap" id="page-minimap" role="group" aria-label="Pages">
+          <div class="mini-grid" id="mini-grid"></div>
+          <span class="page-count" id="page-count">1 page · 1 × 1</span>
+        </div>
+        <div class="zoom-control" id="zoom-control" role="group" aria-label="Zoom">
+          <button class="icon-button" id="zoom-out" title="Zoom out" aria-label="Zoom out"><i data-lucide="minus"></i></button>
+          <button class="zoom-value" id="zoom-value" title="Reset to 100%" aria-label="Zoom level, press to reset to 100%">100%</button>
+          <button class="icon-button" id="zoom-in" title="Zoom in" aria-label="Zoom in"><i data-lucide="plus"></i></button>
+          <span class="zoom-divider"></span>
+          <button class="icon-button" id="zoom-fit" title="Zoom to fit all pages" aria-label="Zoom to fit all pages"><i data-lucide="maximize-2"></i></button>
+        </div>
       </section>
     </main>
 
@@ -336,6 +358,17 @@ document.querySelector('#app').innerHTML = `
       <label class="field-label" for="notebook-name">Name</label>
       <input class="notebook-name-input" id="notebook-name" maxlength="80" required />
       <fieldset class="color-fieldset">
+        <legend>Section</legend>
+        <div class="category-options" id="notebook-categories">
+          ${CATEGORIES.map((category) => `
+            <label class="category-option">
+              <input type="radio" name="notebook-category" value="${category}" ${category === 'projects' ? 'checked' : ''} />
+              <span>${categoryLabel(category)}</span>
+            </label>
+          `).join('')}
+        </div>
+      </fieldset>
+      <fieldset class="color-fieldset">
         <legend>Color</legend>
         <div class="notebook-colors" id="notebook-colors">
           ${['#B86B4B', '#D09A45', '#6F8C63', '#4D839C', '#7A6F9B', '#A55D6F'].map((color) => `
@@ -390,18 +423,31 @@ const elements = {
   title: document.querySelector('#note-title'),
   list: document.querySelector('#notebook-navigator'),
   notebookList: document.querySelector('#notebook-list'),
-  noteList: document.querySelector('#note-list'),
   saveState: document.querySelector('#save-state'),
   pageCount: document.querySelector('#page-count'),
+  pageMinimap: document.querySelector('#page-minimap'),
+  miniGrid: document.querySelector('#mini-grid'),
+  zoomControl: document.querySelector('#zoom-control'),
+  zoomValue: document.querySelector('#zoom-value'),
+  scrollX: document.querySelector('#scroll-x'),
+  scrollY: document.querySelector('#scroll-y'),
+  dockCanvas: document.querySelector('#dock-canvas'),
+  breadcrumbCategory: document.querySelector('#crumb-category'),
+  breadcrumbNotebook: document.querySelector('#crumb-notebook'),
+  shareButton: document.querySelector('#share-button'),
+  shareMenu: document.querySelector('#share-menu'),
+  sidebarScrim: document.querySelector('#sidebar-scrim'),
   sidebar: document.querySelector('#sidebar'),
   notebookPicker: document.querySelector('#notebook-picker'),
   notebookPickerMenu: document.querySelector('#notebook-picker-menu'),
   searchBackdrop: document.querySelector('#search-backdrop'),
+  searchButton: document.querySelector('#search-button'),
   searchInput: document.querySelector('#search-input'),
   searchResults: document.querySelector('#search-results'),
   notebookDialog: document.querySelector('#notebook-dialog'),
   clearNoteDialog: document.querySelector('#clear-note-dialog'),
   mobileSpeak: document.querySelector('#mobile-speak'),
+  mobileConnect: document.querySelector('#mobile-connect'),
   notebookForm: document.querySelector('#notebook-form'),
   notebookName: document.querySelector('#notebook-name'),
   sidebarToggle: document.querySelector('#toggle-sidebar'),
@@ -410,7 +456,7 @@ const elements = {
   noteSurfaceLabel: document.querySelector('#note-surface-label'),
   noteSurfaceDetail: document.querySelector('#note-surface-detail'),
   clearNoteCopy: document.querySelector('#clear-note-copy'),
-  printButton: document.querySelector('#rail-print'),
+  printButton: document.querySelector('#share-print'),
   settings: document.querySelector('#settings-panel'),
   fontSize: document.querySelector('#font-size-control'),
   fontSizeValue: document.querySelector('#font-size-value'),
@@ -443,6 +489,8 @@ const state = {
   activeNoteId: null,
   activeNoteType: 'canvas',
   selectedNotebookId: null,
+  inboxOpen: false,
+  archiveOpen: false,
   pages: { columns: 1, rows: 1 },
   tool: 'text',
   color: '#20201e',
@@ -478,7 +526,10 @@ function setActiveNoteType(noteType) {
   elements.shell.classList.toggle('mindmap-active', isMindMap)
   elements.paper.hidden = isMindMap
   elements.mindmapHost.hidden = !isMindMap
-  elements.pageCount.hidden = isMindMap
+  elements.pageMinimap.hidden = isMindMap
+  elements.zoomControl.hidden = isMindMap
+  elements.dockCanvas.hidden = isMindMap
+  if (isMindMap) hideScrollIndicators()
   elements.canvasTypographyProperties.hidden = isMindMap
   elements.mindmapProperties.hidden = !isMindMap
   elements.mindmapRailActions.hidden = !isMindMap
@@ -594,7 +645,7 @@ function scheduleInkOptionsClose(delay = 750) {
 function updateInkOptions() {
   elements.inkOptionsDot.style.setProperty('--active-ink', state.color)
   elements.inkColorLabel.textContent = state.tool === 'text' ? 'Text color' : 'Ink color'
-  document.querySelectorAll('.palette-swatch').forEach((swatch) => {
+  document.querySelectorAll('.palette-swatch, .ink-swatch').forEach((swatch) => {
     swatch.classList.toggle('active', swatch.dataset.color === state.color)
   })
 
@@ -691,6 +742,37 @@ function escapeHtml(value) {
   return element.innerHTML
 }
 
+function noteRowHtml(note, { dotFor = null } = {}) {
+  const dot = dotFor
+    ? `<span class="notebook-dot" style="--notebook-color:${dotFor.color}" title="${escapeHtml(dotFor.name)}"></span>`
+    : `<i data-lucide="${note.noteType === 'mindmap' ? 'git-fork' : 'file-text'}"></i>`
+  return `
+    <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''}" data-note-id="${note.id}" draggable="true">
+      ${dot}
+      <span>${escapeHtml(note.title || 'Untitled note')}</span>
+    </button>
+  `
+}
+
+function notebookRowHtml(notebook, selectedNotebook) {
+  const isSelected = notebook.id === selectedNotebook?.id
+  const notes = isSelected ? state.notes.filter((note) => note.notebookId === notebook.id) : []
+  return `
+    <div class="nav-row ${isSelected ? 'active' : ''}">
+      <button class="notebook-tab ${isSelected ? 'active' : ''}" data-notebook-select="${notebook.id}" data-notebook-drop="${notebook.id}" aria-expanded="${isSelected}">
+        <span class="notebook-dot" style="--notebook-color:${notebook.color}"></span>
+        <span class="notebook-name">${escapeHtml(notebook.name)}</span>
+        <span class="notebook-count">${notebook.count}</span>
+      </button>
+      <button class="nav-edit" data-edit-notebook="${notebook.id}" title="Edit ${escapeHtml(notebook.name)}" aria-label="Edit notebook ${escapeHtml(notebook.name)}"><i data-lucide="more-horizontal"></i></button>
+    </div>
+    ${isSelected ? `
+      <div class="nav-notes" role="group" aria-label="Notes in ${escapeHtml(notebook.name)}">
+        ${notes.length ? notes.map((note) => noteRowHtml(note)).join('') : '<div class="empty-notebook"><span>No notes yet</span></div>'}
+      </div>` : ''}
+  `
+}
+
 function renderNoteList() {
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
   const selectedNotebook = state.notebooks.find((notebook) => notebook.id === state.selectedNotebookId)
@@ -698,27 +780,51 @@ function renderNoteList() {
     || state.notebooks[0]
   if (selectedNotebook) state.selectedNotebookId = selectedNotebook.id
 
-  elements.notebookList.innerHTML = state.notebooks.map((notebook) => {
-    const count = state.notes.filter((note) => note.notebookId === notebook.id).length
+  const sections = notebookOutline(state.notebooks, state.notes)
+  const selectedSection = sections.find((section) => section.notebooks.some((item) => item.id === selectedNotebook?.id))
+  const archiveOpen = state.archiveOpen || selectedSection?.id === 'archive'
+  const notebookById = new Map(state.notebooks.map((notebook) => [notebook.id, notebook]))
+  const recent = state.inboxOpen ? inboxNotes(state.notes) : []
+
+  const inboxHtml = `
+    <button class="nav-item inbox-tab ${state.inboxOpen ? 'active' : ''}" data-inbox-toggle aria-expanded="${state.inboxOpen}">
+      <i data-lucide="inbox"></i><span class="notebook-name">Inbox</span><span class="notebook-count" title="Most recent notes">${inboxNotes(state.notes).length}</span>
+    </button>
+    ${state.inboxOpen ? `
+      <div class="nav-notes" role="group" aria-label="Recent notes">
+        ${recent.length ? recent.map((note) => noteRowHtml(note, { dotFor: notebookById.get(note.notebookId) || { color: '#B86B4B', name: 'Notebook' } })).join('') : '<div class="empty-notebook"><span>No notes yet</span></div>'}
+      </div>` : ''}
+  `
+
+  const sectionHtml = sections.map((section) => {
+    if (section.id === 'archive') {
+      return `
+        <div class="nav-section nav-archive">
+          <button class="nav-item archive-tab" data-archive-toggle aria-expanded="${archiveOpen}">
+            <i data-lucide="archive"></i><span class="notebook-name">Archive</span><span class="notebook-count">${section.notebooks.length}</span>
+            <i class="nav-chevron ${archiveOpen ? 'open' : ''}" data-lucide="chevron-right"></i>
+          </button>
+          ${archiveOpen ? section.notebooks.map((notebook) => notebookRowHtml(notebook, selectedNotebook)).join('') : ''}
+        </div>`
+    }
     return `
-      <button class="notebook-tab ${notebook.id === selectedNotebook?.id ? 'active' : ''}" data-notebook-select="${notebook.id}" data-notebook-drop="${notebook.id}">
-        <span class="notebook-dot" style="--notebook-color:${notebook.color}"></span>
-        <span class="notebook-name">${escapeHtml(notebook.name)}</span>
-        <span class="notebook-count">${count}</span>
-      </button>
-    `
+      <div class="nav-section" data-category="${section.id}">
+        <div class="nav-heading">
+          <span>${section.label}</span>
+          <button class="nav-add" data-new-notebook="${section.id}" title="New notebook in ${section.label}" aria-label="New notebook in ${section.label}"><i data-lucide="plus"></i></button>
+        </div>
+        ${section.notebooks.map((notebook) => notebookRowHtml(notebook, selectedNotebook)).join('')}
+      </div>`
   }).join('')
 
-  const selectedNotes = state.notes.filter((note) => note.notebookId === selectedNotebook?.id)
-  elements.noteList.innerHTML = selectedNotes.length ? selectedNotes.map((note) => `
-    <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''}" data-note-id="${note.id}" draggable="true">
-      <i data-lucide="${note.noteType === 'mindmap' ? 'git-fork' : 'file-text'}"></i>
-      <span>${escapeHtml(note.title || 'Untitled note')}</span>
-    </button>
-  `).join('') : '<div class="empty-notebook"><i data-lucide="file-plus-2"></i><span>No notes yet</span></div>'
+  // Keep the outline's scroll position across re-renders.
+  const scrollTop = elements.list.scrollTop
+  elements.notebookList.innerHTML = inboxHtml + sectionHtml
+  elements.list.scrollTop = scrollTop
 
-  document.querySelector('#selected-notebook-name').textContent = selectedNotebook?.name || 'Notebook'
-  document.querySelector('#selected-notebook-dot').style.setProperty('--notebook-color', selectedNotebook?.color || '#B86B4B')
+  const notebookForCrumb = state.notebooks.find((item) => item.id === activeNote?.notebookId) || selectedNotebook
+  elements.breadcrumbCategory.textContent = categoryLabel(notebookForCrumb?.category)
+  elements.breadcrumbNotebook.textContent = notebookForCrumb?.name || 'Notebook'
   renderNotebookPicker()
   createIcons({ icons })
 }
@@ -742,19 +848,21 @@ function renderNotebookPicker() {
   `).join('')
 }
 
+const SAVED_LABEL = `Saved on this ${/mac|iphone|ipad/i.test(navigator.platform) ? 'Mac' : 'device'}`
+
 function setSaveState(status, isError = false) {
   elements.saveState.classList.toggle('error', isError)
   elements.saveState.innerHTML = status === 'Saving'
     ? '<span class="saving-spinner"></span>Saving'
-    : `<span></span>${status}`
+    : `<span></span>${status === 'Saved' ? SAVED_LABEL : status}`
 }
 
 let viewportOffsetX = 0
 let viewportOffsetY = 0
 let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
 let pageAnimation = null
-let pageColors = { paper: '#fbfaf5', grid: '#c9c5bc', edge: '#2c2c34', shadows: [] }
-let lastViewportScrollTop = 0
+let pageColors = { paper: '#fbfaf5', grid: '#c9c5bc', edge: '#2c2c34', accent: '#0a6cff', accentInk: '#ffffff', shadows: [] }
+let edgeGhost = null
 let voiceOutline = false
 
 function getDisplayScale() {
@@ -788,6 +896,7 @@ function refreshPageColors() {
     paper: read('--paper', '#fbfaf5'),
     grid: '#c9c5bc',
     accent: read('--accent', '#4D839C'),
+    accentInk: read('--sk-accent-ink', '#ffffff'),
     edge: highContrast ? read('--line', '#2c2c34') : read('--sk-edge', read('--line', '#2c2c34')),
     shadows: parseBoxShadow(read('--sk-shadow', 'none')).map(resolveShadowLayer),
   }
@@ -808,27 +917,23 @@ function pageExtentsTarget() {
   return pageExtents(state.pages.columns, state.pages.rows, PAGE_WIDTH, PAGE_HEIGHT)
 }
 
-function clampedViewOffset(offsetX, offsetY, keep = false) {
+function clampedViewOffset(offsetX, offsetY, keep = false, scale = getCanvasScale()) {
   const target = pageExtentsTarget()
   return clampView({ x: offsetX, y: offsetY }, {
     viewW: canvas.getWidth(),
     viewH: canvas.getHeight(),
     contentW: target.right,
     contentH: target.bottom,
-    scale: getCanvasScale(),
+    scale,
     margins: viewMargins(window.innerWidth),
     keep,
   })
 }
 
-function notifyViewportScrolled() {
-  const scrollTop = viewMargins(window.innerWidth).top - viewportOffsetY
-  handleWorkspaceScroll(scrollTop, lastViewportScrollTop)
-  lastViewportScrollTop = scrollTop
-}
-
-function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY, keep = false) {
+function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY, keep = false, animating = false) {
+  if (!animating) cancelViewAnimation()
   const next = clampedViewOffset(offsetX, offsetY, keep)
+  const previousX = viewportOffsetX
   const moved = next.y !== viewportOffsetY
   viewportOffsetX = next.x
   viewportOffsetY = next.y
@@ -836,15 +941,147 @@ function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOf
   canvas.setViewportTransform([scale, 0, 0, scale, next.x, next.y])
   canvas.requestRenderAll()
   if (writingGuideText) showWritingGuide(writingGuideText)
-  if (moved) notifyViewportScrolled()
+  updateNavigationUi(moved || next.x !== previousX)
+}
+
+// ---- Page minimap, zoom control and scroll indicator. They only read the view; the canvas owns it.
+let miniGridKey = ''
+let scrollFadeTimer
+let viewAnimation = null
+
+function updateMiniGrid() {
+  const { columns, rows } = state.pages
+  const visible = visiblePages({
+    view: { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() },
+    viewW: canvas.getWidth(), viewH: canvas.getHeight(), columns, rows, pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT,
+  })
+  const key = `${columns}x${rows}:${[...visible].join(',')}`
+  if (key === miniGridKey) return
+  miniGridKey = key
+  elements.miniGrid.style.setProperty('--mini-columns', Math.min(columns, 8))
+  elements.miniGrid.innerHTML = Array.from({ length: columns * rows }, (_, index) => `
+    <button class="mini-page ${visible.has(index) ? 'on' : ''}" data-page-index="${index}" aria-label="Go to page ${index + 1}" title="Page ${index + 1}"></button>
+  `).join('')
+}
+
+function hideScrollIndicators() {
+  elements.scrollX.classList.remove('visible')
+  elements.scrollY.classList.remove('visible')
+}
+
+function updateScrollIndicators(reveal) {
+  if (state.activeNoteType !== 'canvas') return
+  const target = pageExtentsTarget()
+  const thumbs = scrollThumbs({
+    view: { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() },
+    viewW: canvas.getWidth(), viewH: canvas.getHeight(),
+    contentW: target.right, contentH: target.bottom, margins: viewMargins(window.innerWidth),
+  })
+  for (const [axis, element, thumb] of [['x', elements.scrollX, thumbs.x], ['y', elements.scrollY, thumbs.y]]) {
+    const bar = element.firstElementChild
+    element.hidden = !thumb
+    if (!thumb) continue
+    bar.style[axis === 'y' ? 'height' : 'width'] = `${thumb.length * 100}%`
+    bar.style.transform = axis === 'y'
+      ? `translateY(${(thumb.start / thumb.length) * 100}%)`
+      : `translateX(${(thumb.start / thumb.length) * 100}%)`
+    if (reveal) element.classList.add('visible')
+  }
+  if (reveal) {
+    clearTimeout(scrollFadeTimer)
+    scrollFadeTimer = setTimeout(hideScrollIndicators, 900)
+  }
+}
+
+function updateNavigationUi(reveal = false) {
+  elements.zoomValue.textContent = `${zoomPercent(getCanvasScale())}%`
+  updateMiniGrid()
+  updateScrollIndicators(reveal)
+}
+
+function cancelViewAnimation() {
+  if (!viewAnimation) return
+  cancelAnimationFrame(viewAnimation.frame)
+  viewAnimation = null
+}
+
+// Glides the view to a target { x, y, scale } (scale is the real canvas scale, not the relative zoom).
+function animateViewTo(target, duration = 280) {
+  cancelViewAnimation()
+  const from = { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }
+  const apply = (view) => {
+    state.canvasZoom = view.scale / state.displayScale
+    const scale = getCanvasScale()
+    viewportOffsetX = view.x
+    viewportOffsetY = view.y
+    canvas.setViewportTransform([scale, 0, 0, scale, view.x, view.y])
+    canvas.requestRenderAll()
+    if (writingGuideText) showWritingGuide(writingGuideText)
+    updateNavigationUi(true)
+  }
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || duration <= 0) {
+    apply(target)
+    return
+  }
+  const startedAt = performance.now()
+  viewAnimation = { frame: 0 }
+  const step = (now) => {
+    const t = easeInOut((now - startedAt) / duration)
+    apply({
+      x: from.x + (target.x - from.x) * t,
+      y: from.y + (target.y - from.y) * t,
+      scale: from.scale + (target.scale - from.scale) * t,
+    })
+    if (now - startedAt < duration) viewAnimation.frame = requestAnimationFrame(step)
+    else viewAnimation = null
+  }
+  viewAnimation.frame = requestAnimationFrame(step)
+}
+
+function zoomTarget(nextZoom, point = { x: canvas.getWidth() / 2, y: canvas.getHeight() / 2 }) {
+  const zoom = Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, nextZoom))
+  const scale = state.displayScale * zoom
+  const view = zoomAtPoint({ x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }, scale, point)
+  const clamped = clampedViewOffset(view.x, view.y, false, scale)
+  return { x: clamped.x, y: clamped.y, scale }
+}
+
+function zoomStep(direction) {
+  const next = stepZoom(state.canvasZoom, direction, { min: CANVAS_ZOOM_MIN, max: CANVAS_ZOOM_MAX })
+  animateViewTo(zoomTarget(next), 180)
+}
+
+function fitAllPages() {
+  const target = pageExtentsTarget()
+  const margins = viewMargins(window.innerWidth)
+  const fit = fitView({
+    viewW: canvas.getWidth(), viewH: canvas.getHeight(), contentW: target.right, contentH: target.bottom,
+    margins, min: state.displayScale * CANVAS_ZOOM_MIN, max: state.displayScale * 1,
+  })
+  const clamped = clampedViewOffset(fit.x, fit.y, false, fit.scale)
+  animateViewTo({ x: clamped.x, y: clamped.y, scale: fit.scale })
+}
+
+function resetZoom() {
+  animateViewTo(zoomTarget(1), 220)
+}
+
+function goToPage(index) {
+  const column = index % state.pages.columns
+  const row = Math.floor(index / state.pages.columns)
+  const scale = getCanvasScale()
+  const view = viewForPage({ column, row, scale, viewW: canvas.getWidth(), viewH: canvas.getHeight(), pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT })
+  const clamped = clampedViewOffset(view.x, view.y, false, scale)
+  animateViewTo({ x: clamped.x, y: clamped.y, scale })
 }
 
 function resetCanvasView() {
   const scale = getCanvasScale()
   const target = pageExtentsTarget()
-  viewportOffsetX = (canvas.getWidth() - target.right * scale) / 2
-  viewportOffsetY = viewMargins(window.innerWidth).top - 38
-  lastViewportScrollTop = 38
+  // Centre the pages when they fit; otherwise start at the first page rather than mid-grid.
+  const freeWidth = canvas.getWidth() - target.right * scale
+  viewportOffsetX = freeWidth >= 48 ? freeWidth / 2 : 24
+  viewportOffsetY = viewMargins(window.innerWidth).top
   setCanvasViewportOffset(viewportOffsetX, viewportOffsetY)
 }
 
@@ -890,8 +1127,50 @@ function resizePaper(animate = false, shiftX = 0, shiftY = 0) {
     viewportOffsetY -= shiftY * scale
   }
   setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, Boolean(shiftX || shiftY || animate))
-  const count = state.pages.columns * state.pages.rows
-  elements.pageCount.textContent = `${state.pages.columns} x ${state.pages.rows} / ${count} ${count === 1 ? 'page' : 'pages'}`
+  elements.pageCount.textContent = pageLabel(state.pages.columns, state.pages.rows)
+  updateMiniGrid()
+  updateScrollIndicators(false)
+}
+
+// The page that would be added if the dragged object went further: dashed accent outline and a "+ Page N" pill.
+// Painted in the canvas's own before:render pass, so it is never an object and is never saved or printed.
+function drawEdgeGhost(ctx, ghost, scale) {
+  const { left, top, width, height } = ghost.rect
+  ctx.save()
+  ctx.globalAlpha = 0.55
+  ctx.fillStyle = pageColors.paper
+  ctx.fillRect(left, top, width, height)
+  ctx.globalAlpha = 1
+  ctx.strokeStyle = pageColors.accent
+  ctx.lineWidth = 1.5 / scale
+  ctx.setLineDash([8 / scale, 6 / scale])
+  ctx.strokeRect(left, top, width, height)
+  ctx.setLineDash([])
+  const label = `Page ${ghost.pageNumber}`
+  ctx.font = `500 ${11.5 / scale}px Geist, system-ui, sans-serif`
+  const pillHeight = 26 / scale
+  const pillWidth = ctx.measureText(label).width + 34 / scale
+  const pillX = left + 16 / scale
+  const pillY = top + 16 / scale
+  ctx.fillStyle = pageColors.accent
+  ctx.beginPath()
+  ctx.roundRect(pillX, pillY, pillWidth, pillHeight, pillHeight / 2)
+  ctx.fill()
+  ctx.strokeStyle = pageColors.accentInk
+  ctx.lineWidth = 2 / scale
+  ctx.lineCap = 'round'
+  const plusX = pillX + 14 / scale
+  const plusY = pillY + pillHeight / 2
+  ctx.beginPath()
+  ctx.moveTo(plusX - 4 / scale, plusY)
+  ctx.lineTo(plusX + 4 / scale, plusY)
+  ctx.moveTo(plusX, plusY - 4 / scale)
+  ctx.lineTo(plusX, plusY + 4 / scale)
+  ctx.stroke()
+  ctx.fillStyle = pageColors.accentInk
+  ctx.textBaseline = 'middle'
+  ctx.fillText(label, pillX + 24 / scale, plusY + 0.5 / scale)
+  ctx.restore()
 }
 
 function drawPageTiles(ctx) {
@@ -928,6 +1207,7 @@ function drawPageTiles(ctx) {
   for (let y = firstRow * PAGE_HEIGHT; y < extents.bottom; y += PAGE_HEIGHT) {
     ctx.fillRect(extents.left, y - hairline, width, hairline)
   }
+  if (edgeGhost) drawEdgeGhost(ctx, edgeGhost, scale)
   if (voiceOutline) {
     // Voice-listening outline follows the page extents, not the whole workspace.
     ctx.strokeStyle = pageColors.accent
@@ -1372,6 +1652,8 @@ function setTool(tool) {
     canvas.freeDrawingBrush.width = tool === 'highlight' ? state.highlightWidth : state.penWidth
     canvas.freeDrawingBrush.decimate = 0.8
   }
+  elements.mobileConnect.classList.toggle('active', tool === 'connect')
+  elements.mobileConnect.setAttribute('aria-pressed', String(tool === 'connect'))
   updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
   connectDraft = null
@@ -1558,13 +1840,17 @@ function ensureCanvasObjectIds() {
   })
 }
 
-async function saveActiveNote() {
+async function saveActiveNote({ unloading = false } = {}) {
   if (!state.activeNoteId || state.loading) return
-  if (saveInFlight) {
+  if (saveInFlight && !unloading) {
     saveQueued = true
     return
   }
-  saveInFlight = true
+  // The page is going away with a save still in flight: send the latest edits now with the last confirmed
+  // revision. Never guess ahead: if the in-flight save lands first this one conflicts and overwrites nothing.
+  const parallelUnload = saveInFlight && unloading
+  if (parallelUnload) saveQueued = false
+  else saveInFlight = true
   unsavedEdits = false
   setSaveState('Saving')
   const noteId = state.activeNoteId
@@ -1574,17 +1860,16 @@ async function saveActiveNote() {
     const title = elements.title.value.trim() || 'Untitled note'
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
     const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : canvas.toJSON()
-    const result = await api(`/notes/${noteId}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        title,
-        content: savedContent,
-        pageState: state.pages,
-        notebookId: note?.notebookId,
-        revision: note?.revision,
-      }),
+    const body = JSON.stringify({
+      title,
+      content: savedContent,
+      pageState: state.pages,
+      notebookId: note?.notebookId,
+      revision: note?.revision,
     })
-    if (note) Object.assign(note, { title, revision: result.revision, resourceId: result.resourceId })
+    // While the page is going away a keepalive request is the only one guaranteed to be sent.
+    const result = await api(`/notes/${noteId}`, { method: 'PUT', body, keepalive: unloading && canKeepAlive(body) })
+    if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
     if (state.activeNoteType === 'canvas') syncedIds = canvasObjectIds(savedContent)
     renderNoteList()
     setSaveState('Saved')
@@ -1595,10 +1880,11 @@ async function saveActiveNote() {
     // An agent may have written first: keep the user's edits and merge its text in.
     if (/revision/i.test(error.message)) agentSync?.syncActiveNote().catch(console.error)
   } finally {
-    saveInFlight = false
-    if (saveQueued) {
+    if (!parallelUnload) saveInFlight = false
+    if (saveQueued && !parallelUnload) {
+      const unloadingNext = saveQueued === 'unloading'
       saveQueued = false
-      saveActiveNote()
+      saveActiveNote({ unloading: unloadingNext })
     }
   }
 }
@@ -1610,6 +1896,21 @@ function queueSave() {
   clearTimeout(saveTimer)
   saveTimer = setTimeout(saveActiveNote, 650)
 }
+
+// Sends anything still waiting on the two debounces (history 180ms, save 650ms) right now.
+function flushPendingEdits() {
+  if (state.loading || !state.activeNoteId) return
+  flushPendingHistory({
+    cancel: () => clearTimeout(historyTimer),
+    commit: () => {
+      if (commitHistorySnapshot()) queueSave()
+    },
+  })
+  if (!unsavedEdits) return
+  clearTimeout(saveTimer)
+  saveActiveNote({ unloading: true })
+}
+bindPageLifecycle({ windowTarget: window, documentTarget: document, flush: flushPendingEdits })
 
 let historyTimer
 function snapshot() {
@@ -1806,8 +2107,10 @@ async function moveNote(noteId, notebookId) {
   renderNoteList()
 }
 
-function openNotebookDialog(notebook = null) {
+function openNotebookDialog(notebook = null, category = 'projects') {
   elements.notebookForm.dataset.notebookId = notebook?.id || ''
+  const categoryInput = document.querySelector(`[name="notebook-category"][value="${notebook?.category || category}"]`)
+  if (categoryInput) categoryInput.checked = true
   elements.notebookName.value = notebook?.name || ''
   document.querySelector('#notebook-dialog-title').textContent = notebook ? 'Edit notebook' : 'New notebook'
   document.querySelector('#save-notebook').textContent = notebook ? 'Save changes' : 'Create'
@@ -1827,15 +2130,16 @@ async function saveNotebook() {
   const name = elements.notebookName.value.trim()
   if (!name) return elements.notebookName.focus()
   const color = document.querySelector('[name="notebook-color"]:checked').value
+  const category = document.querySelector('[name="notebook-category"]:checked').value
   if (id) {
     const notebook = state.notebooks.find((item) => item.id === id)
     const updated = await api(`/notebooks/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, color, revision: notebook?.revision }),
+      body: JSON.stringify({ name, color, category, revision: notebook?.revision }),
     })
     Object.assign(notebook, updated)
   } else {
-    const notebook = await api('/notebooks', { method: 'POST', body: JSON.stringify({ name, color }) })
+    const notebook = await api('/notebooks', { method: 'POST', body: JSON.stringify({ name, color, category }) })
     state.notebooks.unshift(notebook)
     state.selectedNotebookId = notebook.id
   }
@@ -2104,7 +2408,7 @@ function closePrintPreview() {
   elements.printSheetList.innerHTML = ''
   elements.shell.inert = false
   document.body.classList.remove('print-preview-open')
-  document.querySelector('#rail-print').focus()
+  elements.shareButton.focus()
 }
 
 function printNote() {
@@ -2371,7 +2675,24 @@ function setupVoiceInput() {
     }
   }
 
-  elements.voiceButton.addEventListener('click', toggleVoiceDictation)
+  // Hold to talk (release stops), or tap once to keep listening and tap again to stop.
+  const pressToTalk = createPressToTalk({ toggle: () => toggleVoiceDictation(), isListening: () => state.listening })
+  elements.voiceButton.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    elements.voiceButton.setPointerCapture?.(event.pointerId)
+    void pressToTalk.press()
+  })
+  elements.voiceButton.addEventListener('pointerup', (event) => {
+    elements.voiceButton.releasePointerCapture?.(event.pointerId)
+    void pressToTalk.release()
+  })
+  elements.voiceButton.addEventListener('pointercancel', () => void pressToTalk.release())
+  elements.voiceButton.addEventListener('contextmenu', (event) => event.preventDefault())
+  // Keyboard activation arrives as a click with no pointer; pointer clicks are handled above.
+  elements.voiceButton.addEventListener('click', (event) => {
+    if (event.detail === 0) toggleVoiceDictation()
+  })
 }
 
 function renderSearchResults(results, query = '') {
@@ -2593,7 +2914,7 @@ canvas.on('before:render', ({ ctx }) => drawPageTiles(ctx))
 })
 
 elements.workspace.addEventListener('wheel', (event) => {
-  if (state.activeNoteType !== 'canvas' || event.target.closest?.('.tool-dock, .properties-panel, .settings-panel, .sidebar')) return
+  if (state.activeNoteType !== 'canvas' || event.target.closest?.('.tool-dock, .page-minimap, .zoom-control, .properties-panel, .settings-panel, .sidebar')) return
   event.preventDefault()
   if (event.ctrlKey || event.metaKey) {
     const rect = elements.workspace.getBoundingClientRect()
@@ -2809,7 +3130,6 @@ elements.strokeWidths.addEventListener('click', (event) => {
   closeInkOptions()
 })
 
-document.querySelector('#new-notebook').addEventListener('click', () => openNotebookDialog())
 document.querySelector('#clear-note').addEventListener('click', () => {
   elements.clearNoteDialog.showModal()
   requestAnimationFrame(() => elements.clearNoteDialog.querySelector('.dialog-cancel').focus())
@@ -2824,36 +3144,26 @@ document.querySelector('#undo').addEventListener('click', () => restoreHistory(s
 document.querySelector('#redo').addEventListener('click', () => restoreHistory(state.historyIndex + 1))
 const mobileLayout = window.matchMedia('(max-width: 800px)')
 
-function setMobileLibraryView(view) {
-  const notesView = view === 'notes'
-  elements.sidebar.classList.toggle('mobile-notes-view', notesView)
-  document.querySelector('#mobile-library-heading').textContent = notesView
-    ? document.querySelector('#selected-notebook-name').textContent
-    : 'Notebooks'
+function setSidebarOpen(open) {
+  const isOpen = mobileLayout.matches && open
+  const wasOpen = elements.sidebar.classList.contains('open')
+  // Move focus before the drawer becomes inert so it never gets stranded inside it.
+  if (!isOpen && wasOpen && elements.sidebar.contains(document.activeElement)) elements.sidebarToggle.focus()
+  elements.shell.classList.toggle('sidebar-open', isOpen)
+  elements.sidebar.classList.toggle('open', isOpen)
+  elements.sidebar.inert = mobileLayout.matches && !isOpen
+  elements.sidebarToggle.setAttribute('aria-expanded', String(isOpen))
+  elements.sidebarToggle.setAttribute('aria-label', isOpen ? 'Close notebooks' : 'Open notebooks')
+  if (isOpen && !wasOpen) requestAnimationFrame(() => document.querySelector('#rail-new-note').focus())
 }
 
-function setSidebarOpen(open, mobileView = 'notebooks') {
-  if (open && mobileLayout.matches) setMobileLibraryView(mobileView)
-  elements.shell.classList.toggle('sidebar-open', open)
-  elements.sidebar.classList.toggle('open', open)
-  elements.sidebar.inert = !open
-  elements.sidebarToggle.setAttribute('aria-expanded', String(open))
-  elements.sidebarToggle.setAttribute('aria-label', open ? 'Close notebooks' : 'Open notebooks')
-  document.querySelector('#rail-notebooks').classList.toggle('active', open)
-}
-
-document.querySelector('#toggle-sidebar').addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
-document.querySelector('#rail-notebooks').addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
+elements.sidebarToggle.addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
-document.querySelector('#mobile-editor-back').addEventListener('click', () => {
-  const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
-  if (activeNote) state.selectedNotebookId = activeNote.notebookId
-  renderNoteList()
-  setSidebarOpen(true, 'notes')
-})
-document.querySelector('#mobile-library-back').addEventListener('click', () => setMobileLibraryView('notebooks'))
+elements.sidebarScrim.addEventListener('click', () => setSidebarOpen(false))
+mobileLayout.addEventListener('change', () => setSidebarOpen(false))
+setSidebarOpen(false)
 
-const desktopNewNoteButtons = [document.querySelector('#rail-new-note'), document.querySelector('#new-note')]
+const desktopNewNoteButtons = [document.querySelector('#rail-new-note')]
 const suppressedNewNoteClicks = new WeakSet()
 
 function setNoteCreateMenuOpen(open, anchor) {
@@ -2862,8 +3172,8 @@ function setNoteCreateMenuOpen(open, anchor) {
   if (!open || !anchor) return
   const rect = anchor.getBoundingClientRect()
   const menuWidth = 168
-  elements.noteCreateMenu.style.left = `${Math.min(window.innerWidth - menuWidth - 10, rect.right + 10)}px`
-  elements.noteCreateMenu.style.top = `${Math.min(window.innerHeight - 108, Math.max(10, rect.top - 4))}px`
+  elements.noteCreateMenu.style.left = `${Math.max(10, Math.min(window.innerWidth - menuWidth - 10, rect.left))}px`
+  elements.noteCreateMenu.style.top = `${Math.min(window.innerHeight - 108, rect.bottom + 6)}px`
   requestAnimationFrame(() => elements.noteCreateMenu.querySelector('button')?.focus())
 }
 
@@ -2945,83 +3255,31 @@ elements.mobileSpeak.addEventListener('pointerup', async (event) => {
 elements.mobileSpeak.addEventListener('pointercancel', async () => mobileHoldController.cancel())
 elements.mobileSpeak.addEventListener('contextmenu', (event) => event.preventDefault())
 document.querySelector('#mobile-draw').addEventListener('click', () => setTool('pen'))
-const searchButton = document.querySelector('#search-button')
-const SEARCH_REVEAL_LERP = 0.18
-const SEARCH_HIDE_DISTANCE = 52
-const SEARCH_SHOW_UP_DELTA = -2
-const SEARCH_TOP_REVEAL = 10
-
-let searchReveal = 1
-let targetSearchReveal = 1
-let searchRevealFrame = null
-let searchHideAccumulator = 0
-const reducedMotionSearch = window.matchMedia('(prefers-reduced-motion: reduce)')
-
-function searchRevealFromAccumulator() {
-  return Math.max(0, 1 - searchHideAccumulator / SEARCH_HIDE_DISTANCE)
-}
-
-function applySearchRevealFrame() {
-  const delta = targetSearchReveal - searchReveal
-  if (Math.abs(delta) >= 0.003) {
-    searchReveal += delta * SEARCH_REVEAL_LERP
-    searchRevealFrame = requestAnimationFrame(applySearchRevealFrame)
-  } else {
-    searchReveal = targetSearchReveal
-    searchRevealFrame = null
-  }
-  searchButton.style.setProperty('--search-reveal', searchReveal.toFixed(4))
-  searchButton.classList.toggle('is-scroll-hidden', searchReveal < 0.12)
-}
-
-function setSearchRevealTarget(value) {
-  targetSearchReveal = Math.max(0, Math.min(1, value))
-  if (reducedMotionSearch.matches) {
-    searchReveal = targetSearchReveal
-    searchButton.style.setProperty('--search-reveal', searchReveal.toFixed(4))
-    searchButton.classList.toggle('is-scroll-hidden', searchReveal < 0.12)
-    return
-  }
-  if (!searchRevealFrame) searchRevealFrame = requestAnimationFrame(applySearchRevealFrame)
-}
-
-function revealSearchButton() {
-  searchHideAccumulator = 0
-  setSearchRevealTarget(1)
-}
-
-searchButton.style.setProperty('--search-reveal', '1')
-searchButton.addEventListener('focus', revealSearchButton)
+// Phones have no dock, so the Connect tool sits beside Draw: tap to arm it, tap again to go back to typing.
+elements.mobileConnect.addEventListener('click', () => setTool(state.tool === 'connect' ? 'text' : 'connect'))
+const searchButton = elements.searchButton
 searchButton.addEventListener('click', openSearch)
-function handleWorkspaceScroll(nextScrollTop, previousScrollTop) {
-  const delta = nextScrollTop - previousScrollTop
-
-  if (document.activeElement === searchButton) {
-    revealSearchButton()
-  } else if (nextScrollTop <= SEARCH_TOP_REVEAL) {
-    searchHideAccumulator = 0
-    setSearchRevealTarget(1)
-  } else if (delta > 0) {
-    searchHideAccumulator = Math.min(
-      SEARCH_HIDE_DISTANCE * 1.15,
-      searchHideAccumulator + delta * 0.92,
-    )
-    setSearchRevealTarget(searchRevealFromAccumulator())
-  } else if (delta < 0) {
-    searchHideAccumulator = Math.max(0, searchHideAccumulator + delta * 0.92)
-    setSearchRevealTarget(searchRevealFromAccumulator())
-    if (delta < SEARCH_SHOW_UP_DELTA) searchHideAccumulator = Math.max(0, searchHideAccumulator + delta)
-  }
-
+function setShareMenuOpen(open) {
+  elements.shareMenu.hidden = !open
+  elements.shareButton.setAttribute('aria-expanded', String(open))
+  if (open) requestAnimationFrame(() => elements.shareMenu.querySelector('button:not(:disabled)')?.focus())
 }
-reducedMotionSearch.addEventListener('change', () => {
-  if (searchRevealFrame) {
-    cancelAnimationFrame(searchRevealFrame)
-    searchRevealFrame = null
-  }
-  setSearchRevealTarget(targetSearchReveal)
+elements.shareButton.addEventListener('click', () => setShareMenuOpen(elements.shareMenu.hidden))
+elements.shareMenu.addEventListener('click', (event) => {
+  const item = event.target.closest('button')
+  if (!item || item.disabled) return
+  setShareMenuOpen(false)
+  if (item.id === 'share-print') openPrintPreview()
+  else if (item.id === 'share-backup') void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
+  else if (item.id === 'share-markdown') void downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip')
 })
-document.querySelector('#rail-print').addEventListener('click', () => openPrintPreview())
+elements.shareMenu.addEventListener('keydown', (event) => {
+  if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
+  event.preventDefault()
+  const items = [...elements.shareMenu.querySelectorAll('button:not(:disabled)')]
+  const index = items.indexOf(document.activeElement)
+  items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+})
 document.querySelector('#rail-settings').addEventListener('click', () => setSettingsOpen(!elements.settings.classList.contains('open')))
 document.querySelector('#top-properties').addEventListener('click', () => setPropertiesOpen(!elements.properties.classList.contains('open')))
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
@@ -3038,9 +3296,6 @@ elements.importBackupFile.addEventListener('change', () => {
 })
 document.querySelector('#close-print').addEventListener('click', closePrintPreview)
 document.querySelector('#print-note').addEventListener('click', printNote)
-document.querySelector('#edit-selected-notebook').addEventListener('click', () => {
-  openNotebookDialog(state.notebooks.find((notebook) => notebook.id === state.selectedNotebookId))
-})
 document.querySelectorAll('[data-font-family]').forEach((button) => {
   button.addEventListener('click', () => applyTypography('fontFamily', button.dataset.fontFamily))
 })
@@ -3073,6 +3328,7 @@ elements.notebookPickerMenu.addEventListener('click', async (event) => {
   await moveNote(state.activeNoteId, Number(item.dataset.moveToNotebook))
 })
 document.addEventListener('click', (event) => {
+  if (!elements.shareMenu.hidden && !event.target.closest('.share-wrap')) setShareMenuOpen(false)
   if (!event.target.closest('.notebook-picker-wrap')) {
     elements.notebookPickerMenu.hidden = true
     elements.notebookPicker.setAttribute('aria-expanded', 'false')
@@ -3083,7 +3339,7 @@ document.addEventListener('pointerdown', (event) => {
   const target = event.target
   if (
     elements.sidebar.classList.contains('open')
-    && !target.closest('.sidebar, #toggle-sidebar, #rail-notebooks')
+    && !target.closest('.sidebar, #toggle-sidebar')
   ) setSidebarOpen(false)
 
   if (
@@ -3107,11 +3363,22 @@ elements.list.addEventListener('click', (event) => {
     setSidebarOpen(false)
     return
   }
+  const add = event.target.closest('[data-new-notebook]')
+  if (add) return openNotebookDialog(null, add.dataset.newNotebook)
+  const edit = event.target.closest('[data-edit-notebook]')
+  if (edit) return openNotebookDialog(state.notebooks.find((notebook) => notebook.id === Number(edit.dataset.editNotebook)))
+  if (event.target.closest('[data-inbox-toggle]')) {
+    state.inboxOpen = !state.inboxOpen
+    return renderNoteList()
+  }
+  if (event.target.closest('[data-archive-toggle]')) {
+    state.archiveOpen = !state.archiveOpen
+    return renderNoteList()
+  }
   const notebook = event.target.closest('[data-notebook-select]')
   if (notebook) {
     state.selectedNotebookId = Number(notebook.dataset.notebookSelect)
     renderNoteList()
-    if (mobileLayout.matches) setMobileLibraryView('notes')
   }
 })
 elements.list.addEventListener('dragstart', (event) => {
@@ -3180,6 +3447,26 @@ document.addEventListener('keydown', (event) => {
   }
 }, true)
 
+// Native scrolling is gone (the canvas is window-sized), so the keyboard pans it. Only when focus is
+// on the page itself, never while typing or on a control that uses these keys (buttons, radios, menus).
+function canPanFromKeyboard(activeElement) {
+  return keyboardCanPan({
+    activeElement,
+    body: document.body,
+    canvasElement: canvas.upperCanvasEl,
+    editingText: canvas.getObjects().some((object) => object.isEditing),
+    dialogOpen: Boolean(document.querySelector('dialog[open]')) || !elements.searchBackdrop.hidden,
+  })
+}
+
+function panWithKeyboard(event) {
+  const delta = keyboardPan(event, { viewH: canvas.getHeight() })
+  if (!delta) return false
+  setCanvasViewportOffset(viewportOffsetX + delta.dx, viewportOffsetY + delta.dy)
+  updateNavigationUi(true)
+  return true
+}
+
 document.addEventListener('keydown', (event) => {
   const activeElement = document.activeElement
   const activeText = isEditableText(canvas.getActiveObject()) ? canvas.getActiveObject() : null
@@ -3194,9 +3481,17 @@ document.addEventListener('keydown', (event) => {
     }
     return
   }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
+  const shortcutBlocked = isTyping || Boolean(document.querySelector('dialog[open]')) || !elements.searchBackdrop.hidden
+  if (isQuickNoteShortcut(event, { blocked: shortcutBlocked })) {
     event.preventDefault()
-    openPrintPreview()
+    setNoteCreateMenuOpen(false)
+    createNote()
+  } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
+    event.preventDefault()
+    if (state.activeNoteType === 'canvas') openPrintPreview()
+  } else if (event.key === 'Escape' && !elements.shareMenu.hidden) {
+    setShareMenuOpen(false)
+    elements.shareButton.focus()
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault()
     if (elements.searchBackdrop.hidden) openSearch()
@@ -3237,11 +3532,49 @@ document.addEventListener('keydown', (event) => {
       reconcilePages()
       recordHistory()
     }
+  } else if (!isTyping && canPanFromKeyboard(activeElement) && panWithKeyboard(event)) {
+    event.preventDefault()
   } else if (!isTyping && !event.ctrlKey && !event.metaKey) {
     const shortcuts = { v: 'select', t: 'text', p: 'pen', d: 'pen', h: 'highlight', e: 'eraser', c: 'connect' }
     if (shortcuts[event.key.toLowerCase()]) setTool(shortcuts[event.key.toLowerCase()])
   }
 })
+
+document.querySelector('#zoom-in').addEventListener('click', () => zoomStep(1))
+document.querySelector('#zoom-out').addEventListener('click', () => zoomStep(-1))
+document.querySelector('#zoom-fit').addEventListener('click', fitAllPages)
+elements.zoomValue.addEventListener('click', resetZoom)
+elements.miniGrid.addEventListener('click', (event) => {
+  const tile = event.target.closest('[data-page-index]')
+  if (tile) goToPage(Number(tile.dataset.pageIndex))
+})
+
+// Dragging an object lifts it (tilt + deeper shadow) and, near the edge of the page grid,
+// previews the page that would be added. Both are paint-only and never reach the saved note.
+const lift = createLiftEffect({
+  requestRender: () => canvas.requestRenderAll(),
+  reducedMotion: () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+})
+function endDragPreview() {
+  lift.end()
+  if (edgeGhost) {
+    edgeGhost = null
+    canvas.requestRenderAll()
+  }
+}
+canvas.on('object:moving', ({ target }) => {
+  if (!target || state.loading) return
+  lift.begin(target)
+  const rect = target.getBoundingRect()
+  const ghost = nextPageGhost(
+    { left: rect.left, top: rect.top, right: rect.left + rect.width, bottom: rect.top + rect.height },
+    { columns: state.pages.columns, rows: state.pages.rows, pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT, reach: GHOST_REACH },
+  )
+  const changed = JSON.stringify(ghost) !== JSON.stringify(edgeGhost)
+  edgeGhost = ghost
+  if (changed) canvas.requestRenderAll()
+})
+;['mouse:up', 'object:modified', 'selection:cleared'].forEach((eventName) => canvas.on(eventName, endDragPreview))
 
 async function initialize() {
   await prepareCanvasFonts()
@@ -3258,6 +3591,7 @@ async function initialize() {
     agentSync = mountAgentSync({
       api,
       saveStateElement: elements.saveState,
+      chipAnchor: elements.searchButton,
       getActive: () => {
         const note = state.notes.find((item) => item.id === state.activeNoteId)
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
@@ -3290,6 +3624,15 @@ async function initialize() {
     console.error(error)
     setSaveState('Database offline', true)
   }
+}
+
+{
+  const modifier = modifierLabel(navigator.platform)
+  const glue = modifier === '⌘' ? '' : ' '
+  document.querySelector('#quick-note-kbd').textContent = quickNoteKeycap(navigator.platform)
+  document.querySelector('#search-kbd').textContent = `${modifier}${glue}K`
+  document.querySelector('#print-kbd').textContent = `${modifier}${glue}P`
+  elements.searchButton.title = `Search notes (${modifier}${glue}K)`
 }
 
 document.fonts.ready.then(refreshCanvasTextMetrics)

@@ -26,6 +26,17 @@ class CliContractTests(unittest.TestCase):
             code = main(["--database", str(self.database_path), *arguments])
         return code, json.loads(output.getvalue())
 
+    def test_cli_creates_a_notebook_in_a_para_category(self):
+        code, notebook = self.run_cli("notebooks", "create", "--name", "Health", "--category", "areas")
+        self.assertEqual(code, 0)
+        self.assertEqual(notebook["category"], "areas")
+        code, default = self.run_cli("notebooks", "create", "--name", "Plain")
+        self.assertEqual(default["category"], "projects")
+        code, listed = self.run_cli("notebooks", "list")
+        self.assertEqual({item["name"]: item["category"] for item in listed}["Health"], "areas")
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            main(["--database", str(self.database_path), "notebooks", "create", "--name", "X", "--category", "nonsense"])
+
     def test_cli_creates_searches_and_reads_a_canvas_note(self):
         code, notebooks = self.run_cli("notebooks", "list")
         self.assertEqual(code, 0)

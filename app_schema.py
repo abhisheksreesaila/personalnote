@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS notebooks (
     revision INTEGER NOT NULL DEFAULT 1,
   name TEXT NOT NULL,
   color TEXT NOT NULL DEFAULT '#B86B4B',
+  category TEXT NOT NULL DEFAULT 'projects',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -78,6 +79,10 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
     notebook_columns = {
         row[1] for row in connection.execute("PRAGMA table_info(notebooks)").fetchall()
     }
+    if "category" not in notebook_columns:
+        connection.execute(
+            "ALTER TABLE notebooks ADD COLUMN category TEXT NOT NULL DEFAULT 'projects'"
+        )
     if "resource_id" not in notebook_columns:
         connection.execute("ALTER TABLE notebooks ADD COLUMN resource_id TEXT")
     if "revision" not in notebook_columns:
