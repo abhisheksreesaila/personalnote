@@ -12,6 +12,7 @@ export class Sticky extends Textbox {
 
   static ownDefaults = {
     objectCaching: false,
+    lockScalingY: true,
     stickyColor: '#ffd60a',
     splitByGrapheme: false,
   }

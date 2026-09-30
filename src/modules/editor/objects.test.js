@@ -5,7 +5,7 @@ import {
   contrastRatio,
   fitImage,
   imageFiles,
-  nextColorIndex,
+  imageEncoding,
   objectPalette,
   shapeDefaults,
   stickyDefaults,
@@ -36,10 +36,18 @@ test('sticky text is readable on every colour of every skin', () => {
   }
 })
 
-test('colours rotate through the palette and wrap', () => {
-  assert.equal(nextColorIndex(0), 1)
-  assert.equal(nextColorIndex(4), 0)
-  assert.equal(nextColorIndex(9), 0)
+test('a small picture that already fits is stored as it is', () => {
+  assert.equal(imageEncoding({ dataUrlLength: 120_000, resized: false, hasAlpha: false, type: 'image/png' }), null)
+})
+
+test('a large picture is re-encoded even when its dimensions already fit', () => {
+  assert.deepEqual(imageEncoding({ dataUrlLength: 900_000, resized: false, hasAlpha: false, type: 'image/png' }), { type: 'image/jpeg', quality: 0.85 })
+})
+
+test('transparent pictures never become JPEG, and resized or animated ones are always re-encoded', () => {
+  assert.equal(imageEncoding({ dataUrlLength: 900_000, resized: false, hasAlpha: true, type: 'image/png' }).type, 'image/webp')
+  assert.equal(imageEncoding({ dataUrlLength: 1000, resized: true, hasAlpha: false, type: 'image/jpeg' }).type, 'image/jpeg')
+  assert.notEqual(imageEncoding({ dataUrlLength: 1000, resized: false, hasAlpha: false, type: 'image/gif' }), null)
 })
 
 test('a sticky is a fixed-width handwriting note that serialises its own colour', () => {

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   fitView,
+  objectsInView,
+  chooseOpeningView,
   openingView,
   pageLabel,
   scrollThumbs,
@@ -106,4 +108,39 @@ test('a huge page grid stops at the floor and starts at the first page instead o
   assert.equal(view.scale, 0.4)
   assert.equal(view.x, desk.margins.left)
   assert.equal(view.y, desk.margins.top)
+})
+
+const box = (left, top) => ({ left, top, width: 100, height: 100 })
+
+test('objects in view are counted by whether their box touches the window', () => {
+  const view = { x: 0, y: 0, scale: 0.5 }
+  const boxes = [box(0, 0), box(1000, 100), box(3000, 100), box(100, 3000)]
+  assert.equal(objectsInView(view, 1212, 900, boxes), 2)
+})
+
+test('a light note keeps the zoomed-out opening view', () => {
+  const far = { x: 0, y: 0, scale: 0.4 }
+  const near = { x: 0, y: 0, scale: 1 }
+  const boxes = Array.from({ length: 20 }, (_, i) => box(i * 50, 10))
+  assert.equal(chooseOpeningView([far, near], 1212, 900, boxes, 150), far)
+})
+
+test('a dense note opens at the first candidate that keeps the visible object count under the limit', () => {
+  const all = { x: 0, y: 0, scale: 0.4 }
+  const page = { x: 0, y: 0, scale: 0.56 }
+  const actual = { x: 0, y: 0, scale: 1 }
+  const boxes = Array.from({ length: 400 }, (_, i) => box((i % 40) * 60, Math.floor(i / 40) * 200))
+  assert.ok(objectsInView(all, 1212, 900, boxes) > 150)
+  assert.equal(chooseOpeningView([all, page, actual], 1212, 900, boxes, 150), actual)
+  assert.equal(chooseOpeningView([all, page, actual], 1212, 900, boxes, 10000), all)
+})
+
+test('the average load while panning counts too, not only what is on screen at the start', () => {
+  const page = { x: 0, y: 0, scale: 0.56 }
+  const actual = { x: 0, y: 0, scale: 1 }
+  // 300 objects spread over a 3 x 4 grid, but the ones near the start happen to be few.
+  const boxes = Array.from({ length: 300 }, (_, i) => box(1000 + (i % 30) * 70, 2000 + Math.floor(i / 30) * 200))
+  const content = { width: 2580, height: 4320 }
+  assert.equal(chooseOpeningView([page, actual], 1212, 900, boxes, 50, content), actual)
+  assert.equal(chooseOpeningView([page, actual], 1212, 900, boxes, 50), page)
 })

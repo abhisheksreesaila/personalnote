@@ -19,6 +19,7 @@ import { Sticky } from './modules/editor/sticky-object.js'
 import { dockIcon } from './modules/editor/dock-icons.js'
 import {
   fitImage,
+  imageEncoding,
   imageFiles,
   objectPalette,
   shapeDefaults,
@@ -37,7 +38,7 @@ import { bindPageLifecycle, canKeepAlive, confirmedRevision, settleSaves } from 
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { createLiftEffect } from './modules/editor/lift.js'
-import { fitView, openingView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
+import { chooseOpeningView, fitView, openingView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
 import {
   clampView,
   easeInOut,
@@ -1102,17 +1103,27 @@ function goToPage(index) {
 }
 
 const OPEN_ZOOM_MIN = 0.4
+const OPEN_OBJECT_LIMIT = 150
 
-// A note opens with its whole page grid on the desk (zoomed out); phones keep the full-width first page.
+// A note opens with its whole page grid on the desk (zoomed out). A dense note would pan at a crawl with hundreds of
+// objects on screen, so it opens on its first page, or at full size if even that is crowded. Phones keep the
+// full-width first page.
 function openCanvasView() {
   if (window.innerWidth <= 800) return resetCanvasView()
   const target = pageExtentsTarget()
   const margins = viewMargins(window.innerWidth)
-  const view = openingView({
-    viewW: canvas.getWidth(), viewH: canvas.getHeight(), contentW: target.right, contentH: target.bottom,
-    margins: { ...margins, left: 72, right: 72, bottom: margins.bottom + 10 }, // snug side margins, as on the design desk
-    min: state.displayScale * OPEN_ZOOM_MIN, max: state.displayScale,
+  const viewW = canvas.getWidth()
+  const viewH = canvas.getHeight()
+  const min = state.displayScale * OPEN_ZOOM_MIN
+  const max = state.displayScale
+  const whole = openingView({
+    viewW, viewH, contentW: target.right, contentH: target.bottom,
+    margins: { ...margins, left: 72, right: 72, bottom: margins.bottom + 10 }, min, max,
   })
+  const firstPage = fitView({ viewW, viewH, contentW: PAGE_WIDTH, contentH: PAGE_HEIGHT, margins, min, max })
+  const actual = { scale: max, x: (viewW - PAGE_WIDTH * max) / 2, y: margins.top }
+  const boxes = canvas.getObjects().filter((object) => !isConnector(object)).map((object) => object.getBoundingRect())
+  const view = chooseOpeningView([whole, firstPage, actual], viewW, viewH, boxes, OPEN_OBJECT_LIMIT, { width: target.right, height: target.bottom })
   cancelViewAnimation()
   state.canvasZoom = view.scale / state.displayScale
   setCanvasViewportOffset(view.x, view.y)
@@ -1224,8 +1235,12 @@ function drawPageLabels(ctx, scale) {
   ctx.font = `400 ${10.5 / scale}px "Geist Mono", ui-monospace, monospace`
   ctx.fillStyle = pageColors.label
   ctx.textBaseline = 'top'
+  const v = canvas.viewportTransform
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
+      const screenX = v[4] + column * PAGE_WIDTH * v[0]
+      const screenY = v[5] + (row + 1) * PAGE_HEIGHT * v[3]
+      if (screenX > canvas.getWidth() || screenX + PAGE_WIDTH * v[0] < 0 || screenY > canvas.getHeight() + 40 || screenY < -40) continue
       const last = row === rows - 1
       const x = column * PAGE_WIDTH + (last ? 0 : 14 / scale)
       const y = (row + 1) * PAGE_HEIGHT + (last ? 11 : -26) / scale
@@ -1757,7 +1772,7 @@ function finishPlacing(object) {
 function placeObject(kind, point) {
   const color = currentObjectPalette()[state.objectColor]
   if (kind === 'sticky') {
-    const sticky = new Sticky('', { ...stickyDefaults(color), lockScalingY: true })
+    const sticky = new Sticky('', stickyDefaults(color))
     centerOn(sticky, point)
     finishPlacing(sticky)
     bindTextEditingLifecycle(sticky)
@@ -1795,12 +1810,24 @@ async function preparedImageSource(file) {
     image.src = source
   })
   const target = fitImage({ width: element.naturalWidth, height: element.naturalHeight })
-  if (target.width === element.naturalWidth && target.height === element.naturalHeight && file.type !== 'image/gif') return source
+  const resized = target.width !== element.naturalWidth || target.height !== element.naturalHeight
+  const plan = imageEncoding({ dataUrlLength: source.length, resized, hasAlpha: false, type: file.type })
+  if (!plan) return source
   const scratch = document.createElement('canvas')
   scratch.width = target.width
   scratch.height = target.height
-  scratch.getContext('2d').drawImage(element, 0, 0, target.width, target.height)
-  return scratch.toDataURL(file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png', 0.9)
+  const context = scratch.getContext('2d', { willReadFrequently: true })
+  context.drawImage(element, 0, 0, target.width, target.height)
+  const { data } = context.getImageData(0, 0, target.width, target.height)
+  let hasAlpha = false
+  for (let index = 3; index < data.length; index += 4) if (data[index] < 255) { hasAlpha = true; break }
+  const encoding = imageEncoding({ dataUrlLength: source.length, resized, hasAlpha, type: file.type })
+  if (!hasAlpha) {
+    context.globalCompositeOperation = 'destination-over'
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, target.width, target.height)
+  }
+  return scratch.toDataURL(encoding.type, encoding.quality)
 }
 
 async function placeImageFiles(files, point = viewCenterPoint()) {
@@ -3764,7 +3791,7 @@ document.addEventListener('keydown', (event) => {
   } else if (!isTyping && !event.ctrlKey && !event.metaKey) {
     const shortcuts = { v: 'select', t: 'text', p: 'pen', d: 'pen', h: 'highlight', e: 'eraser', c: 'connect', r: 'shape', n: 'sticky' }
     if (shortcuts[event.key.toLowerCase()]) setTool(shortcuts[event.key.toLowerCase()])
-    else if (event.key.toLowerCase() === 'i') elements.imageFile.click()
+    else if (event.key.toLowerCase() === 'i' && state.activeNoteType === 'canvas' && elements.printPreview.hidden) elements.imageFile.click()
   }
 })
 

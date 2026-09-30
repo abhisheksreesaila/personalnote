@@ -2,6 +2,7 @@
 // rules (palette, defaults, image sizing) are easy to test; main.js turns them into canvas objects.
 
 export const IMAGE_MAX_SIDE = 1400
+export const IMAGE_MAX_DATA_URL = 300 * 1024
 export const PALETTE_SIZE = 5
 export const STICKY_FONT = 'Caveat'
 export const STICKY_WIDTH = 240
@@ -44,10 +45,6 @@ export function objectPalette(read) {
   })
 }
 
-export function nextColorIndex(index) {
-  return (index + 1) % PALETTE_SIZE
-}
-
 export function stickyDefaults({ fill, ink }) {
   return {
     width: STICKY_WIDTH,
@@ -69,6 +66,13 @@ export function fitImage({ width, height }, maxSide = IMAGE_MAX_SIDE) {
   if (longest <= maxSide) return { width, height }
   const ratio = maxSide / longest
   return { width: Math.round(width * ratio), height: Math.round(height * ratio) }
+}
+
+// Null when the picture can be stored as it is; otherwise how to re-encode it. Photos become JPEG; pictures with
+// transparency stay lossless-capable (WebP) so they keep their see-through parts.
+export function imageEncoding({ dataUrlLength, resized, hasAlpha, type }) {
+  if (!resized && dataUrlLength <= IMAGE_MAX_DATA_URL && type !== 'image/gif') return null
+  return hasAlpha ? { type: 'image/webp', quality: 0.85 } : { type: 'image/jpeg', quality: 0.85 }
 }
 
 export function imageFiles(files) {

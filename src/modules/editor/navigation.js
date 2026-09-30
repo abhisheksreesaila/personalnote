@@ -40,6 +40,30 @@ export function openingView(options) {
   return fitView(options)
 }
 
+// How many object boxes ({ left, top, width, height } in world units) touch the window at `view`.
+export function objectsInView(view, viewW, viewH, boxes) {
+  let count = 0
+  for (const box of boxes) {
+    const left = view.x + box.left * view.scale
+    const top = view.y + box.top * view.scale
+    if (left + box.width * view.scale > 0 && left < viewW && top + box.height * view.scale > 0 && top < viewH) count += 1
+  }
+  return count
+}
+
+// Candidates run from the most zoomed-out view to the most zoomed-in. Dense notes cannot pan smoothly when
+// hundreds of objects are on screen, so take the first view whose load stays under `limit`. The load is the
+// objects on screen now, or the average you meet while panning (objects spread evenly over `content`), whichever is more.
+export function chooseOpeningView(candidates, viewW, viewH, boxes, limit, content) {
+  const load = (view) => {
+    const average = content
+      ? boxes.length * Math.min(1, (viewW / view.scale) * (viewH / view.scale) / (content.width * content.height))
+      : 0
+    return Math.max(objectsInView(view, viewW, viewH, boxes), average)
+  }
+  return candidates.find((view) => load(view) <= limit) ?? candidates.at(-1)
+}
+
 // Indexes (row-major) of the pages that intersect the window.
 export function visiblePages({ view, viewW, viewH, columns, rows, pageW, pageH }) {
   const visible = new Set()

@@ -78,7 +78,7 @@ Needs: F-002
 ## F-010 Save pending edits on close [done]
 - [x] edits made just before a reload or close are saved (flush on pagehide / hidden, keepalive under 64 KiB)
 - [x] a close-time save never overwrites a newer revision (uses the last confirmed revision)
-Known limit: if a save is in flight at close, later edits can be lost; notes over ~60 KiB save on close best-effort.
+Known limit: if a save is in flight at close, later edits can be lost; notes over ~60 KiB save on close best-effort. Notes with pictures are that large, so in a browser tab they save on close best-effort (the desktop app waits for the save).
 
 ## F-011 Desktop app [done]
 Brief: docs/brief.md (local desktop app, v1) · Needs: none

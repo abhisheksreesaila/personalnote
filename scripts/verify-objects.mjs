@@ -123,6 +123,23 @@ const flush = async (page) => { await page.waitForTimeout(700) }
   await page.waitForFunction(() => window.__personalNote.canvas.getObjects().some((o) => o.type === 'image'), null, { timeout: 5000 })
   check('the image tool adds a picture from the file picker', (await objects(page)).some((o) => o.type === 'Image'))
 
+  // a large noisy picture is re-encoded well below its raw size
+  const noisy = await page.evaluate(() => {
+    const c = document.createElement('canvas'); c.width = 1200; c.height = 900
+    const x = c.getContext('2d'); const d = x.createImageData(1200, 900)
+    for (let i = 0; i < d.data.length; i += 4) { d.data[i] = Math.random() * 256; d.data[i + 1] = Math.random() * 256; d.data[i + 2] = Math.random() * 256; d.data[i + 3] = 255 }
+    x.putImageData(d, 0, 0)
+    return c.toDataURL('image/png').split(',')[1]
+  })
+  const noisyPath = path.join(os.tmpdir(), 'f012-noisy.png')
+  fs.writeFileSync(noisyPath, Buffer.from(noisy, 'base64'))
+  await page.setInputFiles('#image-file', noisyPath)
+  await page.waitForFunction(() => window.__personalNote.canvas.getObjects().filter((o) => o.type === 'image').length === 2, null, { timeout: 8000 })
+  const sizes = await page.evaluate(() => window.__personalNote.canvas.getObjects().filter((o) => o.type === 'image').map((o) => o.getSrc().length))
+  check('a large picture is stored as a smaller JPEG, a small one untouched', sizes[1] < noisy.length * 0.6 && sizes[0] < 10000, JSON.stringify([sizes, noisy.length]))
+  await page.evaluate(() => { const { canvas } = window.__personalNote; canvas.remove(canvas.getObjects().filter((o) => o.type === 'image')[1]); canvas.fire('object:modified', { target: canvas.getObjects()[0] }) })
+  await page.waitForTimeout(400)
+
   // image by drag and drop
   const dropAt = await toClient(page, 600, 800)
   await page.evaluate(async ([x, y, b64]) => {
@@ -149,6 +166,7 @@ const flush = async (page) => { await page.waitForTimeout(700) }
   const list = await objects(page)
   const sticky = list.filter((o) => o.type === 'Sticky')
   check('stickies and shapes come back after a reload, text and colour intact', sticky.length === 2 && sticky[0].text === 'Buy paper' && sticky[1].stickyColor === '#bf5af2' && list.some((o) => o.type === 'Rect'), list.map((o) => o.type).join(','))
+  check('a reloaded sticky still cannot be stretched vertically', await page.evaluate(() => window.__personalNote.canvas.getObjects().filter((o) => o.type === 'sticky').every((o) => o.lockScalingY === true)))
   check('connectors survive the reload', list.some((o) => o.type === 'Connector'))
   check('pictures survive the reload', list.filter((o) => o.type === 'Image').length === 2)
   await page.screenshot({ path: `${shots}/3-reloaded.png` })
