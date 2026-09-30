@@ -41,11 +41,11 @@ Design: docs/design/personal-note.md (Layout) · Needs: F-003
 - [ ] a ghost "+ Page N" appears while dragging past the edge; dragged objects lift with tilt and shadow
 - [ ] keyboard panning (arrows, PageUp/PageDown, Space) and a scroll indicator, since the window-sized canvas (F-002) has no native scrolling
 
-## F-005 Connectors [doing]
+## F-005 Connectors [done]
 Needs: F-002
-- [ ] a connector tool draws an arrow between two objects
-- [ ] connectors follow both ends live while either object is dragged, including across new pages
-- [ ] connectors save, reload, undo and export with the note
+- [x] a connector tool draws an arrow between two objects
+- [x] connectors follow both ends live while either object is dragged, including across new pages
+- [x] connectors save, reload, undo and export with the note
 
 ## F-006 Agent CLI, ready for Claude Code [done]
 Needs: none
@@ -65,6 +65,8 @@ Needs: F-006, F-002
 - [ ] the agent cursor flag does not cause stutter while dragging on a 600-object note (place it at most once per frame, cache the target block)
 - [ ] the flag clears immediately when switching notes
 - [ ] the flag follows pan and zoom on the window-sized canvas
+- [ ] when a save gives objects new ids, the open app learns them (no duplicate objects or connectors on next sync)
+- [ ] duplicate id inside one note that also clashes elsewhere keeps its connector on the first holder
 
 ## F-009 Canvas polish after the rework [todo]
 Needs: F-002
