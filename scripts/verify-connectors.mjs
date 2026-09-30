@@ -181,6 +181,34 @@ const tool = (page, t) => page.evaluate((x) => window.__personalNote.setTool(x),
   const list = await connectors(page)
   check('connectors reload with the note', list.length === 2 && list.every((k) => k.visible), JSON.stringify(list.map((k) => [k.from, k.to])))
   await page.screenshot({ path: `${shots}/8-reloaded.png` })
+  // Group selection: a + b (+ shift-click on a connector) dragged together
+  await tool(page, 'select')
+  const pa = await clientOf(page, 'res_a'); const pb = await clientOf(page, 'res_b')
+  await page.mouse.click(pa.x, pa.y)
+  await page.keyboard.down('Shift'); await page.mouse.click(pb.x, pb.y)
+  const mid = await page.evaluate(() => {
+    const { canvas } = window.__personalNote
+    const c = canvas.getObjects().find((x) => x.fromId === 'res_a')
+    const { start, end } = c.endpoints(); const v = canvas.viewportTransform; const r = canvas.upperCanvasEl.getBoundingClientRect()
+    return { x: r.left + ((start.x + end.x) / 2) * v[0] + v[4], y: r.top + ((start.y + end.y) / 2) * v[3] + v[5] }
+  })
+  await page.mouse.click(mid.x, mid.y)
+  await page.keyboard.up('Shift')
+  const group = await page.evaluate(() => { const a = window.__personalNote.canvas.getActiveObject(); return { type: a?.type, kinds: a?.getObjects?.().map((o) => o.type) } })
+  check('a connector never joins a group selection', group.type === 'activeselection' && !group.kinds.some((k) => /connector/i.test(k)), JSON.stringify(group))
+  const beforeDrag = await connectors(page)
+  await page.mouse.move(pa.x, pa.y); await page.mouse.down()
+  for (let i = 1; i <= 8; i += 1) await page.mouse.move(pa.x + i * 6, pa.y + i * 9)
+  await page.screenshot({ path: `${shots}/8b-group-drag.png` })
+  await page.mouse.up()
+  await page.waitForTimeout(300)
+  const afterDrag = await page.evaluate(() => {
+    const { canvas } = window.__personalNote
+    const box = Object.fromEntries(canvas.getObjects().filter((o) => o.semanticId && !/connector/i.test(o.type)).map((o) => [o.semanticId, o.getBoundingRect()]))
+    const near = (p, r) => Math.max(r.left - p.x, p.x - (r.left + r.width), r.top - p.y, p.y - (r.top + r.height))
+    return canvas.getObjects().filter((o) => /connector/i.test(o.type)).map((c) => { const e = c.endpoints(); return [near(e.start, box[c.fromId]), near(e.end, box[c.toId])] })
+  })
+  check('connectors stay attached after a group drag', afterDrag.every((p) => p.every((d) => d > 0 && d < 12)) && Math.abs((await connectors(page))[0].start.x - beforeDrag[0].start.x) > 20, JSON.stringify(afterDrag))
   // print path
   const printed = await page.evaluate(async () => {
     const { canvas } = window.__personalNote

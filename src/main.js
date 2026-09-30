@@ -791,6 +791,7 @@ function refreshPageColors() {
     edge: highContrast ? read('--line', '#2c2c34') : read('--sk-edge', read('--line', '#2c2c34')),
     shadows: parseBoxShadow(read('--sk-shadow', 'none')).map(resolveShadowLayer),
   }
+  Connector.haloColor = pageColors.accent
 }
 
 // The Fabric canvas is always exactly as large as the workspace. Page growth
@@ -944,7 +945,8 @@ function moveAllObjects(deltaX, deltaY) {
 }
 
 function getContentBounds() {
-  const objects = canvas.getObjects()
+  // Connectors are derived from their endpoints, so they never decide the page extents.
+  const objects = canvas.getObjects().filter((object) => !isConnector(object))
   if (!objects.length) return null
   return objects.reduce((bounds, object) => {
     const rect = object.getBoundingRect()
@@ -1392,16 +1394,21 @@ function ensureObjectId(object) {
   return object.semanticId
 }
 
-function objectBounds(object) {
-  object.setCoords()
+// `fresh` objects are the ones being transformed; their cached coords are stale.
+// Untouched endpoints keep their cached coords.
+function objectBounds(object, fresh = true) {
+  if (fresh) object.setCoords()
   return object.getBoundingRect()
 }
 
-function refreshConnector(connector) {
+function refreshConnector(connector, movingIds = null) {
   const from = objectsById.get(connector.fromId)
   const to = objectsById.get(connector.toId)
-  if (!from || !to) return
-  const ends = connectorEndpoints(objectBounds(from), objectBounds(to))
+  if (!from || !to || connector.group) return
+  const ends = connectorEndpoints(
+    objectBounds(from, !movingIds || movingIds.has(connector.fromId)),
+    objectBounds(to, !movingIds || movingIds.has(connector.toId)),
+  )
   connector.visible = ends.visible
   if (!ends.visible) return
   connector.applyBox(connectorBox(ends.start, ends.end))
@@ -1412,7 +1419,20 @@ function refreshConnectorsOf(target) {
   if (!target || !connectorIndex.byId.size) return
   const objects = target instanceof ActiveSelection ? target.getObjects() : [target]
   const ids = objects.map((object) => object.semanticId).filter(Boolean)
-  connectorIndex.forObjects(ids).forEach(refreshConnector)
+  const moving = new Set(ids)
+  connectorIndex.forObjects(ids).forEach((connector) => refreshConnector(connector, moving))
+}
+
+// A connector only ever moves by following its endpoints, so it never joins a group selection.
+function keepConnectorsOutOfSelections() {
+  const active = canvas.getActiveObject()
+  if (!(active instanceof ActiveSelection)) return
+  const members = active.getObjects()
+  if (!members.some(isConnector)) return
+  const keep = members.filter((object) => !isConnector(object))
+  canvas.discardActiveObject()
+  if (keep.length > 1) canvas.setActiveObject(new ActiveSelection(keep, { canvas }))
+  else if (keep.length === 1) canvas.setActiveObject(keep[0])
 }
 
 // After any load: re-index, drop connectors whose endpoints are gone, recompute geometry.
@@ -2700,6 +2720,7 @@ canvas.on('object:removed', ({ target }) => {
   objectsById.delete(target.semanticId)
   connectorIndex.forObjects([target.semanticId]).forEach((connector) => canvas.remove(connector))
 })
+;['selection:created', 'selection:updated'].forEach((eventName) => canvas.on(eventName, keepConnectorsOutOfSelections))
 canvas.on('after:render', ({ ctx }) => drawConnectOverlay(ctx))
 canvas.on('mouse:down', ({ e, scenePoint }) => {
   if (state.tool !== 'connect' || e.button > 0) return

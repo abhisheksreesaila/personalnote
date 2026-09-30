@@ -8,7 +8,7 @@ const HIT_TOLERANCE = 9
 
 // Draws a rounded-cap line with a filled arrowhead. Used by the canvas object, the
 // print path (which reloads the same JSON into a StaticCanvas) and the live preview.
-export function drawArrow(ctx, start, end, { color = '#20201e', width = CONNECTOR_LINE_WIDTH, halo = 0 } = {}) {
+export function drawArrow(ctx, start, end, { color = '#20201e', width = CONNECTOR_LINE_WIDTH, halo = 0, haloColor = '#4D839C' } = {}) {
   const head = Math.min(HEAD_SIZE, Math.hypot(end.x - start.x, end.y - start.y) * 0.6)
   const [tip, wingA, wingB] = arrowHeadPoints(start, end, head)
   const base = { x: (wingA.x + wingB.x) / 2, y: (wingA.y + wingB.y) / 2 }
@@ -16,8 +16,9 @@ export function drawArrow(ctx, start, end, { color = '#20201e', width = CONNECTO
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   if (halo) {
-    ctx.strokeStyle = 'rgba(58, 123, 255, 0.35)'
-    ctx.fillStyle = 'rgba(58, 123, 255, 0.35)'
+    ctx.globalAlpha = 0.4
+    ctx.strokeStyle = haloColor
+    ctx.fillStyle = haloColor
     ctx.lineWidth = width + halo
     ctx.beginPath()
     ctx.moveTo(start.x, start.y)
@@ -27,6 +28,7 @@ export function drawArrow(ctx, start, end, { color = '#20201e', width = CONNECTO
     ctx.lineTo(wingB.x, wingB.y)
     ctx.closePath()
     ctx.stroke()
+    ctx.globalAlpha = 1
   }
   ctx.strokeStyle = color
   ctx.fillStyle = color
@@ -49,6 +51,9 @@ export function drawArrow(ctx, start, end, { color = '#20201e', width = CONNECTO
 // translating the box translates the arrow. fromId / toId are the objects' semanticIds.
 export class Connector extends FabricObject {
   static type = CONNECTOR_TYPE
+
+  // Skin accent, set by the app whenever page colours refresh.
+  static haloColor = '#4D839C'
 
   static ownDefaults = {
     originX: 'center',
@@ -105,7 +110,7 @@ export class Connector extends FabricObject {
     // Fabric has translated to the box centre; draw in box-local coordinates.
     const local = (p) => ({ x: p.x - this.left, y: p.y - this.top })
     const selected = this.canvas?.getActiveObject?.() === this
-    drawArrow(ctx, local(start), local(end), { color: this.color, width: this.lineWidth, halo: selected ? 7 : 0 })
+    drawArrow(ctx, local(start), local(end), { color: this.color, width: this.lineWidth, halo: selected ? 7 : 0, haloColor: Connector.haloColor })
   }
 
   // Only the line itself is clickable, not the whole diagonal bounding box.
