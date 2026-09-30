@@ -101,11 +101,27 @@ The default database is `data/personal-note.db`; set `PERSONAL_NOTE_DB` to overr
 
 Canvas and mind-map notes share the same notebook and API lifecycle. `noteType` is immutable after creation, preventing one editor from interpreting another editor's data.
 
+## Local CLI
+
+`personal_note_cli.py` is a machine-readable local interface over the same `NoteService` and portability contracts as the web API. It emits JSON to stdout, returns `0` for success, `2` for expected user/input errors, and never bypasses revision or backup-import validation.
+
+```bash
+python personal_note_cli.py status
+python personal_note_cli.py notebooks list
+python personal_note_cli.py notes create --title "Idea" --text "A local searchable capture"
+python personal_note_cli.py search "searchable capture"
+python personal_note_cli.py export workspace --output backup.json
+python personal_note_cli.py import backup.json
+python personal_note_cli.py plugins inspect plugin-manifest.json
+```
+
+Pass `--database /path/to/personal-note.db` before the command to target a specific workspace. The CLI does not provide remote access, plugin execution, or automatic agent actions.
+
 ## Validation
 
 ```bash
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup -v
+python -m unittest tests.test_api tests.test_cli tests.test_startup -v
 npm run benchmark:bundle
 ```
 

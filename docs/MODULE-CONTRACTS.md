@@ -22,6 +22,10 @@ All built-in editors use the same `POST /api/notes`, `GET /api/notes/{id}`, and 
 
 The shell owns when calls occur. A module receives callbacks rather than importing shell state.
 
+## Local CLI contract
+
+`personal_note_cli.py` is a local automation boundary, not a remote agent endpoint. It calls `NoteService` and `portability.py` directly through their established public methods, emits JSON on stdout, and uses stable exit codes (`0` success, `2` expected input/resource errors). It never accesses SQLite outside `NoteService`, bypasses revision checks, or grants any plugin additional authority.
+
 ## Mind-map contract
 
 `src/modules/mindmap.js` exports:
@@ -46,6 +50,10 @@ The shell owns the active canvas text object. `src/modules/voice/transcript-sess
 - `LocalTranscriptionProvider.connect(callbacks)`, `sendAudio(frame)`, `finish()`, `cancel()`, and `disconnect()`
 
 The capture callback carries ephemeral PCM frames directly to the provider. No storage interface exists. The provider emits transient partial text and final text; only final text follows the normal canvas save path.
+
+## Plugin package contract
+
+`plugin_manifest.py` validates a versioned package manifest before any future installation or execution path. A manifest declares its identifier, name, version, host API version, and only supported capability names. Validation does not load code. There is no plugin runtime yet: packages cannot access the filesystem, SQLite, keys, network, or host UI.
 
 ## Portability contract
 

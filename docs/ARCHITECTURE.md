@@ -18,12 +18,13 @@ flowchart LR
     API --> Export[Portability projection]
 ```
 
-Development uses two core processes:
+Development uses two core processes and one local command interface:
 
-| Process | Port | Responsibility |
+| Surface | Port | Responsibility |
 |---|---:|---|
 | Vite | 5173 | Browser shell, canvas, and lazy built-in modules |
 | FastHTML | 3137 | REST API, SQLite persistence, search, backup/import/export |
+| `personal_note_cli.py` | — | Scriptable local create/read/search/import/export/diagnostics through `NoteService` |
 
 The optional Windows transcription service listens on loopback port `8080` and starts separately. The notebook is fully usable when it is absent.
 
@@ -146,7 +147,8 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `src/mindmap/` | Built-in mind-map implementation |
 | `src/modules/voice/` | Transcript, capture, and local provider modules |
 | `routes.py` | Core HTTP routes |
+| `personal_note_cli.py` | Machine-readable local CLI using the same service and portability contracts |
 | `services.py` | SQLite persistence and FTS5 indexing |
 | `portability.py` | Backup/import and Markdown archive projection |
 | `app_schema.py` | Idempotent database setup |
-| `src/workspace-theme.css` | Screen-only Omarchy-style chrome |
+| `src/workspace-theme.css` | Screen-only dark neutral/violet chrome |
