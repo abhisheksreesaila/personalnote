@@ -422,7 +422,9 @@
     .app-shell .scroll-indicator-x { display: none; }
     .app-shell .mobile-capture-controls button { border-radius: 16px; border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); transition: transform 140ms var(--ease-out); }
     .app-shell .mobile-capture-controls button:active { transform: scale(.96); }
-    .app-shell .mobile-draw-button { background: var(--glass-solid); color: var(--sk-ink); }
+    .app-shell .mobile-draw-button, .app-shell .mobile-connect-button { background: var(--glass-solid); color: var(--sk-ink); }
+    .app-shell .mobile-connect-button { min-width: 54px; min-height: 54px; padding: 0; }
+    .app-shell .mobile-connect-button.active { background: var(--sk-accent-soft); color: var(--sk-accent); border-color: var(--sk-accent); }
     .app-shell .mobile-speak-button { background: var(--sk-accent); color: var(--sk-accent-ink); border-color: var(--sk-accent) !important; }
     .app-shell .mobile-capture-controls { bottom: max(14px, env(safe-area-inset-bottom)); }
   }

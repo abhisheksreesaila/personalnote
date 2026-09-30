@@ -22,7 +22,7 @@ import {
   connectorsLeftDangling,
 } from './modules/editor/connectors.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
-import { CATEGORIES, categoryLabel, inboxNotes, modifierLabel, outline } from './modules/library/outline.js'
+import { CATEGORIES, categoryLabel, inboxNotes, modifierLabel, outline as notebookOutline } from './modules/library/outline.js'
 import { keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { createLiftEffect } from './modules/editor/lift.js'
@@ -184,6 +184,7 @@ document.querySelector('#app').innerHTML = `
           </div>
         </div>
         <div class="mobile-capture-controls" aria-label="Canvas capture controls">
+          <button class="mobile-connect-button" id="mobile-connect" title="Connect two objects" aria-label="Connect two objects" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
           <button class="mobile-draw-button" id="mobile-draw" aria-label="Enable drawing"><i data-lucide="pencil"></i><span>Draw</span></button>
           <button class="mobile-speak-button" id="mobile-speak" title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
         </div>
@@ -445,6 +446,7 @@ const elements = {
   notebookDialog: document.querySelector('#notebook-dialog'),
   clearNoteDialog: document.querySelector('#clear-note-dialog'),
   mobileSpeak: document.querySelector('#mobile-speak'),
+  mobileConnect: document.querySelector('#mobile-connect'),
   notebookForm: document.querySelector('#notebook-form'),
   notebookName: document.querySelector('#notebook-name'),
   sidebarToggle: document.querySelector('#toggle-sidebar'),
@@ -777,7 +779,7 @@ function renderNoteList() {
     || state.notebooks[0]
   if (selectedNotebook) state.selectedNotebookId = selectedNotebook.id
 
-  const sections = outline(state.notebooks, state.notes)
+  const sections = notebookOutline(state.notebooks, state.notes)
   const selectedSection = sections.find((section) => section.notebooks.some((item) => item.id === selectedNotebook?.id))
   const archiveOpen = state.archiveOpen || selectedSection?.id === 'archive'
   const notebookById = new Map(state.notebooks.map((notebook) => [notebook.id, notebook]))
@@ -1649,6 +1651,8 @@ function setTool(tool) {
     canvas.freeDrawingBrush.width = tool === 'highlight' ? state.highlightWidth : state.penWidth
     canvas.freeDrawingBrush.decimate = 0.8
   }
+  elements.mobileConnect.classList.toggle('active', tool === 'connect')
+  elements.mobileConnect.setAttribute('aria-pressed', String(tool === 'connect'))
   updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
   connectDraft = null
@@ -3227,6 +3231,8 @@ elements.mobileSpeak.addEventListener('pointerup', async (event) => {
 elements.mobileSpeak.addEventListener('pointercancel', async () => mobileHoldController.cancel())
 elements.mobileSpeak.addEventListener('contextmenu', (event) => event.preventDefault())
 document.querySelector('#mobile-draw').addEventListener('click', () => setTool('pen'))
+// Phones have no dock, so the Connect tool sits beside Draw: tap to arm it, tap again to go back to typing.
+elements.mobileConnect.addEventListener('click', () => setTool(state.tool === 'connect' ? 'text' : 'connect'))
 const searchButton = elements.searchButton
 searchButton.addEventListener('click', openSearch)
 function setShareMenuOpen(open) {
