@@ -16,7 +16,7 @@ Blocked: set STRIPE_SECRET_KEY in Railway, then say go.
 - [ ] pricing page uses register_billing_routes
 -->
 
-## F-002 Window-sized canvas (smoothness rework) [todo]
+## F-002 Window-sized canvas (smoothness rework) [doing]
 Brief: docs/brief.md · Design: docs/design/personal-note.md (Engine) · Needs: none
 - [ ] the canvas is sized to the window; pan and zoom move the view instead of resizing the canvas
 - [ ] pages still grow when an object crosses an edge and fold back when emptied, without resizing the canvas
@@ -24,7 +24,7 @@ Brief: docs/brief.md · Design: docs/design/personal-note.md (Engine) · Needs: 
 - [ ] high zoom on retina never paints blank
 - [ ] print and export output are unchanged
 
-## F-003 Skins: Crayon default, Paper and Night [todo]
+## F-003 Skins: Crayon default, Paper and Night [doing]
 Design: docs/design/personal-note.md · Needs: none
 - [ ] skin tokens live as CSS custom properties per skin; Crayon is the default
 - [ ] switching skin from the sidebar swatches recolors the app with a 400ms crossfade and is remembered
@@ -44,7 +44,7 @@ Needs: F-002
 - [ ] connectors follow both ends live while either object is dragged, including across new pages
 - [ ] connectors save, reload, undo and export with the note
 
-## F-006 Agent CLI, ready for Claude Code [todo]
+## F-006 Agent CLI, ready for Claude Code [doing]
 Needs: none
 - [ ] `personal-note` search, read (as plain text) and write/append work against the live notebook without breaking revisions
 - [ ] an agent write shows up in the open app without a reload
