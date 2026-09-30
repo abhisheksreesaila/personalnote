@@ -542,15 +542,20 @@ class NoteService:
             except (TypeError, ValueError):
                 return default
 
+        # Fabric 7 objects default to a centre origin, so `top` may be the middle of the object.
+        below_top = {"top": 1.0, "center": 0.5, "bottom": 0.0}.get(item.get("originY"), 0.5)
         top = number("top")
         height = number("height", -1.0)
-        if height >= 0:
-            return top + height * abs(number("scaleY", 1.0))
-        text = item.get("text")
-        if isinstance(text, str):
-            size = number("fontSize", APPEND_FONT_SIZE)
-            return top + (text.count("\n") + 1) * size * number("lineHeight", APPEND_LINE_HEIGHT)
-        return top + 40
+        if height < 0:
+            text = item.get("text")
+            if isinstance(text, str):
+                size = number("fontSize", APPEND_FONT_SIZE)
+                height = (text.count("\n") + 1) * size * number("lineHeight", APPEND_LINE_HEIGHT)
+            else:
+                height = 40.0
+        else:
+            height *= abs(number("scaleY", 1.0))
+        return top + height * below_top
 
     @staticmethod
     def estimate_text_height(text: str, width: float) -> float:
@@ -590,6 +595,8 @@ class NoteService:
         content["objects"].append(
             {
                 "type": "Textbox",
+                "originX": "left",
+                "originY": "top",
                 "left": APPEND_LEFT,
                 "top": round(top, 2),
                 "width": width,

@@ -78,7 +78,7 @@ class PlainTextTests(TempServiceCase):
 class AppendTextTests(TempServiceCase):
     def test_append_places_text_below_existing_content_with_a_revision_bump(self):
         note = self.canvas_note(
-            [{"type": "IText", "text": "existing", "left": 72, "top": 80, "height": 60}]
+            [{"type": "IText", "text": "existing", "left": 72, "top": 80, "height": 60, "originY": "top"}]
         )
         result = self.service.append_text(note["id"], "agent line", revision=note["revision"])
         self.assertEqual(result["revision"], note["revision"] + 1)
@@ -90,7 +90,7 @@ class AppendTextTests(TempServiceCase):
 
     def test_append_grows_pages_when_content_would_pass_the_bottom_edge(self):
         note = self.canvas_note(
-            [{"type": "IText", "text": "low", "left": 72, "top": 1000, "height": 40}],
+            [{"type": "IText", "text": "low", "left": 72, "top": 1000, "height": 40, "originY": "top"}],
             page_state={"columns": 1, "rows": 1},
         )
         self.service.append_text(note["id"], "next page text")
@@ -99,6 +99,16 @@ class AppendTextTests(TempServiceCase):
         self.assertEqual(loaded["pageState"]["columns"], 1)
         new = loaded["content"]["objects"][-1]
         self.assertLess(new["top"], loaded["pageState"]["rows"] * 1080)
+
+    def test_append_understands_centre_origin_objects_saved_by_the_browser(self):
+        note = self.canvas_note(
+            [{"type": "Textbox", "text": "centred", "left": 400, "top": 500, "height": 100, "originX": "center", "originY": "center"}]
+        )
+        self.service.append_text(note["id"], "below")
+        new = self.service.get_note(note["id"])["content"]["objects"][-1]
+        self.assertGreaterEqual(new["top"], 550)
+        self.assertLess(new["top"], 620)
+        self.assertEqual((new["originX"], new["originY"]), ("left", "top"))
 
     def test_append_to_empty_note_starts_near_the_top_of_the_page(self):
         note = self.service.create_note({"title": "Empty"})

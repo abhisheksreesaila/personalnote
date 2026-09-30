@@ -2,7 +2,7 @@ import './style.css'
 import './workspace-theme.css'
 import './skins.css'
 import { mountSkinSwitcher, startSkins } from './skins.js'
-import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox } from 'fabric'
+import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { mountMindMapModule } from './modules/mindmap.js'
@@ -10,6 +10,8 @@ import { DictationSession } from './modules/voice/transcript-session.js'
 import { createMobileHoldController } from './modules/voice/mobile-hold-controller.js'
 import { pageBoundedTextLayout } from './modules/voice/text-layout.js'
 import { flushPendingHistory } from './modules/editor/history.js'
+import { mountAgentSync } from './modules/sync/index.js'
+import { mergeRemoteAppends } from './modules/sync/changes.js'
 import { prettifySelection } from './modules/editor/prettify.js'
 
 const PAGE_WIDTH = 860
@@ -1275,6 +1277,14 @@ function setTool(tool) {
 let saveTimer
 let saveInFlight = false
 let saveQueued = false
+// Agent sync: edits not yet saved, and the object ids the server last agreed on.
+let unsavedEdits = false
+let syncedIds = new Set()
+let agentSync = null
+
+function canvasObjectIds(document) {
+  return new Set((document?.objects || []).map((object) => object?.semanticId).filter(Boolean))
+}
 
 function ensureCanvasObjectIds() {
   canvas.getObjects().forEach((object) => {
@@ -1289,6 +1299,7 @@ async function saveActiveNote() {
     return
   }
   saveInFlight = true
+  unsavedEdits = false
   setSaveState('Saving')
   const noteId = state.activeNoteId
   const note = state.notes.find((item) => item.id === noteId)
@@ -1296,22 +1307,27 @@ async function saveActiveNote() {
     if (state.activeNoteType === 'canvas') ensureCanvasObjectIds()
     const title = elements.title.value.trim() || 'Untitled note'
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
+    const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : canvas.toJSON()
     const result = await api(`/notes/${noteId}`, {
       method: 'PUT',
       body: JSON.stringify({
         title,
-        content: state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : canvas.toJSON(),
+        content: savedContent,
         pageState: state.pages,
         notebookId: note?.notebookId,
         revision: note?.revision,
       }),
     })
     if (note) Object.assign(note, { title, revision: result.revision, resourceId: result.resourceId })
+    if (state.activeNoteType === 'canvas') syncedIds = canvasObjectIds(savedContent)
     renderNoteList()
     setSaveState('Saved')
   } catch (error) {
     console.error(error)
+    unsavedEdits = true
     setSaveState('Could not save', true)
+    // An agent may have written first: keep the user's edits and merge its text in.
+    if (/revision/i.test(error.message)) agentSync?.syncActiveNote().catch(console.error)
   } finally {
     saveInFlight = false
     if (saveQueued) {
@@ -1323,6 +1339,7 @@ async function saveActiveNote() {
 
 function queueSave() {
   if (state.loading) return
+  unsavedEdits = true
   setSaveState('Saving')
   clearTimeout(saveTimer)
   saveTimer = setTimeout(saveActiveNote, 650)
@@ -1371,6 +1388,7 @@ async function restoreHistory(index) {
 async function selectNote(id) {
   if (id === state.activeNoteId) return
   clearTimeout(saveTimer)
+  unsavedEdits = false
   state.activeNoteId = id
   renderNoteList()
   state.loading = true
@@ -1402,6 +1420,7 @@ async function selectNote(id) {
       normalizedNote = reconcilePages(true) || normalizedNote
       state.history = [snapshot()]
       state.historyIndex = 0
+      syncedIds = canvasObjectIds(note.content)
       setTool('text')
     }
     setSaveState('Saved')
@@ -1419,6 +1438,66 @@ async function selectNote(id) {
     state.loading = false
     if (normalizedNote) queueSave()
   }
+}
+
+async function refreshWorkspaceLists() {
+  const [notebooks, notes] = await Promise.all([api('/notebooks'), api('/notes')])
+  state.notebooks = notebooks
+  const previous = new Map(state.notes.map((note) => [note.id, note]))
+  state.notes = notes.map((note) => {
+    const known = previous.get(note.id)
+    if (!known) return note
+    // The open note keeps its own revision and title until sync or save settles them.
+    if (note.id === state.activeNoteId) return Object.assign(known, note, { revision: known.revision, title: known.title })
+    return Object.assign(known, note)
+  })
+  renderNoteList()
+}
+
+async function applyRemoteNote(note) {
+  if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
+  state.loading = true
+  try {
+    elements.title.value = note.title
+    state.pages = note.pageState || { columns: 1, rows: 1 }
+    resizePaper()
+    await canvas.loadFromJSON(note.content || { objects: [] })
+    bindCanvasTextObjects()
+    setTool(state.tool)
+    state.history = [snapshot()]
+    state.historyIndex = 0
+    syncedIds = canvasObjectIds(note.content)
+    const summary = state.notes.find((item) => item.id === note.id)
+    if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
+    setSaveState('Saved')
+    renderNoteList()
+  } finally {
+    state.loading = false
+  }
+}
+
+// Unsaved local edits win: add only the objects an agent appended, then save on top of the newer revision.
+async function mergeRemoteNote(note) {
+  if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
+  const remoteObjects = note.content?.objects || []
+  const added = mergeRemoteAppends({ syncedIds, localObjects: canvas.getObjects(), remoteObjects })
+  const enlivened = added.length ? await util.enlivenObjects(added) : []
+  if (note.id !== state.activeNoteId) return 0
+  const summary = state.notes.find((item) => item.id === note.id)
+  if (summary) summary.revision = note.revision
+  syncedIds = new Set([...syncedIds, ...canvasObjectIds(note.content)])
+  const remotePages = note.pageState || {}
+  const columns = Math.max(state.pages.columns, remotePages.columns || 1)
+  const rows = Math.max(state.pages.rows, remotePages.rows || 1)
+  if (columns !== state.pages.columns || rows !== state.pages.rows) {
+    state.pages = { columns, rows }
+    resizePaper(true)
+  }
+  enlivened.forEach((object) => canvas.add(object))
+  bindCanvasTextObjects()
+  canvas.requestRenderAll()
+  queueSave()
+  return enlivened.length
 }
 
 async function createNote(notebookId, noteType = 'canvas') {
@@ -2815,6 +2894,18 @@ async function initialize() {
     state.selectedNotebookId = state.notes[0]?.notebookId || state.notebooks[0]?.id || null
     if (!state.notes.length) await createNote()
     else await selectNote(state.notes[0].id)
+    agentSync = mountAgentSync({
+      api,
+      saveStateElement: elements.saveState,
+      getActive: () => {
+        const note = state.notes.find((item) => item.id === state.activeNoteId)
+        return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
+      },
+      hasUnsavedEdits: () => unsavedEdits || saveInFlight,
+      reload: applyRemoteNote,
+      merge: mergeRemoteNote,
+      refreshLists: refreshWorkspaceLists,
+    })
   } catch (error) {
     console.error(error)
     setSaveState('Database offline', true)
