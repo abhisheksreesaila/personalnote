@@ -71,9 +71,9 @@
     .cover .face,.cover .pages { position:absolute; inset:0; border-radius:.55em 1.25em 1.25em .55em; }
     .cover .pages { inset:.25em -.55em -.55em .7em; background:var(--paper-edge); }
     .cover .pages::after { content:""; position:absolute; inset:-.25em .55em .55em -.4em; border-radius:inherit; background:#FBF8F1; box-shadow:inset -.14em 0 0 var(--line); }
-    .cover .face { display:block; background:var(--face); color:var(--ink); box-shadow:inset 1em 0 0 var(--spine),inset 1.13em 0 0 rgba(255,255,255,.12),0 2.6em 4.4em -2em rgba(0,0,0,.5); padding:3em 3.3em 0 2em; }
+    .cover .face { display:block; background:var(--face); color:var(--ink); box-shadow:inset 1em 0 0 var(--spine),inset 1.13em 0 0 rgba(255,255,255,.12),0 2.6em 4.4em -2em rgba(0,0,0,.5); padding:3em 4.2em 0 1.9em; }
     .cover .sub { display:block; font:400 .72em var(--mono); letter-spacing:.14em; text-transform:uppercase; }
-    .cover .title { display:block; margin-top:.6em; font:700 1.95em/.95 var(--display); letter-spacing:-.035em; }
+    .cover .title { display:block; margin-top:.6em; font:700 1.7em/.95 var(--display); letter-spacing:-.035em; }
     .cover .rule { display:block; width:2.3em; height:2px; margin-top:1em; background:var(--ink); opacity:.5; }
     .cover .band { position:absolute; right:1.7em; top:-.4em; bottom:-.4em; width:1em; border-radius:3px; background:#111114; box-shadow:0 2px 6px rgba(0,0,0,.35); }
     .cover .ribbon { position:absolute; left:3.9em; bottom:-2.4em; width:1.3em; height:4.6em; background:var(--c1); clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%); }
@@ -150,7 +150,7 @@
       .nav .wrap { gap:16px; }
     }
     @media (max-width:600px) {
-      .fan { --ov:-5em; --u:calc((100vw - 24px)/50); }
+      .fan { --ov:-5.5em; --u:calc((100vw - 24px)/55); }
       .cover .sub { font-size:max(8px,.72em); }
     }
     @media (max-width:480px) {
@@ -166,11 +166,11 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header class="nav">
-    <div class="wrap">
+    <nav class="wrap" aria-label="Primary">
       <a class="logo" href="/"><span class="mark" aria-hidden="true"></span>Personal Note</a>
       <a href="#grow">How pages grow</a><a href="#agents">For agents</a><a href="#skins">Skins</a>
       <a class="btn sm" href="/notes">Open notebook</a>
-    </div>
+    </nav>
   </header>
 
   <main id="main">
