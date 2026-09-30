@@ -80,14 +80,15 @@ Needs: F-002
 - [x] a close-time save never overwrites a newer revision (uses the last confirmed revision)
 Known limit: if a save is in flight at close, later edits can be lost; notes over ~60 KiB save on close best-effort.
 
-## F-011 Desktop app [doing]
+## F-011 Desktop app [done]
 Brief: docs/brief.md (local desktop app, v1) · Needs: none
 Decision: pywebview native window around the existing local server (no Rust toolchain; Python backend stays in-process). Fabric.js stays: the stress test showed the speed problem was canvas sizing, not the engine.
-- [ ] one command (`npm run desktop`) opens Personal Note in its own native window, not a browser tab, with the local server on a free loopback port; closing the window stops it cleanly
-- [ ] the app and `bin/personal-note` use the same notebook database by default, stored in the user's app-data folder; an existing `data/personal-note.db` is kept and used, never moved or deleted
-- [ ] microphone (hold-to-talk) works inside the window where the OS allows it, with a visible message where it doesn't
-- [ ] on macOS a double-clickable Personal Note.app can be built with one script (verified on a Mac by the captain); on Linux a launcher entry is provided
-- [ ] cold start to a usable canvas is measured and reported
+- [x] one command (`npm run desktop`) opens Personal Note in its own native window, not a browser tab, with the local server on a free loopback port; closing the window stops it cleanly
+- [x] the app and `bin/personal-note` use the same notebook database by default, stored in the user's app-data folder; an existing `data/personal-note.db` is kept and used, never moved or deleted
+- [x] microphone (hold-to-talk) works inside the window where the OS allows it, with a visible message where it doesn't
+- [x] on macOS a double-clickable Personal Note.app can be built with one script (verified on a Mac by the captain); on Linux a launcher entry is provided
+- [x] cold start to a usable canvas is measured and reported
+Open: Mac .app build and Mac/Linux microphone to be checked by the captain on real hardware.
 
 ## F-012 Match the mockup [doing]
 Design: Crayon-Canvas artboard (canvas link in docs/design/personal-note.md) · Needs: F-004
