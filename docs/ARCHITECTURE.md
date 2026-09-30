@@ -24,7 +24,7 @@ Development uses two core processes and one local command interface:
 |---|---:|---|
 | Vite | 5173 | Browser shell, canvas, and lazy built-in modules |
 | FastHTML | 3137 | REST API, SQLite persistence, search, backup/import/export |
-| `personal_note_cli.py` | — | Scriptable local create/read/search/import/export/diagnostics through `NoteService` |
+| `personal_note_cli.py` (`bin/personal-note`) | — | Local agent and scripting interface: search, read as text, create, append, import/export, diagnostics, all through `NoteService` |
 
 The optional Windows transcription service listens on loopback port `8080` and starts separately. The notebook is fully usable when it is absent.
 
@@ -121,8 +121,9 @@ erDiagram
 | `GET` | `/api/export/workspace` | Canonical JSON backup |
 | `POST` | `/api/import/workspace` | Non-destructive merge import |
 | `GET` | `/api/export/markdown` | Markdown-plus-assets ZIP |
+| `GET` | `/api/changes?since=` | Cheap change feed plus active agent presence, polled by the open app |
 
-There are no v1 model, suggestion, agent, or remote workspace endpoints.
+There are no v1 model, suggestion, or remote workspace endpoints. Agents reach the notebook through the local CLI, which writes through `NoteService` to the same SQLite file; the browser notices those writes through `/api/changes`.
 
 ## Performance shape
 
@@ -132,7 +133,7 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 
 - The API binds to `127.0.0.1` by default.
 - SQLite is local storage, not encryption.
-- V1 has no authentication, tenancy, sync, or remote API contract.
+- V1 has no authentication, tenancy, sync, or remote API contract. Local agent access is the CLI on the same machine, with the same file permissions as the database.
 - No secret or provider credential is sent to the browser.
 - Imported backup content is treated as data and validated for format, note type, references, and size before insertion.
 - Markdown conversion never fetches remote image URLs; only bounded embedded data images are extracted.
@@ -147,7 +148,9 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `src/mindmap/` | Built-in mind-map implementation |
 | `src/modules/voice/` | Transcript, capture, and local provider modules |
 | `routes.py` | Core HTTP routes |
-| `personal_note_cli.py` | Machine-readable local CLI using the same service and portability contracts |
+| `personal_note_cli.py`, `bin/personal-note` | Machine-readable local CLI for agents, using the same service and portability contracts |
+| `note_text.py` | Plain-text projections of notes for agents (reading-order canvas text, mind-map outline) |
+| `src/modules/sync/` | Change-feed polling, safe merge of agent writes, and the agent presence chip |
 | `services.py` | SQLite persistence and FTS5 indexing |
 | `portability.py` | Backup/import and Markdown archive projection |
 | `app_schema.py` | Idempotent database setup |
