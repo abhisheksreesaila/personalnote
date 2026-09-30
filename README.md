@@ -131,6 +131,7 @@ There is no remote access, plugin execution, or model call in the app; an agent 
 npm run test:ui
 python -m unittest tests.test_api tests.test_cli tests.test_agent_access tests.test_startup -v
 npm run benchmark:bundle
+npm run benchmark:canvas
 ```
 
 The bundle benchmark enforces gzip and largest-chunk budgets. Mind-map and desktop voice implementations are split into on-demand chunks so the ordinary canvas path stays small.

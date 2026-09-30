@@ -104,7 +104,7 @@ async function measure(page, name, run) {
   })
   const moved = await run()
   const frames = await page.evaluate(() => { cancelAnimationFrame(window.__loop); return window.__frames.slice(2) })
-  return { scenario: name, ...stat(frames), slowFrames: frames.filter((f) => f > 20).length, moved }
+  return { scenario: name, ...stat(frames), slowFrames: frames.filter((f) => f > 20).length, movedPx: moved ?? '' }
 }
 
 const nextFrame = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())))
