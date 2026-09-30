@@ -44,7 +44,7 @@ npm run desktop                         # or: .venv/bin/python desktop.py
 ```
 
 - It serves the built frontend on a free loopback port, opens a window titled "Personal Note", and stops the server when the window closes (pending edits are saved first, waiting up to 3 seconds). Opening it a second time brings the existing window forward instead of starting another server.
-- `python desktop.py --timing` prints cold-start timings; `--no-build` skips the stale-build check. Measured on Linux (Wayland, WebKitGTK), build in place: server ready 0.10s and a canvas on screen 0.79s after process start (single run).
+- `python desktop.py --timing` prints cold-start timings; `--no-build` skips the stale-build check. Measured on Linux (Wayland, WebKitGTK, hidden window, build in place, three runs): server ready 0.15s; canvas drawn and notes listed 0.90-1.03s after process start.
 - Linux needs a system web view: `webkit2gtk-4.1` and `python-gobject` (Arch/Omarchy: `sudo pacman -S webkit2gtk-4.1 python-gobject`; Debian/Ubuntu: `gir1.2-webkit2-4.1 python3-gi`). The virtualenv must see them: create it with `python -m venv --system-site-packages .venv`. `npm run desktop` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which Wayland sessions need.
 - Launcher entry on Linux: `sh scripts/install-linux-launcher.sh` adds "Personal Note" to the application menu.
 - macOS app: on a Mac, `npm run desktop:mac-app` builds `dist-app/Personal Note.app` with PyInstaller (microphone usage text included). Not yet verified on a Mac.
@@ -66,7 +66,7 @@ The app, `bin/personal-note` and `python main.py` share one database:
 bin/personal-note migrate-data
 ```
 
-It copies the database (SQLite backup; if the app-data database already has notes, the old notes are merged in without overwriting anything), then writes `data/personal-note.db.migrated` so this checkout switches to the app-data copy. It never deletes or moves the original; remove it yourself once you have checked the notes. The macOS app shows a one-line notice when its notebook is empty, pointing here.
+It copies the database (SQLite backup; if the app-data database already has notes, the old notes are merged in without overwriting anything), then writes `data/personal-note.db.migrated` so this checkout switches to the app-data copy. Running it again reports "already migrated" and does nothing (`--force-merge` merges again). It refuses while the desktop app is open or a server answers on `HOST:PORT` (default 3137), because that server would keep writing to the old file; `--yes` overrides the server check. It never deletes or moves the original; remove it yourself once you have checked the notes. The macOS app shows a one-line notice when its notebook is empty, pointing here.
 
 ## V1 capabilities
 

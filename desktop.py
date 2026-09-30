@@ -149,11 +149,10 @@ class LocalServer:
 def record_instance(database: Path, base_url: str, nonce: str) -> None:
     path = instance_file(database)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"url": base_url, "pid": os.getpid(), "nonce": nonce}), encoding="utf-8")
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+    path.unlink(missing_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # private from the first byte
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"url": base_url, "pid": os.getpid(), "nonce": nonce}))
 
 
 def clear_instance(database: Path) -> None:
@@ -253,8 +252,8 @@ def show_notice(window, message: str) -> None:
     script = (
         "(() => { const bar = document.createElement('div'); bar.setAttribute('role', 'status');"
         "bar.style.cssText = 'position:fixed;left:50%;bottom:72px;transform:translateX(-50%);z-index:99999;"
-        "max-width:min(640px,90vw);padding:10px 14px;border-radius:10px;background:#1f2937;color:#fff;"
-        "font:13px system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);cursor:pointer';"
+        "max-width:min(640px,90vw);padding:10px 14px;border-radius:var(--radius-panel);background:var(--surface);"
+        "color:var(--ink);border:1px solid var(--line);font:13px var(--ui-font);box-shadow:var(--shadow-panel);cursor:pointer';"
         f"bar.textContent = {json.dumps(message)}; bar.title = 'Click to dismiss'; bar.onclick = () => bar.remove();"
         "document.body.appendChild(bar); setTimeout(() => bar.remove(), 20000); })()"
     )

@@ -94,6 +94,11 @@ class SingleInstanceTests(TempDirCase):
         record_instance(db, "http://127.0.0.1:9", "n")
         self.assertIsNone(focus_running_instance(db))
 
+    def test_instance_record_is_private_from_the_start(self):
+        db = self.root / "n.db"
+        record_instance(db, "http://127.0.0.1:9", "n")
+        self.assertEqual(instance_file(db).stat().st_mode & 0o777, 0o600 if os.name != "nt" else instance_file(db).stat().st_mode & 0o777)
+
     def test_clear_instance_removes_only_the_record(self):
         db = self.root / "n.db"
         db.write_bytes(b"notes")

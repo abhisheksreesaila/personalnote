@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from app_paths import DATABASE_FILENAME, LEGACY_DATABASE, app_data_dir, default_database_path
+from startup import probe_host
 from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
@@ -145,6 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     migrate.add_argument("--from", dest="source", help="Legacy database (default: data/personal-note.db in this checkout)")
     migrate.add_argument("--to", dest="destination", help="Destination database (default: the app-data folder)")
+    migrate.add_argument("--force-merge", action="store_true", help="Merge again even though this checkout was already migrated to the destination")
+    migrate.add_argument("--yes", action="store_true", help="Continue even if a Personal Note server is answering on HOST:PORT")
     migrate.set_defaults(handler=command_migrate_data, needs_service=False)
 
     plugins = subcommands.add_parser("plugins", help="Inspect plugin package manifests")
@@ -261,7 +265,14 @@ def command_import(service: NoteService, args: argparse.Namespace) -> dict:
 def command_migrate_data(_service: None, args: argparse.Namespace) -> dict:
     source = Path(args.source) if args.source else LEGACY_DATABASE
     destination = Path(args.destination) if args.destination else app_data_dir() / DATABASE_FILENAME
-    return migrate_legacy_database(source, destination)
+    return migrate_legacy_database(
+        source,
+        destination,
+        force_merge=args.force_merge,
+        server_host=probe_host(os.getenv("HOST", "127.0.0.1")),
+        server_port=int(os.getenv("PORT", "3137")),
+        allow_running_server=args.yes,
+    )
 
 
 def command_plugins_inspect(_service: NoteService, args: argparse.Namespace) -> dict:
