@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Run the Personal Note CLI from a checkout: `bin/personal-note <command>`.
+
+Needs only the Python standard library, so no virtualenv is required.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from personal_note_cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())
