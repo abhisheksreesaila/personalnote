@@ -23,9 +23,12 @@ export function bindPageLifecycle({ windowTarget, documentTarget, flush }) {
   }
 }
 
-// An unload save sent while another save is still in flight cannot wait for that save's response.
-// The in-flight request will bump the note to inFlightRevision + 1, so this one builds on that.
-export function revisionForUnloadSave({ inFlightRevision, noteRevision }) {
-  if (inFlightRevision == null) return noteRevision
-  return Math.max(noteRevision, inFlightRevision + 1)
+// The revision the server last confirmed. It only moves forward and never by guessing: a failed save
+// (for example a conflict with an agent's write) returns no result and leaves it unchanged.
+//
+// Limit: when the page closes while a save is still in flight, the close-time save is sent at once with
+// the last confirmed revision. If the in-flight save lands first, the server rejects the close-time save
+// with a conflict instead of overwriting anything, so edits made after the in-flight save can be lost.
+export function confirmedRevision(current, result) {
+  return Math.max(current ?? 0, result ?? 0)
 }

@@ -23,7 +23,7 @@ import {
 } from './modules/editor/connectors.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
-import { bindPageLifecycle, canKeepAlive, revisionForUnloadSave } from './modules/editor/save-flush.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { createLiftEffect } from './modules/editor/lift.js'
@@ -1824,7 +1824,6 @@ function drawConnectOverlay(ctx) {
 
 let saveTimer
 let saveInFlight = false
-let inFlightRevision = null
 let saveQueued = false
 // Agent sync: edits not yet saved, and the object ids the server last agreed on.
 let unsavedEdits = false
@@ -1847,14 +1846,11 @@ async function saveActiveNote({ unloading = false } = {}) {
     saveQueued = true
     return
   }
-  // The page is going away with a save still in flight: send the latest edits now, on top of the
-  // revision that save will produce, instead of waiting for a response that may never be handled.
+  // The page is going away with a save still in flight: send the latest edits now with the last confirmed
+  // revision. Never guess ahead: if the in-flight save lands first this one conflicts and overwrites nothing.
   const parallelUnload = saveInFlight && unloading
   if (parallelUnload) saveQueued = false
-  else {
-    saveInFlight = true
-    inFlightRevision = state.notes.find((item) => item.id === state.activeNoteId)?.revision ?? null
-  }
+  else saveInFlight = true
   unsavedEdits = false
   setSaveState('Saving')
   const noteId = state.activeNoteId
@@ -1869,11 +1865,11 @@ async function saveActiveNote({ unloading = false } = {}) {
       content: savedContent,
       pageState: state.pages,
       notebookId: note?.notebookId,
-      revision: parallelUnload ? revisionForUnloadSave({ inFlightRevision, noteRevision: note?.revision }) : note?.revision,
+      revision: note?.revision,
     })
     // While the page is going away a keepalive request is the only one guaranteed to be sent.
     const result = await api(`/notes/${noteId}`, { method: 'PUT', body, keepalive: unloading && canKeepAlive(body) })
-    if (note) Object.assign(note, { title, revision: Math.max(note.revision ?? 0, result.revision), resourceId: result.resourceId })
+    if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
     if (state.activeNoteType === 'canvas') syncedIds = canvasObjectIds(savedContent)
     renderNoteList()
     setSaveState('Saved')

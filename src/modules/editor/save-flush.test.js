@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { bindPageLifecycle, canKeepAlive, revisionForUnloadSave } from './save-flush.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision } from './save-flush.js'
 
 function targets() {
   const listeners = new Map()
@@ -43,8 +43,9 @@ test('small bodies use keepalive, oversized ones do not', () => {
   assert.equal(canKeepAlive('x'.repeat(70 * 1024)), false)
 })
 
-test('an unload save sent while another save is in flight uses the revision that save will produce', () => {
-  assert.equal(revisionForUnloadSave({ inFlightRevision: 4, noteRevision: 4 }), 5)
-  assert.equal(revisionForUnloadSave({ inFlightRevision: null, noteRevision: 4 }), 4)
-  assert.equal(revisionForUnloadSave({ inFlightRevision: 4, noteRevision: 5 }), 5)
+test('a revision only ever moves forward, and a failed save leaves it where the server last confirmed it', () => {
+  assert.equal(confirmedRevision(4, 5), 5)
+  assert.equal(confirmedRevision(5, 4), 5)
+  // the in-flight save hit a conflict (no result): the close-time save must reuse the confirmed revision, never guess ahead
+  assert.equal(confirmedRevision(4, undefined), 4)
 })
