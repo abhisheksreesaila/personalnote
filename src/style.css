@@ -378,23 +378,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   position: absolute;
   inset: 0;
 }
-.paper::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 2px solid transparent;
-  pointer-events: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease;
-}
-.paper.voice-listening::after {
-  border-color: #4D839C;
-  box-shadow: 0 0 0 2px rgba(77,131,156,.18), 0 0 22px rgba(77,131,156,.45), 0 0 44px rgba(184,107,75,.18);
-  animation: voice-edge 1.6s ease-in-out infinite;
-}
-@keyframes voice-edge {
-  0%, 100% { border-color: #4D839C; box-shadow: 0 0 0 2px rgba(77,131,156,.16), 0 0 18px rgba(77,131,156,.36); }
-  50% { border-color: #B86B4B; box-shadow: 0 0 0 3px rgba(184,107,75,.14), 0 0 28px rgba(184,107,75,.38); }
-}
 .paper.is-dragging { z-index: auto; }
 .canvas-container { position: absolute !important; inset: 0; z-index: 2; }
 .paper.is-dragging .canvas-container { z-index: 20; }
@@ -1083,7 +1066,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .search-button span, .search-button kbd { transition: none; }
   .paper { animation: none; }
   .sidebar { transition-duration: 1ms; }
-  .paper.voice-listening::after, .voice-button.active { animation: none; }
+  .voice-button.active { animation: none; }
   .spotlight, .search-backdrop { transition-duration: 1ms; }
 }
 

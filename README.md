@@ -131,10 +131,10 @@ There is no remote access, plugin execution, or model call in the app; an agent 
 npm run test:ui
 python -m unittest tests.test_api tests.test_cli tests.test_agent_access tests.test_startup -v
 npm run benchmark:bundle
-npm run benchmark:canvas
+npm run benchmark:canvas   # first run: npx playwright install chromium
 ```
 
-The bundle benchmark enforces gzip and largest-chunk budgets. Mind-map and desktop voice implementations are split into on-demand chunks so the ordinary canvas path stays small.
+The bundle benchmark enforces gzip and largest-chunk budgets. Mind-map and desktop voice implementations are split into on-demand chunks so the ordinary canvas path stays small. The canvas benchmark drives the real app in headless Chromium (run `npx playwright install chromium` once) and fails if the dpr 1 p95 frame time exceeds 25ms or if objects move on screen when pages are added or removed.
 
 ## Current scope
 

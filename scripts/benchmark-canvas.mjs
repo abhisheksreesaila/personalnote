@@ -14,7 +14,10 @@ const args = Object.fromEntries(process.argv.slice(2).map((arg) => {
   return [key, value]
 }))
 const dprs = args.dpr ? [Number(args.dpr)] : [1, 2]
-const maxP95 = args['max-p95'] ? Number(args['max-p95']) : null
+// Default gate: p95 frame under 25ms at dpr 1. dpr 2 is software-rendered a 4x larger
+// surface, so it is only gated when --max-p95 is passed explicitly.
+const explicitMaxP95 = args['max-p95'] ? Number(args['max-p95']) : null
+const DEFAULT_MAX_P95 = 25
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
 const COLUMNS = 3
@@ -98,12 +101,17 @@ const stat = (values) => {
 async function measure(page, name, run) {
   await page.evaluate(() => {
     window.__frames = []
+    window.__cols = []
     let last = performance.now()
-    const tick = (time) => { window.__frames.push(time - last); last = time; window.__loop = requestAnimationFrame(tick) }
+    const tick = (time) => { window.__frames.push(time - last); window.__cols.push(window.__personalNote.state.pages.columns); last = time; window.__loop = requestAnimationFrame(tick) }
     window.__loop = requestAnimationFrame(tick)
   })
   const moved = await run()
-  const frames = await page.evaluate(() => { cancelAnimationFrame(window.__loop); return window.__frames.slice(2) })
+  const { frames, cols } = await page.evaluate(() => { cancelAnimationFrame(window.__loop); return { frames: window.__frames.slice(2), cols: window.__cols.slice(2) } })
+  if (args.debug) {
+    const slow = frames.map((f, i) => [i, +f.toFixed(0), cols[i]]).filter(([, f]) => f > 25)
+    console.log(name, 'slow frames [index, ms, columns]:', JSON.stringify(slow))
+  }
   return { scenario: name, ...stat(frames), slowFrames: frames.filter((f) => f > 20).length, movedPx: moved ?? '' }
 }
 
@@ -177,7 +185,14 @@ async function runDpr(browser, baseUrl, dpr, content) {
       return JSON.stringify(by)
     }))
   }
+  if (args.debug) console.log('costs ms', await page.evaluate(() => { const n = window.__personalNote; const time = (fn) => { const t = performance.now(); fn(); return +(performance.now() - t).toFixed(0) }; return JSON.stringify({ bounds: time(() => n.getContentBounds()), reconcile: time(() => n.reconcilePages(true)), snapshot: time(() => n.snapshot()) }) }))
+  if (args.debug) console.log('toJSON ms', await page.evaluate(() => { const t = performance.now(); JSON.stringify(window.__personalNote.canvas.toJSON()); return +(performance.now() - t).toFixed(0) }))
+  if (args.debug) await page.evaluate(() => {
+    window.__loaf = []
+    new PerformanceObserver((list) => { for (const e of list.getEntries()) if (e.duration > 60) window.__loaf.push({ t: Math.round(e.startTime), d: Math.round(e.duration), render: Math.round(e.renderStart ? e.startTime + e.duration - e.renderStart : 0), scripts: e.scripts.map((sc) => `${sc.invoker}:${sc.sourceFunctionName}:${Math.round(sc.duration)}`) }) }).observe({ type: 'long-animation-frame', buffered: false })
+  })
   const rows = []
+  if (args.debug) await measure(page, 'idle 3s', () => page.waitForTimeout(3000))
   rows.push(await measure(page, 'drag inside note', () => dragScenario(page, 3, 2, 90)))
   // Push an object across the grid's right edge so pages grow while dragging.
   await page.evaluate(() => {
@@ -197,6 +212,7 @@ async function runDpr(browser, baseUrl, dpr, content) {
     await page.mouse.move(700, 450)
     for (let i = 0; i < 120; i += 1) { await page.mouse.wheel(i < 60 ? 6 : -6, i < 60 ? 24 : -24); await nextFrame(page) }
   }))
+  if (args.debug) console.log('LOAF', JSON.stringify(await page.evaluate(() => window.__loaf)))
   rows.push(await measure(page, 'zoom (ctrl+wheel)', async () => {
     await page.mouse.move(700, 450)
     await page.keyboard.down('Control')
@@ -219,13 +235,77 @@ async function runDpr(browser, baseUrl, dpr, content) {
   return { dpr, setup, columnsBefore, grown, rows, probe }
 }
 
-if (args.debug) { const n = generateNote(); console.log(JSON.stringify(n.objects.filter((o) => o.type === 'Path')[0]).slice(0, 400)) }
+// Objects must keep their on-screen position while pages are prepended and folded back.
+async function checkPositionStability(browser, baseUrl) {
+  const small = { version: '7.4.0', objects: [
+    { type: 'Rect', version: '7.4.0', originX: 'left', originY: 'top', left: 400, top: 300, width: 160, height: 100, fill: 'rgba(80,120,200,.3)', stroke: '#4a6fb0', strokeWidth: 2 },
+    { type: 'Rect', version: '7.4.0', originX: 'left', originY: 'top', left: 60, top: 300, width: 160, height: 100, fill: 'rgba(200,120,80,.3)', stroke: '#b06f4a', strokeWidth: 2 },
+  ] }
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const page = await context.newPage()
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^\/api/, '')
+    const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+    if (path === '/notebooks') return json(notebooks)
+    if (path === '/notes') return json([summary])
+    if (path === '/notes/1' && route.request().method() === 'GET') return json({ ...summary, content: small, pageState: { columns: 1, rows: 1 } })
+    return json({ ...summary, revision: 2 })
+  })
+  await page.goto(new URL('notes', baseUrl).href)
+  await page.waitForFunction(() => window.__personalNote?.canvas.getObjects().length > 0)
+  await page.waitForTimeout(600)
+  const screenOf = (index) => page.evaluate((i) => {
+    const { canvas } = window.__personalNote
+    const c = canvas.getObjects()[i].getCenterPoint()
+    const v = canvas.viewportTransform
+    return { x: c.x * v[0] + v[4], y: c.y * v[3] + v[5] }
+  }, index)
+  const columns = () => page.evaluate(() => window.__personalNote.state.pages.columns)
+  const failures = []
+  const expectSame = (label, a, b) => {
+    if (Math.abs(a.x - b.x) > 1 || Math.abs(a.y - b.y) > 1) failures.push(`${label}: moved from ${a.x.toFixed(1)},${a.y.toFixed(1)} to ${b.x.toFixed(1)},${b.y.toFixed(1)}`)
+  }
+  await page.evaluate(() => window.__personalNote.setTool('select'))
+  const anchorBefore = await screenOf(0)
+  const start = await page.evaluate(() => {
+    const { canvas } = window.__personalNote
+    const c = canvas.getObjects()[1].getCenterPoint()
+    const v = canvas.viewportTransform
+    const box = canvas.upperCanvasEl.getBoundingClientRect()
+    return { x: box.left + c.x * v[0] + v[4], y: box.top + c.y * v[3] + v[5] }
+  })
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  for (let i = 1; i <= 20; i += 1) { await page.mouse.move(start.x - i * 8, start.y); await page.waitForTimeout(16) }
+  await page.mouse.up()
+  await page.waitForTimeout(900)
+  if ((await columns()) !== 2) failures.push(`expected a prepended page (2 columns), got ${await columns()}`)
+  expectSame('stationary object after page prepend', anchorBefore, await screenOf(0))
+  const draggedAfterPrepend = await screenOf(1)
+  // Move the dragged object away from the leading page so the emptied page folds back.
+  await page.evaluate(() => {
+    const { canvas } = window.__personalNote
+    const moved = canvas.getObjects()[1]
+    moved.set({ left: moved.left + 400 })
+    moved.setCoords()
+    canvas.fire('object:modified', { target: moved })
+  })
+  await page.waitForTimeout(900)
+  const foldedAnchor = await screenOf(0)
+  if ((await columns()) !== 1) failures.push(`expected the emptied page to fold back (1 column), got ${await columns()}`)
+  expectSame('stationary object after fold-back', anchorBefore, foldedAnchor)
+  await context.close()
+  void draggedAfterPrepend
+  return failures
+}
+
 const server = await createServer({ server: { port: 0, host: '127.0.0.1' }, logLevel: 'error' })
 await server.listen()
 const baseUrl = server.resolvedUrls.local[0]
 const browser = await chromium.launch({ headless: true })
 const content = generateNote()
 let worst = 0
+let worstAny = 0
 try {
   for (const dpr of dprs) {
     const result = await runDpr(browser, baseUrl, dpr, content)
@@ -233,14 +313,22 @@ try {
     console.table(result.rows)
     console.log(`page growth: ${result.columnsBefore} -> ${result.grown.columns} columns, canvas stayed ${result.grown.canvasPx}px`)
     console.log(`zoom 4x probe: canvas ${result.probe.canvasPx}px, pixel alpha at object centre ${result.probe.alpha} (${result.probe.alpha > 0 ? 'painted' : 'BLANK'})`)
-    for (const row of result.rows) worst = Math.max(worst, row.p95)
+    for (const row of result.rows) {
+      worstAny = Math.max(worstAny, row.p95)
+      if (dpr === 1) worst = Math.max(worst, row.p95)
+    }
     if (result.probe.alpha === 0) process.exitCode = 1
   }
+  const stability = await checkPositionStability(browser, baseUrl)
+  console.log(stability.length ? `\nposition stability: FAIL\n  ${stability.join('\n  ')}` : '\nposition stability: objects keep their on-screen position across page prepend and fold-back')
+  if (stability.length) process.exitCode = 1
 } finally {
   await browser.close()
   await server.close()
 }
-if (maxP95 && worst > maxP95) {
-  console.error(`worst p95 frame ${worst}ms exceeds --max-p95=${maxP95}`)
+const limit = explicitMaxP95 ?? DEFAULT_MAX_P95
+const measured = explicitMaxP95 ? worstAny : worst
+if (measured > limit) {
+  console.error(`worst p95 frame ${measured}ms exceeds the ${limit}ms limit`)
   process.exitCode = 1
 }

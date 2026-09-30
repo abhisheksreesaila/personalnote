@@ -3,7 +3,9 @@ import test from 'node:test'
 import {
   clampView,
   lerpExtents,
+  parseBoxShadow,
   pageExtents,
+  shadowBands,
   shiftExtents,
   viewMargins,
   zoomAtPoint,
@@ -57,4 +59,33 @@ test('extent animation interpolates both edges and lands exactly on the target',
   assert.deepEqual(lerpExtents(from, to, 0), from)
   assert.deepEqual(lerpExtents(from, to, 1), to)
   assert.equal(lerpExtents(from, to, 0.5).left, 430)
+})
+
+test('a CSS box-shadow token is parsed into canvas shadow layers', () => {
+  assert.deepEqual(
+    parseBoxShadow('0 1px 2px rgba(0, 0, 30, .05), 0 16px 40px -16px rgba(0, 0, 60, .22)'),
+    [
+      { x: 0, y: 1, blur: 2, spread: 0, color: 'rgba(0, 0, 30, .05)' },
+      { x: 0, y: 16, blur: 40, spread: -16, color: 'rgba(0, 0, 60, .22)' },
+    ],
+  )
+  assert.deepEqual(parseBoxShadow('none'), [])
+  assert.deepEqual(parseBoxShadow(''), [])
+})
+
+test('keeping the view leaves it where growth compensation put it', () => {
+  const view = clampView({ x: -597, y: 92 }, { ...desktop, contentW: 1720, contentH: 1080, scale: 1, keep: true })
+  assert.deepEqual(view, { x: -597, y: 92 })
+})
+
+test('shadow bands stack from the outside in and reach the full shadow strength', () => {
+  const bands = shadowBands({ blur: 40, spread: -16, alpha: 0.22 })
+  for (let i = 1; i < bands.length; i += 1) assert.ok(bands[i].grow < bands[i - 1].grow)
+  const composite = 1 - bands.reduce((rest, band) => rest * (1 - band.alpha), 1)
+  assert.ok(Math.abs(composite - 0.22) < 0.01, `composite ${composite}`)
+  assert.ok(bands.every((band) => band.alpha >= 0 && band.alpha <= 0.22))
+})
+
+test('an unblurred shadow is one solid band', () => {
+  assert.deepEqual(shadowBands({ blur: 0, spread: 2, alpha: 0.5 }), [{ grow: 2, alpha: 0.5 }])
 })

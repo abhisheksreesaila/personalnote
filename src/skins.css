@@ -86,7 +86,6 @@
     border-radius: var(--sk-radius);
     box-shadow: var(--sk-shadow);
   }
-  .paper { box-shadow: 0 0 0 1px var(--sk-edge), var(--sk-shadow); }
 
   /* Fonts. */
   .brand-name, .note-title, .note-pane-title strong, .properties-heading h2,

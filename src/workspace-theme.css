@@ -137,7 +137,6 @@
   .properties-trigger:hover, .properties-trigger.active,
   .voice-button.active { color: var(--rail); background: var(--accent); box-shadow: none; }
   .voice-button.active { animation: none; }
-  .paper.voice-listening::after { border-color: var(--accent); box-shadow: none; animation: none; }
 
   .stroke-width-button, .search-close, .search-button kbd, .search-result-icon,
   .notebook-name-input,

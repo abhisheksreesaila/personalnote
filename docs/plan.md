@@ -38,6 +38,7 @@ Design: docs/design/personal-note.md (Layout) · Needs: F-003
 - [ ] floating bottom dock with tools, ink swatches, undo and the hold-to-talk mic
 - [ ] page minimap with page count, and zoom control
 - [ ] a ghost "+ Page N" appears while dragging past the edge; dragged objects lift with tilt and shadow
+- [ ] keyboard panning (arrows, PageUp/PageDown, Space) and a scroll indicator, since the window-sized canvas (F-002) has no native scrolling
 
 ## F-005 Connectors [todo]
 Needs: F-002

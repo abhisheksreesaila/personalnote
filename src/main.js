@@ -18,6 +18,8 @@ import {
   easeInOut,
   lerpExtents,
   pageExtents,
+  parseBoxShadow,
+  shadowBands,
   shiftExtents,
   viewMargins,
   wheelPanDelta,
@@ -364,7 +366,7 @@ document.querySelector('#app').innerHTML = `
   </dialog>
 
   <style id="editor-polish-screen">
-    .writing-guide{position:absolute;z-index:1;pointer-events:none;opacity:.28;background:repeating-linear-gradient(to bottom,transparent 0 calc(1.45em - 1px),#8ca1a0 calc(1.45em - 1px) 1.45em)}.writing-guide[hidden]{display:none}
+    .writing-guide{position:absolute;z-index:3;pointer-events:none;opacity:.28;background:repeating-linear-gradient(to bottom,transparent 0 calc(1.45em - 1px),#8ca1a0 calc(1.45em - 1px) 1.45em)}.writing-guide[hidden]{display:none}
   </style>
 `
 
@@ -743,8 +745,9 @@ let viewportOffsetX = 0
 let viewportOffsetY = 0
 let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
 let pageAnimation = null
-let pageColors = { paper: '#fbfaf5', grid: '#c9c5bc', edge: '#2c2c34' }
+let pageColors = { paper: '#fbfaf5', grid: '#c9c5bc', edge: '#2c2c34', shadows: [] }
 let lastViewportScrollTop = 0
+let voiceOutline = false
 
 function getDisplayScale() {
   if (window.innerWidth > 800) return 1
@@ -759,13 +762,26 @@ function getInputFontSize() {
   return window.innerWidth <= 800 ? Math.max(32, state.fontSize) : state.fontSize
 }
 
+function resolveShadowLayer(layer) {
+  const probe = document.createElement('canvas')
+  probe.width = probe.height = 1
+  const probeContext = probe.getContext('2d', { willReadFrequently: true })
+  probeContext.fillStyle = layer.color
+  probeContext.fillRect(0, 0, 1, 1)
+  const [r, g, b, a] = probeContext.getImageData(0, 0, 1, 1).data
+  return { ...layer, rgb: `rgb(${r}, ${g}, ${b})`, peak: a / 255 }
+}
+
 function refreshPageColors() {
   const styles = getComputedStyle(document.documentElement)
   const read = (name, fallback) => styles.getPropertyValue(name).trim() || fallback
+  const highContrast = window.matchMedia('(prefers-contrast: more)').matches
   pageColors = {
     paper: read('--paper', '#fbfaf5'),
     grid: '#c9c5bc',
-    edge: read('--line', '#2c2c34'),
+    accent: read('--accent', '#4D839C'),
+    edge: highContrast ? read('--line', '#2c2c34') : read('--sk-edge', read('--line', '#2c2c34')),
+    shadows: parseBoxShadow(read('--sk-shadow', 'none')).map(resolveShadowLayer),
   }
 }
 
@@ -783,7 +799,7 @@ function pageExtentsTarget() {
   return pageExtents(state.pages.columns, state.pages.rows, PAGE_WIDTH, PAGE_HEIGHT)
 }
 
-function clampedViewOffset(offsetX, offsetY) {
+function clampedViewOffset(offsetX, offsetY, keep = false) {
   const target = pageExtentsTarget()
   return clampView({ x: offsetX, y: offsetY }, {
     viewW: canvas.getWidth(),
@@ -792,6 +808,7 @@ function clampedViewOffset(offsetX, offsetY) {
     contentH: target.bottom,
     scale: getCanvasScale(),
     margins: viewMargins(window.innerWidth),
+    keep,
   })
 }
 
@@ -801,14 +818,15 @@ function notifyViewportScrolled() {
   lastViewportScrollTop = scrollTop
 }
 
-function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY) {
-  const next = clampedViewOffset(offsetX, offsetY)
+function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY, keep = false) {
+  const next = clampedViewOffset(offsetX, offsetY, keep)
   const moved = next.y !== viewportOffsetY
   viewportOffsetX = next.x
   viewportOffsetY = next.y
   const scale = getCanvasScale()
   canvas.setViewportTransform([scale, 0, 0, scale, next.x, next.y])
   canvas.requestRenderAll()
+  if (writingGuideText) showWritingGuide(writingGuideText)
   if (moved) notifyViewportScrolled()
 }
 
@@ -862,7 +880,7 @@ function resizePaper(animate = false, shiftX = 0, shiftY = 0) {
     viewportOffsetX -= shiftX * scale
     viewportOffsetY -= shiftY * scale
   }
-  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY)
+  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, Boolean(shiftX || shiftY || animate))
   const count = state.pages.columns * state.pages.rows
   elements.pageCount.textContent = `${state.pages.columns} x ${state.pages.rows} / ${count} ${count === 1 ? 'page' : 'pages'}`
 }
@@ -872,10 +890,22 @@ function drawPageTiles(ctx) {
   const width = extents.right - extents.left
   const height = extents.bottom - extents.top
   if (width <= 0 || height <= 0) return
-  const hairline = 1 / getCanvasScale()
+  const scale = getCanvasScale()
+  const hairline = 1 / scale
   const v = canvas.viewportTransform
   ctx.save()
   ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5])
+  // The skin's page shadow, as stacked translucent rects (see shadowBands).
+  for (const layer of pageColors.shadows) {
+    ctx.fillStyle = layer.rgb
+    const previousAlpha = ctx.globalAlpha
+    for (const band of shadowBands({ blur: layer.blur, spread: layer.spread, alpha: layer.peak })) {
+      const grow = band.grow / scale
+      ctx.globalAlpha = band.alpha
+      ctx.fillRect(extents.left - grow + layer.x / scale, extents.top - grow + layer.y / scale, width + grow * 2, height + grow * 2)
+    }
+    ctx.globalAlpha = previousAlpha
+  }
   ctx.fillStyle = pageColors.edge
   ctx.fillRect(extents.left - hairline, extents.top - hairline, width + hairline * 2, height + hairline * 2)
   ctx.fillStyle = pageColors.paper
@@ -888,6 +918,12 @@ function drawPageTiles(ctx) {
   const firstRow = Math.max(1, Math.ceil((extents.top + 1) / PAGE_HEIGHT))
   for (let y = firstRow * PAGE_HEIGHT; y < extents.bottom; y += PAGE_HEIGHT) {
     ctx.fillRect(extents.left, y - hairline, width, hairline)
+  }
+  if (voiceOutline) {
+    // Voice-listening outline follows the page extents, not the whole workspace.
+    ctx.strokeStyle = pageColors.accent
+    ctx.lineWidth = 2 / scale
+    ctx.strokeRect(extents.left - 3 / scale, extents.top - 3 / scale, width + 6 / scale, height + 6 / scale)
   }
   ctx.restore()
 }
@@ -930,16 +966,23 @@ function findEditableTextAt(point) {
   ))
 }
 
+let writingGuideText = null
+
+// Positioned with the same world-to-screen mapping as the canvas (scale plus
+// viewport offset) and re-run on every pan and zoom.
 function showWritingGuide(text) {
+  writingGuideText = text
   const scale = getCanvasScale()
-  elements.writingGuide.style.left = `${text.left * scale}px`
-  elements.writingGuide.style.top = `${(text.top + text.padding) * scale}px`
+  const corner = text.getCoords()[0]
+  elements.writingGuide.style.left = `${corner.x * scale + viewportOffsetX}px`
+  elements.writingGuide.style.top = `${(corner.y + text.padding) * scale + viewportOffsetY}px`
   elements.writingGuide.style.width = `${Math.max(120, text.getScaledWidth() * scale)}px`
   elements.writingGuide.style.height = `${Math.max(text.fontSize * text.lineHeight * scale, text.getScaledHeight() * scale)}px`
   elements.writingGuide.hidden = false
 }
 
 function hideWritingGuide() {
+  writingGuideText = null
   elements.writingGuide.hidden = true
 }
 
@@ -1908,7 +1951,8 @@ function setVoiceListening(listening, message = 'Listening') {
   elements.mobileSpeak.classList.toggle('active', listening)
   elements.mobileSpeak.setAttribute('aria-pressed', String(listening))
   elements.mobileSpeak.setAttribute('aria-label', listening ? 'Release to finish speaking' : 'Hold to speak')
-  elements.paper.classList.toggle('voice-listening', listening)
+  voiceOutline = listening
+  canvas.requestRenderAll()
   elements.voiceCaption.hidden = !listening
   elements.voiceStatus.textContent = message
 }
@@ -2257,6 +2301,17 @@ function finishErasing() {
   state.eraserChanged = false
 }
 
+// A touch that starts in the gutter around the pages scrolls the view with one
+// finger, as the old padded workspace did; touches on the page keep drawing.
+function isOutsidePages(event) {
+  const rect = canvas.upperCanvasEl.getBoundingClientRect()
+  const scale = getCanvasScale()
+  const worldX = (event.clientX - rect.left - viewportOffsetX) / scale
+  const worldY = (event.clientY - rect.top - viewportOffsetY) / scale
+  const target = pageExtentsTarget()
+  return worldX < 0 || worldY < 0 || worldX > target.right || worldY > target.bottom
+}
+
 const canvasTouchPointers = new Map()
 let canvasPinchGesture = null
 let canvasPanGesture = null
@@ -2306,7 +2361,7 @@ canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
     event.stopImmediatePropagation()
     return
   }
-  if (state.tool !== 'hand') return
+  if (state.tool !== 'hand' && !isOutsidePages(event)) return
   canvasPanGesture = {
     pointerId: event.pointerId,
     startX: event.clientX,
@@ -3027,15 +3082,17 @@ function handleWorkspaceResize() {
   const next = zoomAtPoint(previous, getCanvasScale(), center)
   setCanvasViewportOffset(next.x, next.y)
 }
-// The page ring follows the skin's line token, so repaint when the skin changes.
-new MutationObserver(() => {
+// Page colors and shadow come from skin tokens, so repaint when the skin changes.
+const repaintPageColors = () => {
   refreshPageColors()
   canvas.requestRenderAll()
-}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-skin'] })
+}
+new MutationObserver(repaintPageColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-skin'] })
+window.matchMedia('(prefers-contrast: more)').addEventListener('change', repaintPageColors)
 window.addEventListener('resize', handleWorkspaceResize)
 if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResize).observe(elements.workspace)
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset }
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds }
 initialize()
