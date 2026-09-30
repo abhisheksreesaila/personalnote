@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   fitView,
+  openingView,
   pageLabel,
   scrollThumbs,
   stepZoom,
@@ -78,4 +79,31 @@ test('scroll thumbs describe the visible share of the pannable range', () => {
     view: { x: 170, y: 800 - 180 - 4320, scale: 1 }, viewW: 1200, viewH: 800, contentW: 860, contentH: 4320, margins,
   })
   assert.ok(Math.abs(end.y.start + end.y.length - 1) < 1e-9)
+})
+
+const desk = { viewW: 1212, viewH: 900, margins: { left: 140, right: 140, top: 92, bottom: 180 } }
+
+test('opening a one-page note shows the whole page zoomed out, centred on the desk', () => {
+  const view = openingView({ ...desk, contentW: 860, contentH: 1080, min: 0.4, max: 1 })
+  assert.ok(view.scale < 0.7 && view.scale > 0.5, `scale ${view.scale}`)
+  assert.ok(Math.abs(view.x - (1212 - 860 * view.scale) / 2) < 1e-9)
+  assert.ok(view.y >= desk.margins.top)
+})
+
+test('opening a two-page note fits both pages side by side', () => {
+  const view = openingView({ ...desk, contentW: 1720, contentH: 1080, min: 0.4, max: 1 })
+  assert.ok(view.scale >= 0.5 && view.scale <= 0.56, `scale ${view.scale}`)
+  assert.ok(view.x >= desk.margins.left - 1e-9)
+})
+
+test('a tiny note is never magnified past the maximum', () => {
+  const view = openingView({ viewW: 4000, viewH: 3000, margins: { left: 0, right: 0, top: 0, bottom: 0 }, contentW: 860, contentH: 1080, min: 0.4, max: 1 })
+  assert.equal(view.scale, 1)
+})
+
+test('a huge page grid stops at the floor and starts at the first page instead of shrinking to dots', () => {
+  const view = openingView({ ...desk, contentW: 860 * 8, contentH: 1080 * 4, min: 0.4, max: 1 })
+  assert.equal(view.scale, 0.4)
+  assert.equal(view.x, desk.margins.left)
+  assert.equal(view.y, desk.margins.top)
 })

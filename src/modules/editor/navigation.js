@@ -28,6 +28,18 @@ export function fitView({ viewW, viewH, contentW, contentH, margins, min, max })
   }
 }
 
+// The view a note opens at: every page on the desk when that stays readable, otherwise the
+// first page at the smallest comfortable zoom.
+export function openingView(options) {
+  const { viewW, viewH, contentW, contentH, margins, min, max } = options
+  const freeW = viewW - margins.left - margins.right
+  const freeH = viewH - margins.top - margins.bottom
+  if (Math.min(freeW / contentW, freeH / contentH) < min) {
+    return { scale: min, x: margins.left, y: margins.top }
+  }
+  return fitView(options)
+}
+
 // Indexes (row-major) of the pages that intersect the window.
 export function visiblePages({ view, viewW, viewH, columns, rows, pageW, pageH }) {
   const visible = new Set()
