@@ -3027,6 +3027,11 @@ function handleWorkspaceResize() {
   const next = zoomAtPoint(previous, getCanvasScale(), center)
   setCanvasViewportOffset(next.x, next.y)
 }
+// The page ring follows the skin's line token, so repaint when the skin changes.
+new MutationObserver(() => {
+  refreshPageColors()
+  canvas.requestRenderAll()
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-skin'] })
 window.addEventListener('resize', handleWorkspaceResize)
 if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResize).observe(elements.workspace)
 setupVoiceInput()
