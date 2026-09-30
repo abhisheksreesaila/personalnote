@@ -6,14 +6,12 @@
     color-scheme: light;
     --sk-desk: #f2f2f7; --sk-desk-dot: rgba(0, 0, 40, .07);
     --sk-panel: #ffffff; --sk-edge: #e3e3ea;
-    --sk-ink: #111114; --sk-ink-soft: #3a3a42; --sk-muted: #6e6e78; --sk-line: #e6e6ec;
+    --sk-ink: #111114; --sk-muted: #6e6e78; --sk-line: #e6e6ec;
     --sk-accent: #0a6cff; --sk-accent-ink: #ffffff; --sk-accent-soft: #e1ecff;
     --sk-c1: #ffd60a; --sk-c2: #30d158; --sk-c3: #64b5ff; --sk-c4: #bf5af2; --sk-c5: #ff6b3d;
     --sk-danger: #d6391f;
     --sk-display: "Bricolage Grotesque", system-ui, sans-serif; --sk-display-weight: 700;
     --sk-display-style: normal; --sk-title-track: -.035em;
-    --sk-body: "Geist", system-ui, sans-serif; --sk-hand: "Caveat", cursive;
-    --sk-mono: "Geist Mono", ui-monospace, monospace;
     --sk-radius: 18px; --sk-radius-control: 10px;
     --sk-shadow: 0 1px 2px rgba(0, 0, 30, .05), 0 16px 40px -16px rgba(0, 0, 60, .22);
   }
@@ -21,7 +19,7 @@
     color-scheme: light;
     --sk-desk: #efebe3; --sk-desk-dot: rgba(60, 45, 20, .10);
     --sk-panel: #fffdf8; --sk-edge: #e4ddcf;
-    --sk-ink: #1f1b16; --sk-ink-soft: #4a443b; --sk-muted: #857c6e; --sk-line: #e7e0d3;
+    --sk-ink: #1f1b16; --sk-muted: #857c6e; --sk-line: #e7e0d3;
     --sk-accent: #e5533d; --sk-accent-ink: #ffffff; --sk-accent-soft: #fbe3dd;
     --sk-c1: #ffd66b; --sk-c2: #9fe0c0; --sk-c3: #a9cfff; --sk-c4: #cdb8ff; --sk-c5: #ff9c85;
     --sk-danger: #b93a27;
@@ -34,7 +32,7 @@
     color-scheme: dark;
     --sk-desk: #0d1015; --sk-desk-dot: rgba(160, 190, 255, .07);
     --sk-panel: #161b23; --sk-edge: #232a35;
-    --sk-ink: #eceff4; --sk-ink-soft: #b9c1cd; --sk-muted: #7d8796; --sk-line: #262e3a;
+    --sk-ink: #eceff4; --sk-muted: #7d8796; --sk-line: #262e3a;
     --sk-accent: #7ee7c8; --sk-accent-ink: #07261d; --sk-accent-soft: rgba(126, 231, 200, .14);
     --sk-c1: #ffc877; --sk-c2: #7ee7c8; --sk-c3: #9db4ff; --sk-c4: #d3a6ff; --sk-c5: #ff8fb1;
     --sk-danger: #ff8fb1;
@@ -46,7 +44,7 @@
 
   /* Map the tokens onto the chrome variables used across style.css and workspace-theme.css. */
   :root, :root[data-skin] {
-    --ui-font: var(--sk-body);
+    --ui-font: "Geist", system-ui, sans-serif;
     --ink: var(--sk-ink);
     --muted: var(--sk-muted);
     --line: var(--sk-line);
@@ -81,13 +79,6 @@
   .dialog-primary:hover, .print-button:hover { background: color-mix(in srgb, var(--sk-accent) 88%, var(--sk-ink)); }
 
   /* Geometry: controls and panels follow the skin's radii and shadows. */
-  .rail-brand, .rail-button, .icon-button, .tool-button, .sidebar-add, .properties-trigger,
-  .search-button, .voice-button, .notebook-tab, .note-list-item, .search-result, .search-result-icon,
-  .voice-caption, .mobile-new-note, .mobile-action-icon, .mindmap-branch-chooser, .mindmap-zoom,
-  .mindmap-minimap, .mindmap-segments, .sidebar-create-control #new-note, .dialog-primary,
-  .dialog-cancel, .dialog-danger, .print-button, .clear-note-action, .note-title {
-    border-radius: var(--sk-radius-control);
-  }
   .tool-dock, .ink-options-popover, .note-create-menu, .notebook-picker-menu, .spotlight,
   .notebook-dialog, .properties-panel, .settings-panel, .print-summary {
     border-radius: var(--sk-radius);
@@ -104,7 +95,7 @@
   .brand-name { font-size: 17px; }
   .note-title { font-size: 17px; }
   .search-button kbd, .save-state, .sidebar-footer, .notebook-count, .print-sheet-number {
-    font-family: var(--sk-mono);
+    font-family: "Geist Mono", ui-monospace, monospace;
   }
 
   /* Desk: soft dot grid behind the page. */
@@ -130,8 +121,7 @@
   .skin-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--sk-panel), 0 0 0 3.5px var(--sk-accent); }
 
   /* ~400ms color crossfade while switching skin. */
-  :root.skin-fading, :root.skin-fading *, :root.skin-fading *::before, :root.skin-fading *::after {
-    transition: background-color 400ms ease, color 400ms ease, border-color 400ms ease,
-      fill 400ms ease, stroke 400ms ease, box-shadow 400ms ease !important;
+  :root.skin-fading * {
+    transition: background-color .4s, color .4s, border-color .4s, box-shadow .4s !important;
   }
 }

@@ -6,26 +6,6 @@
     color: var(--ink);
     background: var(--canvas);
     font-family: var(--ui-font);
-    --ui-font: "IBM Plex Mono", "DejaVu Sans Mono", monospace;
-    --ink: #f1f2ec;
-    --muted: #a5b2ad;
-    --line: #34443e;
-    --accent: #72b58a;
-    --canvas: #0a100f;
-    --surface: #111816;
-    --surface-cool: #1c2923;
-    --sidebar: #0d1412;
-    --rail: #08100e;
-    --blue: #60bad8;
-    --blue-soft: #152b32;
-    --terracotta: #ef765d;
-    --terracotta-soft: #291713;
-    --green: #72b58a;
-    --gold: #deb25e;
-    --radius-row: 3px;
-    --radius-panel: 3px;
-    --radius-pill: 3px;
-    --shadow-panel: none;
   }
 
   /* Scope geometry to controls, not color swatches, ink previews or canvas objects. */
@@ -36,7 +16,7 @@
   .notebook-dialog, .voice-caption, .ink-options-popover, .note-create-menu,
   .mobile-new-note, .mobile-action-icon, .mindmap-branch-chooser,
   .mindmap-zoom, .mindmap-minimap, .mindmap-segments {
-    border-radius: 3px;
+    border-radius: var(--sk-radius-control);
     box-shadow: none;
   }
 
@@ -92,14 +72,14 @@
   }
   .rail-brand::after, .rail-button::after {
     color: var(--ink); background: var(--surface); border-color: var(--line);
-    border-radius: 3px; box-shadow: none; font-family: var(--ui-font);
+    border-radius: var(--sk-radius-control); box-shadow: none; font-family: var(--ui-font);
     transform: translateY(-50%);
   }
   .rail-brand:hover::after, .rail-button:hover::after,
   .rail-brand:focus-visible::after, .rail-button:focus-visible::after { transform: translateY(-50%); }
   .hold-create-button, .hold-create-button.is-holding, .hold-create-button.is-pressing,
   .hold-create-button[aria-expanded="true"] { box-shadow: none; }
-  .sidebar-create-control #new-note { border: 1px solid var(--line); border-radius: 3px; color: var(--green); background: var(--surface-cool); }
+  .sidebar-create-control #new-note { border: 1px solid var(--line); border-radius: var(--sk-radius-control); color: var(--green); background: var(--surface-cool); }
 
   .note-pane-title strong, .note-list-item, .notebook-tab, .notebook-picker,
   .property-note-info strong, .setting-row, .setting-field-heading,
@@ -203,8 +183,4 @@
     .note-title { max-width: min(25vw, 100px, calc(44vw - 80px)); font-size: 12px; }
   }
 
-  @media (prefers-contrast: more) {
-    :root { --line: #84988d; --muted: #d0dbd5; }
-    .tool-dock, .search-button { border-color: var(--ink); }
-  }
 }
