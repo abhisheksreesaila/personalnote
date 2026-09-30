@@ -4,7 +4,7 @@
 export function viewMargins(windowWidth) {
   if (windowWidth <= 560) return { left: 12, right: 12, top: 88, bottom: 96 }
   if (windowWidth <= 800) return { left: 12, right: 12, top: 64, bottom: 112 }
-  return { left: 140, right: 140, top: 92, bottom: 180 }
+  return { left: 140, right: 140, top: 104, bottom: 180 }
 }
 
 function clampAxis(offset, viewSize, contentSize, before, after, keep) {

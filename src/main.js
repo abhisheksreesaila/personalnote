@@ -1110,7 +1110,7 @@ function openCanvasView() {
   const margins = viewMargins(window.innerWidth)
   const view = openingView({
     viewW: canvas.getWidth(), viewH: canvas.getHeight(), contentW: target.right, contentH: target.bottom,
-    margins: { ...margins, top: margins.top + 12, bottom: margins.bottom + 10 }, // a little breathing room around the pages
+    margins: { ...margins, left: 72, right: 72, bottom: margins.bottom + 10 }, // snug side margins, as on the design desk
     min: state.displayScale * OPEN_ZOOM_MIN, max: state.displayScale,
   })
   cancelViewAnimation()
@@ -1249,7 +1249,7 @@ function drawPageTiles(ctx) {
   for (const layer of pageColors.shadows) {
     ctx.fillStyle = layer.rgb
     const previousAlpha = ctx.globalAlpha
-    for (const band of shadowBands({ blur: layer.blur, spread: layer.spread, alpha: layer.peak })) {
+    for (const band of shadowBands({ blur: layer.blur, spread: layer.spread, alpha: layer.peak }, 32)) {
       const grow = band.grow / scale
       ctx.globalAlpha = band.alpha
       ctx.fillRect(extents.left - grow + layer.x / scale, extents.top - grow + layer.y / scale, width + grow * 2, height + grow * 2)
