@@ -32,6 +32,8 @@ The optional Windows transcription service listens on loopback port `8080` and s
 
 ### Browser shell
 
+The Fabric canvas is always window-sized: pan and zoom move `viewportTransform` (geometry in `src/modules/editor/viewport.js`), page tiles are painted in `before:render`, and page growth only changes the page count. `npm run benchmark:canvas` measures drag, grow, pan and zoom frame times on a generated 600-object note.
+
 `src/main.js` owns shared note lifecycle and canvas interaction. It talks to the backend only through `src/core/api.js`. The shell knows that notes have a `noteType`, but optional modules do not own notebook navigation, persistence, or search.
 
 ### Persistence
