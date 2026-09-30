@@ -23,6 +23,7 @@ import {
 } from './modules/editor/connectors.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, modifierLabel, outline as notebookOutline } from './modules/library/outline.js'
+import { bindPageLifecycle, canKeepAlive } from './modules/editor/save-flush.js'
 import { keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { createLiftEffect } from './modules/editor/lift.js'
@@ -1839,10 +1840,10 @@ function ensureCanvasObjectIds() {
   })
 }
 
-async function saveActiveNote() {
+async function saveActiveNote({ unloading = false } = {}) {
   if (!state.activeNoteId || state.loading) return
   if (saveInFlight) {
-    saveQueued = true
+    saveQueued = unloading ? 'unloading' : true
     return
   }
   saveInFlight = true
@@ -1855,16 +1856,15 @@ async function saveActiveNote() {
     const title = elements.title.value.trim() || 'Untitled note'
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
     const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : canvas.toJSON()
-    const result = await api(`/notes/${noteId}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        title,
-        content: savedContent,
-        pageState: state.pages,
-        notebookId: note?.notebookId,
-        revision: note?.revision,
-      }),
+    const body = JSON.stringify({
+      title,
+      content: savedContent,
+      pageState: state.pages,
+      notebookId: note?.notebookId,
+      revision: note?.revision,
     })
+    // While the page is going away a keepalive request is the only one guaranteed to be sent.
+    const result = await api(`/notes/${noteId}`, { method: 'PUT', body, keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: result.revision, resourceId: result.resourceId })
     if (state.activeNoteType === 'canvas') syncedIds = canvasObjectIds(savedContent)
     renderNoteList()
@@ -1878,8 +1878,9 @@ async function saveActiveNote() {
   } finally {
     saveInFlight = false
     if (saveQueued) {
+      const unloadingNext = saveQueued === 'unloading'
       saveQueued = false
-      saveActiveNote()
+      saveActiveNote({ unloading: unloadingNext })
     }
   }
 }
@@ -1891,6 +1892,21 @@ function queueSave() {
   clearTimeout(saveTimer)
   saveTimer = setTimeout(saveActiveNote, 650)
 }
+
+// Sends anything still waiting on the two debounces (history 180ms, save 650ms) right now.
+function flushPendingEdits() {
+  if (state.loading || !state.activeNoteId) return
+  flushPendingHistory({
+    cancel: () => clearTimeout(historyTimer),
+    commit: () => {
+      if (commitHistorySnapshot()) queueSave()
+    },
+  })
+  if (!unsavedEdits) return
+  clearTimeout(saveTimer)
+  saveActiveNote({ unloading: true })
+}
+bindPageLifecycle({ windowTarget: window, documentTarget: document, flush: flushPendingEdits })
 
 let historyTimer
 function snapshot() {
