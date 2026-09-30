@@ -63,3 +63,9 @@ test('the keycap shows the chord for the platform', () => {
   assert.equal(quickNoteKeycap('MacIntel'), '⌥N')
   assert.equal(quickNoteKeycap('Linux x86_64'), 'Alt N')
 })
+
+test('the chord is ignored while typing, in dialogs or search, and for a dead key while typing', () => {
+  assert.equal(isQuickNoteShortcut(chord(), { blocked: true }), false)
+  assert.equal(isQuickNoteShortcut(chord({ key: 'Dead' }), { blocked: true }), false)
+  assert.equal(isQuickNoteShortcut(chord(), { blocked: false }), true)
+})

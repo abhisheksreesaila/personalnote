@@ -36,7 +36,9 @@ export function modifierLabel(platform = '') {
 
 // Ctrl/⌘+N belongs to the browser, so a page never receives it. Alt/Option+N is free in every major
 // browser and OS; matching the physical key keeps it working where Option+N types a dead key.
-export function isQuickNoteShortcut(event) {
+export function isQuickNoteShortcut(event, { blocked = false } = {}) {
+  // While typing, Option+N is the dead key for n-with-tilde on Mac layouts, so it must reach the field.
+  if (blocked) return false
   return event.code === 'KeyN' && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
 }
 
