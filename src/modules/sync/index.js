@@ -27,7 +27,8 @@ export function mountAgentSync(host) {
     const text = notice || presence?.label || ''
     chip.hidden = !text
     chip.textContent = text
-    chip.title = notice ? '' : presence?.title || ''
+    chip.title = notice || presence?.label || ''
+    chip.setAttribute('aria-label', text)
     chip.classList.toggle('is-notice', Boolean(notice))
     chip.dataset.action = notice ? 'notice' : presence?.action || ''
   }

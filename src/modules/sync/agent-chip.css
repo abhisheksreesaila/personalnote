@@ -28,4 +28,8 @@
 .agent-chip + .save-state { margin-left: 12px; }
 @keyframes agent-chip-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .agent-chip::before { animation: none; } }
+@media (max-width: 720px) {
+  /* Phone: keep just the pulsing dot; the full label stays in aria-label and title. */
+  .agent-chip { font-size: 0; gap: 0; padding: 6px; max-width: none; margin-right: 6px; }
+}
 @media print { .agent-chip { display: none; } }
