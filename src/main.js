@@ -83,6 +83,7 @@ const QUICK_INK_COLORS = [
   ['Blue', '#1c70a8'],
 ]
 const GHOST_REACH = 160
+const PAGE_FOLD_COLOR = 'rgba(31, 27, 22, .13)' // paper is light in every skin
 const STROKE_WIDTHS = {
   pen: [1, 3, 6, 10],
   highlight: [10, 20, 32, 48],
@@ -669,7 +670,7 @@ function updateInkOptions() {
   } else {
     elements.inkColorLabel.textContent = state.tool === 'text' ? 'Text color' : 'Ink color'
   }
-  document.querySelectorAll('.palette-swatch, .ink-swatch').forEach((swatch) => {
+  document.querySelectorAll('.palette-swatch:not(.object-swatch), .ink-swatch').forEach((swatch) => {
     swatch.classList.toggle('active', swatch.dataset.color === state.color)
   })
 
@@ -885,7 +886,7 @@ let viewportOffsetX = 0
 let viewportOffsetY = 0
 let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
 let pageAnimation = null
-let pageColors = { paper: '#fbfaf5', fold: '#e6e6ec', label: '#6e6e78', radius: 6, edge: '#2c2c34', accent: '#0a6cff', accentInk: '#ffffff', shadows: [] }
+let pageColors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', accent: '#0a6cff', accentInk: '#ffffff', shadows: [] }
 let edgeGhost = null
 let voiceOutline = false
 
@@ -918,7 +919,6 @@ function refreshPageColors() {
   const highContrast = window.matchMedia('(prefers-contrast: more)').matches
   pageColors = {
     paper: read('--paper', '#fbfaf5'),
-    fold: read('--sk-line', '#e6e6ec'),
     label: read('--ui-muted', '#6e6e78'),
     radius: Number.parseFloat(read('--sk-page-radius', '6')) || 0,
     accent: read('--accent', '#4D839C'),
@@ -1266,7 +1266,7 @@ function drawPageTiles(ctx) {
   ctx.roundRect(extents.left, extents.top, width, height, radius)
   ctx.fill()
   // Fold lines between pages are dashed, as on the desk in the design.
-  ctx.strokeStyle = pageColors.fold
+  ctx.strokeStyle = PAGE_FOLD_COLOR
   ctx.lineWidth = 1.5 / scale
   ctx.setLineDash([6 / scale, 5 / scale])
   ctx.beginPath()

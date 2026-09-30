@@ -226,7 +226,6 @@
   }
   .app-shell .dock-canvas, .app-shell .mindmap-dock-actions, .app-shell .tool-group, .app-shell .ink-swatches { display: flex; align-items: center; gap: 2px; min-width: 0; }
   .app-shell .dock-canvas[hidden], .app-shell .mindmap-dock-actions[hidden] { display: none; }
-  .app-shell .dock-slot { display: contents; }
   .app-shell .tool-dock .tool-button {
     position: relative; width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 12px;
     color: var(--ink-soft); background: transparent; box-shadow: none; cursor: pointer;
@@ -274,6 +273,7 @@
   .app-shell .workspace.is-object-dragging :is(.page-minimap, .zoom-control) { opacity: .3; pointer-events: none; }
   .app-shell .workspace.is-object-dragging .tool-dock { opacity: .14; pointer-events: none; transform: translateX(-50%) translateY(6px); }
 
+  .app-shell .workspace.is-drop-target::after { content: ""; position: absolute; inset: 8px; z-index: 6; pointer-events: none; border: 2px dashed var(--sk-accent); border-radius: var(--sk-radius); background: color-mix(in srgb, var(--sk-accent) 6%, transparent); }
   .app-shell .ink-options-popover { position: fixed; bottom: 92px; border-radius: 16px; background: var(--glass-solid); }
   .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - var(--rail-width) - 24px)); font-size: 11px; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); bottom: 92px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
   .app-shell .voice-pulse { background: var(--sk-accent); }
@@ -363,7 +363,7 @@
     .app-shell .agent-chip { font-size: 0; gap: 0; padding: 0 13px; }
     .app-shell .page-minimap .mini-grid { display: none; }
   }
-  @media (min-width: 801px) and (max-width: 960px) {
+  @media (min-width: 801px) and (max-width: 1340px) {
     .app-shell .page-minimap, .app-shell .zoom-control { bottom: 92px; }
   }
 

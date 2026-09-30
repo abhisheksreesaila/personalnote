@@ -101,7 +101,7 @@
   .stroke-width-button:hover { background: var(--line); }
   .font-size-row input, .mindmap-inspector input[type="range"], .mindmap-toggle input { accent-color: var(--accent); }
   .delete-note-action, .mindmap-inspector footer .danger { color: var(--terracotta); background: var(--terracotta-soft); border-color: var(--terracotta); }
-  .danger-button:hover, .delete-note-action:hover, .delete-notebook:hover { color: var(--terracotta); background: var(--terracotta-soft); }
+  .delete-note-action:hover, .delete-notebook:hover { color: var(--terracotta); background: var(--terracotta-soft); }
   .clear-note-action { color: var(--accent); }
   .clear-note-action:hover, .dialog-primary, .print-button {
     color: var(--rail); background: var(--accent); border-color: var(--accent);

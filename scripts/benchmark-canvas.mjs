@@ -226,6 +226,17 @@ async function runDpr(browser, baseUrl, dpr, content) {
   })
   const rows = []
   if (args.debug) await measure(page, 'idle 3s', () => page.waitForTimeout(3000))
+  // A note opens zoomed out so the whole grid is on the desk: measure that default view first, then go back to
+  // 100% so the editing scenarios below stay comparable with earlier runs.
+  rows.push(await measure(page, 'pan at the opening zoom (whole grid)', async () => {
+    await page.mouse.move(700, 450)
+    for (let i = 0; i < 120; i += 1) { await page.mouse.wheel(i < 60 ? 6 : -6, i < 60 ? 24 : -24); await nextFrame(page) }
+  }))
+  await page.evaluate(() => {
+    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+    state.canvasZoom = 1
+    setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104)
+  })
   rows.push(await measure(page, 'drag inside note (6 connectors follow)', () => dragScenario(page, 3, 2, 90)))
   const attached = await connectorsAttached(page)
   if (!args['no-connectors'] && (!attached.count || attached.worst > 8)) { console.error(`connectors did not follow the drag: ${JSON.stringify(attached)}`); process.exitCode = 1 }
@@ -350,7 +361,8 @@ try {
     console.table(result.rows)
     console.log(`page growth: ${result.columnsBefore} -> ${result.grown.columns} columns, canvas stayed ${result.grown.canvasPx}px`)
     console.log(`zoom 4x probe: canvas ${result.probe.canvasPx}px, pixel alpha at object centre ${result.probe.alpha} (${result.probe.alpha > 0 ? 'painted' : 'BLANK'})`)
-    for (const row of result.rows) {
+    // The opening-zoom row draws all 645 objects of the 12-page fixture at once; it is reported, not gated.
+    for (const row of result.rows.filter((r) => !r.scenario.startsWith('pan at the opening zoom'))) {
       worstAny = Math.max(worstAny, row.p95)
       if (dpr === 1) worst = Math.max(worst, row.p95)
     }
