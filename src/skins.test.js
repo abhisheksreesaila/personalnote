@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CROSSFADE_MS, DEFAULT_SKIN, SKINS, SKIN_STORAGE_KEY,
-  createSkinController, fontUrl, readStoredSkin, resolveSkin, writeStoredSkin,
+  createSkinController, fontUrl, injectFonts, mountSkinSwitcher, readStoredSkin, resolveSkin, writeStoredSkin,
 } from './skins.js'
 
 function memoryStorage(initial = {}) {
@@ -88,4 +88,56 @@ test('loads the fonts of the active skin only', () => {
   assert.doesNotMatch(fontUrl('night'), /Fraunces|Bricolage/)
   assert.match(fontUrl('crayon'), /Bricolage/)
   assert.match(fontUrl('paper'), /Fraunces/)
+})
+
+function fakeElement() {
+  const attrs = {}, listeners = {}
+  return {
+    attrs, dataset: {}, children: [], tabIndex: 0, style: { setProperty() {} }, focused: false,
+    setAttribute(k, v) { attrs[k] = String(v) }, getAttribute: (k) => attrs[k],
+    addEventListener(type, fn) { listeners[type] = fn }, fire(type, event = {}) { listeners[type]({ preventDefault() {}, ...event }) },
+    append(...items) { this.children.push(...items) }, focus() { this.focused = true },
+  }
+}
+const fakeDoc = () => ({ createElement: fakeElement })
+
+test('switcher renders a radiogroup of three radios that follow the active skin', () => {
+  const container = fakeElement()
+  const skins = createSkinController({ root: fakeRoot(), storage: memoryStorage() })
+  const { buttons } = mountSkinSwitcher(container, skins, fakeDoc())
+  assert.equal(container.attrs.role, 'radiogroup')
+  assert.deepEqual(buttons.map((b) => b.attrs.role), ['radio', 'radio', 'radio'])
+  assert.deepEqual(buttons.map((b) => b.attrs['aria-checked']), ['true', 'false', 'false'])
+  buttons[2].fire('click')
+  assert.equal(skins.current, 'night')
+  assert.deepEqual(buttons.map((b) => b.attrs['aria-checked']), ['false', 'false', 'true'])
+})
+
+test('switcher has one tab stop and arrow keys move and select', () => {
+  const skins = createSkinController({ root: fakeRoot(), storage: memoryStorage() })
+  const { buttons } = mountSkinSwitcher(fakeElement(), skins, fakeDoc())
+  assert.deepEqual(buttons.map((b) => b.tabIndex), [0, -1, -1])
+  buttons[0].fire('keydown', { key: 'ArrowRight' })
+  assert.equal(skins.current, 'paper')
+  assert.equal(buttons[1].focused, true)
+  assert.deepEqual(buttons.map((b) => b.tabIndex), [-1, 0, -1])
+  buttons[1].fire('keydown', { key: 'ArrowLeft' })
+  buttons[0].fire('keydown', { key: 'ArrowLeft' })
+  assert.equal(skins.current, 'night')
+  buttons[2].fire('keydown', { key: 'a' })
+  assert.equal(skins.current, 'night')
+})
+
+test('injectFonts adds each font stylesheet once', () => {
+  const links = []
+  const doc = {
+    head: { append: (l) => links.push(l) },
+    createElement: () => ({ dataset: {} }),
+    querySelectorAll: () => links,
+  }
+  injectFonts('night', doc); injectFonts('night', doc)
+  assert.equal(links.length, 1)
+  assert.equal(links[0].href, fontUrl('night'))
+  injectFonts('paper', doc)
+  assert.equal(links.length, 2)
 })

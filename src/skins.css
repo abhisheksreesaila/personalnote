@@ -74,9 +74,9 @@
   .tool-dock .tool-button.active, .font-family-control button.active, .mindmap-segments button.active,
   .properties-trigger:hover, .properties-trigger.active, .voice-button.active,
   .clear-note-action:hover, .dialog-primary, .print-button,
-  .dialog-primary:hover, .print-button:hover, .mobile-new-note { color: var(--skin-on-accent); }
-  .dialog-danger { color: #fff; }
+  .mobile-new-note { color: var(--skin-on-accent); }
   .dialog-primary:hover, .print-button:hover { background: color-mix(in srgb, var(--sk-accent) 88%, var(--sk-ink)); }
+  .dialog-danger:hover { background: color-mix(in srgb, var(--sk-danger) 88%, var(--sk-ink)); }
 
   /* Geometry: controls and panels follow the skin's radii and shadows. */
   .tool-dock, .ink-options-popover, .note-create-menu, .notebook-picker-menu, .spotlight,
@@ -123,5 +123,10 @@
   /* ~400ms color crossfade while switching skin. */
   :root.skin-fading * {
     transition: background-color .4s, color .4s, border-color .4s, box-shadow .4s !important;
+  }
+
+  @media (prefers-contrast: more) {
+    :root[data-skin] { --line: color-mix(in srgb, var(--sk-ink) 55%, var(--sk-panel)); --muted: color-mix(in srgb, var(--sk-ink) 82%, var(--sk-panel)); }
+    .tool-dock, .search-button { border-color: var(--ink); }
   }
 }

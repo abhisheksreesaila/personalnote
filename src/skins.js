@@ -83,8 +83,7 @@ export function createSkinController({
   }
 }
 
-function injectFonts(id) {
-  const doc = globalThis.document
+export function injectFonts(id, doc = globalThis.document) {
   if (!doc) return
   const href = fontUrl(id)
   if ([...doc.querySelectorAll('link[data-skin-font]')].some((link) => link.href === href)) return
@@ -109,12 +108,12 @@ export function startSkins() {
   return controller
 }
 
-/** Render the three swatches into `container` (a radiogroup). */
-export function mountSkinSwitcher(container, skins = startSkins()) {
+/** Render the three swatches into `container` as a radiogroup (one tab stop, arrow keys move and select). */
+export function mountSkinSwitcher(container, skins = startSkins(), doc = globalThis.document) {
   container.setAttribute('role', 'radiogroup')
   container.setAttribute('aria-label', 'Skin')
   const buttons = SKINS.map((skin) => {
-    const button = document.createElement('button')
+    const button = doc.createElement('button')
     button.type = 'button'
     button.className = 'skin-swatch'
     button.setAttribute('role', 'radio')
@@ -122,11 +121,29 @@ export function mountSkinSwitcher(container, skins = startSkins()) {
     button.title = skin.name
     button.setAttribute('aria-label', `${skin.name} skin`)
     button.style.setProperty('--swatch', skin.swatch)
-    button.addEventListener('click', () => { skins.select(skin.id); sync() })
+    button.addEventListener('click', () => choose(skin.id))
+    button.addEventListener('keydown', (event) => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
+      if (!step) return
+      event.preventDefault?.()
+      const index = (SKINS.findIndex((entry) => entry.id === skins.current) + step + SKINS.length) % SKINS.length
+      choose(SKINS[index].id, true)
+    })
     return button
   })
-  const sync = () => buttons.forEach((button) => button.setAttribute('aria-checked', String(button.dataset.skin === skins.current)))
+  function sync() {
+    buttons.forEach((button) => {
+      const on = button.dataset.skin === skins.current
+      button.setAttribute('aria-checked', String(on))
+      button.tabIndex = on ? 0 : -1
+    })
+  }
+  function choose(id, focus = false) {
+    skins.select(id)
+    sync()
+    if (focus) buttons.find((button) => button.dataset.skin === id).focus?.()
+  }
   container.append(...buttons)
   sync()
-  return { sync }
+  return { sync, buttons }
 }

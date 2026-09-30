@@ -1,5 +1,5 @@
-/* Flat, terminal-inspired chrome uses the landing page palette. Note content,
-   ink colors and printable paper deliberately keep their original appearance. */
+/* Flat, screen-only chrome geometry. Colors, fonts and radii come from the skin tokens in
+   skins.css; note content, ink colors and printable paper keep their original appearance. */
 @media screen {
   :root {
     color-scheme: dark;
@@ -157,9 +157,7 @@
   .clear-note-action:hover, .dialog-primary, .print-button {
     color: var(--rail); background: var(--green); border-color: var(--green);
   }
-  .dialog-primary:hover, .print-button:hover { color: var(--rail); background: #8bc99f; }
   .dialog-danger { color: var(--rail); background: var(--terracotta); border-color: var(--terracotta); }
-  .dialog-danger:hover { background: #ff927b; }
   .notebook-color input:checked + span { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--notebook-color); }
   .search-backdrop.open, .notebook-dialog::backdrop { background: rgba(0, 0, 0, .65); backdrop-filter: none; }
   .print-preview { color: var(--ink); background: var(--canvas); }
