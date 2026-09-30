@@ -10,7 +10,7 @@
     "start": "npm run start:api",
     "start:api": "python main.py",
     "test:api": "python -m unittest tests.test_api -v",
-    "test:ui": "node --test src/modules/voice/*.test.js src/mindmap/*.test.js",
+    "test:ui": "node --test src/*.test.js src/modules/voice/*.test.js src/mindmap/*.test.js",
     "voice:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-voice.ps1",
     "voice:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-voice.ps1",
     "build": "vite build",
