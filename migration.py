@@ -43,7 +43,7 @@ def _open_desktop_instance(database: Path) -> bool:
 def _already_migrated_to(legacy: Path, destination: Path) -> bool:
     try:
         marker = json.loads(marker_path(legacy).read_text(encoding="utf-8"))
-        return Path(marker["migratedTo"]) == destination
+        return Path(marker["migratedTo"]).resolve() == destination.resolve()
     except (OSError, ValueError, KeyError, TypeError):
         return False
 

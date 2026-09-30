@@ -35,7 +35,7 @@ def marker_path(legacy: Path) -> Path:
 
 
 def write_migration_marker(legacy: Path, destination: Path) -> None:
-    marker_path(legacy).write_text(json.dumps({"migratedTo": str(destination)}), encoding="utf-8")
+    marker_path(legacy).write_text(json.dumps({"migratedTo": str(destination.resolve())}), encoding="utf-8")
 
 
 def instance_file(database: Path) -> Path:

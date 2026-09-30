@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from app_paths import default_database_path, instance_file, marker_path
 from desktop import LocalServer
@@ -16,6 +17,9 @@ from services import NoteService
 
 class MigrationTests(unittest.TestCase):
     def setUp(self):
+        patcher = mock.patch.dict(os.environ, {"PORT": "9", "HOST": "127.0.0.1"})  # a closed port, never the real 3137
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
@@ -95,6 +99,12 @@ class MigrationTests(unittest.TestCase):
         migrate_legacy_database(self.legacy, self.appdata)
         self.assertEqual(migrate_legacy_database(self.legacy, self.appdata, force_merge=True)["mode"], "merged")
 
+    def test_relative_and_absolute_destination_count_as_the_same(self):
+        self.make_legacy_note()
+        migrate_legacy_database(self.legacy, self.appdata)
+        relative = Path(os.path.relpath(self.appdata))
+        self.assertEqual(migrate_legacy_database(self.legacy, relative)["mode"], "already-migrated")
+
     def test_a_marker_for_another_destination_does_not_block(self):
         self.make_legacy_note()
         migrate_legacy_database(self.legacy, self.appdata.with_name("other.db"))
@@ -132,6 +142,22 @@ class MigrationTests(unittest.TestCase):
             with contextlib.redirect_stdout(output):
                 main(["migrate-data", "--from", str(self.legacy), "--to", str(self.appdata)])
         self.assertEqual(json.loads(output.getvalue())["mode"], "already-migrated")
+
+    def test_cli_reads_port_from_dot_env_when_the_environment_has_none(self):
+        self.make_legacy_note()
+        server = LocalServer(create_app(self.root_db()))
+        server.start()
+        self.addCleanup(server.stop)
+        port = server.base_url.rsplit(":", 1)[1]
+        env_file = Path(self.tmp.name) / ".env"
+        env_file.write_text(f"# settings\nHOST=127.0.0.1\nPORT={port}\n")
+        with mock.patch.dict(os.environ, {}, clear=False), mock.patch("personal_note_cli.ENV_FILE", env_file):
+            os.environ.pop("PORT", None)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = main(["migrate-data", "--from", str(self.legacy), "--to", str(self.appdata)])
+        self.assertEqual(code, 2)
+        self.assertIn("answering", json.loads(output.getvalue())["error"])
 
     def test_cli_command_failure_is_json_and_exit_code_two(self):
         output = io.StringIO()

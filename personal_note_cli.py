@@ -22,11 +22,26 @@ from note_text import note_plain_text
 from services import ConflictError, NoteService, NotFoundError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
 
 ROOT = Path(__file__).resolve().parent
+ENV_FILE = ROOT / ".env"
 DEFAULT_AGENT = "Claude Code"
 
 
 class CliError(Exception):
     """Expected command error rendered as JSON."""
+
+
+def env_setting(name: str, default: str) -> str:
+    """Environment first, then the checkout's .env (same file main.py loads); standard library only."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.strip().partition("=")
+            if separator and key.strip() == name and value.strip():
+                return value.strip().strip("\"'")
+    except OSError:
+        pass
+    return default
 
 
 def database_path(value: str | None) -> Path:
@@ -269,8 +284,8 @@ def command_migrate_data(_service: None, args: argparse.Namespace) -> dict:
         source,
         destination,
         force_merge=args.force_merge,
-        server_host=probe_host(os.getenv("HOST", "127.0.0.1")),
-        server_port=int(os.getenv("PORT", "3137")),
+        server_host=probe_host(env_setting("HOST", "127.0.0.1")),
+        server_port=int(env_setting("PORT", "3137")),
         allow_running_server=args.yes,
     )
 
