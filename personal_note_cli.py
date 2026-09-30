@@ -13,12 +13,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from app_paths import DATABASE_FILENAME, LEGACY_DATABASE, app_data_dir, default_database_path
+from startup import probe_host
+from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
 from services import ConflictError, NoteService, NotFoundError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
 
 ROOT = Path(__file__).resolve().parent
+ENV_FILE = ROOT / ".env"
 DEFAULT_AGENT = "Claude Code"
 
 
@@ -26,8 +30,22 @@ class CliError(Exception):
     """Expected command error rendered as JSON."""
 
 
+def env_setting(name: str, default: str) -> str:
+    """Environment first, then the checkout's .env (same file main.py loads); standard library only."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.strip().partition("=")
+            if separator and key.strip() == name and value.strip():
+                return value.strip().strip("\"'")
+    except OSError:
+        pass
+    return default
+
+
 def database_path(value: str | None) -> Path:
-    return Path(value or os.getenv("PERSONAL_NOTE_DB", ROOT / "data" / "personal-note.db"))
+    return Path(value) if value else default_database_path()
 
 
 def emit(value: Any) -> None:
@@ -73,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="personal-note",
         description="Personal Note local workspace CLI. Output is JSON unless --text is given on read commands.",
     )
-    parser.add_argument("--database", help="SQLite database path (defaults to PERSONAL_NOTE_DB or data/personal-note.db)")
+    parser.add_argument("--database", help="SQLite database path (defaults to PERSONAL_NOTE_DB, else the app-data folder)")
     parser.add_argument("--agent", default=DEFAULT_AGENT, help=f"Name shown in the app while this agent works (default: {DEFAULT_AGENT})")
     agent_option = argparse.ArgumentParser(add_help=False)
     agent_option.add_argument("--agent", default=argparse.SUPPRESS, help="Name shown in the app while this agent works")
@@ -137,6 +155,16 @@ def build_parser() -> argparse.ArgumentParser:
     imported = subcommands.add_parser("import", help="Merge a lossless workspace backup")
     imported.add_argument("input", help="Workspace backup JSON file")
     imported.set_defaults(handler=command_import)
+
+    migrate = subcommands.add_parser(
+        "migrate-data",
+        help="Copy this checkout's data/personal-note.db into the app-data folder (never deletes or moves the original)",
+    )
+    migrate.add_argument("--from", dest="source", help="Legacy database (default: data/personal-note.db in this checkout)")
+    migrate.add_argument("--to", dest="destination", help="Destination database (default: the app-data folder)")
+    migrate.add_argument("--force-merge", action="store_true", help="Merge again even though this checkout was already migrated to the destination")
+    migrate.add_argument("--yes", action="store_true", help="Continue even if a Personal Note server is answering on HOST:PORT")
+    migrate.set_defaults(handler=command_migrate_data, needs_service=False)
 
     plugins = subcommands.add_parser("plugins", help="Inspect plugin package manifests")
     plugin_commands = plugins.add_subparsers(dest="plugin_command", required=True)
@@ -249,6 +277,19 @@ def command_import(service: NoteService, args: argparse.Namespace) -> dict:
     return import_workspace_backup(service, read_json(args.input))
 
 
+def command_migrate_data(_service: None, args: argparse.Namespace) -> dict:
+    source = Path(args.source) if args.source else LEGACY_DATABASE
+    destination = Path(args.destination) if args.destination else app_data_dir() / DATABASE_FILENAME
+    return migrate_legacy_database(
+        source,
+        destination,
+        force_merge=args.force_merge,
+        server_host=probe_host(env_setting("HOST", "127.0.0.1")),
+        server_port=int(env_setting("PORT", "3137")),
+        allow_running_server=args.yes,
+    )
+
+
 def command_plugins_inspect(_service: NoteService, args: argparse.Namespace) -> dict:
     manifest = parse_plugin_manifest(read_json(args.manifest))
     return {"ok": True, "manifest": manifest.as_dict(), "execution": "not-supported"}
@@ -257,11 +298,12 @@ def command_plugins_inspect(_service: NoteService, args: argparse.Namespace) -> 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        result = args.handler(NoteService(database_path(args.database)), args)
+        service = NoteService(database_path(args.database)) if getattr(args, "needs_service", True) else None
+        result = args.handler(service, args)
         if result is not None:
             emit(result)
         return 0
-    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, PortabilityError, WorkspaceImportError, PluginManifestError) as error:
+    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, PortabilityError, WorkspaceImportError, PluginManifestError, MigrationError) as error:
         emit({"ok": False, "error": str(error)})
         return 2
     except Exception:

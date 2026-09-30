@@ -1,11 +1,11 @@
 import logging
-import os
 from pathlib import Path
 
 from fasthtml.common import FastHTML
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
+from app_paths import default_database_path
 from portability import (
     PortabilityError,
     import_workspace_backup,
@@ -46,7 +46,7 @@ def runtime_capabilities() -> dict:
 
 
 def create_app(database_path: Path | str | None = None) -> FastHTML:
-    data_path = Path(database_path or os.getenv("PERSONAL_NOTE_DB", ROOT / "data" / "personal-note.db"))
+    data_path = Path(database_path or default_database_path())
     service = NoteService(data_path)
     app = FastHTML(sess_cls=None)
     app.state.note_service = service

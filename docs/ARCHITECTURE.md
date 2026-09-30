@@ -26,6 +26,8 @@ Development uses two core processes and one local command interface:
 | FastHTML | 3137 | REST API, SQLite persistence, search, backup/import/export |
 | `personal_note_cli.py` (`bin/personal-note`) | — | Local agent and scripting interface: search, read as text, create, append, import/export, diagnostics, all through `NoteService` |
 
+The desktop app (`desktop.py`) replaces both with one process: uvicorn serves the built `dist/` and the API on a free loopback port in a background thread, and a pywebview window loads it. On close it calls the page's `window.personalNote.flush()` (resolves once nothing is unsaved; bounded to 3 seconds), then destroys the window and stops the server. A per-database `*.desktop.json` record (with a random nonce) and a loopback `POST /_desktop/focus` that requires that nonce give single-instance behaviour. The web view keeps a persistent context so `localStorage` exists; the frontend also tolerates its absence. `app_paths.py` (standard library only) picks the database: `PERSONAL_NOTE_DB`, else an existing legacy `data/personal-note.db` (until `personal-note migrate-data` has copied it to app-data), else the app-data folder. `migration.py` implements the explicit copy.
+
 The optional Windows transcription service listens on loopback port `8080` and starts separately. The notebook is fully usable when it is absent.
 
 ## Core boundaries
@@ -154,6 +156,9 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `src/mindmap/` | Built-in mind-map implementation |
 | `src/modules/voice/` | Transcript, capture, and local provider modules |
 | `routes.py` | Core HTTP routes |
+| `desktop.py` | Native-window entry point: in-process server, single instance, close-time flush |
+| `app_paths.py` | Default database location shared by the app, CLI and server |
+| `scripts/build-mac-app.sh`, `packaging/` | macOS app bundle build and Linux launcher |
 | `personal_note_cli.py`, `bin/personal-note` | Machine-readable local CLI for agents, using the same service and portability contracts |
 | `note_text.py` | Plain-text projections of notes for agents (reading-order canvas text, mind-map outline) |
 | `src/modules/sync/` | Change-feed polling, safe merge of agent writes, and the agent presence chip |

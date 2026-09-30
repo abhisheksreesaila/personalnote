@@ -15,6 +15,7 @@ FROM python:3.12-slim AS runtime
 
 ENV HOST=0.0.0.0 \
     PORT=8080 \
+    PERSONAL_NOTE_DB=/app/data/personal-note.db \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 

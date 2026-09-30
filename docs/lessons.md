@@ -8,3 +8,4 @@ Claude reads this at the start of each session. -->
 - 2026-09-30 · A Fabric 7 subclass must set its own defaults in its constructor (`super(); Object.assign(this, X.ownDefaults); this.setOptions(options)`); a `static ownDefaults` alone is silently ignored.
 - 2026-09-30 · Never have the client guess a future revision (e.g. in-flight R+1) to save on close — it can overwrite an agent's write; send the last confirmed revision and accept a conflict.
 - 2026-09-30 · Builders and reviewers must stop every server, browser and window they start, and never use the app's real port (3137) or the captain's real database; a leftover old server on 3137 made the captain's test open stale code.
+- 2026-09-30 · Guard every browser-storage access (localStorage can be missing in WebKit web views) and check frontend changes in a non-Chromium engine; tests/test_webview_smoke.py loads the built app in the system web view with a hidden window.

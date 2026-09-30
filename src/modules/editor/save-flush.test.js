@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { bindPageLifecycle, canKeepAlive, confirmedRevision } from './save-flush.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision, settleSaves } from './save-flush.js'
 
 function targets() {
   const listeners = new Map()
@@ -48,4 +48,26 @@ test('a revision only ever moves forward, and a failed save leaves it where the 
   assert.equal(confirmedRevision(5, 4), 5)
   // the in-flight save hit a conflict (no result): the close-time save must reuse the confirmed revision, never guess ahead
   assert.equal(confirmedRevision(4, undefined), 4)
+})
+
+test('settleSaves waits for an in-flight save, then saves what is still unsaved', async () => {
+  const log = []
+  let saving = true
+  let unsaved = true
+  let ticks = 0
+  const result = await settleSaves({
+    flushPending: () => log.push('flush'),
+    isSaving: () => saving,
+    hasUnsaved: () => unsaved,
+    save: async () => { log.push('save'); unsaved = false },
+    wait: async () => { ticks += 1; if (ticks === 2) saving = false },
+  })
+  assert.equal(result, true)
+  assert.deepEqual(log, ['flush', 'save'])
+  assert.equal(ticks, 2)
+})
+
+test('settleSaves reports false when the save did not land', async () => {
+  const result = await settleSaves({ flushPending: () => {}, isSaving: () => false, hasUnsaved: () => true, save: async () => {} })
+  assert.equal(result, false)
 })

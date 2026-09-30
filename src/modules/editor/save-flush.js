@@ -32,3 +32,15 @@ export function bindPageLifecycle({ windowTarget, documentTarget, flush }) {
 export function confirmedRevision(current, result) {
   return Math.max(current ?? 0, result ?? 0)
 }
+
+/**
+ * Sends what is pending and resolves once no save is in flight, for a host (the desktop window) that must
+ * not stop the server before edits land. Resolves true when nothing is left unsaved.
+ */
+export async function settleSaves({ flushPending, isSaving, hasUnsaved, save, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
+  flushPending()
+  while (isSaving()) await wait(15)
+  if (hasUnsaved()) await save()
+  while (isSaving()) await wait(15)
+  return !hasUnsaved()
+}

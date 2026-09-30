@@ -21,9 +21,10 @@ import {
   connectorEndpoints,
   connectorsLeftDangling,
 } from './modules/editor/connectors.js'
+import { readPreferences, writePreferences } from './preferences.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
-import { bindPageLifecycle, canKeepAlive, confirmedRevision } from './modules/editor/save-flush.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { createLiftEffect } from './modules/editor/lift.js'
@@ -559,25 +560,14 @@ async function mountActiveMindMap(documentValue) {
   })
 }
 
-const PREFERENCES_KEY = 'personal-note.preferences.v1'
-const FONT_FAMILIES = new Set(['Source Serif 4', 'IBM Plex Sans', 'monospace'])
-
 function loadPreferences() {
-  try {
-    const preferences = JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}')
-    if (FONT_FAMILIES.has(preferences.fontFamily)) state.fontFamily = preferences.fontFamily
-    const fontSize = Number(preferences.fontSize)
-    if (Number.isFinite(fontSize)) state.fontSize = Math.min(72, Math.max(12, Math.round(fontSize)))
-  } catch {
-    localStorage.removeItem(PREFERENCES_KEY)
-  }
+  const preferences = readPreferences()
+  if (preferences.fontFamily) state.fontFamily = preferences.fontFamily
+  if (preferences.fontSize) state.fontSize = preferences.fontSize
 }
 
 function savePreferences() {
-  localStorage.setItem(PREFERENCES_KEY, JSON.stringify({
-    fontFamily: state.fontFamily,
-    fontSize: state.fontSize,
-  }))
+  writePreferences(undefined, { fontFamily: state.fontFamily, fontSize: state.fontSize })
 }
 
 loadPreferences()
@@ -1911,6 +1901,25 @@ function flushPendingEdits() {
   saveActiveNote({ unloading: true })
 }
 bindPageLifecycle({ windowTarget: window, documentTarget: document, flush: flushPendingEdits })
+
+// Lets the desktop window wait for edits to land before it closes: resolves true once nothing is unsaved.
+window.personalNote = {
+  flush: () => settleSaves({
+    flushPending: () => {
+      if (state.loading || !state.activeNoteId) return
+      flushPendingHistory({
+        cancel: () => clearTimeout(historyTimer),
+        commit: () => {
+          if (commitHistorySnapshot()) queueSave()
+        },
+      })
+      clearTimeout(saveTimer)
+    },
+    isSaving: () => saveInFlight,
+    hasUnsaved: () => unsavedEdits,
+    save: () => saveActiveNote(),
+  }),
+}
 
 let historyTimer
 function snapshot() {
