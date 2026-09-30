@@ -561,19 +561,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .mindmap-zoom { right: 10px; bottom: 74px; }
   .mindmap-zoom button { min-width: 44px; height: 44px; }
   .mindmap-zoom .mindmap-zoom-label { width: 56px; }
-  .tool-dock { --mobile-tool-size: 44px; left: calc(50% + 27px); max-width: calc(100vw - 72px); height: 60px; gap: 3px; padding: 8px 5px; overflow: visible; bottom: max(12px, env(safe-area-inset-bottom)); }
-  .tool-dock .tool-button { width: var(--mobile-tool-size); height: var(--mobile-tool-size); flex-basis: var(--mobile-tool-size); }
-  .tool-dock .mobile-hand-tool { display: grid; }
-  .tool-dock .mobile-hand-tool svg { width: 25px; height: 25px; stroke-width: 2; }
-  .tool-dock [data-tool="pen"],
-  .tool-dock [data-tool="highlight"],
-  .tool-dock [data-tool="eraser"] { display: none; }
-  .tool-dock .ink-options-trigger { display: none; }
-  .tool-dock > .tool-group:last-child { display: none; }
-  .dock-divider { display: none; }
-  .ink-options-popover { bottom: 76px; width: min(266px, calc(100vw - 24px)); }
-  .voice-caption { left: 12px; right: auto; bottom: 76px; max-width: calc(100vw - 24px); transform: none; }
-  .properties-panel, .settings-panel { width: 100vw; max-width: 320px; }
   .print-preview-bar { height: 58px; flex-basis: 58px; grid-template-columns: auto 1fr auto; gap: 6px; padding: 0 8px; }
   .print-back span, .paper-select { display: none; }
   .print-back { width: 36px; padding: 0; justify-content: center; }
@@ -590,7 +577,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 }
 
 @media (max-width: 560px) {
-  .tool-dock { display: none; }
   .mobile-capture-controls { position: fixed; z-index: 22; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 8px; }
   .mobile-capture-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; font: 600 12px/1 var(--ui-font, "IBM Plex Mono", monospace); cursor: pointer; }
   .mobile-draw-button { min-width: 54px; min-height: 54px; color: var(--ink); background: var(--surface); }
@@ -600,14 +586,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .voice-caption { left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); max-width: none; }
 }
 
-@media (max-width: 360px) {
-  .tool-dock { gap: 2px; padding-inline: 3px; }
-  .tool-dock .tool-button { min-height: 32px; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   button:not(:disabled):active { scale: 1; transition: none; }
-  .tool-dock .dock-control { transform: none !important; transition: none; }
   .paper { animation: none; }
   .voice-button.active { animation: none; }
   .spotlight, .search-backdrop { transition-duration: 1ms; }

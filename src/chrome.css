@@ -356,6 +356,9 @@
     .app-shell .agent-chip { font-size: 0; gap: 0; padding: 0 13px; }
     .app-shell .page-minimap .mini-grid { display: none; }
   }
+  @media (min-width: 801px) and (max-width: 960px) {
+    .app-shell .page-minimap, .app-shell .zoom-control { bottom: 92px; }
+  }
 
   /* ---------- Phones and narrow tablets ---------- */
   @media (max-width: 800px) {
@@ -400,7 +403,7 @@
     .app-shell .tool-dock .mobile-hand-tool { display: grid; }
     .app-shell .tool-dock .ink-options-trigger { width: 32px; height: 32px; flex-basis: 32px; }
     .app-shell .voice-button { flex-basis: 46px; width: 46px; height: 46px; }
-    .app-shell .ink-options-popover { bottom: 84px; }
+    .app-shell .ink-options-popover { bottom: 84px; width: min(266px, calc(100vw - 24px)); }
     .app-shell .voice-caption { left: 12px; right: auto; bottom: 84px; max-width: calc(100vw - 24px); transform: none; }
     .app-shell .page-minimap { left: 12px; bottom: 84px; height: 34px; padding: 0 10px; }
     .app-shell .zoom-control { right: 12px; bottom: 84px; height: 34px; }
@@ -412,6 +415,7 @@
   /* The capture surface on phones keeps its dedicated controls (F-001): no dock, just Draw and Hold to speak. */
   @media (max-width: 560px) {
     .app-shell .tool-dock, .app-shell.mindmap-active .tool-dock { display: none !important; }
+    .app-shell .quick-note kbd { display: none; }
     .app-shell .page-minimap { left: auto; right: 10px; bottom: auto; top: 56px; height: 28px; padding: 0 10px; border-radius: 99px; font-size: 11px; }
     .app-shell .page-minimap .mini-grid { display: none; }
     .app-shell .zoom-control { display: none; }
@@ -421,9 +425,6 @@
     .app-shell .mobile-draw-button { background: var(--glass-solid); color: var(--sk-ink); }
     .app-shell .mobile-speak-button { background: var(--sk-accent); color: var(--sk-accent-ink); border-color: var(--sk-accent) !important; }
     .app-shell .mobile-capture-controls { bottom: max(14px, env(safe-area-inset-bottom)); }
-  }
-  @media (max-width: 560px) {
-    .app-shell .quick-note kbd { display: none; }
   }
   @media (max-width: 380px) {
     .app-shell .share-wrap { display: none; }

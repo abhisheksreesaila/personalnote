@@ -421,7 +421,6 @@ const elements = {
   title: document.querySelector('#note-title'),
   list: document.querySelector('#notebook-navigator'),
   notebookList: document.querySelector('#notebook-list'),
-  noteList: document.querySelector('#note-list'),
   saveState: document.querySelector('#save-state'),
   pageCount: document.querySelector('#page-count'),
   pageMinimap: document.querySelector('#page-minimap'),
@@ -1076,7 +1075,9 @@ function goToPage(index) {
 function resetCanvasView() {
   const scale = getCanvasScale()
   const target = pageExtentsTarget()
-  viewportOffsetX = (canvas.getWidth() - target.right * scale) / 2
+  // Centre the pages when they fit; otherwise start at the first page rather than mid-grid.
+  const freeWidth = canvas.getWidth() - target.right * scale
+  viewportOffsetX = freeWidth >= 48 ? freeWidth / 2 : 24
   viewportOffsetY = viewMargins(window.innerWidth).top
   setCanvasViewportOffset(viewportOffsetX, viewportOffsetY)
 }

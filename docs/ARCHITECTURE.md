@@ -34,6 +34,8 @@ The optional Windows transcription service listens on loopback port `8080` and s
 
 The Fabric canvas is always window-sized: pan and zoom move `viewportTransform` (geometry in `src/modules/editor/viewport.js`), page tiles are painted in `before:render`, and page growth only changes the page count. `npm run benchmark:canvas` measures drag, grow, pan and zoom frame times on a generated 600-object note.
 
+The chrome floats over that canvas (F-004): a glass sidebar (Quick note, Inbox, notebooks grouped by PARA category with their notes), a top bar (breadcrumb, title, save state, agent chip, search, share/export), a bottom dock (tools, ink swatches, undo, mic), a page minimap and a zoom control. Pure helpers keep the logic testable: `src/modules/library/outline.js` (sidebar grouping), `src/modules/editor/navigation.js` (page label, zoom steps, fit, minimap, scroll thumbs), `keyboard-pan.js`, `edge-ghost.js` (the "+ Page N" preview) and `lift.js` (a dragged object's tilt and shadow). The ghost page and the lift are painted only while dragging and are never saved objects. The chrome is screen-only and lives in `src/chrome.css`.
+
 `src/main.js` owns shared note lifecycle and canvas interaction. It talks to the backend only through `src/core/api.js`. The shell knows that notes have a `noteType`, but optional modules do not own notebook navigation, persistence, or search.
 
 ### Persistence
@@ -156,4 +158,5 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `services.py` | SQLite persistence and FTS5 indexing |
 | `portability.py` | Backup/import and Markdown archive projection |
 | `app_schema.py` | Idempotent database setup |
-| `src/workspace-theme.css` | Screen-only dark neutral/violet chrome |
+| `src/workspace-theme.css` | Screen-only chrome defaults mapped onto the skin tokens |
+| `src/chrome.css` | Screen-only floating chrome layout: sidebar, top bar, dock, minimap, zoom |
