@@ -1,0 +1,100 @@
+import contextlib
+import io
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+from app_paths import default_database_path, instance_file, marker_path
+from migration import MigrationError, migrate_legacy_database
+from personal_note_cli import main
+from services import NoteService
+
+
+class MigrationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.legacy = root / "repo" / "data" / "personal-note.db"
+        self.appdata = root / "xdg" / "personal-note" / "personal-note.db"
+        self.env = {"XDG_DATA_HOME": str(root / "xdg")}
+        self.home = root / "home"
+
+    def resolve(self):
+        return default_database_path(platform="linux", env=self.env, home=self.home, legacy_path=self.legacy)
+
+    def titles(self, path):
+        return sorted(note["title"] for note in NoteService(path).list_notes())
+
+    def make_legacy_note(self, title="From the checkout"):
+        service = NoteService(self.legacy)
+        service.create_note({"title": title, "noteType": "canvas"})
+
+    def test_copies_to_a_missing_destination_and_keeps_the_legacy_file(self):
+        self.make_legacy_note()
+        before = self.legacy.read_bytes()
+        result = migrate_legacy_database(self.legacy, self.appdata)
+        self.assertEqual(result["mode"], "copied")
+        self.assertEqual(self.titles(self.appdata), ["From the checkout"])
+        self.assertTrue(self.legacy.exists())
+        self.assertEqual(NoteService(self.legacy).list_notes()[0]["title"], "From the checkout")
+        self.assertEqual(self.legacy.read_bytes()[:16], before[:16])
+        self.assertTrue(marker_path(self.legacy).exists())
+        self.assertFalse(self.appdata.with_name(self.appdata.name + ".partial").exists())
+
+    def test_merges_into_a_destination_another_install_already_created(self):
+        self.make_legacy_note("Legacy note")
+        NoteService(self.appdata).create_note({"title": "App note", "noteType": "canvas"})
+        result = migrate_legacy_database(self.legacy, self.appdata)
+        self.assertEqual(result["mode"], "merged")
+        self.assertEqual(self.titles(self.appdata), ["App note", "Legacy note"])
+        self.assertEqual(self.titles(self.legacy), ["Legacy note"])
+
+    def test_full_sequence_from_another_install_creating_app_data_first(self):
+        self.make_legacy_note()
+        NoteService(self.appdata)  # the .app creates an empty app-data database first
+        self.assertEqual(self.resolve(), self.legacy)  # the checkout keeps its notes
+        migrate_legacy_database(self.legacy, self.appdata)
+        self.assertEqual(self.resolve(), self.appdata)
+        self.assertIn("From the checkout", self.titles(self.appdata))
+
+    def test_refuses_while_the_desktop_app_is_open(self):
+        self.make_legacy_note()
+        instance_file(self.appdata).parent.mkdir(parents=True)
+        instance_file(self.appdata).write_text(json.dumps({"url": "x", "pid": os.getpid(), "nonce": "n"}))
+        with self.assertRaises(MigrationError):
+            migrate_legacy_database(self.legacy, self.appdata)
+        self.assertFalse(marker_path(self.legacy).exists())
+
+    def test_a_stale_instance_record_does_not_block(self):
+        self.make_legacy_note()
+        instance_file(self.appdata).parent.mkdir(parents=True)
+        instance_file(self.appdata).write_text(json.dumps({"url": "x", "pid": 2**22 + 12345, "nonce": "n"}))
+        self.assertEqual(migrate_legacy_database(self.legacy, self.appdata)["mode"], "copied")
+
+    def test_nothing_to_migrate_is_an_error_that_creates_nothing(self):
+        with self.assertRaises(MigrationError):
+            migrate_legacy_database(self.legacy, self.appdata)
+        self.assertFalse(self.appdata.exists())
+        self.assertFalse(self.legacy.exists())
+
+    def test_cli_command_reports_json(self):
+        self.make_legacy_note()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = main(["migrate-data", "--from", str(self.legacy), "--to", str(self.appdata)])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue())["mode"], "copied")
+
+    def test_cli_command_failure_is_json_and_exit_code_two(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = main(["migrate-data", "--from", str(self.legacy), "--to", str(self.appdata)])
+        self.assertEqual(code, 2)
+        self.assertFalse(json.loads(output.getvalue())["ok"])
+
+
+if __name__ == "__main__":
+    unittest.main()

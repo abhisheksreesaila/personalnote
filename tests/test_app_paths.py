@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app_paths import app_data_dir, default_database_path
+from app_paths import app_data_dir, default_database_path, marker_path, write_migration_marker
 
 
 class AppDataDirTests(unittest.TestCase):
@@ -71,17 +71,35 @@ class DefaultDatabasePathTests(unittest.TestCase):
     def test_empty_env_override_is_ignored(self):
         self.assertEqual(self.resolve({**self.env, "PERSONAL_NOTE_DB": ""}), self.appdata_db)
 
-    def test_existing_legacy_database_is_kept(self):
+    def make_legacy(self):
         self.legacy.parent.mkdir(parents=True)
         self.legacy.write_bytes(b"x")
-        self.assertEqual(self.resolve(), self.legacy)
 
-    def test_app_data_database_wins_once_it_exists(self):
-        self.legacy.parent.mkdir(parents=True)
-        self.legacy.write_bytes(b"x")
+    def make_appdata(self):
         self.appdata_db.parent.mkdir(parents=True)
         self.appdata_db.write_bytes(b"y")
+
+    def test_existing_legacy_database_is_kept(self):
+        self.make_legacy()
+        self.assertEqual(self.resolve(), self.legacy)
+
+    def test_legacy_wins_even_when_another_install_created_an_app_data_database_first(self):
+        # the .app, or a second checkout, starts first and creates an empty app-data database
+        self.make_legacy()
+        self.make_appdata()
+        self.assertEqual(self.resolve(), self.legacy)
+
+    def test_after_an_explicit_migration_the_app_data_database_wins(self):
+        self.make_legacy()
+        self.make_appdata()
+        write_migration_marker(self.legacy, self.appdata_db)
+        self.assertTrue(marker_path(self.legacy).exists())
         self.assertEqual(self.resolve(), self.appdata_db)
+
+    def test_a_marker_without_the_app_data_database_never_hides_the_legacy_notes(self):
+        self.make_legacy()
+        write_migration_marker(self.legacy, self.appdata_db)
+        self.assertEqual(self.resolve(), self.legacy)
 
     def test_resolution_never_touches_the_filesystem(self):
         self.resolve()

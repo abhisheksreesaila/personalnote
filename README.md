@@ -43,8 +43,8 @@ python -m venv .venv
 npm run desktop                         # or: .venv/bin/python desktop.py
 ```
 
-- It serves the built frontend on a free loopback port, opens a window titled "Personal Note", and stops the server when the window closes (pending edits are flushed first). Opening it a second time brings the existing window forward instead of starting another server.
-- `python desktop.py --timing` prints cold-start timings; `--no-build` skips the stale-build check.
+- It serves the built frontend on a free loopback port, opens a window titled "Personal Note", and stops the server when the window closes (pending edits are saved first, waiting up to 3 seconds). Opening it a second time brings the existing window forward instead of starting another server.
+- `python desktop.py --timing` prints cold-start timings; `--no-build` skips the stale-build check. Measured on Linux (Wayland, WebKitGTK), build in place: server ready 0.10s and a canvas on screen 0.79s after process start (single run).
 - Linux needs a system web view: `webkit2gtk-4.1` and `python-gobject` (Arch/Omarchy: `sudo pacman -S webkit2gtk-4.1 python-gobject`; Debian/Ubuntu: `gir1.2-webkit2-4.1 python3-gi`). The virtualenv must see them: create it with `python -m venv --system-site-packages .venv`. `npm run desktop` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which Wayland sessions need.
 - Launcher entry on Linux: `sh scripts/install-linux-launcher.sh` adds "Personal Note" to the application menu.
 - macOS app: on a Mac, `npm run desktop:mac-app` builds `dist-app/Personal Note.app` with PyInstaller (microphone usage text included). Not yet verified on a Mac.
@@ -60,7 +60,13 @@ The app, `bin/personal-note` and `python main.py` share one database:
 | Linux | `$XDG_DATA_HOME/personal-note/personal-note.db` (default `~/.local/share/personal-note/`) |
 | Windows | `%APPDATA%\Personal Note\personal-note.db` |
 
-`PERSONAL_NOTE_DB` overrides it. If a legacy `data/personal-note.db` exists in the checkout and the app-data one does not, that legacy file keeps being used; nothing is ever moved, copied or deleted for you. To move it: close the app, copy `data/personal-note.db` (and any `-wal`/`-shm` files) into the app-data folder above, then delete the old file once you have checked the notes.
+`PERSONAL_NOTE_DB` overrides it. **An existing `data/personal-note.db` in a checkout always wins** until you migrate on purpose, so another install (the macOS app, a second checkout) creating an empty app-data database can never hide your notes. To move your notes to the app-data folder, close the app and run, in the checkout that has the data:
+
+```bash
+bin/personal-note migrate-data
+```
+
+It copies the database (SQLite backup; if the app-data database already has notes, the old notes are merged in without overwriting anything), then writes `data/personal-note.db.migrated` so this checkout switches to the app-data copy. It never deletes or moves the original; remove it yourself once you have checked the notes. The macOS app shows a one-line notice when its notebook is empty, pointing here.
 
 ## V1 capabilities
 
@@ -147,7 +153,7 @@ bin/personal-note import backup.json
 bin/personal-note plugins inspect plugin-manifest.json
 ```
 
-`npm run personal-note -- <command>` and `npm link` (which installs a `personal-note` command from `package.json`) work too. Pass `--database /path/to/personal-note.db` (or set `PERSONAL_NOTE_DB`) to target a specific workspace; the default is the same `data/personal-note.db` the app uses.
+`npm run personal-note -- <command>` and `npm link` (which installs a `personal-note` command from `package.json`) work too. Pass `--database /path/to/personal-note.db` (or set `PERSONAL_NOTE_DB`) to target a specific workspace; the default is the same database the app uses (see Desktop app, Where the notebook lives); `bin/personal-note migrate-data` moves a checkout's data into the app-data folder.
 
 ### Using it from Claude Code
 

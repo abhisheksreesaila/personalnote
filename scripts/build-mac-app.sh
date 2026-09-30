@@ -25,7 +25,7 @@ rm -rf build/pyinstaller dist-app
   --collect-all fasthtml --collect-all fastcore --collect-submodules uvicorn \
   --collect-submodules webview \
   --hidden-import routes --hidden-import services --hidden-import portability \
-  --hidden-import app_schema --hidden-import note_text --hidden-import app_paths \
+  --hidden-import app_schema --hidden-import note_text --hidden-import app_paths --hidden-import migration \
   --hidden-import plugin_manifest --hidden-import startup
 
 # WKWebView only prompts for the microphone if the bundle says why it wants it.

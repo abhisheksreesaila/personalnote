@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import shutil
+import secrets
 import socket
 import subprocess
 import sys
@@ -24,13 +25,15 @@ from urllib.request import Request, urlopen
 
 PROCESS_START = time.perf_counter()
 
-from app_paths import default_database_path  # noqa: E402
+from app_paths import app_data_dir, default_database_path, instance_file  # noqa: E402
 
 HOST = "127.0.0.1"
 WINDOW_TITLE = "Personal Note"
 WINDOW_SIZE = (1280, 860)
 WINDOW_MIN_SIZE = (900, 600)
+FLUSH_TIMEOUT = 3.0
 FOCUS_PATH = "/_desktop/focus"
+NONCE_HEADER = "x-focus-nonce"
 ROOT = Path(__file__).resolve().parent
 FRONTEND_INPUTS = ("src", "public", "index.html", "landing-note.html", "spatial-docs.html", "vite.config.js", "package.json")
 
@@ -89,6 +92,7 @@ class LocalServer:
         self.app = app
         self.host = host
         self.on_focus = on_focus
+        self.nonce = secrets.token_hex(16)
         self.base_url: str | None = None
         self._server = None
         self._thread: threading.Thread | None = None
@@ -99,7 +103,10 @@ class LocalServer:
         from starlette.responses import JSONResponse
 
         @self.app.route(FOCUS_PATH, methods=["POST"])
-        def focus():
+        def focus(request):
+            # Only the desktop app that wrote the instance record knows the nonce.
+            if not secrets.compare_digest(request.headers.get(NONCE_HEADER, ""), self.nonce):
+                return JSONResponse({"ok": False}, status_code=403)
             if self.on_focus:
                 threading.Thread(target=self.on_focus, daemon=True).start()
             return JSONResponse({"ok": True})
@@ -139,14 +146,14 @@ class LocalServer:
 # ---- single instance ------------------------------------------------------------------------
 
 
-def instance_file(database: Path) -> Path:
-    return database.with_name(database.name + ".desktop.json")
-
-
-def record_instance(database: Path, base_url: str) -> None:
+def record_instance(database: Path, base_url: str, nonce: str) -> None:
     path = instance_file(database)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"url": base_url, "pid": os.getpid()}), encoding="utf-8")
+    path.write_text(json.dumps({"url": base_url, "pid": os.getpid(), "nonce": nonce}), encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def clear_instance(database: Path) -> None:
@@ -159,8 +166,9 @@ def clear_instance(database: Path) -> None:
 def focus_running_instance(database: Path) -> str | None:
     """If a desktop app already owns this database, ask it to come forward and return its URL."""
     try:
-        url = json.loads(instance_file(database).read_text(encoding="utf-8"))["url"]
-        request = Request(url + FOCUS_PATH, method="POST")
+        record = json.loads(instance_file(database).read_text(encoding="utf-8"))
+        url = record["url"]
+        request = Request(url + FOCUS_PATH, method="POST", headers={NONCE_HEADER: record["nonce"]})
         with urlopen(request, timeout=1.5) as response:
             return url if json.load(response).get("ok") else None
     except (OSError, URLError, ValueError, KeyError, TypeError):
@@ -205,6 +213,54 @@ def allow_microphone(window) -> None:
         logger.warning("Could not enable microphone access in this window.", exc_info=True)
 
 
+def flush_page(window, timeout: float = FLUSH_TIMEOUT) -> bool:
+    """Ask the page to send pending edits and wait (bounded) until they are saved. True if nothing is left."""
+    try:
+        window.evaluate_js(
+            "window.__flushResult = null;"
+            "Promise.resolve(window.personalNote ? window.personalNote.flush() : true)"
+            ".then((ok) => { window.__flushResult = ok ? 1 : 0 }, () => { window.__flushResult = 0 }); 0"
+        )
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            result = window.evaluate_js("window.__flushResult")
+            if result is not None:
+                return bool(result)
+            time.sleep(0.03)
+    except Exception:
+        logger.warning("Could not flush pending edits.", exc_info=True)
+    return False
+
+
+EMPTY_NOTICE = (
+    "This is a new, empty notebook. Notes from a source checkout stay in its data/ folder: "
+    "run `bin/personal-note migrate-data` in that checkout to bring them here."
+)
+
+
+def empty_notebook_notice(database: Path) -> str | None:
+    """A one-line notice when this database holds no notes the user has written."""
+    from services import NoteService
+
+    if not database.exists():
+        return EMPTY_NOTICE
+    notes = NoteService(database).list_notes()
+    untouched = len(notes) == 1 and notes[0]["title"] == "Untitled note" and notes[0]["revision"] <= 1
+    return EMPTY_NOTICE if not notes or untouched else None
+
+
+def show_notice(window, message: str) -> None:
+    script = (
+        "(() => { const bar = document.createElement('div'); bar.setAttribute('role', 'status');"
+        "bar.style.cssText = 'position:fixed;left:50%;bottom:72px;transform:translateX(-50%);z-index:99999;"
+        "max-width:min(640px,90vw);padding:10px 14px;border-radius:10px;background:#1f2937;color:#fff;"
+        "font:13px system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);cursor:pointer';"
+        f"bar.textContent = {json.dumps(message)}; bar.title = 'Click to dismiss'; bar.onclick = () => bar.remove();"
+        "document.body.appendChild(bar); setTimeout(() => bar.remove(), 20000); })()"
+    )
+    window.evaluate_js(script)
+
+
 def run_window(base_url: str, database: Path, server: LocalServer, timing: bool) -> None:
     if sys.platform.startswith("linux"):
         # WebKitGTK's DMABUF renderer crashes some Wayland sessions with a protocol error.
@@ -225,12 +281,8 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
     flushed = threading.Event()
 
     def flush_then_close():
-        # Same path the page takes on pagehide, run while the server is still up.
-        try:
-            window.evaluate_js("window.dispatchEvent(new Event('pagehide'))")
-            time.sleep(0.4)
-        except Exception:
-            logger.warning("Could not flush pending edits before closing.", exc_info=True)
+        if not flush_page(window):
+            logger.warning("Pending edits may not have been saved before closing.")
         flushed.set()
         window.destroy()
 
@@ -243,12 +295,19 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
 
     window.events.closing += on_closing
 
+    notice = empty_notebook_notice(database) if getattr(sys, "frozen", False) else None
+    if notice:
+        window.events.loaded += lambda: show_notice(window, notice)
+
     def on_started():
         allow_microphone(window)
         if timing:
             report_timing(window)
 
-    webview.start(on_started)
+    # A persistent web context: the page keeps localStorage (display preferences) between runs.
+    storage = app_data_dir() / "webview"
+    storage.mkdir(parents=True, exist_ok=True)
+    webview.start(on_started, private_mode=False, storage_path=str(storage))
 
 
 def report_timing(window) -> None:
@@ -291,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.timing:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
-    record_instance(database, base_url)
+    record_instance(database, base_url, server.nonce)
     try:
         run_window(base_url, database, server, args.timing)
     except ImportError as error:

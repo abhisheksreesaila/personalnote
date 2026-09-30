@@ -12,7 +12,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from app_paths import default_database_path
+from app_paths import DATABASE_FILENAME, LEGACY_DATABASE, app_data_dir, default_database_path
+from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
@@ -138,6 +139,14 @@ def build_parser() -> argparse.ArgumentParser:
     imported.add_argument("input", help="Workspace backup JSON file")
     imported.set_defaults(handler=command_import)
 
+    migrate = subcommands.add_parser(
+        "migrate-data",
+        help="Copy this checkout's data/personal-note.db into the app-data folder (never deletes or moves the original)",
+    )
+    migrate.add_argument("--from", dest="source", help="Legacy database (default: data/personal-note.db in this checkout)")
+    migrate.add_argument("--to", dest="destination", help="Destination database (default: the app-data folder)")
+    migrate.set_defaults(handler=command_migrate_data, needs_service=False)
+
     plugins = subcommands.add_parser("plugins", help="Inspect plugin package manifests")
     plugin_commands = plugins.add_subparsers(dest="plugin_command", required=True)
     inspect_plugin = plugin_commands.add_parser("inspect", help="Validate a plugin manifest without installing or executing it")
@@ -249,6 +258,12 @@ def command_import(service: NoteService, args: argparse.Namespace) -> dict:
     return import_workspace_backup(service, read_json(args.input))
 
 
+def command_migrate_data(_service: None, args: argparse.Namespace) -> dict:
+    source = Path(args.source) if args.source else LEGACY_DATABASE
+    destination = Path(args.destination) if args.destination else app_data_dir() / DATABASE_FILENAME
+    return migrate_legacy_database(source, destination)
+
+
 def command_plugins_inspect(_service: NoteService, args: argparse.Namespace) -> dict:
     manifest = parse_plugin_manifest(read_json(args.manifest))
     return {"ok": True, "manifest": manifest.as_dict(), "execution": "not-supported"}
@@ -257,11 +272,12 @@ def command_plugins_inspect(_service: NoteService, args: argparse.Namespace) -> 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        result = args.handler(NoteService(database_path(args.database)), args)
+        service = NoteService(database_path(args.database)) if getattr(args, "needs_service", True) else None
+        result = args.handler(service, args)
         if result is not None:
             emit(result)
         return 0
-    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, PortabilityError, WorkspaceImportError, PluginManifestError) as error:
+    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, PortabilityError, WorkspaceImportError, PluginManifestError, MigrationError) as error:
         emit({"ok": False, "error": str(error)})
         return 2
     except Exception:
