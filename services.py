@@ -171,16 +171,29 @@ class NoteService:
             objects = []
             document["objects"] = objects
         seen = set(reserved_ids or ())
+        in_document: set[str] = set()
+        id_map: dict[str, str] = {}
         changed = False
         for item in objects:
             if not isinstance(item, dict):
                 continue
             semantic_id = item.get("semanticId")
             if not isinstance(semantic_id, str) or not semantic_id or semantic_id in seen:
-                semantic_id = cls.new_resource_id()
+                new_id = cls.new_resource_id()
+                # First holder of an id that had to change: connectors pointing at it follow.
+                if isinstance(semantic_id, str) and semantic_id and semantic_id not in in_document:
+                    id_map[semantic_id] = new_id
+                semantic_id = new_id
                 item["semanticId"] = semantic_id
                 changed = True
             seen.add(semantic_id)
+            in_document.add(semantic_id)
+        if id_map:
+            for item in objects:
+                if isinstance(item, dict) and item.get("type") == "Connector":
+                    for key in ("fromId", "toId"):
+                        if item.get(key) in id_map:
+                            item[key] = id_map[item[key]]
         return document, changed
 
     @classmethod

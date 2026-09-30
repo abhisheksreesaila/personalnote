@@ -2,7 +2,7 @@ import './style.css'
 import './workspace-theme.css'
 import './skins.css'
 import { mountSkinSwitcher, startSkins } from './skins.js'
-import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox, util } from 'fabric'
+import { ActiveSelection, cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { mountMindMapModule } from './modules/mindmap.js'
@@ -13,6 +13,13 @@ import { flushPendingHistory } from './modules/editor/history.js'
 import { mountAgentSync } from './modules/sync/index.js'
 import { mergeRemoteAppends, pickFlagBlock } from './modules/sync/changes.js'
 import { prettifySelection } from './modules/editor/prettify.js'
+import { Connector, drawArrow } from './modules/editor/connector-object.js'
+import {
+  ConnectorIndex,
+  connectorBox,
+  connectorEndpoints,
+  connectorsLeftDangling,
+} from './modules/editor/connectors.js'
 import {
   clampView,
   easeInOut,
@@ -154,6 +161,7 @@ document.querySelector('#app').innerHTML = `
             <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text"><i data-lucide="type"></i></button>
             <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen"><i data-lucide="pencil"></i></button>
             <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (H) - hold for color and width" aria-label="Highlighter"><i data-lucide="highlighter"></i></button>
+            <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
             <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser"><i data-lucide="eraser"></i></button>
           </div>
           <div class="dock-divider"></div>
@@ -783,6 +791,7 @@ function refreshPageColors() {
     edge: highContrast ? read('--line', '#2c2c34') : read('--sk-edge', read('--line', '#2c2c34')),
     shadows: parseBoxShadow(read('--sk-shadow', 'none')).map(resolveShadowLayer),
   }
+  Connector.haloColor = pageColors.accent
 }
 
 // The Fabric canvas is always exactly as large as the workspace. Page growth
@@ -936,7 +945,8 @@ function moveAllObjects(deltaX, deltaY) {
 }
 
 function getContentBounds() {
-  const objects = canvas.getObjects()
+  // Connectors are derived from their endpoints, so they never decide the page extents.
+  const objects = canvas.getObjects().filter((object) => !isConnector(object))
   if (!objects.length) return null
   return objects.reduce((bounds, object) => {
     const rect = object.getBoundingRect()
@@ -1351,7 +1361,7 @@ function setTool(tool) {
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
   canvas.isDrawingMode = tool === 'pen' || tool === 'highlight'
   canvas.selection = tool === 'select'
-  canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : 'default'
+  canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : tool === 'connect' ? 'crosshair' : 'default'
   canvas.forEachObject((object) => {
     const textEditable = tool === 'text' && isEditableText(object)
     object.selectable = tool === 'select' || textEditable
@@ -1364,8 +1374,170 @@ function setTool(tool) {
   }
   updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
+  connectDraft = null
+  connectHover = null
   canvas.discardActiveObject()
   canvas.requestRenderAll()
+}
+
+// Connectors: arrows between two canvas objects, joined by semanticId. The index maps
+// an object to its connectors so a drag refreshes only the arrows it owns.
+const connectorIndex = new ConnectorIndex()
+const objectsById = new Map()
+let connectDraft = null
+let connectHover = null
+
+const isConnector = (object) => object instanceof Connector
+
+function ensureObjectId(object) {
+  if (!object.semanticId) object.semanticId = `res_${crypto.randomUUID().replaceAll('-', '')}`
+  return object.semanticId
+}
+
+// `fresh` objects are the ones being transformed; their cached coords are stale.
+// Untouched endpoints keep their cached coords.
+function objectBounds(object, fresh = true) {
+  if (fresh) object.setCoords()
+  return object.getBoundingRect()
+}
+
+function refreshConnector(connector, movingIds = null) {
+  const from = objectsById.get(connector.fromId)
+  const to = objectsById.get(connector.toId)
+  if (!from || !to || connector.group) return
+  const ends = connectorEndpoints(
+    objectBounds(from, !movingIds || movingIds.has(connector.fromId)),
+    objectBounds(to, !movingIds || movingIds.has(connector.toId)),
+  )
+  connector.visible = ends.visible
+  if (!ends.visible) return
+  connector.applyBox(connectorBox(ends.start, ends.end))
+}
+
+// Refresh the connectors of the given objects (an ActiveSelection is unpacked).
+function refreshConnectorsOf(target) {
+  if (!target || !connectorIndex.byId.size) return
+  const objects = target instanceof ActiveSelection ? target.getObjects() : [target]
+  const ids = objects.map((object) => object.semanticId).filter(Boolean)
+  const moving = new Set(ids)
+  connectorIndex.forObjects(ids).forEach((connector) => refreshConnector(connector, moving))
+}
+
+// A connector only ever moves by following its endpoints, so it never joins a group selection.
+function keepConnectorsOutOfSelections() {
+  const active = canvas.getActiveObject()
+  if (!(active instanceof ActiveSelection)) return
+  const members = active.getObjects()
+  if (!members.some(isConnector)) return
+  const keep = members.filter((object) => !isConnector(object))
+  canvas.discardActiveObject()
+  if (keep.length > 1) canvas.setActiveObject(new ActiveSelection(keep, { canvas }))
+  else if (keep.length === 1) canvas.setActiveObject(keep[0])
+}
+
+// After any load: re-index, drop connectors whose endpoints are gone, recompute geometry.
+function rebuildConnectors() {
+  objectsById.clear()
+  const connectors = []
+  canvas.getObjects().forEach((object) => {
+    if (isConnector(object)) {
+      ensureObjectId(object)
+      connectors.push(object)
+    } else if (object.semanticId) {
+      objectsById.set(object.semanticId, object)
+    }
+  })
+  const dangling = new Set(connectorsLeftDangling(connectors, new Set(objectsById.keys())))
+  dangling.forEach((connector) => canvas.remove(connector))
+  const live = connectors.filter((connector) => !dangling.has(connector))
+  connectorIndex.rebuild(live)
+  live.forEach((connector) => {
+    connector.selectable = connector.evented = state.tool === 'select'
+    refreshConnector(connector)
+  })
+  return dangling.size > 0
+}
+
+function createConnector(from, to) {
+  if (!from || !to || from === to || isConnector(from) || isConnector(to)) return null
+  const fromId = ensureObjectId(from)
+  const toId = ensureObjectId(to)
+  if (connectorIndex.has(fromId, toId)) return null
+  objectsById.set(fromId, from)
+  objectsById.set(toId, to)
+  const connector = new Connector({ fromId, toId, color: state.color, semanticId: `res_${crypto.randomUUID().replaceAll('-', '')}` })
+  refreshConnector(connector)
+  if (!connector.visible) return null
+  connector.selectable = connector.evented = state.tool === 'select'
+  connectorIndex.add(connector)
+  canvas.add(connector)
+  return connector
+}
+
+// Topmost non-ink object under the point; ink (whose box is loose) only as a fallback.
+function connectTargetAt(point, exclude = null) {
+  const objects = canvas.getObjects()
+  let ink = null
+  for (let index = objects.length - 1; index >= 0; index -= 1) {
+    const object = objects[index]
+    if (object === exclude || isConnector(object) || !object.visible || !object.containsPoint(point)) continue
+    if (object.isInk) ink ||= object
+    else return object
+  }
+  return ink
+}
+
+function cancelConnectDraft() {
+  if (!connectDraft && !connectHover) return false
+  const wasDrafting = Boolean(connectDraft)
+  connectDraft = null
+  connectHover = null
+  canvas.requestRenderAll()
+  return wasDrafting
+}
+
+function drawConnectOverlay(ctx) {
+  if (state.tool !== 'connect' || (!connectDraft && !connectHover)) return
+  const v = canvas.viewportTransform
+  const scale = v[0]
+  const accent = pageColors.accent
+  ctx.save()
+  ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5])
+  const outline = (object) => {
+    const box = objectBounds(object)
+    ctx.strokeStyle = accent
+    ctx.lineWidth = 2 / scale
+    ctx.strokeRect(box.left - 4 / scale, box.top - 4 / scale, box.width + 8 / scale, box.height + 8 / scale)
+    return box
+  }
+  const dot = (point) => {
+    ctx.fillStyle = accent
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, 5 / scale, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 1.5 / scale
+    ctx.stroke()
+  }
+  if (connectDraft) {
+    const source = objectBounds(connectDraft.source)
+    outline(connectDraft.source)
+    const target = connectHover
+    const goal = target ? objectBounds(target) : { left: connectDraft.pointer.x, top: connectDraft.pointer.y, width: 0, height: 0 }
+    const ends = connectorEndpoints(source, goal, target ? undefined : 0)
+    if (target) outline(target)
+    if (ends.visible) {
+      ctx.globalAlpha = 0.75
+      drawArrow(ctx, ends.start, ends.end, { color: accent })
+      ctx.globalAlpha = 1
+      dot(ends.start)
+      if (target) dot(ends.end)
+    }
+  } else if (connectHover) {
+    const box = outline(connectHover)
+    dot({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
+  }
+  ctx.restore()
 }
 
 let saveTimer
@@ -1473,6 +1645,7 @@ async function restoreHistory(index) {
   resizePaper(true)
   await canvas.loadFromJSON(entry.content)
   bindCanvasTextObjects()
+  rebuildConnectors()
   setTool('text')
   state.loading = false
   canvas.requestRenderAll()
@@ -1512,6 +1685,7 @@ async function selectNote(id) {
       await canvas.loadFromJSON(note.content || { objects: [] })
       bindCanvasTextObjects()
       normalizedNote = normalizeNotebookFonts()
+      normalizedNote = rebuildConnectors() || normalizedNote
       normalizedNote = reconcilePages(true) || normalizedNote
       state.history = [snapshot()]
       state.historyIndex = 0
@@ -1554,6 +1728,7 @@ async function applyRemoteNote(note) {
     resizePaper()
     await canvas.loadFromJSON(note.content || { objects: [] })
     bindCanvasTextObjects()
+    rebuildConnectors()
     setTool(state.tool)
     state.history = [snapshot()]
     state.historyIndex = 0
@@ -1588,6 +1763,7 @@ async function mergeRemoteNote(note) {
   }
   enlivened.forEach((object) => canvas.add(object))
   bindCanvasTextObjects()
+  rebuildConnectors()
   canvas.requestRenderAll()
   queueSave()
   return enlivened.length
@@ -2530,6 +2706,50 @@ canvas.on('text:changed', () => {
 ;['object:moving', 'object:scaling', 'object:rotating'].forEach((eventName) => {
   canvas.on(eventName, expandPagesDuringTransform)
 })
+// Registered after page growth so arrows see the final, prepend-compensated positions.
+;['object:moving', 'object:scaling', 'object:rotating', 'object:resizing', 'object:modified', 'text:changed'].forEach((eventName) => {
+  canvas.on(eventName, ({ target }) => refreshConnectorsOf(target))
+})
+canvas.on('object:removed', ({ target }) => {
+  if (!target) return
+  if (isConnector(target)) {
+    connectorIndex.remove(target.id)
+    return
+  }
+  if (state.loading || !target.semanticId) return
+  objectsById.delete(target.semanticId)
+  connectorIndex.forObjects([target.semanticId]).forEach((connector) => canvas.remove(connector))
+})
+;['selection:created', 'selection:updated'].forEach((eventName) => canvas.on(eventName, keepConnectorsOutOfSelections))
+canvas.on('after:render', ({ ctx }) => drawConnectOverlay(ctx))
+canvas.on('mouse:down', ({ e, scenePoint }) => {
+  if (state.tool !== 'connect' || e.button > 0) return
+  const source = connectTargetAt(scenePoint)
+  if (!source) return
+  connectDraft = { source, pointer: { x: scenePoint.x, y: scenePoint.y } }
+  connectHover = null
+  canvas.requestRenderAll()
+})
+canvas.on('mouse:move', ({ scenePoint }) => {
+  if (state.tool !== 'connect') return
+  const hover = connectTargetAt(scenePoint, connectDraft?.source)
+  if (connectDraft) connectDraft.pointer = { x: scenePoint.x, y: scenePoint.y }
+  if (hover === connectHover && !connectDraft) return
+  connectHover = hover
+  canvas.requestRenderAll()
+})
+canvas.on('mouse:up', ({ scenePoint }) => {
+  if (state.tool !== 'connect' || !connectDraft) return
+  const { source } = connectDraft
+  const target = connectTargetAt(scenePoint, source)
+  connectDraft = null
+  connectHover = null
+  if (target && createConnector(source, target)) {
+    reconcilePages()
+    recordHistory()
+  }
+  canvas.requestRenderAll()
+})
 canvas.on('mouse:up', () => {
   elements.paper.classList.remove('is-dragging')
   elements.workspace.classList.remove('is-object-dragging')
@@ -2997,6 +3217,8 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault()
     activeText.exitEditing()
     setTool('select')
+  } else if (event.key === 'Escape' && connectDraft) {
+    cancelConnectDraft()
   } else if (event.key === 'Escape' && !isTyping && state.tool !== 'select') {
     setTool('select')
   } else if (isTyping && (event.ctrlKey || event.metaKey)) {
@@ -3016,7 +3238,7 @@ document.addEventListener('keydown', (event) => {
       recordHistory()
     }
   } else if (!isTyping && !event.ctrlKey && !event.metaKey) {
-    const shortcuts = { v: 'select', t: 'text', p: 'pen', d: 'pen', h: 'highlight', e: 'eraser' }
+    const shortcuts = { v: 'select', t: 'text', p: 'pen', d: 'pen', h: 'highlight', e: 'eraser', c: 'connect' }
     if (shortcuts[event.key.toLowerCase()]) setTool(shortcuts[event.key.toLowerCase()])
   }
 })

@@ -76,6 +76,28 @@ class PlainTextTests(TempServiceCase):
         )
 
 
+class ConnectorHandlingTests(TempServiceCase):
+    OBJECTS = [
+        {"type": "IText", "text": "left card", "semanticId": "res_a", "left": 72, "top": 80, "height": 60, "originY": "top"},
+        {"type": "IText", "text": "right card", "semanticId": "res_b", "left": 400, "top": 80, "height": 60, "originY": "top"},
+        {"type": "Connector", "semanticId": "res_c", "fromId": "res_a", "toId": "res_b",
+         "originX": "center", "originY": "center", "left": 300, "top": 110, "width": 120, "height": 1},
+    ]
+
+    def test_plain_text_read_ignores_connectors(self):
+        note = self.canvas_note(self.OBJECTS)
+        self.assertEqual(note_plain_text(note), "left card\n\nright card")
+
+    def test_append_lands_below_cards_and_leaves_connectors_untouched(self):
+        note = self.canvas_note(self.OBJECTS)
+        self.service.append_text(note["id"], "agent line")
+        objects = self.service.get_note(note["id"])["content"]["objects"]
+        self.assertEqual([o["type"] for o in objects], ["IText", "IText", "Connector", "Textbox"])
+        self.assertGreaterEqual(objects[-1]["top"], 140)
+        connector = objects[2]
+        self.assertEqual((connector["fromId"], connector["toId"]), ("res_a", "res_b"))
+
+
 class AppendTextTests(TempServiceCase):
     def test_append_places_text_below_existing_content_with_a_revision_bump(self):
         note = self.canvas_note(

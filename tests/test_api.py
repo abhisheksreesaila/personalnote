@@ -182,6 +182,37 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotEqual(imported_note["content"]["objects"][0]["semanticId"], original_object_id)
         self.assertEqual(notebook["name"], "My Notes")
 
+    def test_backup_import_keeps_connectors_attached_to_their_remapped_objects(self):
+        notebook = self.client.get("/api/notebooks").json()[0]
+        note = self.client.post("/api/notes", json={"title": "Linked", "notebookId": notebook["id"]}).json()
+        objects = [
+            {"type": "IText", "text": "a", "semanticId": "res_a", "left": 0, "top": 0, "width": 50, "height": 20},
+            {"type": "IText", "text": "b", "semanticId": "res_b", "left": 200, "top": 0, "width": 50, "height": 20},
+            {"type": "Connector", "semanticId": "res_c", "fromId": "res_a", "toId": "res_b",
+             "originX": "center", "originY": "center", "left": 125, "top": 10, "width": 140, "height": 1},
+        ]
+        saved = self.client.put(
+            f"/api/notes/{note['id']}",
+            json={"title": "Linked", "notebookId": notebook["id"], "revision": note["revision"],
+                  "content": {"objects": objects}, "pageState": {"columns": 1, "rows": 1}},
+        )
+        self.assertEqual(saved.status_code, 200)
+        backup = self.client.get("/api/export/workspace").json()
+        exported = next(item for item in backup["notes"] if item["title"] == "Linked")
+        self.assertEqual([o["type"] for o in exported["content"]["objects"]], ["IText", "IText", "Connector"])
+
+        imported = self.client.post("/api/import/workspace", json=backup).json()
+        titles = {self.client.get(f"/api/notes/{i}").json()["title"]: i for i in imported["noteIds"]}
+        copy = self.client.get(f"/api/notes/{titles['Linked']}").json()["content"]["objects"]
+        by_text = {o["text"]: o["semanticId"] for o in copy if "text" in o}
+        connector = next(o for o in copy if o["type"] == "Connector")
+        self.assertNotEqual(by_text["a"], "res_a")
+        self.assertEqual(connector["fromId"], by_text["a"])
+        self.assertEqual(connector["toId"], by_text["b"])
+        original = self.client.get(f"/api/notes/{note['id']}").json()["content"]["objects"]
+        original_connector = next(o for o in original if o["type"] == "Connector")
+        self.assertEqual((original_connector["fromId"], original_connector["toId"]), ("res_a", "res_b"))
+
     def test_invalid_import_is_atomic_and_keeps_existing_workspace(self):
         self.create_text_note()
         before = self.client.get("/api/export/workspace").json()
