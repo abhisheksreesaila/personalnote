@@ -2,8 +2,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from starlette.testclient import TestClient
+
 from note_text import note_plain_text
-from services import ConflictError, NoteService, NotFoundError, UnsupportedNoteTypeError
+from routes import create_app
+from services import (
+    AGENT_ACTIVITY_WINDOW,
+    ConflictError,
+    NoteService,
+    NotFoundError,
+    UnsupportedNoteTypeError,
+)
 
 
 class TempServiceCase(unittest.TestCase):
@@ -128,6 +137,75 @@ class AppendTextTests(TempServiceCase):
         note = self.service.create_note({"title": "Empty"})
         self.service.append_text(note["id"], "quokka migration plan")
         self.assertEqual(self.service.search("quokka")[0]["id"], note["id"])
+
+
+class AgentActivityTests(TempServiceCase):
+    def test_activity_records_who_note_action_and_expires(self):
+        note = self.service.create_note({"title": "Watched"})
+        self.service.record_agent_activity("Claude Code", note["id"], "reading", now=1000.0)
+        active = self.service.active_agents(now=1003.0)
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0]["agent"], "Claude Code")
+        self.assertEqual(active[0]["noteId"], note["id"])
+        self.assertEqual(active[0]["noteTitle"], "Watched")
+        self.assertEqual(active[0]["action"], "reading")
+        self.assertEqual(self.service.active_agents(now=1000.0 + AGENT_ACTIVITY_WINDOW + 1), [])
+
+    def test_latest_action_per_agent_wins(self):
+        note = self.service.create_note({"title": "Watched"})
+        self.service.record_agent_activity("Claude Code", note["id"], "reading", now=1000.0)
+        self.service.record_agent_activity("Claude Code", note["id"], "writing", now=1001.0)
+        self.assertEqual([a["action"] for a in self.service.active_agents(now=1002.0)], ["writing"])
+
+    def test_unknown_actions_are_rejected(self):
+        with self.assertRaises(ValueError):
+            self.service.record_agent_activity("Claude Code", None, "deleting")
+
+
+class ChangesSinceTests(TempServiceCase):
+    def test_reports_changes_after_a_sequence_and_the_current_sequence(self):
+        baseline = self.service.changes_since(None)
+        self.assertEqual(baseline["changes"], [])
+        note = self.service.create_note({"title": "A"})
+        self.service.append_text(note["id"], "more")
+        result = self.service.changes_since(baseline["sequence"])
+        self.assertEqual(result["sequence"], baseline["sequence"] + 2)
+        self.assertEqual(
+            [(c["resourceKind"], c["changeType"], c["revision"]) for c in result["changes"]],
+            [("note", "created", 1), ("note", "updated", 2)],
+        )
+        self.assertEqual(result["changes"][0]["resourceId"], note["resourceId"])
+        self.assertEqual(self.service.changes_since(result["sequence"])["changes"], [])
+
+
+class ChangesEndpointTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.database_path = Path(self.temporary_directory.name) / "personal-note.db"
+        self.client = TestClient(create_app(self.database_path))
+        self.service = NoteService(self.database_path)
+
+    def tearDown(self):
+        self.client.close()
+        self.temporary_directory.cleanup()
+
+    def test_browser_sees_an_agent_write_and_presence_through_one_cheap_poll(self):
+        baseline = self.client.get("/api/changes").json()
+        self.assertEqual(baseline["changes"], [])
+        note = self.client.post("/api/notes", json={"title": "Shared"}).json()
+        seen = self.client.get(f"/api/changes?since={baseline['sequence']}").json()["sequence"]
+        self.service.append_text(note["id"], "from the agent", revision=note["revision"])
+        self.service.record_agent_activity("Claude Code", note["id"], "writing")
+        polled = self.client.get(f"/api/changes?since={seen}").json()
+        self.assertEqual(polled["changes"][0]["resourceId"], note["resourceId"])
+        self.assertEqual(polled["changes"][0]["revision"], note["revision"] + 1)
+        self.assertEqual(polled["agents"][0]["agent"], "Claude Code")
+        self.assertEqual(polled["agents"][0]["action"], "writing")
+
+    def test_rejects_a_non_numeric_cursor_with_a_plain_baseline(self):
+        response = self.client.get("/api/changes?since=abc")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["changes"], [])
 
 
 if __name__ == "__main__":

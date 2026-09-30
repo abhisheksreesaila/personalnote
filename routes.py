@@ -75,6 +75,14 @@ def create_app(database_path: Path | str | None = None) -> FastHTML:
     def settings_capabilities():
         return JSONResponse(runtime_capabilities())
 
+    @app.get("/api/changes")
+    def changes(request):
+        try:
+            since = int(request.query_params.get("since"))
+        except (TypeError, ValueError):
+            since = None
+        return JSONResponse(service.changes_since(since) | {"agents": service.active_agents()})
+
     @app.get("/api/notebooks")
     def list_notebooks():
         return JSONResponse(service.list_notebooks())

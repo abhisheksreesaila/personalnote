@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -44,6 +45,9 @@ APPEND_FONT_SIZE = 24
 APPEND_LINE_HEIGHT = 1.45
 APPEND_PADDING = 8
 APPEND_MAX_LENGTH = 100_000
+AGENT_ACTIVITY_WINDOW = 10.0
+AGENT_ACTIONS = {"reading", "writing"}
+CHANGES_LIMIT = 500
 
 
 class NotFoundError(Exception):
@@ -786,6 +790,78 @@ class NoteService:
             "notebooksImported": len(imported_notebooks),
             "notesImported": len(imported_note_ids),
             "noteIds": imported_note_ids,
+        }
+
+    def record_agent_activity(
+        self, agent: str, note_id: int | None, action: str, now: float | None = None
+    ) -> None:
+        """Remember that a local agent is reading or writing; it expires on its own."""
+        if action not in AGENT_ACTIONS:
+            raise ValueError("Unsupported agent action")
+        name = str(agent or "").strip()[:80] or "Agent"
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO agent_activity (agent, note_id, action, at) VALUES (?, ?, ?, ?)
+                ON CONFLICT(agent) DO UPDATE
+                SET note_id = excluded.note_id, action = excluded.action, at = excluded.at
+                """,
+                (name, note_id, action, time.time() if now is None else now),
+            )
+            connection.commit()
+
+    def active_agents(self, now: float | None = None) -> list[dict]:
+        moment = time.time() if now is None else now
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT agent_activity.*, notes.title AS note_title
+                FROM agent_activity
+                LEFT JOIN notes ON notes.id = agent_activity.note_id
+                WHERE agent_activity.at >= ?
+                ORDER BY agent_activity.at DESC
+                """,
+                (moment - AGENT_ACTIVITY_WINDOW,),
+            ).fetchall()
+        return [
+            {
+                "agent": row["agent"],
+                "noteId": row["note_id"],
+                "noteTitle": row["note_title"],
+                "action": row["action"],
+                "at": row["at"],
+            }
+            for row in rows
+        ]
+
+    def changes_since(self, since: int | None) -> dict:
+        """Cheap change feed: the current sequence plus changes after `since`."""
+        with self.connection() as connection:
+            sequence = connection.execute(
+                "SELECT sequence FROM workspace_state WHERE id = 1"
+            ).fetchone()[0]
+            if since is None or since >= sequence:
+                return {"sequence": sequence, "changes": [], "overflow": False}
+            rows = connection.execute(
+                """
+                SELECT sequence, resource_kind, resource_id, revision, change_type
+                FROM workspace_changes WHERE sequence > ? ORDER BY sequence LIMIT ?
+                """,
+                (since, CHANGES_LIMIT + 1),
+            ).fetchall()
+        return {
+            "sequence": sequence,
+            "overflow": len(rows) > CHANGES_LIMIT,
+            "changes": [
+                {
+                    "sequence": row["sequence"],
+                    "resourceKind": row["resource_kind"],
+                    "resourceId": row["resource_id"],
+                    "revision": row["revision"],
+                    "changeType": row["change_type"],
+                }
+                for row in rows[:CHANGES_LIMIT]
+            ],
         }
 
     def search(self, query: str) -> list[dict]:
