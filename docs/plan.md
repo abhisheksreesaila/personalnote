@@ -24,11 +24,12 @@ Brief: docs/brief.md · Design: docs/design/personal-note.md (Engine) · Needs: 
 - [ ] high zoom on retina never paints blank
 - [ ] print and export output are unchanged
 
-## F-003 Skins: Crayon default, Paper and Night [doing]
+## F-003 Skins: Crayon default, Paper and Night [done]
 Design: docs/design/personal-note.md · Needs: none
-- [ ] skin tokens live as CSS custom properties per skin; Crayon is the default
-- [ ] switching skin from the sidebar swatches recolors the app with a 400ms crossfade and is remembered
-- [ ] print output stays white paper regardless of skin
+- [x] skin tokens live as CSS custom properties per skin; Crayon is the default
+- [x] switching skin from the sidebar swatches recolors the app with a 400ms crossfade and is remembered
+- [x] print output stays white paper regardless of skin
+Open: Night keeps ivory paper on screen (invariant 9); captain to decide on dark paper.
 
 ## F-004 New canvas chrome [todo]
 Design: docs/design/personal-note.md (Layout) · Needs: F-003
