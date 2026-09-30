@@ -1,0 +1,31 @@
+/* Screen-only presence chip; the redesigned header chrome is a separate ticket. */
+.agent-chip {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(99, 86, 67, 0.22);
+  color: var(--muted, #756d61);
+  font-size: 12px;
+  white-space: nowrap;
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-chip[hidden] { display: none; }
+.agent-chip::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4d8b61;
+  animation: agent-chip-pulse 1.2s ease-in-out infinite;
+}
+.agent-chip[data-action='writing']::before { background: #b86b4b; }
+.agent-chip.is-notice::before { animation: none; background: #b86b4b; }
+.agent-chip + .save-state { margin-left: 12px; }
+@keyframes agent-chip-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .agent-chip::before { animation: none; } }
+@media print { .agent-chip { display: none; } }
