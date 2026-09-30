@@ -62,12 +62,34 @@ export function generateNote() {
   for (let i = 0; i < 60; i += 1) {
     const { x, y } = place()
     objects.push({
-      type: 'Rect', version: '7.4.0', originX: 'left', originY: 'top', left: x, top: y, width: 120 + random() * 160, height: 80 + random() * 120,
+      type: 'Rect', version: '7.4.0', semanticId: `res_rect_${i}`, originX: 'left', originY: 'top', left: x, top: y, width: 120 + random() * 160, height: 80 + random() * 120,
       fill: 'rgba(80,120,200,0.15)', stroke: '#4a6fb0', strokeWidth: 2, rx: 6, ry: 6,
     })
   }
+  // Connector scenario: rect 3 (the one the drag scenarios move) carries several arrows, and
+  // 40 more link other rects. Geometry is recomputed from the endpoints on load.
+  const links = [[3, 4], [3, 5], [6, 3], [3, 7], [8, 3], [3, 9]]
+  for (let i = 10; i < 50; i += 1) links.push([i, i + 1])
+  links.forEach(([from, to], index) => objects.push({
+    type: 'Connector', version: '7.4.0', semanticId: `res_conn_${index}`, fromId: `res_rect_${from}`, toId: `res_rect_${to}`,
+    originX: 'center', originY: 'center', left: 0, top: 0, width: 10, height: 10, reverseX: false, reverseY: false,
+    fill: null, strokeWidth: 0, lineWidth: 2.6, color: '#223',
+  }))
   return { version: '7.4.0', objects }
 }
+
+// Arrows of the dragged rect must still touch it (within the gap) after the drag.
+const connectorsAttached = (page) => page.evaluate(() => {
+  const { canvas } = window.__personalNote
+  const rect = canvas.getObjects().filter((o) => o.type === 'rect')[3]
+  const box = rect.getBoundingRect()
+  const gaps = canvas.getObjects().filter((o) => o.type === 'connector' && o.visible && (o.fromId === rect.semanticId || o.toId === rect.semanticId)).map((c) => {
+    const { start, end } = c.endpoints()
+    const p = c.fromId === rect.semanticId ? start : end
+    return Math.max(box.left - p.x, p.x - (box.left + box.width), box.top - p.y, p.y - (box.top + box.height))
+  })
+  return { count: gaps.length, worst: gaps.length ? Math.max(...gaps) : 0 }
+})
 
 const now = new Date().toISOString()
 const summary = {
@@ -193,7 +215,9 @@ async function runDpr(browser, baseUrl, dpr, content) {
   })
   const rows = []
   if (args.debug) await measure(page, 'idle 3s', () => page.waitForTimeout(3000))
-  rows.push(await measure(page, 'drag inside note', () => dragScenario(page, 3, 2, 90)))
+  rows.push(await measure(page, 'drag inside note (6 connectors follow)', () => dragScenario(page, 3, 2, 90)))
+  const attached = await connectorsAttached(page)
+  if (!attached.count || attached.worst > 8) { console.error(`connectors did not follow the drag: ${JSON.stringify(attached)}`); process.exitCode = 1 }
   // Push an object across the grid's right edge so pages grow while dragging.
   await page.evaluate(() => {
     const { canvas, state } = window.__personalNote
@@ -203,6 +227,8 @@ async function runDpr(browser, baseUrl, dpr, content) {
   })
   const columnsBefore = await page.evaluate(() => window.__personalNote.state.pages.columns)
   rows.push(await measure(page, 'drag across page edge (grow)', () => dragScenario(page, 8, 0, 90)))
+  const attachedGrown = await connectorsAttached(page)
+  if (!attachedGrown.count || attachedGrown.worst > 8) { console.error(`connectors did not follow the growing drag: ${JSON.stringify(attachedGrown)}`); process.exitCode = 1 }
   if (args.debug) console.log('after grow drag', await page.evaluate(() => { const { canvas, state } = window.__personalNote; const r = canvas.getObjects().filter((o) => o.type === 'rect')[3]; return JSON.stringify({ pages: state.pages, left: r.left, right: r.getBoundingRect().left + r.getBoundingRect().width, tool: state.tool }) }))
   const grown = await page.evaluate(() => ({
     columns: window.__personalNote.state.pages.columns,
