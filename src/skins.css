@@ -10,6 +10,7 @@
     --sk-accent: #0a6cff; --sk-accent-ink: #ffffff; --sk-accent-soft: #e1ecff;
     --sk-c1: #ffd60a; --sk-c2: #30d158; --sk-c3: #64b5ff; --sk-c4: #bf5af2; --sk-c5: #ff6b3d;
     --sk-danger: #d6391f;
+    --paper: #ffffff; --sk-page-radius: 10px;
     --sk-display: "Bricolage Grotesque", system-ui, sans-serif; --sk-display-weight: 700;
     --sk-display-style: normal; --sk-title-track: -.035em;
     --sk-radius: 18px; --sk-radius-control: 10px;
@@ -23,6 +24,7 @@
     --sk-accent: #e5533d; --sk-accent-ink: #ffffff; --sk-accent-soft: #fbe3dd;
     --sk-c1: #ffd66b; --sk-c2: #9fe0c0; --sk-c3: #a9cfff; --sk-c4: #cdb8ff; --sk-c5: #ff9c85;
     --sk-danger: #b93a27;
+    --paper: #fbfaf5; --sk-page-radius: 4px;
     --sk-display: "Fraunces", Georgia, serif; --sk-display-weight: 500;
     --sk-display-style: normal; --sk-title-track: -.02em;
     --sk-radius: 14px; --sk-radius-control: 8px;
@@ -36,6 +38,7 @@
     --sk-accent: #7ee7c8; --sk-accent-ink: #07261d; --sk-accent-soft: rgba(126, 231, 200, .14);
     --sk-c1: #ffc877; --sk-c2: #7ee7c8; --sk-c3: #9db4ff; --sk-c4: #d3a6ff; --sk-c5: #ff8fb1;
     --sk-danger: #ff8fb1;
+    --paper: #fbfaf5; --sk-page-radius: 6px;
     --sk-display: "Instrument Serif", Georgia, serif; --sk-display-weight: 400;
     --sk-display-style: italic; --sk-title-track: -.01em;
     --sk-radius: 14px; --sk-radius-control: 8px;
