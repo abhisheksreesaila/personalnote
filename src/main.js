@@ -1,5 +1,7 @@
 import './style.css'
 import './workspace-theme.css'
+import './skins.css'
+import { mountSkinSwitcher, startSkins } from './skins.js'
 import { cache, Canvas, Circle, FabricObject, IText, Path, PencilBrush, Point, StaticCanvas, Textbox } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
@@ -118,7 +120,7 @@ document.querySelector('#app').innerHTML = `
           <div class="note-list" id="note-list"></div>
         </section>
       </div>
-      <div class="sidebar-footer"><span class="storage-dot"></span>Saved on this device</div>
+      <div class="sidebar-footer"><span class="storage-dot"></span>Saved on this device<span class="skin-switcher" id="skin-switcher"></span></div>
     </aside>
 
     <main class="main-view">
@@ -354,6 +356,7 @@ document.querySelector('#app').innerHTML = `
 `
 
 createIcons({ icons })
+mountSkinSwitcher(document.querySelector('#skin-switcher'))
 
 const elements = {
   shell: document.querySelector('.app-shell'),

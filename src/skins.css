@@ -1,0 +1,134 @@
+/* Skins: Crayon (default), Paper, Night. Screen-only (AGENTS.md invariant 9): print output
+   and the saved canvas paper are not touched. Loaded after workspace-theme.css; it maps each
+   skin's tokens onto the chrome variables that stylesheet already uses. */
+@media screen {
+  :root, :root[data-skin="crayon"] {
+    color-scheme: light;
+    --sk-desk: #f2f2f7; --sk-desk-dot: rgba(0, 0, 40, .07);
+    --sk-panel: #ffffff; --sk-edge: #e3e3ea;
+    --sk-ink: #111114; --sk-muted: #6e6e78; --sk-line: #e6e6ec;
+    --sk-accent: #0a6cff; --sk-accent-ink: #ffffff; --sk-accent-soft: #e1ecff;
+    --sk-c1: #ffd60a; --sk-c2: #30d158; --sk-c3: #64b5ff; --sk-c4: #bf5af2; --sk-c5: #ff6b3d;
+    --sk-danger: #d6391f;
+    --sk-display: "Bricolage Grotesque", system-ui, sans-serif; --sk-display-weight: 700;
+    --sk-display-style: normal; --sk-title-track: -.035em;
+    --sk-radius: 18px; --sk-radius-control: 10px;
+    --sk-shadow: 0 1px 2px rgba(0, 0, 30, .05), 0 16px 40px -16px rgba(0, 0, 60, .22);
+  }
+  :root[data-skin="paper"] {
+    color-scheme: light;
+    --sk-desk: #efebe3; --sk-desk-dot: rgba(60, 45, 20, .10);
+    --sk-panel: #fffdf8; --sk-edge: #e4ddcf;
+    --sk-ink: #1f1b16; --sk-muted: #857c6e; --sk-line: #e7e0d3;
+    --sk-accent: #e5533d; --sk-accent-ink: #ffffff; --sk-accent-soft: #fbe3dd;
+    --sk-c1: #ffd66b; --sk-c2: #9fe0c0; --sk-c3: #a9cfff; --sk-c4: #cdb8ff; --sk-c5: #ff9c85;
+    --sk-danger: #b93a27;
+    --sk-display: "Fraunces", Georgia, serif; --sk-display-weight: 500;
+    --sk-display-style: normal; --sk-title-track: -.02em;
+    --sk-radius: 14px; --sk-radius-control: 8px;
+    --sk-shadow: 0 1px 0 rgba(31, 27, 22, .04), 0 12px 32px -12px rgba(60, 40, 10, .22);
+  }
+  :root[data-skin="night"] {
+    color-scheme: dark;
+    --sk-desk: #0d1015; --sk-desk-dot: rgba(160, 190, 255, .07);
+    --sk-panel: #161b23; --sk-edge: #232a35;
+    --sk-ink: #eceff4; --sk-muted: #7d8796; --sk-line: #262e3a;
+    --sk-accent: #7ee7c8; --sk-accent-ink: #07261d; --sk-accent-soft: rgba(126, 231, 200, .14);
+    --sk-c1: #ffc877; --sk-c2: #7ee7c8; --sk-c3: #9db4ff; --sk-c4: #d3a6ff; --sk-c5: #ff8fb1;
+    --sk-danger: #ff8fb1;
+    --sk-display: "Instrument Serif", Georgia, serif; --sk-display-weight: 400;
+    --sk-display-style: italic; --sk-title-track: -.01em;
+    --sk-radius: 14px; --sk-radius-control: 8px;
+    --sk-shadow: 0 0 0 1px rgba(236, 239, 244, .04), 0 20px 50px -20px rgba(0, 0, 0, .7);
+  }
+
+  /* Map the tokens onto the chrome variables used across style.css and workspace-theme.css. */
+  :root, :root[data-skin] {
+    --ui-font: "Geist", system-ui, sans-serif;
+    --ink: var(--sk-ink);
+    --muted: var(--sk-muted);
+    --line: var(--sk-line);
+    --accent: var(--sk-accent);
+    --canvas: var(--sk-desk);
+    --surface: var(--sk-panel);
+    --surface-cool: color-mix(in srgb, var(--sk-ink) 6%, var(--sk-panel));
+    --sidebar: var(--sk-panel);
+    --rail: var(--sk-panel);
+    --green: var(--sk-accent);
+    --saved: var(--sk-c2);
+    --focus: var(--sk-accent);
+    --blue: var(--sk-accent);
+    --blue-soft: var(--sk-accent-soft);
+    --gold: var(--sk-c1);
+    --violet: var(--sk-c4);
+    --terracotta: var(--sk-danger);
+    --terracotta-soft: color-mix(in srgb, var(--sk-danger) 12%, var(--sk-panel));
+    --radius-row: var(--sk-radius-control);
+    --radius-panel: var(--sk-radius);
+    --radius-pill: var(--sk-radius-control);
+    --shadow-panel: var(--sk-shadow);
+    --skin-on-accent: var(--sk-accent-ink);
+    background: var(--sk-desk);
+  }
+
+  /* Text sitting on the accent color uses the skin's own ink, not the (now light) rail. */
+  .rail-brand, .rail-brand:hover,
+  .tool-dock .tool-button.active, .font-family-control button.active, .mindmap-segments button.active,
+  .properties-trigger:hover, .properties-trigger.active, .voice-button.active,
+  .clear-note-action:hover, .dialog-primary, .print-button,
+  .mobile-new-note { color: var(--skin-on-accent); }
+  .dialog-primary:hover, .print-button:hover { background: color-mix(in srgb, var(--sk-accent) 88%, var(--sk-ink)); }
+  .dialog-danger:hover { background: color-mix(in srgb, var(--sk-danger) 88%, var(--sk-ink)); }
+
+  /* Geometry: controls and panels follow the skin's radii and shadows. */
+  .tool-dock, .ink-options-popover, .note-create-menu, .notebook-picker-menu, .spotlight,
+  .notebook-dialog, .properties-panel, .settings-panel, .print-summary {
+    border-radius: var(--sk-radius);
+    box-shadow: var(--sk-shadow);
+  }
+  .paper { box-shadow: 0 0 0 1px var(--sk-edge), var(--sk-shadow); }
+
+  /* Fonts. */
+  .brand-name, .note-title, .note-pane-title strong, .properties-heading h2,
+  .dialog-heading-row h2, .mobile-library-heading, .mindmap-inspector header strong {
+    font-family: var(--sk-display); font-weight: var(--sk-display-weight);
+    font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track);
+  }
+  .brand-name { font-size: 17px; }
+  .note-title { font-size: 17px; }
+  .search-button kbd, .save-state, .sidebar-footer, .notebook-count, .print-sheet-number {
+    font-family: "Geist Mono", ui-monospace, monospace;
+  }
+
+  /* Desk: soft dot grid behind the page. */
+  .workspace {
+    background-image: radial-gradient(var(--sk-desk-dot) 1px, transparent 1.2px);
+    background-size: 22px 22px;
+    background-color: var(--sk-desk);
+  }
+  .side-rail { background: var(--rail); }
+  .topbar { background: color-mix(in srgb, var(--sk-panel) 82%, transparent); backdrop-filter: blur(14px) saturate(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.1); }
+  .search-backdrop.open, .notebook-dialog::backdrop { background: color-mix(in srgb, var(--sk-ink) 45%, transparent); }
+
+  /* Skin switcher: three swatches in the sidebar footer. */
+  .sidebar-footer { justify-content: flex-start; }
+  .skin-switcher { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .skin-swatch {
+    width: 16px; height: 16px; padding: 0; border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--sk-ink) 22%, transparent);
+    background: var(--swatch); cursor: pointer; box-shadow: none;
+    transition: transform 160ms ease, box-shadow 160ms ease;
+  }
+  .skin-swatch:hover { transform: scale(1.12); }
+  .skin-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--sk-panel), 0 0 0 3.5px var(--sk-accent); }
+
+  /* ~400ms color crossfade while switching skin. */
+  :root.skin-fading * {
+    transition: background-color .4s, color .4s, border-color .4s, box-shadow .4s !important;
+  }
+
+  @media (prefers-contrast: more) {
+    :root[data-skin] { --line: color-mix(in srgb, var(--sk-ink) 55%, var(--sk-panel)); --muted: color-mix(in srgb, var(--sk-ink) 82%, var(--sk-panel)); }
+    .tool-dock, .search-button { border-color: var(--ink); }
+  }
+}

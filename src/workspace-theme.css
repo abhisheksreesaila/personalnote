@@ -1,35 +1,11 @@
-/* Flat, terminal-inspired chrome uses the landing page palette. Note content,
-   ink colors and printable paper deliberately keep their original appearance. */
+/* Flat, screen-only chrome geometry. Colors, fonts and radii come from the skin tokens in
+   skins.css; note content, ink colors and printable paper keep their original appearance. */
 @media screen {
   :root {
     color-scheme: dark;
     color: var(--ink);
     background: var(--canvas);
     font-family: var(--ui-font);
-    --ui-font: "IBM Plex Mono", "DejaVu Sans Mono", monospace;
-    --ink: #F0EFF4;
-    --muted: #B5B3BE;
-    --text-dim: #8E8C98;
-    --line: #2C2C34;
-    --line-strong: #41414C;
-    --accent: #A78BFA;
-    --accent-dim: #221B38;
-    --canvas: #111114;
-    --surface: #18181C;
-    --surface-cool: #202026;
-    --sidebar: #0D0D0F;
-    --rail: #0D0D0F;
-    --blue: #82B6D9;
-    --blue-soft: #132634;
-    --terracotta: #E08A93;
-    --terracotta-soft: #351C25;
-    --saved: #8DBA9C;
-    --gold: #DAB56D;
-    --focus: #C4B5FD;
-    --radius-row: 3px;
-    --radius-panel: 3px;
-    --radius-pill: 3px;
-    --shadow-panel: none;
   }
 
   /* Scope geometry to controls, not color swatches, ink previews or canvas objects. */
@@ -40,7 +16,7 @@
   .notebook-dialog, .voice-caption, .ink-options-popover, .note-create-menu,
   .mindmap-branch-chooser,
   .mindmap-zoom, .mindmap-minimap, .mindmap-segments {
-    border-radius: 3px;
+    border-radius: var(--sk-radius-control);
     box-shadow: none;
   }
 
@@ -96,14 +72,14 @@
   }
   .rail-brand::after, .rail-button::after {
     color: var(--ink); background: var(--surface); border-color: var(--line);
-    border-radius: 3px; box-shadow: none; font-family: var(--ui-font);
+    border-radius: var(--sk-radius-control); box-shadow: none; font-family: var(--ui-font);
     transform: translateY(-50%);
   }
   .rail-brand:hover::after, .rail-button:hover::after,
   .rail-brand:focus-visible::after, .rail-button:focus-visible::after { transform: translateY(-50%); }
   .hold-create-button, .hold-create-button.is-holding, .hold-create-button.is-pressing,
   .hold-create-button[aria-expanded="true"] { box-shadow: none; }
-  .sidebar-create-control #new-note { border: 1px solid var(--line); border-radius: 3px; color: var(--accent); background: var(--surface-cool); }
+  .sidebar-create-control #new-note { border: 1px solid var(--line); border-radius: var(--sk-radius-control); color: var(--accent); background: var(--surface-cool); }
 
   .note-pane-title strong, .note-list-item, .notebook-tab, .notebook-picker,
   .property-note-info strong, .setting-row, .setting-field-heading,
@@ -181,9 +157,7 @@
   .clear-note-action:hover, .dialog-primary, .print-button {
     color: var(--rail); background: var(--accent); border-color: var(--accent);
   }
-  .dialog-primary:hover, .print-button:hover { color: var(--rail); background: var(--focus); }
   .dialog-danger { color: var(--rail); background: var(--terracotta); border-color: var(--terracotta); }
-  .dialog-danger:hover { background: #ff927b; }
   .notebook-color input:checked + span { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--notebook-color); }
   .search-backdrop.open, .notebook-dialog::backdrop { background: rgba(0, 0, 0, .65); backdrop-filter: none; }
   .print-preview { color: var(--ink); background: var(--canvas); }
@@ -203,8 +177,4 @@
     .note-title { max-width: min(25vw, 100px, calc(44vw - 80px)); font-size: 12px; }
   }
 
-  @media (prefers-contrast: more) {
-    :root { --line: #84988d; --muted: #d0dbd5; }
-    .tool-dock, .search-button { border-color: var(--ink); }
-  }
 }
