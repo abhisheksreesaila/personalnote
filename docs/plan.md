@@ -88,3 +88,11 @@ Decision: pywebview native window around the existing local server (no Rust tool
 - [ ] microphone (hold-to-talk) works inside the window where the OS allows it, with a visible message where it doesn't
 - [ ] on macOS a double-clickable Personal Note.app can be built with one script (verified on a Mac by the captain); on Linux a launcher entry is provided
 - [ ] cold start to a usable canvas is measured and reported
+
+## F-012 Match the mockup [doing]
+Design: Crayon-Canvas artboard (canvas link in docs/design/personal-note.md) · Needs: F-004
+Captain: "the mock-up was way better"; buttons not as intended; nothing to drop on the canvas.
+- [ ] Crayon paper is white on screen as in the mockup (print unchanged; Paper and Night keep their paper)
+- [ ] a note opens zoomed to show whole pages on the dotted desk, with page edges, page labels, and the ghost "+ Page" visible while dragging past an edge
+- [ ] the dock has Sticky note, Shape and Image tools like the mockup; stickies and shapes save, undo, connect and print
+- [ ] dock, top bar, sidebar and zoom buttons match the mockup's sizes, radii, glass and states, checked side by side with screenshots in all three skins
