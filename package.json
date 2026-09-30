@@ -19,11 +19,13 @@
     "voice:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-voice.ps1",
     "voice:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-voice.ps1",
     "build": "vite build",
+    "benchmark:canvas": "node scripts/benchmark-canvas.mjs",
     "benchmark:bundle": "npm run build && node scripts/check-performance-budget.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {
     "concurrently": "^10.0.3",
+    "playwright": "^1.62.1",
     "vite": "^8.1.1"
   },
   "dependencies": {

@@ -370,30 +370,18 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .workspace {
   position: relative;
   flex: 1;
-  overflow: auto;
-  padding: 92px max(140px, calc((100vw - var(--rail-width) - 860px) / 2)) 180px;
+  overflow: hidden;
   background-color: var(--canvas);
-  scrollbar-color: #aaa59a transparent;
 }
+/* The canvas fills the workspace; page tiles are painted by the canvas itself. */
 .paper {
-  position: relative;
-  margin: 0 auto;
-  width: 860px;
-  height: 1080px;
-  background-color: var(--paper);
-  background-image:
-    linear-gradient(to right, transparent calc(100% - 1px), #c9c5bc calc(100% - 1px)),
-    linear-gradient(to bottom, transparent calc(100% - 1px), #c9c5bc calc(100% - 1px));
-  background-size: var(--page-width, 860px) var(--page-height, 1080px);
-  box-shadow: 0 2px 4px rgba(49, 45, 36, .1), 0 18px 48px rgba(49, 45, 36, .12);
-  overflow: visible;
-  transition: width 560ms cubic-bezier(.45, 0, .55, 1), height 560ms cubic-bezier(.45, 0, .55, 1);
-  will-change: width, height;
+  position: absolute;
+  inset: 0;
 }
 .paper::after {
   content: '';
   position: absolute;
-  inset: -3px;
+  inset: 0;
   border: 2px solid transparent;
   pointer-events: none;
   transition: border-color 160ms ease, box-shadow 160ms ease;
@@ -407,13 +395,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   0%, 100% { border-color: #4D839C; box-shadow: 0 0 0 2px rgba(77,131,156,.16), 0 0 18px rgba(77,131,156,.36); }
   50% { border-color: #B86B4B; box-shadow: 0 0 0 3px rgba(184,107,75,.14), 0 0 28px rgba(184,107,75,.38); }
 }
-.paper.is-expanding,
-.paper.is-shrinking {
-  overflow: visible;
-  transition-duration: 560ms;
-  transition-timing-function: cubic-bezier(.45, 0, .55, 1);
-}
-.paper.is-shrinking { overflow: hidden; }
 .paper.is-dragging { z-index: auto; }
 .canvas-container { position: absolute !important; inset: 0; z-index: 2; }
 .paper.is-dragging .canvas-container { z-index: 20; }
@@ -1033,7 +1014,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .mobile-editor-back { display: grid !important; width: 34px; height: 34px; flex: 0 0 34px; }
   .note-title { min-width: 0; width: auto; max-width: min(25vw, 100px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .properties-trigger { margin-left: auto; }
-  .workspace { padding: 64px 12px 112px; }
   .canvas-container { touch-action: none; }
   .mindmap-active .workspace { padding: 0; }
   .mindmap-minimap { display: none; }
@@ -1080,7 +1060,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 }
 
 @media (max-width: 560px) {
-  .workspace { padding: 88px 12px 96px; }
   .tool-dock { display: none; }
   .mobile-capture-controls { position: fixed; z-index: 22; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 8px; }
   .mobile-capture-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; font: 600 12px/1 var(--ui-font, "IBM Plex Mono", monospace); cursor: pointer; }
@@ -1102,7 +1081,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .tool-dock .dock-control { transform: none !important; transition: none; }
   .search-button, .voice-button, .properties-trigger { --standalone-scale: 1 !important; transition: none; }
   .search-button span, .search-button kbd { transition: none; }
-  .paper { transition-duration: 1ms; animation: none; }
+  .paper { animation: none; }
   .sidebar { transition-duration: 1ms; }
   .paper.voice-listening::after, .voice-button.active { animation: none; }
   .spotlight, .search-backdrop { transition-duration: 1ms; }

@@ -38,7 +38,7 @@
   .sidebar, .properties-panel, .settings-panel { box-shadow: none; }
   .topbar { background: var(--rail); border-bottom: 1px solid var(--line); }
   .workspace { background-image: none; scrollbar-color: var(--line) var(--canvas); }
-  .paper { color-scheme: light; box-shadow: 0 0 0 1px var(--line); animation: none; }
+  .paper { color-scheme: light; animation: none; }
 
   .rail-brand, .brand-name, .note-title, .note-pane-title strong,
   .note-list-item span, .mobile-library-heading, .properties-heading h2,

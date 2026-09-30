@@ -13,10 +13,21 @@ import { flushPendingHistory } from './modules/editor/history.js'
 import { mountAgentSync } from './modules/sync/index.js'
 import { mergeRemoteAppends, pickFlagBlock } from './modules/sync/changes.js'
 import { prettifySelection } from './modules/editor/prettify.js'
+import {
+  clampView,
+  easeInOut,
+  lerpExtents,
+  pageExtents,
+  shiftExtents,
+  viewMargins,
+  wheelPanDelta,
+  zoomAtPoint,
+} from './modules/editor/viewport.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
-const CANVAS_OVERSCAN = 48
+const CANVAS_ZOOM_MIN = 0.25
+const CANVAS_ZOOM_MAX = 4
 const EDGE_OVERFLOW = 6
 const EDGE_SHRINK = 0
 const TRANSFORM_EDGE_MARGIN = 24
@@ -511,10 +522,12 @@ function savePreferences() {
 loadPreferences()
 
 const canvas = new Canvas('note-canvas', {
-  width: PAGE_WIDTH,
-  height: PAGE_HEIGHT,
+  width: elements.workspace.clientWidth || PAGE_WIDTH,
+  height: elements.workspace.clientHeight || PAGE_HEIGHT,
   backgroundColor: 'transparent',
   preserveObjectStacking: false,
+  renderOnAddRemove: false,
+  skipOffscreen: true,
   selectionColor: 'rgba(28, 112, 168, 0.08)',
   selectionBorderColor: '#1c70a8',
 })
@@ -726,12 +739,13 @@ function setSaveState(status, isError = false) {
     : `<span></span>${status}`
 }
 
-let resizeTimer
-let viewportMotionFrame
 let viewportOffsetX = 0
 let viewportOffsetY = 0
-let renderedPaperWidth = PAGE_WIDTH
-let renderedPaperHeight = PAGE_HEIGHT
+let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
+let pageAnimation = null
+let pageColors = { paper: '#fbfaf5', grid: '#c9c5bc', edge: '#2c2c34' }
+let lastViewportScrollTop = 0
+
 function getDisplayScale() {
   if (window.innerWidth > 800) return 1
   return Math.min(1, (elements.workspace.clientWidth - 24) / PAGE_WIDTH)
@@ -745,98 +759,137 @@ function getInputFontSize() {
   return window.innerWidth <= 800 ? Math.max(32, state.fontSize) : state.fontSize
 }
 
-function setCanvasDisplaySize(width, height) {
-  const scale = getCanvasScale()
-  const scaledWidth = (width + CANVAS_OVERSCAN) * scale
-  const scaledHeight = (height + CANVAS_OVERSCAN) * scale
-  canvas.setDimensions({ width: scaledWidth, height: scaledHeight })
-  canvas.setViewportTransform([
-    scale, 0, 0, scale,
-    viewportOffsetX, viewportOffsetY,
-  ])
+function refreshPageColors() {
+  const styles = getComputedStyle(document.documentElement)
+  const read = (name, fallback) => styles.getPropertyValue(name).trim() || fallback
+  pageColors = {
+    paper: read('--paper', '#fbfaf5'),
+    grid: '#c9c5bc',
+    edge: read('--line', '#2c2c34'),
+  }
 }
 
-function setCanvasViewportOffset(offsetX = 0, offsetY = 0) {
-  viewportOffsetX = offsetX
-  viewportOffsetY = offsetY
-  const zoom = getCanvasScale()
-  canvas.setViewportTransform([zoom, 0, 0, zoom, offsetX, offsetY])
+// The Fabric canvas is always exactly as large as the workspace. Page growth
+// only changes the page count and the tiles drawn behind the objects.
+function syncCanvasSize() {
+  const width = Math.max(1, elements.workspace.clientWidth)
+  const height = Math.max(1, elements.workspace.clientHeight)
+  if (canvas.getWidth() === width && canvas.getHeight() === height) return false
+  canvas.setDimensions({ width, height })
+  return true
+}
+
+function pageExtentsTarget() {
+  return pageExtents(state.pages.columns, state.pages.rows, PAGE_WIDTH, PAGE_HEIGHT)
+}
+
+function clampedViewOffset(offsetX, offsetY) {
+  const target = pageExtentsTarget()
+  return clampView({ x: offsetX, y: offsetY }, {
+    viewW: canvas.getWidth(),
+    viewH: canvas.getHeight(),
+    contentW: target.right,
+    contentH: target.bottom,
+    scale: getCanvasScale(),
+    margins: viewMargins(window.innerWidth),
+  })
+}
+
+function notifyViewportScrolled() {
+  const scrollTop = viewMargins(window.innerWidth).top - viewportOffsetY
+  handleWorkspaceScroll(scrollTop, lastViewportScrollTop)
+  lastViewportScrollTop = scrollTop
+}
+
+function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY) {
+  const next = clampedViewOffset(offsetX, offsetY)
+  const moved = next.y !== viewportOffsetY
+  viewportOffsetX = next.x
+  viewportOffsetY = next.y
+  const scale = getCanvasScale()
+  canvas.setViewportTransform([scale, 0, 0, scale, next.x, next.y])
   canvas.requestRenderAll()
+  if (moved) notifyViewportScrolled()
 }
 
-function animateViewportCompensation(deltaX, deltaY, duration = PAGE_EXPAND_DURATION) {
-  cancelAnimationFrame(viewportMotionFrame)
-  const scaledDeltaX = deltaX * getCanvasScale()
-  const scaledDeltaY = deltaY * getCanvasScale()
-  if (!scaledDeltaX && !scaledDeltaY) return setCanvasViewportOffset()
-
-  const startScrollLeft = elements.workspace.scrollLeft
-  const startScrollTop = elements.workspace.scrollTop
-  const startOffsetX = viewportOffsetX - scaledDeltaX
-  const startOffsetY = viewportOffsetY - scaledDeltaY
-  const targetScrollLeft = Math.max(0, startScrollLeft + scaledDeltaX - viewportOffsetX)
-  const targetScrollTop = Math.max(0, startScrollTop + scaledDeltaY - viewportOffsetY)
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    setCanvasViewportOffset()
-    elements.workspace.scrollLeft = targetScrollLeft
-    elements.workspace.scrollTop = targetScrollTop
-    return
-  }
-  const startedAt = performance.now()
-
-  setCanvasViewportOffset(startOffsetX, startOffsetY)
-  const frame = (now) => {
-    const progress = Math.min(1, (now - startedAt) / duration)
-    const eased = progress * progress * (3 - 2 * progress)
-    setCanvasViewportOffset(startOffsetX * (1 - eased), startOffsetY * (1 - eased))
-    elements.workspace.scrollLeft = startScrollLeft + (targetScrollLeft - startScrollLeft) * eased
-    elements.workspace.scrollTop = startScrollTop + (targetScrollTop - startScrollTop) * eased
-    if (progress < 1) viewportMotionFrame = requestAnimationFrame(frame)
-    else {
-      setCanvasViewportOffset()
-      elements.workspace.scrollLeft = targetScrollLeft
-      elements.workspace.scrollTop = targetScrollTop
-    }
-  }
-  viewportMotionFrame = requestAnimationFrame(frame)
-}
-
-function resizePaper(animate = false) {
-  const width = state.pages.columns * PAGE_WIDTH
-  const height = state.pages.rows * PAGE_HEIGHT
-  const currentWidth = renderedPaperWidth
-  const currentHeight = renderedPaperHeight
-  const isExpanding = width > currentWidth || height > currentHeight
-  const isShrinking = width < currentWidth || height < currentHeight
-  const resizeDuration = isExpanding ? PAGE_EXPAND_DURATION : PAGE_RESIZE_DURATION
-  state.displayScale = getDisplayScale()
-  clearTimeout(resizeTimer)
-  elements.paper.classList.toggle('is-expanding', animate && isExpanding)
-  elements.paper.classList.toggle('is-shrinking', animate && isShrinking)
-
-  if (animate && (width !== currentWidth || height !== currentHeight)) {
-    setCanvasDisplaySize(Math.max(width, currentWidth), Math.max(height, currentHeight))
-    resizeTimer = setTimeout(() => {
-      setCanvasDisplaySize(width, height)
-      elements.paper.classList.remove('is-expanding')
-      elements.paper.classList.remove('is-shrinking')
-      canvas.requestRenderAll()
-    }, resizeDuration)
-  } else {
-    setCanvasDisplaySize(width, height)
-    elements.paper.classList.remove('is-expanding')
-    elements.paper.classList.remove('is-shrinking')
-  }
-
-  renderedPaperWidth = width
-  renderedPaperHeight = height
+function resetCanvasView() {
   const scale = getCanvasScale()
-  elements.paper.style.width = `${width * scale}px`
-  elements.paper.style.height = `${height * scale}px`
-  elements.paper.style.setProperty('--page-width', `${PAGE_WIDTH * scale}px`)
-  elements.paper.style.setProperty('--page-height', `${PAGE_HEIGHT * scale}px`)
+  const target = pageExtentsTarget()
+  viewportOffsetX = (canvas.getWidth() - target.right * scale) / 2
+  viewportOffsetY = viewMargins(window.innerWidth).top - 38
+  lastViewportScrollTop = 38
+  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY)
+}
+
+function zoomCanvasAt(nextZoom, point) {
+  const zoom = Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, nextZoom))
+  if (zoom === state.canvasZoom) return
+  const previous = { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }
+  state.canvasZoom = zoom
+  const next = zoomAtPoint(previous, getCanvasScale(), point)
+  setCanvasViewportOffset(next.x, next.y)
+}
+
+function stepPageAnimation(now) {
+  if (!pageAnimation) return
+  const progress = (now - pageAnimation.startedAt) / PAGE_EXPAND_DURATION
+  pageExtentsNow = lerpExtents(pageAnimation.from, pageAnimation.to, easeInOut(progress))
+  canvas.requestRenderAll()
+  if (progress < 1) pageAnimation.frame = requestAnimationFrame(stepPageAnimation)
+  else pageAnimation = null
+}
+
+// Retargets the drawn page tiles. `shift` is the world distance every object
+// moved when pages were prepended, so the view is compensated and nothing jumps.
+function resizePaper(animate = false, shiftX = 0, shiftY = 0) {
+  state.displayScale = getDisplayScale()
+  syncCanvasSize()
+  const target = pageExtentsTarget()
+  const from = shiftExtents(pageExtentsNow, shiftX, shiftY)
+  if (pageAnimation) cancelAnimationFrame(pageAnimation.frame)
+  pageAnimation = null
+  const changed = from.left !== target.left || from.top !== target.top
+    || from.right !== target.right || from.bottom !== target.bottom
+  if (animate && changed && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    pageExtentsNow = from
+    pageAnimation = { from, to: target, startedAt: performance.now(), frame: 0 }
+    pageAnimation.frame = requestAnimationFrame(stepPageAnimation)
+  } else {
+    pageExtentsNow = target
+  }
+  const scale = getCanvasScale()
+  if (shiftX || shiftY) {
+    viewportOffsetX -= shiftX * scale
+    viewportOffsetY -= shiftY * scale
+  }
+  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY)
   const count = state.pages.columns * state.pages.rows
   elements.pageCount.textContent = `${state.pages.columns} x ${state.pages.rows} / ${count} ${count === 1 ? 'page' : 'pages'}`
+}
+
+function drawPageTiles(ctx) {
+  const extents = pageExtentsNow
+  const width = extents.right - extents.left
+  const height = extents.bottom - extents.top
+  if (width <= 0 || height <= 0) return
+  const hairline = 1 / getCanvasScale()
+  const v = canvas.viewportTransform
+  ctx.save()
+  ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5])
+  ctx.fillStyle = pageColors.edge
+  ctx.fillRect(extents.left - hairline, extents.top - hairline, width + hairline * 2, height + hairline * 2)
+  ctx.fillStyle = pageColors.paper
+  ctx.fillRect(extents.left, extents.top, width, height)
+  ctx.fillStyle = pageColors.grid
+  const firstColumn = Math.max(1, Math.ceil((extents.left + 1) / PAGE_WIDTH))
+  for (let x = firstColumn * PAGE_WIDTH; x < extents.right; x += PAGE_WIDTH) {
+    ctx.fillRect(x - hairline, extents.top, hairline, height)
+  }
+  const firstRow = Math.max(1, Math.ceil((extents.top + 1) / PAGE_HEIGHT))
+  for (let y = firstRow * PAGE_HEIGHT; y < extents.bottom; y += PAGE_HEIGHT) {
+    ctx.fillRect(extents.left, y - hairline, width, hairline)
+  }
+  ctx.restore()
 }
 
 function moveAllObjects(deltaX, deltaY) {
@@ -994,8 +1047,7 @@ function reconcilePages(force = false) {
   }
 
   if (changed) {
-    resizePaper(true)
-    animateViewportCompensation(viewportDeltaX, viewportDeltaY)
+    resizePaper(true, viewportDeltaX, viewportDeltaY)
   }
   canvas.requestRenderAll()
   return changed
@@ -1034,8 +1086,7 @@ function expandPagesDuringTransform() {
   }
 
   if (changed) {
-    resizePaper(true)
-    animateViewportCompensation(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
+    resizePaper(true, prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
   }
   elements.paper.classList.add('is-dragging')
   canvas.requestRenderAll()
@@ -1414,6 +1465,7 @@ async function selectNote(id) {
     } else {
       state.pages = note.pageState || { columns: 1, rows: 1 }
       resizePaper()
+      resetCanvasView()
       await canvas.loadFromJSON(note.content || { objects: [] })
       bindCanvasTextObjects()
       normalizedNote = normalizeNotebookFonts()
@@ -1425,12 +1477,7 @@ async function selectNote(id) {
     }
     setSaveState('Saved')
     renderNoteList()
-    requestAnimationFrame(() => {
-      elements.workspace.scrollTo({
-        left: Math.max(0, (elements.paper.offsetWidth - elements.workspace.clientWidth) / 2),
-        top: 38,
-      })
-    })
+    requestAnimationFrame(resetCanvasView)
   } catch (error) {
     console.error(error)
     setSaveState('Could not load', true)
@@ -2245,7 +2292,6 @@ function updateCanvasPinch() {
   const scale = getCanvasScale()
   const offsetX = center.x - rect.left - canvasPinchGesture.worldX * scale
   const offsetY = center.y - rect.top - canvasPinchGesture.worldY * scale
-  resizePaper()
   setCanvasViewportOffset(offsetX, offsetY)
   return true
 }
@@ -2307,6 +2353,42 @@ canvas.upperCanvasEl.addEventListener('pointercancel', (event) => {
     canvas.isDrawingMode = state.tool === 'pen' || state.tool === 'highlight'
   }
 }, { capture: true })
+
+canvas.on('before:render', ({ ctx }) => drawPageTiles(ctx))
+// renderOnAddRemove is off so bulk loads do not repaint per object; one batched
+// repaint per frame covers every add and remove.
+;['object:added', 'object:removed'].forEach((eventName) => {
+  canvas.on(eventName, () => canvas.requestRenderAll())
+})
+
+elements.workspace.addEventListener('wheel', (event) => {
+  if (state.activeNoteType !== 'canvas' || event.target.closest?.('.tool-dock, .properties-panel, .settings-panel, .sidebar')) return
+  event.preventDefault()
+  if (event.ctrlKey || event.metaKey) {
+    const rect = elements.workspace.getBoundingClientRect()
+    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    zoomCanvasAt(state.canvasZoom * Math.exp(-event.deltaY * 0.01), point)
+    return
+  }
+  const { dx, dy } = wheelPanDelta(event)
+  setCanvasViewportOffset(viewportOffsetX - dx, viewportOffsetY - dy)
+}, { passive: false })
+
+let mousePan = null
+canvas.on('mouse:down', ({ e }) => {
+  if (state.tool !== 'hand' || e.pointerType === 'touch' || e.touches) return
+  mousePan = { x: e.clientX, y: e.clientY, offsetX: viewportOffsetX, offsetY: viewportOffsetY }
+  canvas.setCursor('grabbing')
+})
+canvas.on('mouse:move', ({ e }) => {
+  if (!mousePan) return
+  setCanvasViewportOffset(mousePan.offsetX + e.clientX - mousePan.x, mousePan.offsetY + e.clientY - mousePan.y)
+})
+canvas.on('mouse:up', () => {
+  if (!mousePan) return
+  mousePan = null
+  canvas.setCursor('grab')
+})
 
 canvas.on('before:path:created', ({ path }) => {
   const points = canvas.freeDrawingBrush?._points || []
@@ -2597,7 +2679,6 @@ const SEARCH_TOP_REVEAL = 10
 let searchReveal = 1
 let targetSearchReveal = 1
 let searchRevealFrame = null
-let searchScrollTop = elements.workspace.scrollTop
 let searchHideAccumulator = 0
 const reducedMotionSearch = window.matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -2637,9 +2718,8 @@ function revealSearchButton() {
 searchButton.style.setProperty('--search-reveal', '1')
 searchButton.addEventListener('focus', revealSearchButton)
 searchButton.addEventListener('click', openSearch)
-elements.workspace.addEventListener('scroll', () => {
-  const nextScrollTop = elements.workspace.scrollTop
-  const delta = nextScrollTop - searchScrollTop
+function handleWorkspaceScroll(nextScrollTop, previousScrollTop) {
+  const delta = nextScrollTop - previousScrollTop
 
   if (document.activeElement === searchButton) {
     revealSearchButton()
@@ -2658,8 +2738,7 @@ elements.workspace.addEventListener('scroll', () => {
     if (delta < SEARCH_SHOW_UP_DELTA) searchHideAccumulator = Math.max(0, searchHideAccumulator + delta)
   }
 
-  searchScrollTop = nextScrollTop
-}, { passive: true })
+}
 reducedMotionSearch.addEventListener('change', () => {
   if (searchRevealFrame) {
     cancelAnimationFrame(searchRevealFrame)
@@ -2889,7 +2968,9 @@ document.addEventListener('keydown', (event) => {
 
 async function initialize() {
   await prepareCanvasFonts()
+  refreshPageColors()
   resizePaper()
+  resetCanvasView()
   syncDefaultTypographySettings()
   loadCapabilitySettings()
   try {
@@ -2936,9 +3017,20 @@ async function initialize() {
 
 document.fonts.ready.then(refreshCanvasTextMetrics)
 document.fonts.addEventListener('loadingdone', refreshCanvasTextMetrics)
-window.addEventListener('resize', () => {
-  if (state.activeNoteType === 'canvas') resizePaper()
-})
+function handleWorkspaceResize() {
+  if (state.activeNoteType !== 'canvas') return
+  const previous = { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }
+  state.displayScale = getDisplayScale()
+  syncCanvasSize()
+  refreshPageColors()
+  const center = { x: canvas.getWidth() / 2, y: canvas.getHeight() / 2 }
+  const next = zoomAtPoint(previous, getCanvasScale(), center)
+  setCanvasViewportOffset(next.x, next.y)
+}
+window.addEventListener('resize', handleWorkspaceResize)
+if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResize).observe(elements.workspace)
 setupVoiceInput()
 setupToolOptionGestures()
+// Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset }
 initialize()
