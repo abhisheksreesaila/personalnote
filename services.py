@@ -66,6 +66,10 @@ class UnsupportedNoteTypeError(ValueError):
     pass
 
 
+class AppendTextError(ValueError):
+    """Text to append is blank or too long."""
+
+
 class NoteService:
     def __init__(self, database_path: Path | str):
         self.database_path = Path(database_path)
@@ -571,9 +575,9 @@ class NoteService:
         """
         text = str(text).strip("\n")
         if not text.strip():
-            raise ValueError("Text to append is empty")
+            raise AppendTextError("Text to append is empty")
         if len(text) > APPEND_MAX_LENGTH:
-            raise ValueError("Text to append is too long")
+            raise AppendTextError("Text to append is too long")
         note = self.get_note(note_id)
         if note["noteType"] != "canvas":
             raise UnsupportedNoteTypeError("Text can only be appended to canvas notes")

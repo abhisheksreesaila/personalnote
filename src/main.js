@@ -11,7 +11,7 @@ import { createMobileHoldController } from './modules/voice/mobile-hold-controll
 import { pageBoundedTextLayout } from './modules/voice/text-layout.js'
 import { flushPendingHistory } from './modules/editor/history.js'
 import { mountAgentSync } from './modules/sync/index.js'
-import { mergeRemoteAppends } from './modules/sync/changes.js'
+import { mergeRemoteAppends, pickFlagBlock } from './modules/sync/changes.js'
 import { prettifySelection } from './modules/editor/prettify.js'
 
 const PAGE_WIDTH = 860
@@ -1457,6 +1457,7 @@ async function refreshWorkspaceLists() {
 async function applyRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
   state.loading = true
+  let reconciled = false
   try {
     elements.title.value = note.title
     state.pages = note.pageState || { columns: 1, rows: 1 }
@@ -1469,10 +1470,12 @@ async function applyRemoteNote(note) {
     syncedIds = canvasObjectIds(note.content)
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
+    reconciled = reconcilePages(true)
     setSaveState('Saved')
     renderNoteList()
   } finally {
     state.loading = false
+    if (reconciled) queueSave()
   }
 }
 
@@ -2901,7 +2904,26 @@ async function initialize() {
         const note = state.notes.find((item) => item.id === state.activeNoteId)
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
       },
-      hasUnsavedEdits: () => unsavedEdits || saveInFlight,
+      // Also true while typing is not yet in history or a text object is being edited.
+      hasUnsavedEdits: () => unsavedEdits || saveInFlight || canvas.getObjects().some((object) => object.isEditing)
+        || (state.activeNoteType === 'canvas' && snapshot() !== state.history[state.historyIndex]),
+      locateFlagBlock: (action) => {
+        const block = pickFlagBlock(action, canvas.getObjects())
+        if (!block) return null
+        const corner = block.aCoords?.tl || { x: block.left, y: block.top }
+        const [a, b, c, d, e, f] = canvas.viewportTransform
+        const box = canvas.upperCanvasEl.getBoundingClientRect()
+        const ratio = box.width / canvas.getWidth()
+        const point = { x: box.left + (a * corner.x + c * corner.y + e) * ratio, y: box.top + (b * corner.x + d * corner.y + f) * ratio }
+        const view = elements.workspace.getBoundingClientRect()
+        const inside = point.x >= view.left && point.x <= view.right && point.y >= view.top && point.y <= view.bottom
+        return inside ? point : null
+      },
+      onLayout: (callback) => {
+        canvas.on('after:render', callback)
+        elements.workspace.addEventListener('scroll', callback, { passive: true })
+        window.addEventListener('resize', callback)
+      },
       reload: applyRemoteNote,
       merge: mergeRemoteNote,
       refreshLists: refreshWorkspaceLists,

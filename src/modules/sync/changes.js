@@ -35,6 +35,24 @@ export function describeAgentPresence(agents) {
   }
 }
 
+// The agent (if any) currently working on the open note, for the cursor flag.
+export function agentFlagFor(agents, activeNoteId) {
+  if (!Array.isArray(agents) || activeNoteId == null) return null
+  const mine = agents.filter((agent) => agent.noteId === activeNoteId)
+  const chosen = mine.find((agent) => agent.action === 'writing') || mine[0]
+  if (!chosen) return null
+  const name = String(chosen.agent || 'Agent').replace(/ Code$/, '')
+  return { agent: chosen.agent, action: chosen.action, label: `${name} · ${chosen.action}` }
+}
+
+// Writes point at the last (appended) text block, reads at the first one.
+export function pickFlagBlock(action, objects) {
+  const texts = objects
+    .filter((object) => typeof object?.text === 'string' && object.text.trim())
+    .sort((a, b) => (a.top ?? 0) - (b.top ?? 0) || (a.left ?? 0) - (b.left ?? 0))
+  return action === 'writing' ? texts.at(-1) : texts[0]
+}
+
 export function createChangePoller({
   fetchChanges,
   onUpdate,

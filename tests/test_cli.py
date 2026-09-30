@@ -100,6 +100,11 @@ class CliContractTests(unittest.TestCase):
         self.assertNotIn("stale", text)
         self.assertIn("From a pipe", text)
 
+    def test_append_of_blank_text_is_a_clear_error(self):
+        note = self.create_note()
+        code, result = self.run_cli("notes", "append", str(note["id"]), "--text", "  ")
+        self.assertEqual((code, result["ok"]), (2, False))
+
     def test_append_to_a_mind_map_is_a_clear_error(self):
         _, note = self.run_cli("notes", "create", "--title", "Map", "--type", "mindmap")
         code, result = self.run_cli("notes", "append", str(note["id"]), "--text", "x")

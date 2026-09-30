@@ -16,7 +16,7 @@ from typing import Any
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
-from services import ConflictError, NoteService, NotFoundError, UnsupportedNoteTypeError, WorkspaceImportError
+from services import ConflictError, NoteService, NotFoundError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_AGENT = "Claude Code"
@@ -260,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         if result is not None:
             emit(result)
         return 0
-    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, ValueError, PortabilityError, WorkspaceImportError, PluginManifestError) as error:
+    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, PortabilityError, WorkspaceImportError, PluginManifestError) as error:
         emit({"ok": False, "error": str(error)})
         return 2
     except Exception:

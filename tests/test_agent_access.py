@@ -8,6 +8,7 @@ from note_text import note_plain_text
 from routes import create_app
 from services import (
     AGENT_ACTIVITY_WINDOW,
+    AppendTextError,
     ConflictError,
     NoteService,
     NotFoundError,
@@ -140,7 +141,7 @@ class AppendTextTests(TempServiceCase):
 
     def test_append_rejects_blank_text(self):
         note = self.service.create_note({"title": "Empty"})
-        with self.assertRaises(ValueError):
+        with self.assertRaises(AppendTextError):
             self.service.append_text(note["id"], "   ")
 
     def test_appended_text_is_searchable(self):
@@ -170,6 +171,19 @@ class AgentActivityTests(TempServiceCase):
     def test_unknown_actions_are_rejected(self):
         with self.assertRaises(ValueError):
             self.service.record_agent_activity("Claude Code", None, "deleting")
+
+
+class LegacyDatabaseTests(TempServiceCase):
+    def test_a_database_created_before_agent_activity_upgrades_in_place(self):
+        note = self.service.create_note({"title": "Old"})
+        import sqlite3
+
+        with sqlite3.connect(self.database_path) as connection:
+            connection.execute("DROP TABLE agent_activity")
+        upgraded = NoteService(self.database_path)
+        upgraded.record_agent_activity("Claude Code", note["id"], "reading")
+        self.assertEqual(upgraded.active_agents()[0]["noteId"], note["id"])
+        self.assertEqual(upgraded.get_note(note["id"])["title"], "Old")
 
 
 class ChangesSinceTests(TempServiceCase):
