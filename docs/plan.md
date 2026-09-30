@@ -54,10 +54,10 @@ Needs: none
 - [x] while an agent is reading or writing a note, the app shows the "Claude Code is reading" chip and cursor flag
 - [x] AGENTS.md invariant 8 and the product docs updated: agent access is now in scope
 
-## F-007 Cover page (Crayon) [doing]
+## F-007 Cover page (Crayon) [done]
 Design: Crayon cover artboard · Needs: F-003
-- [ ] landing page with the fanned PARA notebooks hero, "a page that grows" steps, "your agents can read it too", skins, final download call
-- [ ] works at phone width without horizontal scroll
+- [x] landing page with the fanned PARA notebooks hero, "a page that grows" steps, "your agents can read it too", skins, final call to open the notebook (no Mac download yet)
+- [x] works at phone width without horizontal scroll
 
 ## F-008 Agent sync polish [todo]
 Needs: F-006, F-002
