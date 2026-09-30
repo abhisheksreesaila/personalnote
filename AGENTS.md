@@ -30,7 +30,7 @@ These are internal contracts, not a public plugin SDK.
 5. Local transcription failure must be visible and must leave the note intact.
 6. Backup JSON is lossless and versioned. Import is validated, transactional, and merge-only; it never deletes or overwrites existing notes.
 7. Markdown export is explicitly lossy and never fetches remote assets.
-8. The v1 core has no model worker, automatic suggestions, agent endpoint, chat, sync, or authentication.
+8. Local agents (Claude Code and similar) are first-class clients through `bin/personal-note` (`personal_note_cli.py`), which goes through `NoteService` with revision checks. There is still no model worker, automatic suggestions, chat, sync, authentication, or remote agent endpoint; agents act only when they run the CLI.
 9. `src/workspace-theme.css` is screen-only. Do not change saved canvas appearance or print output when changing app chrome.
 
 ## Commands
@@ -41,7 +41,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run dev
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup -v
+python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access -v
 npm run benchmark:bundle
 ```
 

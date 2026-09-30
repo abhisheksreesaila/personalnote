@@ -2,7 +2,7 @@
 
 Personal Note is a fast, local notebook for technical and creative project work. It combines a spatial writing and drawing canvas, optional mind-map notes, editable voice transcripts, SQLite storage, search, and practical workspace exports.
 
-The v1 core does not include model providers, automatic suggestions, agent access, cloud sync, authentication, or a chat surface. Capture and retrieval remain deterministic and local.
+The v1 core does not include model providers, automatic suggestions, cloud sync, authentication, or a chat surface. Local agents such as Claude Code can search, read and write notes through the `personal-note` CLI (see below). Capture and retrieval remain deterministic and local.
 
 ## Run locally
 
@@ -103,25 +103,33 @@ Canvas and mind-map notes share the same notebook and API lifecycle. `noteType` 
 
 ## Local CLI
 
-`personal_note_cli.py` is a machine-readable local interface over the same `NoteService` and portability contracts as the web API. It emits JSON to stdout, returns `0` for success, `2` for expected user/input errors, and never bypasses revision or backup-import validation.
+`personal_note_cli.py` is a machine-readable local interface over the same `NoteService` and portability contracts as the web API. It emits JSON to stdout by default, returns `0` for success, `2` for expected user/input errors, and never bypasses revision or backup-import validation. `bin/personal-note` runs it with any Python 3 (standard library only, no virtualenv), so an agent needs only the checkout path.
 
 ```bash
-python personal_note_cli.py status
-python personal_note_cli.py notebooks list
-python personal_note_cli.py notes create --title "Idea" --text "A local searchable capture"
-python personal_note_cli.py search "searchable capture"
-python personal_note_cli.py export workspace --output backup.json
-python personal_note_cli.py import backup.json
-python personal_note_cli.py plugins inspect plugin-manifest.json
+bin/personal-note search "searchable capture"                 # JSON matches; add --text for readable lines
+bin/personal-note notes read 12 --text                        # plain text: canvas in reading order, mind maps as an outline
+bin/personal-note notes create --title "Idea" --text "A local searchable capture"
+bin/personal-note notes append 12 --text "One more thought"   # or pipe: echo "..." | bin/personal-note notes append 12
+bin/personal-note notes append 12 --text "..." --revision 5   # fail instead of writing over a newer note
+bin/personal-note status
+bin/personal-note export workspace --output backup.json
+bin/personal-note import backup.json
+bin/personal-note plugins inspect plugin-manifest.json
 ```
 
-Pass `--database /path/to/personal-note.db` before the command to target a specific workspace. The CLI does not provide remote access, plugin execution, or automatic agent actions.
+`npm run personal-note -- <command>` and `npm link` (which installs a `personal-note` command from `package.json`) work too. Pass `--database /path/to/personal-note.db` (or set `PERSONAL_NOTE_DB`) to target a specific workspace; the default is the same `data/personal-note.db` the app uses.
+
+### Using it from Claude Code
+
+Tell Claude Code the command, for example in your project's `CLAUDE.md`: "Search and edit my notes with `/path/to/personalnotev2/bin/personal-note` (run `--help` for commands; always read a note before appending)." Agent commands take `--agent NAME` (default `Claude Code`). While one runs, the open app shows a chip such as "Claude Code is reading" or "Claude Code is writing" for a few seconds, and appended text appears in the open note within about two seconds without a reload. If you have unsaved edits when an agent writes, your edits are kept and the agent's new text is added beside them. Appends go below the existing content and grow the page when needed; mind maps are readable but not writable by the CLI.
+
+There is no remote access, plugin execution, or model call in the app; an agent acts only when it runs the CLI on your machine.
 
 ## Validation
 
 ```bash
 npm run test:ui
-python -m unittest tests.test_api tests.test_cli tests.test_startup -v
+python -m unittest tests.test_api tests.test_cli tests.test_agent_access tests.test_startup -v
 npm run benchmark:bundle
 ```
 

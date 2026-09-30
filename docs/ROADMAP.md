@@ -15,6 +15,7 @@ Desktop core ships first. Small-screen responsiveness protects access to existin
 - Fast SQLite persistence with revision-checked updates.
 - Local FTS5 search across canvas text and mind-map labels.
 - Core FastHTML runtime with no model worker or automatic suggestion path.
+- Local agent access through the `personal-note` CLI, live sync of agent writes, and an agent presence chip.
 
 ### Internal boundaries
 
@@ -68,7 +69,7 @@ Prioritize evidence from real use before expanding scope:
 - General plugin marketplace
 - Automatic suggestions or rewriting
 - Model provider setup or cloud inference
-- Chat or assistant surfaces
+- Chat or assistant surfaces inside the app
 - Remote workspace access
 - Audio recording retention or playback
 - Sync, authentication, sharing, or multi-tenancy

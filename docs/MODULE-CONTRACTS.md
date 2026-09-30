@@ -24,7 +24,13 @@ The shell owns when calls occur. A module receives callbacks rather than importi
 
 ## Local CLI contract
 
-`personal_note_cli.py` is a local automation boundary, not a remote agent endpoint. It calls `NoteService` and `portability.py` directly through their established public methods, emits JSON on stdout, and uses stable exit codes (`0` success, `2` expected input/resource errors). It never accesses SQLite outside `NoteService`, bypasses revision checks, or grants any plugin additional authority.
+`personal_note_cli.py` (run as `bin/personal-note`) is the local agent and automation boundary, not a remote endpoint. It calls `NoteService`, `note_text.py` and `portability.py` directly through their established public methods, emits JSON on stdout by default (`--text` on `notes read` and `search` prints readable text), and uses stable exit codes (`0` success, `2` expected input/resource errors). It never accesses SQLite outside `NoteService`, bypasses revision checks, or grants any plugin additional authority.
+
+Agent-facing commands: `search`, `notes read` (canvas text in reading order, mind maps as an outline), `notes create --text`, and `notes append` (adds a text block below existing content, growing pages; `--revision N` fails on a stale note). Each accepts `--agent NAME` (default `Claude Code`) and records the agent's latest activity (`reading` or `writing`, note, timestamp) through `NoteService.record_agent_activity`; activity expires after `AGENT_ACTIVITY_WINDOW` seconds. Append refuses mind-map notes and never rewrites existing objects.
+
+## Agent sync contract
+
+`GET /api/changes?since=<sequence>` returns the workspace sequence, the change rows after `since` (`resourceKind`, `resourceId`, `revision`, `changeType`), an `overflow` flag, and the currently active agents. Omit `since` for a baseline. `src/modules/sync/` polls it every two seconds while the page is visible, refreshes lists, reloads the open note when it has no unsaved edits, and otherwise merges only objects the agent added (by `semanticId`) into the user's canvas so local edits are never discarded. The shell supplies canvas operations through callbacks; the module never imports shell state.
 
 ## Mind-map contract
 

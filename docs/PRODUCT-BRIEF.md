@@ -6,7 +6,7 @@ Status: implementation reference for the desktop core.
 
 Personal Note is a **fast local notebook for technical and creative project thinkers**. A note can be an adaptive canvas for writing and drawing or, when deliberately chosen, a mind map. The default path is immediate: open a note, place text or ink, and continue thinking without setup or background work.
 
-V1 is a notebook product, not an assistant product. It ships no automatic suggestions, model configuration, chat surface, agent controls, cloud inference, sync, or authentication. Those concerns may be explored later as optional integrations only after the notebook core is stable.
+V1 is a notebook product, not an assistant product. It ships no automatic suggestions, model configuration, chat surface, cloud inference, sync, or authentication. Local agents are first-class clients: an agent such as Claude Code runs the `personal-note` CLI to search, read, create and append to notes on the same machine, and the open app shows the change and an agent presence chip. The notebook never calls a model itself.
 
 ## V1 outcomes
 
@@ -67,7 +67,7 @@ The Markdown ZIP is intentionally lossy. It orders canvas text spatially, render
 - Model provider setup or bundled reasoning features
 - Automatic suggestions, classification, rewriting, or generated diagrams
 - Persistent chat
-- Remote workspace or agent access
+- Remote workspace access, or agents that run inside the app (local agent access through the CLI is in scope)
 - Audio recording retention or playback
 - Sync, accounts, authentication, sharing, or multi-tenancy
 - Native mobile product work

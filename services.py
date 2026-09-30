@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -35,6 +36,18 @@ NOTE_TYPES = {"canvas", "mindmap"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
+PAGE_WIDTH = 860
+PAGE_HEIGHT = 1080
+APPEND_LEFT = 72
+APPEND_TOP = 80
+APPEND_GAP = 24
+APPEND_FONT_SIZE = 24
+APPEND_LINE_HEIGHT = 1.45
+APPEND_PADDING = 8
+APPEND_MAX_LENGTH = 100_000
+AGENT_ACTIVITY_WINDOW = 10.0
+AGENT_ACTIONS = {"reading", "writing"}
+CHANGES_LIMIT = 500
 
 
 class NotFoundError(Exception):
@@ -47,6 +60,14 @@ class ConflictError(Exception):
 
 class WorkspaceImportError(ValueError):
     pass
+
+
+class UnsupportedNoteTypeError(ValueError):
+    pass
+
+
+class AppendTextError(ValueError):
+    """Text to append is blank or too long."""
 
 
 class NoteService:
@@ -517,6 +538,91 @@ class NoteService:
             connection.commit()
         return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
 
+    @staticmethod
+    def object_bottom(item: dict) -> float:
+        def number(key: str, default: float = 0.0) -> float:
+            try:
+                return float(item.get(key) if item.get(key) is not None else default)
+            except (TypeError, ValueError):
+                return default
+
+        # Fabric 7 objects default to a centre origin, so `top` may be the middle of the object.
+        below_top = {"top": 1.0, "center": 0.5, "bottom": 0.0}.get(item.get("originY"), 0.5)
+        top = number("top")
+        height = number("height", -1.0)
+        if height < 0:
+            text = item.get("text")
+            if isinstance(text, str):
+                size = number("fontSize", APPEND_FONT_SIZE)
+                height = (text.count("\n") + 1) * size * number("lineHeight", APPEND_LINE_HEIGHT)
+            else:
+                height = 40.0
+        else:
+            height *= abs(number("scaleY", 1.0))
+        return top + height * below_top
+
+    @staticmethod
+    def estimate_text_height(text: str, width: float) -> float:
+        characters_per_line = max(1, int(width / (APPEND_FONT_SIZE * 0.5)))
+        lines = sum(max(1, -(-len(line) // characters_per_line)) for line in text.split("\n"))
+        return lines * APPEND_FONT_SIZE * APPEND_LINE_HEIGHT + APPEND_PADDING * 2
+
+    def append_text(self, note_id: int, text: str, revision: int | None = None) -> dict:
+        """Add a text block below a canvas note's content, growing pages as needed.
+
+        Existing objects are never rewritten. The write goes through update_note,
+        so a stale revision raises ConflictError and leaves the note unchanged.
+        """
+        text = str(text).strip("\n")
+        if not text.strip():
+            raise AppendTextError("Text to append is empty")
+        if len(text) > APPEND_MAX_LENGTH:
+            raise AppendTextError("Text to append is too long")
+        note = self.get_note(note_id)
+        if note["noteType"] != "canvas":
+            raise UnsupportedNoteTypeError("Text can only be appended to canvas notes")
+        objects = [
+            item for item in note["content"].get("objects", []) if isinstance(item, dict)
+        ]
+        content = {**note["content"], "objects": list(note["content"].get("objects", []))}
+        width = PAGE_WIDTH - 2 * APPEND_LEFT
+        top = (
+            max(self.object_bottom(item) for item in objects) + APPEND_GAP
+            if objects
+            else APPEND_TOP
+        )
+        bottom = top + self.estimate_text_height(text, width)
+        page_state = dict(note["pageState"]) if isinstance(note["pageState"], dict) else dict(DEFAULT_PAGE_STATE)
+        columns = max(1, int(page_state.get("columns") or 1))
+        rows = max(1, int(page_state.get("rows") or 1))
+        rows = max(rows, -(-int(bottom + APPEND_LEFT) // PAGE_HEIGHT))
+        content["objects"].append(
+            {
+                "type": "Textbox",
+                "originX": "left",
+                "originY": "top",
+                "left": APPEND_LEFT,
+                "top": round(top, 2),
+                "width": width,
+                "fill": "#20201e",
+                "fontFamily": "Source Serif 4",
+                "fontSize": APPEND_FONT_SIZE,
+                "lineHeight": APPEND_LINE_HEIGHT,
+                "padding": APPEND_PADDING,
+                "text": text,
+            }
+        )
+        return self.update_note(
+            note_id,
+            {
+                "title": note["title"],
+                "notebookId": note["notebookId"],
+                "revision": note["revision"] if revision is None else revision,
+                "content": content,
+                "pageState": {**page_state, "columns": columns, "rows": rows},
+            },
+        )
+
     def move_note(self, note_id: int, payload: dict) -> dict:
         try:
             notebook_id = int(payload.get("notebookId"))
@@ -695,6 +801,78 @@ class NoteService:
             "notebooksImported": len(imported_notebooks),
             "notesImported": len(imported_note_ids),
             "noteIds": imported_note_ids,
+        }
+
+    def record_agent_activity(
+        self, agent: str, note_id: int | None, action: str, now: float | None = None
+    ) -> None:
+        """Remember that a local agent is reading or writing; it expires on its own."""
+        if action not in AGENT_ACTIONS:
+            raise ValueError("Unsupported agent action")
+        name = str(agent or "").strip()[:80] or "Agent"
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO agent_activity (agent, note_id, action, at) VALUES (?, ?, ?, ?)
+                ON CONFLICT(agent) DO UPDATE
+                SET note_id = excluded.note_id, action = excluded.action, at = excluded.at
+                """,
+                (name, note_id, action, time.time() if now is None else now),
+            )
+            connection.commit()
+
+    def active_agents(self, now: float | None = None) -> list[dict]:
+        moment = time.time() if now is None else now
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT agent_activity.*, notes.title AS note_title
+                FROM agent_activity
+                LEFT JOIN notes ON notes.id = agent_activity.note_id
+                WHERE agent_activity.at >= ?
+                ORDER BY agent_activity.at DESC
+                """,
+                (moment - AGENT_ACTIVITY_WINDOW,),
+            ).fetchall()
+        return [
+            {
+                "agent": row["agent"],
+                "noteId": row["note_id"],
+                "noteTitle": row["note_title"],
+                "action": row["action"],
+                "at": row["at"],
+            }
+            for row in rows
+        ]
+
+    def changes_since(self, since: int | None) -> dict:
+        """Cheap change feed: the current sequence plus changes after `since`."""
+        with self.connection() as connection:
+            sequence = connection.execute(
+                "SELECT sequence FROM workspace_state WHERE id = 1"
+            ).fetchone()[0]
+            if since is None or since >= sequence:
+                return {"sequence": sequence, "changes": [], "overflow": False}
+            rows = connection.execute(
+                """
+                SELECT sequence, resource_kind, resource_id, revision, change_type
+                FROM workspace_changes WHERE sequence > ? ORDER BY sequence LIMIT ?
+                """,
+                (since, CHANGES_LIMIT + 1),
+            ).fetchall()
+        return {
+            "sequence": sequence,
+            "overflow": len(rows) > CHANGES_LIMIT,
+            "changes": [
+                {
+                    "sequence": row["sequence"],
+                    "resourceKind": row["resource_kind"],
+                    "resourceId": row["resource_id"],
+                    "revision": row["revision"],
+                    "changeType": row["change_type"],
+                }
+                for row in rows[:CHANGES_LIMIT]
+            ],
         }
 
     def search(self, query: str) -> list[dict]:

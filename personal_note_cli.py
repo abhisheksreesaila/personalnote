@@ -15,9 +15,11 @@ from typing import Any
 
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
-from services import ConflictError, NoteService, NotFoundError, WorkspaceImportError
+from note_text import note_plain_text
+from services import ConflictError, NoteService, NotFoundError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
 
 ROOT = Path(__file__).resolve().parent
+DEFAULT_AGENT = "Claude Code"
 
 
 class CliError(Exception):
@@ -56,13 +58,25 @@ def write_json(path: str | None, value: dict) -> None:
         print(encoded, end="")
 
 
-def text_document(text: str) -> dict:
-    return {"objects": [{"type": "IText", "text": text, "left": 72, "top": 80}]}
+def read_stdin_text() -> str:
+    if sys.stdin is None or sys.stdin.isatty():
+        raise CliError("Provide --text, or pipe the text on standard input")
+    return sys.stdin.read()
+
+
+def print_text(value: str) -> None:
+    print(value)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Personal Note local workspace CLI")
+    parser = argparse.ArgumentParser(
+        prog="personal-note",
+        description="Personal Note local workspace CLI. Output is JSON unless --text is given on read commands.",
+    )
     parser.add_argument("--database", help="SQLite database path (defaults to PERSONAL_NOTE_DB or data/personal-note.db)")
+    parser.add_argument("--agent", default=DEFAULT_AGENT, help=f"Name shown in the app while this agent works (default: {DEFAULT_AGENT})")
+    agent_option = argparse.ArgumentParser(add_help=False)
+    agent_option.add_argument("--agent", default=argparse.SUPPRESS, help="Name shown in the app while this agent works")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     status = subcommands.add_parser("status", help="Report local workspace diagnostics")
@@ -79,10 +93,23 @@ def build_parser() -> argparse.ArgumentParser:
     notes = subcommands.add_parser("notes", help="Manage notes")
     note_commands = notes.add_subparsers(dest="note_command", required=True)
     note_commands.add_parser("list", help="List note summaries").set_defaults(handler=command_notes_list)
-    get_note = note_commands.add_parser("get", help="Read a note")
+    get_note = note_commands.add_parser("get", help="Read a note as full JSON (canvas or map document)", parents=[agent_option])
     get_note.add_argument("note_id", type=int)
     get_note.set_defaults(handler=command_notes_get)
-    create_note = note_commands.add_parser("create", help="Create a canvas or mind-map note")
+    read_note = note_commands.add_parser(
+        "read", help="Read a note as plain text (canvas in reading order, mind map as an outline)", parents=[agent_option]
+    )
+    read_note.add_argument("note_id", type=int)
+    read_note.add_argument("--text", dest="as_text", action="store_true", help="Print only the text instead of JSON")
+    read_note.set_defaults(handler=command_notes_read)
+    append_note = note_commands.add_parser(
+        "append", help="Append text below a canvas note's content (grows pages as needed)", parents=[agent_option]
+    )
+    append_note.add_argument("note_id", type=int)
+    append_note.add_argument("--text", help="Text to append; omit or use - to read standard input")
+    append_note.add_argument("--revision", type=int, help="Fail if the note is no longer at this revision")
+    append_note.set_defaults(handler=command_notes_append)
+    create_note = note_commands.add_parser("create", help="Create a canvas or mind-map note", parents=[agent_option])
     create_note.add_argument("--title", required=True)
     create_note.add_argument("--notebook-id", type=int)
     create_note.add_argument("--type", dest="note_type", choices=("canvas", "mindmap"), default="canvas")
@@ -92,8 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
     delete_note.add_argument("note_id", type=int)
     delete_note.set_defaults(handler=command_notes_delete)
 
-    search = subcommands.add_parser("search", help="Search note titles and content")
+    search = subcommands.add_parser("search", help="Search note titles and content", parents=[agent_option])
     search.add_argument("query")
+    search.add_argument("--text", dest="as_text", action="store_true", help="Print one readable line per match instead of JSON")
     search.set_defaults(handler=command_search)
 
     export = subcommands.add_parser("export", help="Export user-owned workspace data")
@@ -142,7 +170,34 @@ def command_notes_list(service: NoteService, _args: argparse.Namespace) -> list[
 
 
 def command_notes_get(service: NoteService, args: argparse.Namespace) -> dict:
-    return service.get_note(args.note_id)
+    note = service.get_note(args.note_id)
+    service.record_agent_activity(args.agent, note["id"], "reading")
+    return note
+
+
+def command_notes_read(service: NoteService, args: argparse.Namespace) -> dict | None:
+    note = service.get_note(args.note_id)
+    service.record_agent_activity(args.agent, note["id"], "reading")
+    text = note_plain_text(note)
+    if args.as_text:
+        print_text(text)
+        return None
+    return {
+        "id": note["id"],
+        "title": note["title"],
+        "noteType": note["noteType"],
+        "notebookId": note["notebookId"],
+        "revision": note["revision"],
+        "updatedAt": note["updatedAt"],
+        "text": text,
+    }
+
+
+def command_notes_append(service: NoteService, args: argparse.Namespace) -> dict:
+    text = args.text if args.text not in (None, "-") else read_stdin_text()
+    result = service.append_text(args.note_id, text, revision=args.revision)
+    service.record_agent_activity(args.agent, args.note_id, "writing")
+    return result
 
 
 def command_notes_create(service: NoteService, args: argparse.Namespace) -> dict:
@@ -152,19 +207,11 @@ def command_notes_create(service: NoteService, args: argparse.Namespace) -> dict
     if args.notebook_id is not None:
         payload["notebookId"] = args.notebook_id
     note = service.create_note(payload)
-    if args.text is None:
-        return note
-    result = service.update_note(
-        note["id"],
-        {
-            "title": note["title"],
-            "notebookId": note["notebookId"],
-            "revision": note["revision"],
-            "content": text_document(args.text),
-            "pageState": note["pageState"],
-        },
-    )
-    return service.get_note(note["id"]) | {"revision": result["revision"]}
+    if args.text is not None:
+        service.append_text(note["id"], args.text, revision=note["revision"])
+        note = service.get_note(note["id"])
+    service.record_agent_activity(args.agent, note["id"], "writing")
+    return note
 
 
 def command_notes_delete(service: NoteService, args: argparse.Namespace) -> dict:
@@ -172,8 +219,15 @@ def command_notes_delete(service: NoteService, args: argparse.Namespace) -> dict
     return {"ok": True, "id": args.note_id}
 
 
-def command_search(service: NoteService, args: argparse.Namespace) -> list[dict]:
-    return service.search(args.query)
+def command_search(service: NoteService, args: argparse.Namespace) -> list[dict] | None:
+    matches = service.search(args.query)
+    service.record_agent_activity(args.agent, None, "reading")
+    if not args.as_text:
+        return matches
+    for match in matches:
+        excerpt = " ".join(match["excerpt"].split())
+        print_text(f"#{match['id']} {match['title']} [{match['notebookName']}]" + (f" - {excerpt}" if excerpt else ""))
+    return None
 
 
 def command_export_workspace(service: NoteService, args: argparse.Namespace) -> None:
@@ -206,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         if result is not None:
             emit(result)
         return 0
-    except (CliError, NotFoundError, ConflictError, PortabilityError, WorkspaceImportError, PluginManifestError) as error:
+    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, PortabilityError, WorkspaceImportError, PluginManifestError) as error:
         emit({"ok": False, "error": str(error)})
         return 2
     except Exception:

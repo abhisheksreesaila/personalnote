@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS workspace_changes (
     change_type TEXT NOT NULL CHECK (change_type IN ('created', 'updated', 'deleted')),
     occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS agent_activity (
+    agent TEXT PRIMARY KEY,
+    note_id INTEGER,
+    action TEXT NOT NULL CHECK (action IN ('reading', 'writing')),
+    at REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_workspace_changes_resource
 ON workspace_changes(resource_kind, resource_id, sequence);
 """
