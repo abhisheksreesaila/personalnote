@@ -22,9 +22,9 @@ import {
   connectorsLeftDangling,
 } from './modules/editor/connectors.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
-import { CATEGORIES, categoryLabel, inboxNotes, modifierLabel, outline as notebookOutline } from './modules/library/outline.js'
+import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
 import { bindPageLifecycle, canKeepAlive } from './modules/editor/save-flush.js'
-import { keyboardPan } from './modules/editor/keyboard-pan.js'
+import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { createLiftEffect } from './modules/editor/lift.js'
 import { fitView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
@@ -788,7 +788,7 @@ function renderNoteList() {
 
   const inboxHtml = `
     <button class="nav-item inbox-tab ${state.inboxOpen ? 'active' : ''}" data-inbox-toggle aria-expanded="${state.inboxOpen}">
-      <i data-lucide="inbox"></i><span class="notebook-name">Inbox</span><span class="notebook-count">${state.notes.length}</span>
+      <i data-lucide="inbox"></i><span class="notebook-name">Inbox</span><span class="notebook-count" title="Most recent notes">${inboxNotes(state.notes).length}</span>
     </button>
     ${state.inboxOpen ? `
       <div class="nav-notes" role="group" aria-label="Recent notes">
@@ -3142,11 +3142,15 @@ const mobileLayout = window.matchMedia('(max-width: 800px)')
 
 function setSidebarOpen(open) {
   const isOpen = mobileLayout.matches && open
+  const wasOpen = elements.sidebar.classList.contains('open')
+  // Move focus before the drawer becomes inert so it never gets stranded inside it.
+  if (!isOpen && wasOpen && elements.sidebar.contains(document.activeElement)) elements.sidebarToggle.focus()
   elements.shell.classList.toggle('sidebar-open', isOpen)
   elements.sidebar.classList.toggle('open', isOpen)
   elements.sidebar.inert = mobileLayout.matches && !isOpen
   elements.sidebarToggle.setAttribute('aria-expanded', String(isOpen))
   elements.sidebarToggle.setAttribute('aria-label', isOpen ? 'Close notebooks' : 'Open notebooks')
+  if (isOpen && !wasOpen) requestAnimationFrame(() => document.querySelector('#rail-new-note').focus())
 }
 
 elements.sidebarToggle.addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
@@ -3442,8 +3446,13 @@ document.addEventListener('keydown', (event) => {
 // Native scrolling is gone (the canvas is window-sized), so the keyboard pans it. Only when focus is
 // on the page itself, never while typing or on a control that uses these keys (buttons, radios, menus).
 function canPanFromKeyboard(activeElement) {
-  if (document.querySelector('dialog[open]') || !elements.searchBackdrop.hidden) return false
-  return !activeElement || activeElement === document.body || activeElement === canvas.upperCanvasEl
+  return keyboardCanPan({
+    activeElement,
+    body: document.body,
+    canvasElement: canvas.upperCanvasEl,
+    editingText: canvas.getObjects().some((object) => object.isEditing),
+    dialogOpen: Boolean(document.querySelector('dialog[open]')) || !elements.searchBackdrop.hidden,
+  })
 }
 
 function panWithKeyboard(event) {
@@ -3468,7 +3477,7 @@ document.addEventListener('keydown', (event) => {
     }
     return
   }
-  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'n') {
+  if (isQuickNoteShortcut(event)) {
     event.preventDefault()
     setNoteCreateMenuOpen(false)
     createNote()
@@ -3615,7 +3624,7 @@ async function initialize() {
 {
   const modifier = modifierLabel(navigator.platform)
   const glue = modifier === '⌘' ? '' : ' '
-  document.querySelector('#quick-note-kbd').textContent = `${modifier}${glue}N`
+  document.querySelector('#quick-note-kbd').textContent = quickNoteKeycap(navigator.platform)
   document.querySelector('#search-kbd').textContent = `${modifier}${glue}K`
   document.querySelector('#print-kbd').textContent = `${modifier}${glue}P`
   elements.searchButton.title = `Search notes (${modifier}${glue}K)`

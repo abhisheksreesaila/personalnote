@@ -23,3 +23,13 @@ export function keyboardPan(event, { viewH }) {
     default: return null
   }
 }
+
+const CONTROL_SELECTOR = 'input, textarea, select, button, a[href], summary, [contenteditable], [role="radio"], [role="menuitem"], [role="tab"], [role="slider"], [tabindex]'
+
+// Arrow and Space keys belong to the focused control whenever there is one. The canvas only pans
+// from the keyboard when focus is on the page itself (or the canvas) and nothing is being typed.
+export function canPanFromKeyboard({ activeElement, body, canvasElement, editingText = false, dialogOpen = false }) {
+  if (editingText || dialogOpen) return false
+  if (!activeElement || activeElement === body || activeElement === canvasElement) return true
+  return !(activeElement.isContentEditable || activeElement.matches?.(CONTROL_SELECTOR))
+}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { keyboardPan } from './keyboard-pan.js'
+import { canPanFromKeyboard, keyboardPan } from './keyboard-pan.js'
 
 const view = { viewH: 800 }
 const press = (key, extra = {}) => ({ key, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...extra })
@@ -33,4 +33,25 @@ test('other keys and modified shortcuts are left alone', () => {
   assert.equal(keyboardPan(press('ArrowDown', { metaKey: true }), view), null)
   assert.equal(keyboardPan(press('ArrowDown', { ctrlKey: true }), view), null)
   assert.equal(keyboardPan(press('ArrowDown', { altKey: true }), view), null)
+})
+
+const body = { matches: () => false }
+const canvasElement = { matches: () => false }
+const control = (selectorMatches = true) => ({ matches: () => selectorMatches, isContentEditable: false })
+
+test('the canvas pans from the keyboard only when focus is on the page or the canvas', () => {
+  assert.equal(canPanFromKeyboard({ activeElement: null, body, canvasElement }), true)
+  assert.equal(canPanFromKeyboard({ activeElement: body, body, canvasElement }), true)
+  assert.equal(canPanFromKeyboard({ activeElement: canvasElement, body, canvasElement }), true)
+})
+
+test('it never pans while text is being edited or a dialog is open', () => {
+  assert.equal(canPanFromKeyboard({ activeElement: body, body, canvasElement, editingText: true }), false)
+  assert.equal(canPanFromKeyboard({ activeElement: body, body, canvasElement, dialogOpen: true }), false)
+})
+
+test('it never pans while a control has focus (inputs, buttons, radios, menu items, editable content)', () => {
+  assert.equal(canPanFromKeyboard({ activeElement: control(), body, canvasElement }), false)
+  assert.equal(canPanFromKeyboard({ activeElement: { matches: () => false, isContentEditable: true }, body, canvasElement }), false)
+  assert.equal(canPanFromKeyboard({ activeElement: control(false), body, canvasElement }), true)
 })

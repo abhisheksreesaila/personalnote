@@ -33,3 +33,13 @@ export function inboxNotes(notes, limit = 6) {
 export function modifierLabel(platform = '') {
   return /mac|iphone|ipad/i.test(platform) ? '⌘' : 'Ctrl'
 }
+
+// Ctrl/⌘+N belongs to the browser, so a page never receives it. Alt/Option+N is free in every major
+// browser and OS; matching the physical key keeps it working where Option+N types a dead key.
+export function isQuickNoteShortcut(event) {
+  return event.code === 'KeyN' && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+}
+
+export function quickNoteKeycap(platform = '') {
+  return modifierLabel(platform) === '⌘' ? '⌥N' : 'Alt N'
+}

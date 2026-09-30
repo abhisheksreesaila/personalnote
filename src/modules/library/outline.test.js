@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CATEGORIES, categoryLabel, inboxNotes, modifierLabel, outline } from './outline.js'
+import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline, quickNoteKeycap } from './outline.js'
 
 const notebooks = [
   { id: 1, name: 'Personal Note', category: 'projects' },
@@ -42,4 +42,24 @@ test('the inbox lists the newest notes first, capped', () => {
 test('the quick-note shortcut is shown for the platform', () => {
   assert.equal(modifierLabel('MacIntel'), '⌘')
   assert.equal(modifierLabel('Linux x86_64'), 'Ctrl')
+})
+
+const chord = (extra) => ({ code: 'KeyN', key: 'n', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, ...extra })
+
+test('Alt/Option+N is the quick-note chord, including where Option+N types a dead key', () => {
+  assert.equal(isQuickNoteShortcut(chord()), true)
+  assert.equal(isQuickNoteShortcut(chord({ key: 'Dead' })), true)
+})
+
+test('browser-reserved or modified chords are not quick note', () => {
+  assert.equal(isQuickNoteShortcut(chord({ altKey: false, ctrlKey: true })), false)
+  assert.equal(isQuickNoteShortcut(chord({ altKey: false, metaKey: true })), false)
+  assert.equal(isQuickNoteShortcut(chord({ ctrlKey: true })), false)
+  assert.equal(isQuickNoteShortcut(chord({ shiftKey: true })), false)
+  assert.equal(isQuickNoteShortcut(chord({ code: 'KeyM' })), false)
+})
+
+test('the keycap shows the chord for the platform', () => {
+  assert.equal(quickNoteKeycap('MacIntel'), '⌥N')
+  assert.equal(quickNoteKeycap('Linux x86_64'), 'Alt N')
 })
