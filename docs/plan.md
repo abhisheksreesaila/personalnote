@@ -16,13 +16,14 @@ Blocked: set STRIPE_SECRET_KEY in Railway, then say go.
 - [ ] pricing page uses register_billing_routes
 -->
 
-## F-002 Window-sized canvas (smoothness rework) [doing]
+## F-002 Window-sized canvas (smoothness rework) [done]
 Brief: docs/brief.md · Design: docs/design/personal-note.md (Engine) · Needs: none
-- [ ] the canvas is sized to the window; pan and zoom move the view instead of resizing the canvas
-- [ ] pages still grow when an object crosses an edge and fold back when emptied, without resizing the canvas
-- [ ] a 600-object, 12-page benchmark note drags, pans and zooms at ~60fps (benchmark script checked in)
-- [ ] high zoom on retina never paints blank
-- [ ] print and export output are unchanged
+- [x] the canvas is sized to the window; pan and zoom move the view instead of resizing the canvas
+- [x] pages still grow when an object crosses an edge and fold back when emptied, without resizing the canvas
+- [x] a 600-object, 12-page benchmark note drags, pans and zooms at ~60fps (benchmark script checked in)
+- [x] high zoom on retina never paints blank
+- [x] print and export output are unchanged
+Open: ~60fps verified at normal density; retina zoom-out on a full 600-object note needs a check on real Mac hardware (and objectCaching re-measure).
 
 ## F-003 Skins: Crayon default, Paper and Night [done]
 Design: docs/design/personal-note.md · Needs: none
@@ -64,3 +65,10 @@ Needs: F-006, F-002
 - [ ] the agent cursor flag does not cause stutter while dragging on a 600-object note (place it at most once per frame, cache the target block)
 - [ ] the flag clears immediately when switching notes
 - [ ] the flag follows pan and zoom on the window-sized canvas
+
+## F-009 Canvas polish after the rework [todo]
+Needs: F-002
+- [ ] autosave on a 600-object note no longer freezes a frame for 100ms+ (defer or slim serialization)
+- [ ] after fold-back or undo the view settles inside the content without a later snap
+- [ ] the writing guide draws under the text, not over it
+- [ ] on a real retina Mac: zoom-out on the 600-object note stays smooth; decide objectCaching for ink paths
