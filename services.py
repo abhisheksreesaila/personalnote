@@ -35,6 +35,15 @@ NOTE_TYPES = {"canvas", "mindmap"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
+PAGE_WIDTH = 860
+PAGE_HEIGHT = 1080
+APPEND_LEFT = 72
+APPEND_TOP = 80
+APPEND_GAP = 24
+APPEND_FONT_SIZE = 24
+APPEND_LINE_HEIGHT = 1.45
+APPEND_PADDING = 8
+APPEND_MAX_LENGTH = 100_000
 
 
 class NotFoundError(Exception):
@@ -46,6 +55,10 @@ class ConflictError(Exception):
 
 
 class WorkspaceImportError(ValueError):
+    pass
+
+
+class UnsupportedNoteTypeError(ValueError):
     pass
 
 
@@ -516,6 +529,84 @@ class NoteService:
             self.record_change(connection, "note", current["resource_id"], revision, "updated")
             connection.commit()
         return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
+
+    @staticmethod
+    def object_bottom(item: dict) -> float:
+        def number(key: str, default: float = 0.0) -> float:
+            try:
+                return float(item.get(key) if item.get(key) is not None else default)
+            except (TypeError, ValueError):
+                return default
+
+        top = number("top")
+        height = number("height", -1.0)
+        if height >= 0:
+            return top + height * abs(number("scaleY", 1.0))
+        text = item.get("text")
+        if isinstance(text, str):
+            size = number("fontSize", APPEND_FONT_SIZE)
+            return top + (text.count("\n") + 1) * size * number("lineHeight", APPEND_LINE_HEIGHT)
+        return top + 40
+
+    @staticmethod
+    def estimate_text_height(text: str, width: float) -> float:
+        characters_per_line = max(1, int(width / (APPEND_FONT_SIZE * 0.5)))
+        lines = sum(max(1, -(-len(line) // characters_per_line)) for line in text.split("\n"))
+        return lines * APPEND_FONT_SIZE * APPEND_LINE_HEIGHT + APPEND_PADDING * 2
+
+    def append_text(self, note_id: int, text: str, revision: int | None = None) -> dict:
+        """Add a text block below a canvas note's content, growing pages as needed.
+
+        Existing objects are never rewritten. The write goes through update_note,
+        so a stale revision raises ConflictError and leaves the note unchanged.
+        """
+        text = str(text).strip("\n")
+        if not text.strip():
+            raise ValueError("Text to append is empty")
+        if len(text) > APPEND_MAX_LENGTH:
+            raise ValueError("Text to append is too long")
+        note = self.get_note(note_id)
+        if note["noteType"] != "canvas":
+            raise UnsupportedNoteTypeError("Text can only be appended to canvas notes")
+        objects = [
+            item for item in note["content"].get("objects", []) if isinstance(item, dict)
+        ]
+        content = {**note["content"], "objects": list(note["content"].get("objects", []))}
+        width = PAGE_WIDTH - 2 * APPEND_LEFT
+        top = (
+            max(self.object_bottom(item) for item in objects) + APPEND_GAP
+            if objects
+            else APPEND_TOP
+        )
+        bottom = top + self.estimate_text_height(text, width)
+        page_state = dict(note["pageState"]) if isinstance(note["pageState"], dict) else dict(DEFAULT_PAGE_STATE)
+        columns = max(1, int(page_state.get("columns") or 1))
+        rows = max(1, int(page_state.get("rows") or 1))
+        rows = max(rows, -(-int(bottom + APPEND_LEFT) // PAGE_HEIGHT))
+        content["objects"].append(
+            {
+                "type": "Textbox",
+                "left": APPEND_LEFT,
+                "top": round(top, 2),
+                "width": width,
+                "fill": "#20201e",
+                "fontFamily": "Source Serif 4",
+                "fontSize": APPEND_FONT_SIZE,
+                "lineHeight": APPEND_LINE_HEIGHT,
+                "padding": APPEND_PADDING,
+                "text": text,
+            }
+        )
+        return self.update_note(
+            note_id,
+            {
+                "title": note["title"],
+                "notebookId": note["notebookId"],
+                "revision": note["revision"] if revision is None else revision,
+                "content": content,
+                "pageState": {**page_state, "columns": columns, "rows": rows},
+            },
+        )
 
     def move_note(self, note_id: int, payload: dict) -> dict:
         try:
