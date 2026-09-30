@@ -76,6 +76,33 @@ class PlainTextTests(TempServiceCase):
         )
 
 
+class StickyAndShapeTests(TempServiceCase):
+    OBJECTS = [
+        {"type": "Sticky", "text": "Renew the passport", "stickyColor": "#ffd60a", "originX": "center", "originY": "center",
+         "left": 300, "top": 200, "width": 240, "height": 200},
+        {"type": "Rect", "fill": "#64b5ff", "rx": 28, "ry": 28, "originX": "center", "originY": "center",
+         "left": 600, "top": 200, "width": 280, "height": 180},
+        {"type": "IText", "text": "plain text", "left": 10, "top": 600},
+    ]
+
+    def test_sticky_text_is_read_and_shapes_add_nothing(self):
+        note = self.canvas_note(self.OBJECTS)
+        self.assertEqual(note_plain_text(note), "Renew the passport\n\nplain text")
+
+    def test_an_empty_sticky_reads_as_nothing(self):
+        note = self.canvas_note([{"type": "Sticky", "text": "", "stickyColor": "#30d158", "top": 50, "left": 50}])
+        self.assertEqual(note_plain_text(note), "")
+
+    def test_append_lands_below_the_lowest_sticky_or_shape(self):
+        objects = [dict(item, top=item["top"] + 500) if item["type"] != "IText" else item for item in self.OBJECTS[:2]]
+        note = self.canvas_note(objects)
+        self.service.append_text(note["id"], "agent line")
+        appended = self.service.get_note(note["id"])["content"]["objects"][-1]
+        lowest_bottom = 700 + 100
+        self.assertGreater(appended["top"], lowest_bottom)
+        self.assertEqual([item["type"] for item in self.service.get_note(note["id"])["content"]["objects"][:2]], ["Sticky", "Rect"])
+
+
 class ConnectorHandlingTests(TempServiceCase):
     OBJECTS = [
         {"type": "IText", "text": "left card", "semanticId": "res_a", "left": 72, "top": 80, "height": 60, "originY": "top"},
