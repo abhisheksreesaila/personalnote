@@ -88,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_notebook = notebook_commands.add_parser("create", help="Create a notebook")
     create_notebook.add_argument("--name", required=True)
     create_notebook.add_argument("--color")
+    create_notebook.add_argument("--category", choices=["projects", "areas", "resources", "archive"])
     create_notebook.set_defaults(handler=command_notebooks_create)
 
     notes = subcommands.add_parser("notes", help="Manage notes")
@@ -162,7 +163,7 @@ def command_notebooks_list(service: NoteService, _args: argparse.Namespace) -> l
 
 
 def command_notebooks_create(service: NoteService, args: argparse.Namespace) -> dict:
-    return service.create_notebook({"name": args.name, "color": args.color})
+    return service.create_notebook({"name": args.name, "color": args.color, "category": args.category})
 
 
 def command_notes_list(service: NoteService, _args: argparse.Namespace) -> list[dict]:

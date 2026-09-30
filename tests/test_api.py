@@ -43,6 +43,51 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(update.status_code, 200)
         return notebook, self.client.get(f"/api/notes/{note['id']}").json()
 
+    def test_notebook_category_defaults_validates_and_round_trips(self):
+        default = self.client.get("/api/notebooks").json()[0]
+        self.assertEqual(default["category"], "projects")
+
+        created = self.client.post(
+            "/api/notebooks", json={"name": "Health", "category": "areas"}
+        ).json()
+        self.assertEqual(created["category"], "areas")
+
+        bogus = self.client.post(
+            "/api/notebooks", json={"name": "Odd", "category": "nonsense"}
+        ).json()
+        self.assertEqual(bogus["category"], "projects")
+
+        updated = self.client.put(
+            f"/api/notebooks/{created['id']}",
+            json={"revision": created["revision"], "category": "archive"},
+        ).json()
+        self.assertEqual(updated["category"], "archive")
+        self.assertEqual(updated["name"], "Health")
+
+        listed = {item["name"]: item["category"] for item in self.client.get("/api/notebooks").json()}
+        self.assertEqual(listed["Health"], "archive")
+
+        backup = self.client.get("/api/export/workspace").json()
+        exported = {item["name"]: item.get("category") for item in backup["notebooks"]}
+        self.assertEqual(exported["Health"], "archive")
+        self.client.post("/api/import/workspace", json=backup)
+        categories = [item["category"] for item in self.client.get("/api/notebooks").json() if item["name"] == "Health"]
+        self.assertEqual(sorted(categories), ["archive", "archive"])
+
+    def test_existing_database_without_category_migrates_to_projects(self):
+        import sqlite3
+        legacy = Path(self.temporary_directory.name) / "legacy.db"
+        connection = sqlite3.connect(legacy)
+        connection.execute(
+            "CREATE TABLE notebooks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '#B86B4B', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+        )
+        connection.execute("INSERT INTO notebooks (name) VALUES ('Old')")
+        connection.commit()
+        connection.close()
+        with TestClient(create_app(legacy)) as client:
+            notebooks = client.get("/api/notebooks").json()
+        self.assertEqual([(item["name"], item["category"]) for item in notebooks], [("Old", "projects")])
+
     def test_note_and_notebook_contract(self):
         health = self.client.get("/health")
         self.assertEqual(health.status_code, 200)
