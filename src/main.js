@@ -2126,9 +2126,30 @@ async function restoreHistory(index) {
   queueSave()
 }
 
+// Lands the outgoing note's pending history and save, with its own confirmed revision, before another note loads.
+async function settleOutgoingNote() {
+  if (state.loading || !state.activeNoteId) return
+  await settleSaves({
+    flushPending: () => {
+      flushPendingHistory({
+        cancel: () => clearTimeout(historyTimer),
+        commit: () => {
+          if (commitHistorySnapshot()) queueSave()
+        },
+      })
+      clearTimeout(saveTimer)
+    },
+    isSaving: () => saveInFlight,
+    hasUnsaved: () => unsavedEdits,
+    save: () => saveActiveNote(),
+  })
+}
+
 async function selectNote(id) {
   if (id === state.activeNoteId) return
   hideToast()
+  await settleOutgoingNote()
+  if (id === state.activeNoteId) return
   clearTimeout(saveTimer)
   unsavedEdits = false
   state.activeNoteId = id

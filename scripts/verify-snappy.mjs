@@ -223,6 +223,23 @@ async function typeNote(page, x, y, text) {
 }
 
 {
+  // a fast switch to another note must not drop the edit just made
+  const { context, page } = await open()
+  await page.click('[data-tool="text"]')
+  await click(page, 100, 100)
+  await page.keyboard.type('quick edit')
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => [...document.querySelectorAll('.note-list-item')].find((n) => n.textContent.includes('Second')).click())
+  await page.waitForTimeout(1500)
+  check('the outgoing note was saved before the switch', stored.objects.some((o) => o.text === 'quick edit'), JSON.stringify(stored.objects.map((o) => o.text)))
+  await page.evaluate(() => [...document.querySelectorAll('.note-list-item')].find((n) => n.textContent.includes('Objects')).click())
+  await page.waitForTimeout(1200)
+  const back = await page.evaluate(() => window.__personalNote.canvas.getObjects().map((o) => o.text))
+  check('switching back shows the edit', back.includes('quick edit'), JSON.stringify(back))
+  await context.close()
+}
+
+{
   const { context, page } = await open(390, 844)
   await page.waitForTimeout(500)
   await page.screenshot({ path: path.join(shots, 'phone.png') })
