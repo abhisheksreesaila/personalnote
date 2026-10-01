@@ -72,7 +72,7 @@ Needs: F-006, F-002
 Needs: F-002
 - [ ] autosave on a 600-object note no longer freezes a frame for 100ms+ (defer or slim serialization)
 - [ ] after fold-back or undo the view settles inside the content without a later snap
-- [ ] the writing guide draws under the text, not over it
+- [x] the writing guide draws under the text, not over it (moot: guide removed in F-016)
 - [ ] on a real retina Mac: zoom-out on the 600-object note stays smooth; decide objectCaching for ink paths
 - [ ] large transparent images in WebKit (Mac app) stay PNG because WebP encoding falls back; check and handle
 - [ ] verify-objects sticky-lock check asserts the sticky count

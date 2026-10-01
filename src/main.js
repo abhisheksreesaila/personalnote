@@ -222,7 +222,6 @@ document.querySelector('#app').innerHTML = `
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
 
         <div class="paper" id="paper">
-          <div class="writing-guide" id="writing-guide" aria-hidden="true"></div>
           <canvas id="note-canvas"></canvas>
         </div>
         <div class="mindmap-host" id="mindmap-host" hidden></div>
@@ -403,7 +402,6 @@ document.querySelector('#app').innerHTML = `
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span></span><button id="toast-action" type="button">Undo</button></div>
 
   <style id="editor-polish-screen">
-    .writing-guide{position:absolute;z-index:3;pointer-events:none;opacity:.28;background:repeating-linear-gradient(to bottom,transparent 0 calc(1.45em - 1px),#8ca1a0 calc(1.45em - 1px) 1.45em)}.writing-guide[hidden]{display:none}
   </style>
 `
 
@@ -414,7 +412,6 @@ const elements = {
   shell: document.querySelector('.app-shell'),
   workspace: document.querySelector('#workspace'),
   paper: document.querySelector('#paper'),
-  writingGuide: document.querySelector('#writing-guide'),
   mindmapHost: document.querySelector('#mindmap-host'),
   title: document.querySelector('#note-title'),
   list: document.querySelector('#notebook-navigator'),
@@ -945,7 +942,6 @@ function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOf
   const scale = getCanvasScale()
   canvas.setViewportTransform([scale, 0, 0, scale, next.x, next.y])
   canvas.requestRenderAll()
-  if (writingGuideText) showWritingGuide(writingGuideText)
   updateNavigationUi(moved || next.x !== previousX)
 }
 
@@ -1012,7 +1008,6 @@ function setViewTo(view) {
   viewportOffsetY = view.y
   canvas.setViewportTransform([scale, 0, 0, scale, view.x, view.y])
   canvas.requestRenderAll()
-  if (writingGuideText) showWritingGuide(writingGuideText)
   updateNavigationUi(true)
 }
 
@@ -1283,32 +1278,10 @@ function findEditableTextAt(point) {
   ))
 }
 
-let writingGuideText = null
-
-// Positioned with the same world-to-screen mapping as the canvas (scale plus
-// viewport offset) and re-run on every pan and zoom.
-function showWritingGuide(text) {
-  writingGuideText = text
-  const scale = getCanvasScale()
-  const corner = text.getCoords()[0]
-  elements.writingGuide.style.left = `${corner.x * scale + viewportOffsetX}px`
-  elements.writingGuide.style.top = `${(corner.y + text.padding) * scale + viewportOffsetY}px`
-  elements.writingGuide.style.width = `${Math.max(120, text.getScaledWidth() * scale)}px`
-  elements.writingGuide.style.height = `${Math.max(text.fontSize * text.lineHeight * scale, text.getScaledHeight() * scale)}px`
-  elements.writingGuide.hidden = false
-}
-
-function hideWritingGuide() {
-  writingGuideText = null
-  elements.writingGuide.hidden = true
-}
-
 function bindTextEditingLifecycle(text) {
   if (text.__personalNoteTextBound) return
   text.__personalNoteTextBound = true
-  text.on('editing:entered', () => showWritingGuide(text))
   text.on('editing:exited', () => {
-    hideWritingGuide()
     if (!(text instanceof Sticky) && isPlaceholderText(text.text) && canvas.getObjects().includes(text)) {
       canvas.remove(text)
       canvas.discardActiveObject()
@@ -3317,8 +3290,6 @@ canvas.on('text:changed', () => {
   elements.paper.classList.remove('is-dragging')
   elements.workspace.classList.remove('is-object-dragging')
   reconcilePages()
-  const activeText = selectedTextObject()
-  if (activeText?.isEditing) showWritingGuide(activeText)
   recordHistory()
 })
 ;['object:moving', 'object:scaling', 'object:rotating'].forEach((eventName) => {
