@@ -71,6 +71,7 @@ jobs:
     name: Voice engine (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    continue-on-error: true # a failed engine build must not turn the whole run red or block the app release
     strategy:
       fail-fast: false
       matrix:
@@ -118,8 +119,11 @@ jobs:
 
   release:
     name: Attach to the GitHub Release
+    # The app release never waits on, or fails with, a voice-engine build: this runs once `build` has succeeded
+    # (and after the engine jobs have finished, so their files are there if they succeeded), and attaches
+    # whichever engine files exist. A missing engine only means "Download voice" reports it is not available yet.
     needs: [build, voice-engine]
-    if: github.ref_type == 'tag'
+    if: ${{ !cancelled() && needs.build.result == 'success' && github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

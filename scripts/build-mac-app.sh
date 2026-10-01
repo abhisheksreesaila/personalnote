@@ -19,6 +19,7 @@ if [ "${SKIP_FRONTEND:-}" != "1" ]; then
   npm run build
 fi
 [ -f dist/index.html ] || { echo "dist/ is missing; run npm run build first." >&2; exit 1; }
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-13.0}"
 export APP_VERSION="${APP_VERSION:-$(node -p "require('./package.json').version")}"
 
 rm -rf build/pyinstaller dist-app
@@ -46,6 +47,7 @@ with open(path, "rb") as f:
     info = plistlib.load(f)
 info["NSMicrophoneUsageDescription"] = "Personal Note uses the microphone only while you hold the voice button, to turn speech into text on this Mac. Audio is never stored."
 info["NSHighResolutionCapable"] = True
+info["LSMinimumSystemVersion"] = "13.0"  # the voice engine (Metal) is built for macOS 13 and newer too
 info["CFBundleShortVersionString"] = os.environ["APP_VERSION"]
 with open(path, "wb") as f:
     plistlib.dump(info, f)
