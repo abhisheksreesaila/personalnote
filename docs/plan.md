@@ -78,6 +78,8 @@ Needs: F-002
 - [ ] verify-objects sticky-lock check asserts the sticky count
 - [ ] a note whose save keeps failing doesn't trap you: a second click switches anyway, or "Leave without saving"
 - [ ] stale-load guard also after loadFromJSON / mind-map mount
+- [ ] pointer tracking clears only the moving pointer's own id (pen + mouse at once)
+- [ ] JS bundle is near its 230 KiB budget: trim or split before adding features
 
 ## F-010 Save pending edits on close [done]
 - [x] edits made just before a reload or close are saved (flush on pagehide / hidden, keepalive under 64 KiB)
@@ -132,8 +134,8 @@ Captain: "no need for a translucent line underneath the text… remove and save 
 - [x] no ruled guide lines appear while editing text, on desktop or phone
 - [x] the code that placed and redrew them is gone, not just hidden
 
-## F-017 Red skin default and quick select/hand switching [doing]
+## F-017 Red skin default and quick select/hand switching [done]
 Captain: "not the blue one… I like the red one, which looked like Claude"; "I have to click between the arrow tool and the hand tool… there has to be an easy shortcut."
-- [ ] Paper (the red skin) is the default for a first launch; a skin the user already picked is kept
-- [ ] hold Space to pan with the hand, release to go back to the previous tool; V selects the arrow, H the hand; middle-mouse drag pans from any tool
-- [ ] Space no longer pages the canvas (arrows and PageUp/PageDown still do), and none of this fires while typing
+- [x] Paper (the red skin) is the default for a first launch; a skin the user already picked is kept
+- [x] hold Space to pan with the hand, release to go back to the previous tool; V selects the arrow, H the hand; middle-mouse drag pans from any tool
+- [x] Space no longer pages the canvas (arrows and PageUp/PageDown still do), and none of this fires while typing
