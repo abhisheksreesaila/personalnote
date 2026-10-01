@@ -1,11 +1,12 @@
 import logging
+import os
 from pathlib import Path
 
 from fasthtml.common import FastHTML
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
-from app_paths import default_database_path, resource_root
+from app_paths import app_data_dir, default_database_path, resource_root
 from portability import (
     PortabilityError,
     import_workspace_backup,
@@ -14,6 +15,7 @@ from portability import (
     workspace_backup,
 )
 from services import ConflictError, NoteService, NotFoundError, WorkspaceImportError
+from voice_runtime import VoiceError, VoiceRuntime, app_version
 
 
 logger = logging.getLogger(__name__)
@@ -45,12 +47,22 @@ def runtime_capabilities() -> dict:
     }
 
 
-def create_app(database_path: Path | str | None = None) -> FastHTML:
+APP_HEADER = "x-personal-note"
+
+
+def default_voice_runtime() -> VoiceRuntime:
+    """Voice lives in the app-data folder (PERSONAL_NOTE_VOICE_DIR overrides it), never beside the notes."""
+    folder = os.environ.get("PERSONAL_NOTE_VOICE_DIR")
+    return VoiceRuntime(root=Path(folder) if folder else app_data_dir() / "voice", version=app_version(ROOT))
+
+
+def create_app(database_path: Path | str | None = None, voice: VoiceRuntime | None = None) -> FastHTML:
     data_path = Path(database_path or default_database_path())
     service = NoteService(data_path)
     # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service
+    app.state.voice = voice or default_voice_runtime()
 
     def json_error(error: Exception) -> JSONResponse:
         status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 500
@@ -75,6 +87,42 @@ def create_app(database_path: Path | str | None = None) -> FastHTML:
     @app.get("/api/settings/capabilities")
     def settings_capabilities():
         return JSONResponse(runtime_capabilities())
+
+    def voice_response(call, status_code: int = 200) -> JSONResponse:
+        try:
+            return JSONResponse(call(), status_code=status_code)
+        except VoiceError as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
+
+    def from_this_app(request) -> bool:
+        # A custom header cannot be sent cross-site without a CORS preflight, which this server never allows,
+        # so another web page cannot start a 750 MB download or remove voice behind the user's back.
+        return bool(request.headers.get(APP_HEADER))
+
+    def forbidden() -> JSONResponse:
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+    @app.get("/api/voice/status")
+    def voice_status():
+        return JSONResponse(app.state.voice.status())
+
+    @app.post("/api/voice/install")
+    def voice_install(request):
+        if not from_this_app(request):
+            return forbidden()
+        return voice_response(lambda: app.state.voice.start_install(), 202)
+
+    @app.post("/api/voice/engine/start")
+    def voice_engine_start(request):
+        if not from_this_app(request):
+            return forbidden()
+        return voice_response(lambda: app.state.voice.start_engine())
+
+    @app.delete("/api/voice")
+    def voice_remove(request):
+        if not from_this_app(request):
+            return forbidden()
+        return voice_response(lambda: app.state.voice.remove())
 
     @app.get("/api/changes")
     def changes(request):
