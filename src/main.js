@@ -35,7 +35,7 @@ import { readPreferences, writePreferences } from './preferences.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
-import { bindPageLifecycle, canKeepAlive, confirmedRevision, settleSaves } from './modules/editor/save-flush.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
@@ -60,6 +60,8 @@ const EDGE_OVERFLOW = 6
 const EDGE_SHRINK = 0
 const TRANSFORM_EDGE_MARGIN = 24
 const ERASER_RADIUS = 13
+// desktop.py opens the Chromium app window with engine=chromium (see createSaveTiming).
+const saveTiming = createSaveTiming({ fast: new URLSearchParams(location.search).get('engine') === 'chromium' })
 const INK_COLORS = [
   ['Charcoal', '#20201e'],
   ['Graphite', '#5f6368'],
@@ -222,7 +224,6 @@ document.querySelector('#app').innerHTML = `
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
 
         <div class="paper" id="paper">
-          <div class="writing-guide" id="writing-guide" aria-hidden="true"></div>
           <canvas id="note-canvas"></canvas>
         </div>
         <div class="mindmap-host" id="mindmap-host" hidden></div>
@@ -402,9 +403,6 @@ document.querySelector('#app').innerHTML = `
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span></span><button id="toast-action" type="button">Undo</button></div>
 
-  <style id="editor-polish-screen">
-    .writing-guide{position:absolute;z-index:3;pointer-events:none;opacity:.28;background:repeating-linear-gradient(to bottom,transparent 0 calc(1.45em - 1px),#8ca1a0 calc(1.45em - 1px) 1.45em)}.writing-guide[hidden]{display:none}
-  </style>
 `
 
 createIcons({ icons })
@@ -414,7 +412,6 @@ const elements = {
   shell: document.querySelector('.app-shell'),
   workspace: document.querySelector('#workspace'),
   paper: document.querySelector('#paper'),
-  writingGuide: document.querySelector('#writing-guide'),
   mindmapHost: document.querySelector('#mindmap-host'),
   title: document.querySelector('#note-title'),
   list: document.querySelector('#notebook-navigator'),
@@ -945,7 +942,6 @@ function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOf
   const scale = getCanvasScale()
   canvas.setViewportTransform([scale, 0, 0, scale, next.x, next.y])
   canvas.requestRenderAll()
-  if (writingGuideText) showWritingGuide(writingGuideText)
   updateNavigationUi(moved || next.x !== previousX)
 }
 
@@ -1012,7 +1008,6 @@ function setViewTo(view) {
   viewportOffsetY = view.y
   canvas.setViewportTransform([scale, 0, 0, scale, view.x, view.y])
   canvas.requestRenderAll()
-  if (writingGuideText) showWritingGuide(writingGuideText)
   updateNavigationUi(true)
 }
 
@@ -1283,32 +1278,10 @@ function findEditableTextAt(point) {
   ))
 }
 
-let writingGuideText = null
-
-// Positioned with the same world-to-screen mapping as the canvas (scale plus
-// viewport offset) and re-run on every pan and zoom.
-function showWritingGuide(text) {
-  writingGuideText = text
-  const scale = getCanvasScale()
-  const corner = text.getCoords()[0]
-  elements.writingGuide.style.left = `${corner.x * scale + viewportOffsetX}px`
-  elements.writingGuide.style.top = `${(corner.y + text.padding) * scale + viewportOffsetY}px`
-  elements.writingGuide.style.width = `${Math.max(120, text.getScaledWidth() * scale)}px`
-  elements.writingGuide.style.height = `${Math.max(text.fontSize * text.lineHeight * scale, text.getScaledHeight() * scale)}px`
-  elements.writingGuide.hidden = false
-}
-
-function hideWritingGuide() {
-  writingGuideText = null
-  elements.writingGuide.hidden = true
-}
-
 function bindTextEditingLifecycle(text) {
   if (text.__personalNoteTextBound) return
   text.__personalNoteTextBound = true
-  text.on('editing:entered', () => showWritingGuide(text))
   text.on('editing:exited', () => {
-    hideWritingGuide()
     if (!(text instanceof Sticky) && isPlaceholderText(text.text) && canvas.getObjects().includes(text)) {
       canvas.remove(text)
       canvas.discardActiveObject()
@@ -2025,6 +1998,7 @@ async function saveActiveNote({ unloading = false } = {}) {
       notebookId: note?.notebookId,
       revision: note?.revision,
     })
+    saveTiming.saved(body)
     // While the page is going away a keepalive request is the only one guaranteed to be sent.
     const result = await api(`/notes/${noteId}`, { method: 'PUT', body, keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
@@ -2054,10 +2028,10 @@ function queueSave() {
   if (pendingClearUndo) hideToast()
   setSaveState('Saving')
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(saveActiveNote, 650)
+  saveTimer = setTimeout(saveActiveNote, saveTiming.saveDelay())
 }
 
-// Sends anything still waiting on the two debounces (history 180ms, save 650ms) right now.
+// Sends anything still waiting on the two debounces (history 180ms, save 650ms; 100ms and 150ms in the Chromium window) right now.
 function flushPendingEdits(reason) {
   // Hiding the window may come back (Undo must still work); only a real close sends the held delete.
   if (reason !== 'hidden') void commitPendingDelete({ keepalive: true })
@@ -2115,7 +2089,7 @@ function recordHistory() {
   clearTimeout(historyTimer)
   historyTimer = setTimeout(() => {
     if (commitHistorySnapshot()) queueSave()
-  }, 180)
+  }, saveTiming.historyDelay())
 }
 
 async function restoreHistory(index) {
@@ -2205,6 +2179,7 @@ async function selectNote(id) {
       resizePaper()
       openCanvasView()
       await canvas.loadFromJSON(note.content || { objects: [] })
+      saveTiming.noteLoaded(note.content)
       bindCanvasTextObjects()
       normalizedNote = normalizeNotebookFonts()
       normalizedNote = rebuildConnectors() || normalizedNote
@@ -2249,6 +2224,7 @@ async function applyRemoteNote(note) {
     state.pages = note.pageState || { columns: 1, rows: 1 }
     resizePaper()
     await canvas.loadFromJSON(note.content || { objects: [] })
+    saveTiming.noteLoaded(note.content)
     bindCanvasTextObjects()
     rebuildConnectors()
     setTool(state.tool)
@@ -3317,8 +3293,6 @@ canvas.on('text:changed', () => {
   elements.paper.classList.remove('is-dragging')
   elements.workspace.classList.remove('is-object-dragging')
   reconcilePages()
-  const activeText = selectedTextObject()
-  if (activeText?.isEditing) showWritingGuide(activeText)
   recordHistory()
 })
 ;['object:moving', 'object:scaling', 'object:rotating'].forEach((eventName) => {

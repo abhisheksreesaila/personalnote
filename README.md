@@ -34,7 +34,7 @@ python main.py
 
 ## Desktop app
 
-Personal Note runs in its own native window (pywebview around the same local server, no browser tab).
+Personal Note runs in its own app window around the same local server, no browser tab: a Chromium app window on Linux when Chromium or Chrome is installed (it feels fastest there), a pywebview window otherwise and on macOS and Windows.
 
 ```bash
 npm install && npm run build            # once; the app rebuilds a stale frontend itself
@@ -43,12 +43,14 @@ python -m venv .venv
 npm run desktop                         # or: .venv/bin/python desktop.py
 ```
 
-- It serves the built frontend on a free loopback port, opens a window titled "Personal Note", and stops the server when the window closes (pending edits are saved first, waiting up to 3 seconds). Opening it a second time brings the existing window forward instead of starting another server.
+- It serves the built frontend on loopback port 3138 (another free port only if that one is taken, so the page's origin, and with it saved preferences and the microphone permission, stays the same between launches), opens a window titled "Personal Note", and stops the server when the window closes (in the pywebview window pending edits are saved first, waiting up to 3 seconds; the Chromium window works differently, see Engine). Opening it a second time brings the existing window forward instead of starting another server.
+- Engine: `--engine auto` (default) uses Chromium on Linux when `chromium`, `chromium-browser`, `google-chrome-stable` or `google-chrome` is on the PATH (the real `/usr/lib/chromium/chromium` is started directly, with `--disable-extensions`, so your browser flags do not apply), else pywebview; `--engine chromium` or `--engine webview` forces one. The Chromium window uses its own profile in the app-data folder (`chromium-profile`), separate from your everyday browser. If port 3138 is taken the app uses another port and warns on the command line (and in the pywebview window), because preferences and the microphone permission then start fresh. A second launch brings the open window forward by process id (`hyprctl dispatch focuswindow pid:<pid>` on Hyprland; elsewhere it only reports that the app is open) and never starts a second server or window. If a window is open but its server is gone, it refuses with a message instead of starting another server. The speed meter reads "Desktop app" in this window.
+- Saving on close in the Chromium window: unlike pywebview, Chromium gives the app no chance to flush before closing. In this window (the page is opened with `engine=chromium`) a note small enough for a keepalive request saves about 250 ms after your last edit (instead of about 830 ms); a bigger note keeps the normal delays, because its close-time save could not be sent anyway and frequent large autosaves cost frames. The page still sends a keepalive save when the page goes away, and the server stays up for 0.4 to 1.5 seconds after the window closes so that save lands. Remaining limit: a note over about 60 KiB (large notes, notes with pictures) cannot use the keepalive request, so edits made in the last fraction of a second before closing may be lost. The window class is set to `PersonalNote` (and `StartupWMClass` in the launcher entry matches), but that is best effort and not verified on Hyprland.
 - `python desktop.py --timing` prints cold-start timings; `--no-build` skips the stale-build check. Measured on Linux (Wayland, WebKitGTK, hidden window, build in place, three runs): server ready 0.15s; canvas drawn and notes listed 0.90-1.03s after process start.
 - Linux needs a system web view: `webkit2gtk-4.1` and `python-gobject` (Arch/Omarchy: `sudo pacman -S webkit2gtk-4.1 python-gobject`; Debian/Ubuntu: `gir1.2-webkit2-4.1 python3-gi`). The virtualenv must see them: create it with `python -m venv --system-site-packages .venv`. `npm run desktop` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which Wayland sessions need.
-- Launcher entry on Linux: `sh scripts/install-linux-launcher.sh` adds "Personal Note" to the application menu.
+- Launcher entry on Linux: `sh scripts/install-linux-launcher.sh` adds "Personal Note" to the application menu (re-run it after updating so the window class matches).
 - macOS app: on a Mac, `npm run desktop:mac-app` builds `dist-app/Personal Note.app` with PyInstaller (microphone usage text included). Not yet verified on a Mac.
-- Microphone: Linux grants the window microphone access automatically; macOS asks once. If access is refused the app shows its usual "voice unavailable" message.
+- Microphone: Linux grants the window microphone access automatically; macOS asks once. If access is refused the app shows its usual "voice unavailable" message. In the Chromium window the browser asks once per origin; the fixed port keeps the origin stable, so it is not asked again on each launch.
 
 ### Where the notebook lives
 

@@ -1,8 +1,8 @@
 """Personal Note desktop app: the local server inside a native window.
 
 Runs the same FastHTML app as `main.py`, in-process on a free loopback port, and
-shows it in a pywebview window. Closing the window flushes pending edits and stops
-the server. Start it with `npm run desktop` or `python desktop.py`.
+shows it in a Chromium app window (Linux, when installed) or a pywebview window.
+Closing the window flushes pending edits and stops the server. Start it with `npm run desktop` or `python desktop.py`.
 """
 
 from __future__ import annotations
@@ -26,8 +26,12 @@ from urllib.request import Request, urlopen
 PROCESS_START = time.perf_counter()
 
 from app_paths import app_data_dir, default_database_path, instance_file  # noqa: E402
+from chromium_app import find_chromium, focus_window, profile_owner_pid, run_chromium_window  # noqa: E402
 
 HOST = "127.0.0.1"
+# A fixed preferred port keeps the page's origin stable, so localStorage (skin, speed meter, preferences)
+# and the microphone permission survive restarts. Another port is used only when this one is taken.
+PREFERRED_PORT = 3138
 WINDOW_TITLE = "Personal Note"
 WINDOW_SIZE = (1280, 860)
 WINDOW_MIN_SIZE = (900, 600)
@@ -88,15 +92,17 @@ def ensure_frontend_built(root: Path = ROOT, run: Callable = subprocess.run) -> 
 class LocalServer:
     """Runs the ASGI app with uvicorn in a background thread on a free loopback port."""
 
-    def __init__(self, app, host: str = HOST, on_focus: Callable[[], None] | None = None):
+    def __init__(self, app, host: str = HOST, on_focus: Callable[[], None] | None = None, preferred_port: int = 0):
         self.app = app
         self.host = host
+        self.preferred_port = preferred_port
         self.on_focus = on_focus
         self.nonce = secrets.token_hex(16)
         self.base_url: str | None = None
         self._server = None
         self._thread: threading.Thread | None = None
         self._sock: socket.socket | None = None
+        self.fell_back = False
         self._install_focus_route()
 
     def _install_focus_route(self) -> None:
@@ -117,7 +123,12 @@ class LocalServer:
 
         # Bind here, then hand the socket to uvicorn, so the port cannot be taken in between.
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.bind((self.host, 0))
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self._sock.bind((self.host, self.preferred_port))
+        except OSError:
+            self._sock.bind((self.host, 0))  # the preferred port is taken by something else
+            self.fell_back = True
         port = self._sock.getsockname()[1]
         config = uvicorn.Config(self.app, log_level=os.getenv("LOG_LEVEL", "warning").lower(), lifespan="off")
         self._server = uvicorn.Server(config)
@@ -300,6 +311,7 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
     window.events.closing += on_closing
 
     notice = empty_notebook_notice(database) if getattr(sys, "frozen", False) else None
+    notice = " ".join(part for part in (notice, getattr(server, "fallback_notice", None)) if part) or None
     if notice:
         window.events.loaded += lambda: show_notice(window, notice)
 
@@ -327,12 +339,53 @@ def report_timing(window) -> None:
     print("[timing] canvas did not appear within 30s", flush=True)
 
 
+# ---- engine ---------------------------------------------------------------------------------
+
+
+def choose_engine(requested: str, platform: str = sys.platform, which: Callable = shutil.which) -> tuple[str, str | None]:
+    """Pick the window engine: ("chromium", binary) or ("webview", None).
+
+    `auto` uses a Chromium app window on Linux when a Chromium/Chrome binary exists, and the
+    pywebview window everywhere else (macOS and Windows keep it for now).
+    """
+    if requested == "webview":
+        return "webview", None
+    binary = find_chromium(which)
+    if requested == "chromium":
+        if binary is None:
+            raise DesktopError("No Chromium or Chrome found (tried chromium, chromium-browser, google-chrome-stable, google-chrome).")
+        return "chromium", binary
+    if platform.startswith("linux") and binary:
+        return "chromium", binary
+    return "webview", None
+
+
+def check_profile_free(profile: Path) -> None:
+    """Refuse to start when a Chromium already holds the app profile but no server answered.
+
+    Starting a second server would put the open window on a dead origin while a new one saves to the
+    same database, so bring the window forward and stop with a clear message instead.
+    """
+    pid = profile_owner_pid(profile)
+    if pid is None:
+        return
+    focus_window(pid)
+    raise DesktopError(
+        "A Personal Note window is already open but its server is not answering. "
+        "Close that window (it may be saving), then start Personal Note again."
+    )
+
+
 # ---- entry point ----------------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="personal-note-desktop", description="Open Personal Note in its own window.")
     parser.add_argument("--no-build", action="store_true", help="Do not rebuild the frontend even if it looks stale")
+    parser.add_argument(
+        "--engine", choices=("auto", "chromium", "webview"), default="auto",
+        help="Window engine: a Chromium app window (default on Linux when installed) or the pywebview window",
+    )
     parser.add_argument("--timing", action="store_true", help="Print cold-start timings")
     args = parser.parse_args(argv)
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "WARNING"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -343,20 +396,42 @@ def main(argv: list[str] | None = None) -> int:
         if running:
             print(f"Personal Note is already open ({running}); brought it forward.")
             return 0
+        engine, chromium = choose_engine(args.engine)
+        if engine == "chromium":
+            check_profile_free(app_data_dir() / "chromium-profile")
         if not args.no_build and not getattr(sys, "frozen", False):
             ensure_frontend_built()
         from routes import create_app
 
-        server = LocalServer(create_app(database))
+        server = LocalServer(create_app(database), preferred_port=PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:
         print(error, file=sys.stderr)
         return 1
+    fallback_notice = None
+    if server.fell_back and PREFERRED_PORT:
+        fallback_notice = (
+            f"Port {PREFERRED_PORT} is in use by another program, so Personal Note is using a different port. "
+            "Saved preferences (skin, speed meter) and the microphone permission start fresh on this port."
+        )
+        print(f"Warning: {fallback_notice}", file=sys.stderr)
+    server.fallback_notice = fallback_notice
     if args.timing:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
     record_instance(database, base_url, server.nonce)
     try:
-        run_window(base_url, database, server, args.timing)
+        if engine == "chromium":
+            code = run_chromium_window(base_url, chromium, app_data_dir() / "chromium-profile", server)
+            if code != 0:
+                print(f"The Chromium window exited with an error (code {code}). Try `--engine webview`.", file=sys.stderr)
+                return 1
+        else:
+            run_window(base_url, database, server, args.timing)
+    except OSError as error:
+        if engine != "chromium":
+            raise
+        print(f"Could not start the Chromium window ({error}). Try `--engine webview`.", file=sys.stderr)
+        return 1
     except ImportError as error:
         print(
             f"The desktop window needs pywebview and a system web view ({error}).\n"
