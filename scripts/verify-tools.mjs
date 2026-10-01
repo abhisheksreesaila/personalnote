@@ -172,6 +172,15 @@ const count = (page) => page.evaluate(() => window.__personalNote.canvas.getObje
   check('panning added no history entry', await page.evaluate(() => window.__personalNote.state.historyIndex) === hist0)
   await page.evaluate(() => { const c = window.__personalNote.canvas; c.discardActiveObject(); c.getObjects().forEach((o) => c.remove(o)) })
 
+  // a pointerdown whose pointerup never arrives (a context menu eats it) must not disable Space
+  await page.keyboard.press('v')
+  await page.evaluate(() => window.__personalNote.canvas.upperCanvasEl.dispatchEvent(new PointerEvent('pointerdown', { button: 2, buttons: 2, bubbles: true, pointerType: 'mouse' })))
+  await page.mouse.click(mx, my - 150)
+  await page.keyboard.down('Space')
+  check('a pointerdown without its pointerup does not disable Space', await tool(page) === 'hand')
+  await page.keyboard.up('Space')
+  check('and Space still returns to the previous tool', await tool(page) === 'select')
+
   // Space no longer pages the canvas
   await page.keyboard.press('v')
   const idle = await vpt(page)

@@ -3848,20 +3848,42 @@ function canPanFromKeyboard(activeElement) {
 
 // Space is only a hand between drags: while any pointer is down the tool must not change under a stroke,
 // connector drag, object drag or eraser pass, so the switch waits for the release.
-let pointersDown = 0
+// A pointerup can be lost (a native context menu eats it), so the set is re-synced from `buttons` and
+// cleared on contextmenu, blur and when the page is hidden; a stuck entry must never disable Space.
+const activePointers = new Set()
+let lastPointerButtons = 0
 let spaceHeld = false
+function releaseAllPointers() {
+  if (!activePointers.size) return
+  activePointers.clear()
+  setTimeout(settleSpaceAfterPointer, 0)
+}
 function settleSpaceAfterPointer() {
-  if (pointersDown) return
+  if (activePointers.size) return
   if (spaceHeld) beginTemporaryHand()
   else endTemporaryHand()
 }
-document.addEventListener('pointerdown', () => { pointersDown += 1 }, { capture: true })
-const pointerReleased = () => { pointersDown = Math.max(0, pointersDown - 1); setTimeout(settleSpaceAfterPointer, 0) }
+document.addEventListener('pointerdown', (event) => {
+  lastPointerButtons = event.buttons
+  activePointers.add(event.pointerId)
+}, { capture: true })
+window.addEventListener('pointermove', (event) => {
+  lastPointerButtons = event.buttons
+  if (event.buttons === 0) releaseAllPointers()
+}, { capture: true })
+document.addEventListener('keydown', () => { if (lastPointerButtons === 0) releaseAllPointers() }, { capture: true })
+document.addEventListener('contextmenu', releaseAllPointers, { capture: true })
+document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAllPointers() })
+const pointerReleased = (event) => {
+  lastPointerButtons = event.buttons
+  activePointers.delete(event.pointerId)
+  setTimeout(settleSpaceAfterPointer, 0)
+}
 window.addEventListener('pointerup', pointerReleased, { capture: true })
 window.addEventListener('pointercancel', pointerReleased, { capture: true })
 
 function beginTemporaryHand() {
-  if (pointersDown) return
+  if (activePointers.size) return
   const hand = temporaryHand.begin(state.tool)
   if (!hand) return
   applyingTemporaryHand = true
@@ -3869,7 +3891,7 @@ function beginTemporaryHand() {
 }
 
 function endTemporaryHand() {
-  if (pointersDown) return
+  if (activePointers.size) return
   const back = temporaryHand.end()
   if (!back) return
   applyingTemporaryHand = true
@@ -3883,7 +3905,7 @@ document.addEventListener('click', (event) => {
   if (button && event.detail > 0) button.blur()
 })
 document.addEventListener('keyup', (event) => { if (event.key === ' ') { spaceHeld = false; endTemporaryHand() } })
-window.addEventListener('blur', () => { spaceHeld = false; pointersDown = 0; endTemporaryHand() })
+window.addEventListener('blur', () => { spaceHeld = false; activePointers.clear(); endTemporaryHand() })
 
 function panWithKeyboard(event) {
   const delta = keyboardPan(event, { viewH: canvas.getHeight() })
