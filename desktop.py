@@ -25,7 +25,7 @@ from urllib.request import Request, urlopen
 
 PROCESS_START = time.perf_counter()
 
-from app_paths import app_data_dir, default_database_path, instance_file  # noqa: E402
+from app_paths import app_data_dir, default_database_path, instance_file, resource_root  # noqa: E402
 from chromium_app import find_chromium, focus_window, profile_owner_pid, run_chromium_window  # noqa: E402
 
 HOST = "127.0.0.1"
@@ -38,7 +38,7 @@ WINDOW_MIN_SIZE = (900, 600)
 FLUSH_TIMEOUT = 3.0
 FOCUS_PATH = "/_desktop/focus"
 NONCE_HEADER = "x-focus-nonce"
-ROOT = Path(__file__).resolve().parent
+ROOT = resource_root()
 FRONTEND_INPUTS = ("src", "public", "index.html", "landing-note.html", "spatial-docs.html", "vite.config.js", "package.json")
 
 logger = logging.getLogger("personal-note.desktop")
@@ -376,6 +376,17 @@ def check_profile_free(profile: Path) -> None:
     )
 
 
+def wait_for_stop(base_url: str) -> None:
+    """Headless mode: print the address, then block until SIGINT or SIGTERM."""
+    import signal
+
+    stop = threading.Event()
+    for name in ("SIGINT", "SIGTERM"):
+        signal.signal(getattr(signal, name), lambda *_: stop.set())
+    print(f"Serving on {base_url}", flush=True)
+    stop.wait()
+
+
 # ---- entry point ----------------------------------------------------------------------------
 
 
@@ -387,6 +398,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Window engine: a Chromium app window (default on Linux when installed) or the pywebview window",
     )
     parser.add_argument("--timing", action="store_true", help="Print cold-start timings")
+    parser.add_argument("--serve", action="store_true", help="Run only the local server, with no window, until interrupted")
+    parser.add_argument("--port", type=int, default=None, help="Port for --serve (default: any free port)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "WARNING"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -396,20 +409,20 @@ def main(argv: list[str] | None = None) -> int:
         if running:
             print(f"Personal Note is already open ({running}); brought it forward.")
             return 0
-        engine, chromium = choose_engine(args.engine)
+        engine, chromium = ("serve", None) if args.serve else choose_engine(args.engine)
         if engine == "chromium":
             check_profile_free(app_data_dir() / "chromium-profile")
         if not args.no_build and not getattr(sys, "frozen", False):
             ensure_frontend_built()
         from routes import create_app
 
-        server = LocalServer(create_app(database), preferred_port=PREFERRED_PORT)
+        server = LocalServer(create_app(database), preferred_port=(args.port or 0) if args.serve else PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:
         print(error, file=sys.stderr)
         return 1
     fallback_notice = None
-    if server.fell_back and PREFERRED_PORT:
+    if server.fell_back and PREFERRED_PORT and not args.serve:
         fallback_notice = (
             f"Port {PREFERRED_PORT} is in use by another program, so Personal Note is using a different port. "
             "Saved preferences (skin, speed meter) and the microphone permission start fresh on this port."
@@ -420,7 +433,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
     record_instance(database, base_url, server.nonce)
     try:
-        if engine == "chromium":
+        if engine == "serve":
+            wait_for_stop(base_url)
+        elif engine == "chromium":
             code = run_chromium_window(base_url, chromium, app_data_dir() / "chromium-profile", server)
             if code != 0:
                 print(f"The Chromium window exited with an error (code {code}). Try `--engine webview`.", file=sys.stderr)
@@ -433,11 +448,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Could not start the Chromium window ({error}). Try `--engine webview`.", file=sys.stderr)
         return 1
     except ImportError as error:
-        print(
-            f"The desktop window needs pywebview and a system web view ({error}).\n"
-            "Install them with: pip install -r requirements-desktop.txt (see README, Desktop app).",
-            file=sys.stderr,
-        )
+        if getattr(sys, "frozen", False):
+            print(
+                f"Personal Note needs Chromium or Google Chrome installed to open its window ({error}).",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"The desktop window needs pywebview and a system web view ({error}).\n"
+                "Install them with: pip install -r requirements-desktop.txt (see README, Desktop app).",
+                file=sys.stderr,
+            )
         return 1
     finally:
         clear_instance(database)

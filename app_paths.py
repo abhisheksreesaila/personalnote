@@ -16,6 +16,15 @@ DATABASE_FILENAME = "personal-note.db"
 LEGACY_DATABASE = Path(__file__).resolve().parent / "data" / DATABASE_FILENAME
 
 
+def resource_root(frozen: bool | None = None, meipass: str | None = None, source: Path | None = None) -> Path:
+    """Folder holding the built frontend (`dist/`): the source folder, or PyInstaller's bundle folder."""
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    meipass = getattr(sys, "_MEIPASS", None) if frozen and meipass is None else meipass
+    if frozen and meipass:
+        return Path(meipass)
+    return Path(__file__).resolve().parent if source is None else source
+
+
 def app_data_dir(platform: str | None = None, env: Mapping[str, str] | None = None, home: Path | None = None) -> Path:
     platform = sys.platform if platform is None else platform
     env = os.environ if env is None else env
@@ -48,11 +57,12 @@ def default_database_path(
     env: Mapping[str, str] | None = None,
     home: Path | None = None,
     legacy_path: Path | None = None,
+    frozen: bool | None = None,
 ) -> Path:
     """Choose the notebook database. Nothing is created, moved, copied or deleted here.
 
     1. PERSONAL_NOTE_DB, if set.
-    2. An existing legacy `data/personal-note.db` in this checkout, until the user has run
+    2. In a source checkout (not a packaged app), an existing legacy `data/personal-note.db`, until the user has run
        `personal-note migrate-data` (which leaves a marker) and the app-data database exists.
        Another install creating an empty app-data database first therefore never hides the notes.
     3. The app-data database.
@@ -62,7 +72,9 @@ def default_database_path(
     if override:
         return Path(override)
     appdata_db = app_data_dir(platform, env, home) / DATABASE_FILENAME
-    legacy = LEGACY_DATABASE if legacy_path is None else legacy_path
+    if bool(getattr(sys, "frozen", False)) if frozen is None else frozen:
+        return appdata_db  # a packaged app has no checkout, so there is no legacy database to keep
+    legacy =LEGACY_DATABASE if legacy_path is None else legacy_path
     if legacy.exists() and not (marker_path(legacy).exists() and appdata_db.exists()):
         return legacy
     return appdata_db

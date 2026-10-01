@@ -193,6 +193,49 @@ class FrontendBuildTests(TempDirCase):
         self.assertTrue(frontend_is_stale(root))
 
 
+class SessionKeyLocationTests(TempDirCase):
+    def test_the_session_key_is_kept_beside_the_database_not_in_the_working_directory(self):
+        # Launched from a menu the working directory is the home folder or / (not writable in a bundle).
+        work = self.root / "cwd"
+        work.mkdir()
+        previous = os.getcwd()
+        os.chdir(work)
+        try:
+            create_app(self.root / "data" / "n.db")
+        finally:
+            os.chdir(previous)
+        self.assertFalse((work / ".sesskey").exists())
+        self.assertTrue((self.root / "data" / ".sesskey").exists())
+
+
+class ServeOnlyTests(TempDirCase):
+    def test_serve_runs_the_app_without_a_window_until_told_to_stop(self):
+        import signal
+        import subprocess
+        import sys
+
+        env = {**os.environ, "PERSONAL_NOTE_DB": str(self.root / "n.db"), "XDG_DATA_HOME": str(self.root / "xdg")}
+        root = Path(__file__).resolve().parent.parent
+        process = subprocess.Popen(
+            [sys.executable, str(root / "desktop.py"), "--serve", "--port", "0", "--no-build"],
+            cwd=self.root, env=env, stdout=subprocess.PIPE, text=True,
+        )
+        try:
+            line = process.stdout.readline().strip()
+            self.assertTrue(line.startswith("Serving on http://127.0.0.1:"), line)
+            url = line.removeprefix("Serving on ")
+            with urlopen(f"{url}/health", timeout=3) as response:
+                self.assertEqual(json.load(response)["app"], "personal-note")
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=10), 0)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            process.stdout.close()
+        self.assertFalse(instance_file(self.root / "n.db").exists())
+
+
 class WindowUrlTests(unittest.TestCase):
     def test_desktop_window_tells_the_page_it_is_the_desktop_app(self):
         self.assertEqual(window_url("http://127.0.0.1:5000"), "http://127.0.0.1:5000/notes?host=desktop")
