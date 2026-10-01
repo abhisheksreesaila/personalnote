@@ -530,7 +530,7 @@ class VoiceRuntime:
             self.pid_path.unlink(missing_ok=True)
             return
         try:
-            command = subprocess.run(["ps", "-p", str(pid), "-o", "args="], capture_output=True, text=True, timeout=5).stdout
+            command = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "args="], capture_output=True, text=True, timeout=5).stdout
         except (OSError, subprocess.SubprocessError):
             command = ""
         if binary in command:  # the same pid could now belong to something else
@@ -556,7 +556,7 @@ class VoiceRuntime:
             process = subprocess.Popen(
                 self._command(port), cwd=self.binary_path().parent, env=child_env(),
                 stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                preexec_fn=_die_with_parent if sys.platform.startswith("linux") else None,
+                preexec_fn=(lambda parent=os.getpid(): _die_with_parent(parent)) if _PRCTL else None,
             )
         except OSError as error:
             raise VoiceError("The voice engine could not be started. Remove voice and download it again.") from error
@@ -733,11 +733,23 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def _die_with_parent() -> None:
-    """Linux: have the kernel stop the engine if this app dies without cleaning up (runs in the child)."""
+def _load_prctl():
+    """Resolved once at import (Linux only), so the code that runs between fork and exec only calls it."""
+    if not sys.platform.startswith("linux"):
+        return None
     try:
         import ctypes
 
-        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
-    except Exception:
-        pass
+        return ctypes.CDLL("libc.so.6", use_errno=True).prctl
+    except (OSError, AttributeError):
+        return None
+
+
+_PRCTL = _load_prctl()
+
+
+def _die_with_parent(parent: int) -> None:
+    """Runs in the child: have the kernel stop the engine if this app dies (PR_SET_PDEATHSIG)."""
+    _PRCTL(1, signal.SIGTERM)
+    if os.getppid() != parent:  # the app died before the signal was armed
+        os._exit(1)

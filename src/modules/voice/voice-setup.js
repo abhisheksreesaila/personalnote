@@ -35,7 +35,7 @@ export function describeVoice(status) {
       }
     case 'ready':
       return {
-        headline: 'Ready',
+        headline: status.starting ? 'Starting…' : 'Ready',
         detail: [
           status.engineError || (status.running
             ? 'Runs on this computer. Hold the mic button to dictate. Audio is never stored.'
@@ -91,7 +91,8 @@ export async function prepareLocalVoice(client, { onStarting } = {}) {
     try {
       status = await client.startEngine()
     } catch (error) {
-      return { blocked: `${error.message} Open Settings › Voice to reinstall it.`, status }
+      // A processor the engine cannot run on is not fixed by reinstalling.
+      return { blocked: /processor/.test(error.message) ? error.message : `${error.message} Open Settings › Voice to reinstall it.`, status }
     }
   }
   return status.endpoint ? { endpoint: status.endpoint } : { blocked: 'The voice engine did not start. Open Settings › Voice.', status }

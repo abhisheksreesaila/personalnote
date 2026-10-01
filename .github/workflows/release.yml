@@ -111,6 +111,10 @@ jobs:
       - name: Build the voice engine
         run: sh scripts/build-voice-engine.sh
 
+      - name: Say so when the engine build failed
+        if: failure()
+        run: echo "::warning title=Voice engine::The ${{ matrix.name }} voice engine did not build; the release goes out without it."
+
       - uses: actions/upload-artifact@v4
         with:
           name: personal-note-voice-engine-${{ matrix.os }}
@@ -133,7 +137,18 @@ jobs:
           path: assets
           merge-multiple: true
 
+      - name: Note any missing voice engine
+        run: |
+          : > release-extra.md
+          for name in personal-note-voice-engine-linux-x86_64.tar.gz personal-note-voice-engine-macos-arm64.tar.gz; do
+            if [ ! -f "assets/$name" ]; then
+              echo "::warning title=Voice engine missing::$name was not built, so Download voice is unavailable on that system for this release."
+              echo "Voice engine \`$name\` was not built for this release; Download voice will not work on that system until it is added." >> release-extra.md
+            fi
+          done
+
       - uses: softprops/action-gh-release@v2
         with:
           files: assets/*
+          body_path: release-extra.md
           generate_release_notes: true

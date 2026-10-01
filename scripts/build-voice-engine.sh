@@ -91,9 +91,8 @@ if [ "$SYSTEM" = Linux ]; then
   GOMP="$(${CC:-cc} -print-file-name=libgomp.so.1)"
   [ -f "$GOMP" ] && mkdir -p "$STAGE/lib" && cp -L "$GOMP" "$STAGE/lib/libgomp.so.1"
 fi
-# The app refuses archive links, so turn the library symlinks into real files (they are small).
-find "$STAGE" -type l -name '*.so' -delete
-find "$STAGE" -type l -name '*.dylib' -delete
+# The app refuses archive links, so turn every library symlink (the versioned names the binary loads included)
+# into a real file. They are small.
 find "$STAGE" -type l | while read -r link; do target="$(readlink -f "$link")"; rm "$link"; cp "$target" "$link"; done
 [ -z "$(find "$STAGE" -type l)" ] || { echo "Links remain in the engine folder." >&2; exit 1; }
 
@@ -103,11 +102,16 @@ if [ "$SYSTEM" = Darwin ]; then
 fi
 printf '{"engine":"NeMo-Speech.cpp","commit":"%s","platform":"%s"}\n' "$ENGINE_COMMIT" "$KEY" > "$STAGE/engine.json"
 
-# The binary finds its libraries through its own folder, so it works wherever the app unpacks it.
-"$STAGE/bin/nemo-speech" --version
 
 rm -f "$OUT/$NAME.tar.gz" "$OUT/$NAME.tar.gz.sha256"
 COPYFILE_DISABLE=1 tar -C "$STAGE" -czf "$OUT/$NAME.tar.gz" .
 if command -v sha256sum >/dev/null 2>&1; then SUM="$(sha256sum "$OUT/$NAME.tar.gz")"; else SUM="$(shasum -a 256 "$OUT/$NAME.tar.gz")"; fi
 printf '%s  %s\n' "${SUM%% *}" "$NAME.tar.gz" > "$OUT/$NAME.tar.gz.sha256"
+# Self-check: unpack the archive we are about to ship into an empty folder and start the engine from there, the
+# way the app will. A binary that cannot find its libraries fails the job here, not on a user's machine.
+CHECK="$(mktemp -d)"
+tar -xzf "$OUT/$NAME.tar.gz" -C "$CHECK"
+(cd "$CHECK" && env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH ./bin/nemo-speech --version) \
+  || { echo "The packed engine does not start from a clean folder." >&2; rm -rf "$CHECK"; exit 1; }
+rm -rf "$CHECK"
 echo "Built dist-app/$NAME.tar.gz"

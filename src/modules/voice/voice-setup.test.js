@@ -67,6 +67,16 @@ test('an engine that cannot start says why and points at Settings', async () => 
   assert.match(result.blocked, /Settings/)
 })
 
+test('an unsupported processor is stated plainly, with no advice to reinstall', async () => {
+  const message = "This computer's processor isn't supported by the voice engine."
+  const client = { status: async () => ({ state: 'ready', running: false }), startEngine: async () => { throw new Error(message) } }
+  assert.equal((await prepareLocalVoice(client)).blocked, message)
+})
+
+test('Settings says Starting while the engine starts', () => {
+  assert.equal(describeVoice({ ...ready, running: false, starting: true }).headline, 'Starting…')
+})
+
 test('voice that is not installed, downloading or broken is blocked with a short reason', async () => {
   const blocked = async (status) => (await prepareLocalVoice({ status: async () => status })).blocked
   assert.match(await blocked({ state: 'not-installed' }), /not installed.*Settings › Voice/)
