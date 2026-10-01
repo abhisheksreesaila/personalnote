@@ -111,7 +111,8 @@ Captain, after first use of the desktop app: page grow/shrink "feels sluggish…
 - [x] Clear all is one click from the top right, and can be undone right after (Undo in a toast and Ctrl/⌘+Z)
 - [x] Delete note is undoable for 8 s; switching notes saves the outgoing note first
 
-## F-014 Fastest engine for the Linux app [todo]
+## F-014 Fastest engine for the Linux app [doing]
+Captain: "the chromium window feels fast, use that for the launcher."
 Needs: F-013
 - [ ] the same canvas benchmark is measured in the current desktop window (WebKitGTK) and in a Chromium app window on this machine, with GPU
 - [ ] the Linux launcher uses whichever is faster, keeping one-window, single-instance and save-on-close behavior
@@ -122,3 +123,8 @@ Captain: "I don't know whether it's a Chromium window or NPM window… put some 
 - [x] the meter names the engine the window runs on (Chromium, WebKit, Firefox) and whether it's the desktop app or a browser window
 - [x] the meter is off by default, costs nothing when off, and its on/off choice is remembered
 - [x] `npm start` uses the project's own Python environment when it exists
+
+## F-016 Remove the writing guide [doing]
+Captain: "no need for a translucent line underneath the text… remove and save some cycles of drawing time."
+- [ ] no ruled guide lines appear while editing text, on desktop or phone
+- [ ] the code that placed and redrew them is gone, not just hidden
