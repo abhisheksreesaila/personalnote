@@ -215,7 +215,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mindmap-inspector footer .danger { color: #9e3b2a; border-color: #efc8be; background: #fff5f1; }
 .toast { position: fixed; z-index: 120; left: 50%; bottom: 96px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 9px 10px 9px 16px; border-radius: 8px; color: #fff; background: #292a25; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.28); }
 .toast[hidden] { display: none; }
-.toast button { padding: 5px 10px; border: 0; border-radius: 6px; color: #fff; background: rgba(255,255,255,.16); font: 600 12px inherit; cursor: pointer; }
+.toast button { padding: 5px 10px; border: 0; border-radius: 6px; color: #fff; background: rgba(255,255,255,.16); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
 .toast button:hover { background: rgba(255,255,255,.28); }
 .mindmap-toast { position: fixed; z-index: 100; left: 50%; bottom: 24px; transform: translate(-50%,20px); padding: 10px 14px; border-radius: 5px; color: #fff; background: #292a25; font-size: 12px; opacity: 0; pointer-events: none; transition: 200ms ease; }
 .mindmap-toast.visible { transform: translate(-50%,0); opacity: 1; }

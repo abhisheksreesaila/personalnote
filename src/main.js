@@ -151,7 +151,7 @@ document.querySelector('#app').innerHTML = `
             </div>
           </div>
           <button class="icon-button glass-button" id="clear-note" title="Clear all" aria-label="Clear all"><i data-lucide="eraser"></i></button>
-          <button class="icon-button glass-button properties-trigger" id="top-properties" title="Note properties" aria-label="Open note properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
+          <button class="icon-button glass-button properties-trigger" id="top-properties" title="Settings and properties" aria-label="Open settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
         </div>
       </header>
 
@@ -241,10 +241,10 @@ document.querySelector('#app').innerHTML = `
       </section>
     </main>
 
-    <aside class="properties-panel" id="properties-panel" aria-label="Note properties" aria-hidden="true" inert>
+    <aside class="properties-panel" id="properties-panel" aria-label="Settings and properties" aria-hidden="true" inert>
       <div class="properties-heading">
         <div><span>Inspector</span><h2>Note properties</h2></div>
-        <button class="icon-button" id="close-properties" title="Close properties" aria-label="Close note properties"><i data-lucide="x"></i></button>
+        <button class="icon-button" id="close-properties" title="Close settings and properties" aria-label="Close settings and properties"><i data-lucide="x"></i></button>
       </div>
       <section class="property-section">
         <label class="property-label">Notebook</label>
@@ -256,7 +256,7 @@ document.querySelector('#app').innerHTML = `
       <section class="property-section" id="canvas-typography-properties">
         <div class="property-section-title"><span>Typography</span><small id="text-selection-status">New text</small></div>
         <div class="font-family-control" id="font-family-control" aria-label="Font family">
-          <button data-font-family="Source Serif 4" class="active" title="Serif" aria-label="Serif">Ag</button>
+          <button data-font-family="Source Serif 4" title="Serif" aria-label="Serif">Ag</button>
           <button data-font-family="IBM Plex Sans" title="Sans serif" aria-label="Sans serif">Ag</button>
           <button data-font-family="monospace" title="Monospace" aria-label="Monospace">Ag</button>
         </div>
@@ -275,7 +275,7 @@ document.querySelector('#app').innerHTML = `
         <p class="settings-section-label">Writing</p>
         <div class="setting-field-heading"><span>Default text</span><small>New objects</small></div>
         <div class="font-family-control settings-font-control" aria-label="Default font family">
-          <button data-default-font-family="Source Serif 4" class="active" title="Serif" aria-label="Serif">Ag</button>
+          <button data-default-font-family="Source Serif 4" title="Serif" aria-label="Serif">Ag</button>
           <button data-default-font-family="IBM Plex Sans" title="Sans serif" aria-label="Sans serif">Ag</button>
           <button data-default-font-family="monospace" title="Monospace" aria-label="Monospace">Ag</button>
         </div>
@@ -2042,6 +2042,8 @@ async function saveActiveNote({ unloading = false } = {}) {
 function queueSave() {
   if (state.loading) return
   unsavedEdits = true
+  // Any edit after Clear all ends its Undo, so Ctrl/Cmd+Z goes back to ordinary undo.
+  if (pendingClearUndo) hideToast()
   setSaveState('Saving')
   clearTimeout(saveTimer)
   saveTimer = setTimeout(saveActiveNote, 650)
@@ -2049,6 +2051,7 @@ function queueSave() {
 
 // Sends anything still waiting on the two debounces (history 180ms, save 650ms) right now.
 function flushPendingEdits() {
+  void commitPendingDelete({ keepalive: true })
   if (state.loading || !state.activeNoteId) return
   flushPendingHistory({
     cancel: () => clearTimeout(historyTimer),
@@ -2066,6 +2069,7 @@ bindPageLifecycle({ windowTarget: window, documentTarget: document, flush: flush
 window.personalNote = {
   flush: () => settleSaves({
     flushPending: () => {
+      void commitPendingDelete({ keepalive: true })
       if (state.loading || !state.activeNoteId) return
       flushPendingHistory({
         cancel: () => clearTimeout(historyTimer),
@@ -2075,7 +2079,7 @@ window.personalNote = {
       })
       clearTimeout(saveTimer)
     },
-    isSaving: () => saveInFlight,
+    isSaving: () => saveInFlight || deleteInFlight,
     hasUnsaved: () => unsavedEdits,
     save: () => saveActiveNote(),
   }),
@@ -2124,6 +2128,7 @@ async function restoreHistory(index) {
 
 async function selectNote(id) {
   if (id === state.activeNoteId) return
+  hideToast()
   clearTimeout(saveTimer)
   unsavedEdits = false
   state.activeNoteId = id
@@ -2352,7 +2357,7 @@ function setPropertiesOpen(open) {
   const trigger = document.querySelector('#top-properties')
   trigger.classList.toggle('active', open)
   trigger.setAttribute('aria-expanded', String(open))
-  trigger.setAttribute('aria-label', open ? 'Close note properties' : 'Open note properties')
+  trigger.setAttribute('aria-label', open ? 'Close settings and properties' : 'Open settings and properties')
 }
 
 function syncDefaultTypographySettings() {
@@ -2913,11 +2918,19 @@ function queueSearch() {
 
 async function deleteActiveNote() {
   if (!state.activeNoteId) return
-  await api(`/notes/${state.activeNoteId}`, { method: 'DELETE' })
-  state.notes = state.notes.filter((note) => note.id !== state.activeNoteId)
+  await commitPendingDelete()
+  // Land the note's latest edits first, so Undo brings back exactly what was on screen.
+  flushPendingEdits()
+  const id = state.activeNoteId
+  const index = state.notes.findIndex((note) => note.id === id)
+  const note = state.notes[index]
+  if (!note) return
+  state.notes = state.notes.filter((item) => item.id !== id)
   state.activeNoteId = null
   if (!state.notes.length) await createNote()
   else await selectNote(state.notes[0].id)
+  pendingDelete = { note, index }
+  showToast('Note deleted', 'Undo', undoDelete)
 }
 
 // Clear all runs at once and offers Undo in a toast (and Ctrl/Cmd+Z), so no confirmation dialog is needed.
@@ -2934,10 +2947,43 @@ function showToast(message, actionLabel, onAction) {
   toastTimer = setTimeout(hideToast, 8000)
 }
 
+// Hiding the toast ends whatever it was offering to undo; a held delete is sent for real.
 function hideToast() {
   clearTimeout(toastTimer)
   elements.toast.hidden = true
   pendingClearUndo = null
+  void commitPendingDelete()
+}
+
+// Delete note leaves the view at once; the real DELETE waits for the toast to expire, another note to open,
+// or the app to close (flushed with the other pending edits). Undo cancels it.
+let pendingDelete = null
+let deleteInFlight = false
+
+async function commitPendingDelete({ keepalive = false } = {}) {
+  const held = pendingDelete
+  if (!held) return
+  pendingDelete = null
+  deleteInFlight = true
+  try {
+    await api(`/notes/${held.note.id}`, { method: 'DELETE', keepalive })
+  } catch (error) {
+    console.error(error)
+    state.notes = await api('/notes').catch(() => state.notes)
+    renderNoteList()
+  } finally {
+    deleteInFlight = false
+  }
+}
+
+async function undoDelete() {
+  const held = pendingDelete
+  pendingDelete = null
+  hideToast()
+  if (!held) return
+  state.notes.splice(Math.min(held.index, state.notes.length), 0, held.note)
+  renderNoteList()
+  await selectNote(held.note.id)
 }
 
 async function undoClear() {
@@ -2963,7 +3009,7 @@ async function clearActiveNote() {
     return
   }
   if (!canvas.getObjects().length) return
-  clearTimeout(historyTimer)
+  flushPendingHistory({ cancel: () => clearTimeout(historyTimer), commit: commitHistorySnapshot })
   canvas.discardActiveObject()
   canvas.clear()
   state.pages = { columns: 1, rows: 1 }
@@ -3805,6 +3851,7 @@ async function initialize() {
   resizePaper()
   resetCanvasView()
   syncDefaultTypographySettings()
+  syncTypographyControls()
   loadCapabilitySettings()
   try {
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])

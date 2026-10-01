@@ -145,7 +145,7 @@
   .app-shell .skin-swatch:hover { transform: scale(1.14); }
   .app-shell .skin-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--sk-accent); }
   .app-shell .skin-swatch:focus-visible { outline: none; box-shadow: var(--ring); }
-    .app-shell .sidebar-scrim { display: none; }
+  .app-shell .sidebar-scrim { display: none; }
 
   /* ---------- Top bar ---------- */
   .app-shell .topbar {
@@ -334,7 +334,7 @@
     background: var(--glass-solid); -webkit-backdrop-filter: blur(24px) saturate(1.1); backdrop-filter: blur(24px) saturate(1.1);
     transform: translateX(calc(100% + 28px)); transition: transform 260ms var(--ease-out);
   }
-  .app-shell .properties-panel.open.open { transform: none; }
+  .app-shell .properties-panel.open { transform: none; }
 
   /* ---------- Notebook dialog: section picker ---------- */
   .category-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: color-mix(in srgb, var(--sk-ink) 6%, var(--sk-panel)); }
