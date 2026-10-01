@@ -13,7 +13,7 @@ All three share one layout, so they double as the v1 **skins** — the brief ask
 | Feel | warm ivory paper, tomato cloth cover | bright white, Apple system colors | dark desk, glowing ink |
 | Display type | Fraunces | Bricolage Grotesque | Instrument Serif italic |
 | Body / hand / mono | Geist / Caveat / Geist Mono | same | same |
-| Accent | #E5533D | #0A6CFF | #7EE7C8 |
+| Accent | #E5533D | #2F6FE0 | #7EE7C8 |
 | Hero idea | one closed notebook with elastic band | fan of PARA notebooks | midnight cover, foil title |
 
 Plus an interactive board (**Try it — page growth + skins**) showing the expand/shrink motion

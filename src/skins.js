@@ -2,7 +2,7 @@
 // only decides which skin is active, remembers it locally, and loads its fonts.
 
 export const SKINS = [
-  { id: 'crayon', name: 'Crayon', swatch: '#0a6cff', themeColor: '#f2f2f7', fonts: 'Bricolage+Grotesque:wght@600;700;800' },
+  { id: 'crayon', name: 'Crayon', swatch: '#2f6fe0', themeColor: '#f2f2f7', fonts: 'Bricolage+Grotesque:wght@600;700;800' },
   { id: 'paper', name: 'Paper', swatch: '#e5533d', themeColor: '#efebe3', fonts: 'Fraunces:wght@500;600' },
   { id: 'night', name: 'Night', swatch: '#1b2130', themeColor: '#0d1015', fonts: 'Instrument+Serif:ital@0;1' },
 ]
