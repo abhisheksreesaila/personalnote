@@ -17,7 +17,6 @@ export function keyboardPan(event, { viewH }) {
     case 'ArrowRight': return { dx: -step, dy: 0 }
     case 'PageUp': return { dx: 0, dy: page }
     case 'PageDown': return { dx: 0, dy: -page }
-    case ' ': return { dx: 0, dy: event.shiftKey ? page : -page }
     case 'Home': return { dx: 0, dy: Infinity }
     case 'End': return { dx: 0, dy: -Infinity }
     default: return null

@@ -16,11 +16,11 @@ test('shift makes arrow steps larger', () => {
   assert.deepEqual(keyboardPan(press('ArrowDown', { shiftKey: true }), view), { dx: 0, dy: -256 })
 })
 
-test('PageDown, PageUp and Space move by most of a screen', () => {
+test('PageDown and PageUp move by most of a screen; Space is the hand, not a page key', () => {
   assert.deepEqual(keyboardPan(press('PageDown'), view), { dx: 0, dy: -680 })
   assert.deepEqual(keyboardPan(press('PageUp'), view), { dx: 0, dy: 680 })
-  assert.deepEqual(keyboardPan(press(' '), view), { dx: 0, dy: -680 })
-  assert.deepEqual(keyboardPan(press(' ', { shiftKey: true }), view), { dx: 0, dy: 680 })
+  assert.equal(keyboardPan(press(' '), view), null)
+  assert.equal(keyboardPan(press(' ', { shiftKey: true }), view), null)
 })
 
 test('Home and End jump to the top and bottom', () => {

@@ -233,7 +233,6 @@
   .app-shell .tool-dock .tool-button:focus-visible { outline: none; box-shadow: var(--ring); }
   .app-shell .tool-dock .tool-button.active { background: var(--sk-ink); color: var(--sk-panel); box-shadow: none; }
   .app-shell .tool-dock .tool-button.active:hover { background: var(--sk-ink); }
-  .app-shell .tool-dock .mobile-hand-tool { display: none; }
   .app-shell .tool-dock .tool-button svg { width: 20px; height: 20px; stroke-width: 1.7; }
   .app-shell .tool-button[data-tool-options]::after { right: 6px; bottom: 6px; }
   .app-shell .dock-divider { flex: none; width: 1px; height: 24px; margin: 0 6px; background: var(--sk-line); }

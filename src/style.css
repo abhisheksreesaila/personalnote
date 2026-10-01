@@ -221,7 +221,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mindmap-toast.visible { transform: translate(-50%,0); opacity: 1; }
 
 .tool-group { display: flex; align-items: center; gap: 2px; }
-.mobile-hand-tool { display: none; }
 .tool-button[data-tool-options]::after {
   content: '';
   position: absolute;
