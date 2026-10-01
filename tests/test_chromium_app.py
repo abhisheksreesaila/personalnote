@@ -129,7 +129,7 @@ class RunWindowTests(unittest.TestCase):
             self.assertTrue(profile.is_dir())
         self.assertEqual(code, 0)
         self.assertEqual(events[1:], ["exited", "idle-wait"])
-        self.assertIn("--app=http://127.0.0.1:5000/notes?host=desktop", events[0][1])
+        self.assertIn("--app=http://127.0.0.1:5000/notes?host=desktop&engine=chromium", events[0][1])
 
     def test_idle_wait_also_runs_when_waiting_is_interrupted(self):
         events = []
@@ -185,8 +185,25 @@ class ProfileLockTests(unittest.TestCase):
     def test_reads_the_pid_from_the_singleton_lock(self):
         with tempfile.TemporaryDirectory() as tmp:
             os.symlink("myhost-4321", Path(tmp) / "SingletonLock")
-            self.assertEqual(profile_owner_pid(Path(tmp), alive=lambda pid: True), 4321)
-            self.assertIsNone(profile_owner_pid(Path(tmp), alive=lambda pid: False))
+            ours = dict(hostname=lambda: "myhost", is_chromium=lambda pid: True)
+            self.assertEqual(profile_owner_pid(Path(tmp), alive=lambda pid: True, **ours), 4321)
+            self.assertIsNone(profile_owner_pid(Path(tmp), alive=lambda pid: False, **ours))
+
+    def test_another_hosts_lock_or_a_recycled_pid_is_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.symlink("myhost-4321", Path(tmp) / "SingletonLock")
+            self.assertIsNone(profile_owner_pid(Path(tmp), alive=lambda p: True, hostname=lambda: "other", is_chromium=lambda p: True))
+            self.assertIsNone(profile_owner_pid(Path(tmp), alive=lambda p: True, hostname=lambda: "myhost", is_chromium=lambda p: False))
+
+    def test_is_chromium_reads_proc_comm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "10").mkdir()
+            (Path(tmp) / "10" / "comm").write_text("chromium\n")
+            (Path(tmp) / "11").mkdir()
+            (Path(tmp) / "11" / "comm").write_text("bash\n")
+            self.assertTrue(chromium_app.is_chromium(10, comm_dir=tmp))
+            self.assertFalse(chromium_app.is_chromium(11, comm_dir=tmp))
+            self.assertFalse(chromium_app.is_chromium(12, comm_dir=tmp))
 
     def test_no_lock_or_a_garbled_lock_means_free(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -265,6 +282,7 @@ class StartupTests(unittest.TestCase):
                 mock.patch.object(desktop, "run_chromium_window", side_effect=patches.get("run", lambda *a, **k: 0)):
             server.return_value.start.return_value = "http://127.0.0.1:1"
             server.return_value.nonce = "n"
+            server.return_value.fell_back = patches.get("fell_back", False)
             return desktop.main(["--no-build"]), server
 
     def test_nonzero_chromium_exit_is_reported(self):
@@ -301,6 +319,15 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(code, 1)
         server.assert_not_called()
         self.assertIn("already open", err.getvalue())
+
+    def test_a_port_fallback_is_warned_about(self):
+        import io
+        from contextlib import redirect_stderr
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.run_main(fell_back=True)
+        self.assertIn("3138 is in use", err.getvalue())
 
     def test_server_asks_for_the_stable_port(self):
         import desktop
@@ -341,6 +368,7 @@ class StablePortTests(unittest.TestCase):
             server = LocalServer(create_app(Path(tmp) / "n.db"), preferred_port=taken)
             try:
                 self.assertNotEqual(server.start(), f"http://127.0.0.1:{taken}")
+                self.assertTrue(server.fell_back)
             finally:
                 server.stop()
 

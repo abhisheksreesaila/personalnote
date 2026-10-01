@@ -102,6 +102,7 @@ class LocalServer:
         self._server = None
         self._thread: threading.Thread | None = None
         self._sock: socket.socket | None = None
+        self.fell_back = False
         self._install_focus_route()
 
     def _install_focus_route(self) -> None:
@@ -127,6 +128,7 @@ class LocalServer:
             self._sock.bind((self.host, self.preferred_port))
         except OSError:
             self._sock.bind((self.host, 0))  # the preferred port is taken by something else
+            self.fell_back = True
         port = self._sock.getsockname()[1]
         config = uvicorn.Config(self.app, log_level=os.getenv("LOG_LEVEL", "warning").lower(), lifespan="off")
         self._server = uvicorn.Server(config)
@@ -309,6 +311,7 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
     window.events.closing += on_closing
 
     notice = empty_notebook_notice(database) if getattr(sys, "frozen", False) else None
+    notice = " ".join(part for part in (notice, getattr(server, "fallback_notice", None)) if part) or None
     if notice:
         window.events.loaded += lambda: show_notice(window, notice)
 
@@ -405,6 +408,14 @@ def main(argv: list[str] | None = None) -> int:
     except DesktopError as error:
         print(error, file=sys.stderr)
         return 1
+    fallback_notice = None
+    if server.fell_back and PREFERRED_PORT:
+        fallback_notice = (
+            f"Port {PREFERRED_PORT} is in use by another program, so Personal Note is using a different port. "
+            "Saved preferences (skin, speed meter) and the microphone permission start fresh on this port."
+        )
+        print(f"Warning: {fallback_notice}", file=sys.stderr)
+    server.fallback_notice = fallback_notice
     if args.timing:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
     record_instance(database, base_url, server.nonce)

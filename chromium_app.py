@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -59,14 +60,30 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
-def profile_owner_pid(profile_dir: Path, alive: Callable[[int], bool] = pid_alive) -> int | None:
+def is_chromium(pid: int, comm_dir: str = "/proc") -> bool:
+    """Linux: the process named `pid` is a Chromium/Chrome (a recycled PID of another program is not)."""
+    try:
+        return Path(comm_dir, str(pid), "comm").read_text().strip().lower().startswith("chrom")
+    except OSError:
+        return False
+
+
+def profile_owner_pid(
+    profile_dir: Path,
+    alive: Callable[[int], bool] = pid_alive,
+    hostname: Callable[[], str] = socket.gethostname,
+    is_chromium: Callable[[int], bool] = is_chromium,
+) -> int | None:
     """PID of the live Chromium holding this profile (its SingletonLock symlink is `host-pid`), else None."""
     try:
         target = os.readlink(Path(profile_dir) / "SingletonLock")
-        pid = int(target.rsplit("-", 1)[1])
-    except (OSError, ValueError, IndexError):
+        host, _, number = target.rpartition("-")
+        pid = int(number)
+    except (OSError, ValueError):
         return None
-    return pid if alive(pid) else None
+    if host != hostname() or not alive(pid):
+        return None  # another machine's or a dead process's lock is stale
+    return pid if is_chromium(pid) else None
 
 
 def server_is_idle(server) -> bool:
@@ -144,7 +161,7 @@ def run_chromium_window(
 
     The caller stops the server afterwards. Returns Chromium's exit code.
     """
-    url = base_url + "/notes?host=desktop"  # same host flag as the pywebview window
+    url = base_url + "/notes?host=desktop&engine=chromium"  # host flag as in the pywebview window; engine selects the save timing
     profile_dir.mkdir(parents=True, exist_ok=True)
     command = chromium_command(binary, url, profile_dir)
     server.on_focus = lambda: focus_window(owner(profile_dir), run=run, which=which)
