@@ -83,6 +83,10 @@ if [ "$SYSTEM" = Linux ]; then
   GOMP="$(${CC:-cc} -print-file-name=libgomp.so.1)"
   [ -f "$GOMP" ] && mkdir -p "$STAGE/lib" && cp -L "$GOMP" "$STAGE/lib/libgomp.so.1"
 fi
+if [ "$SYSTEM" = Darwin ]; then
+  # Apple Silicon only runs signed code. The linker already signs ad hoc; do it again so every file is covered.
+  find "$STAGE" -type f \( -name '*.dylib' -o -perm -u+x \) -exec codesign --force --sign - {} \;
+fi
 printf '{"engine":"NeMo-Speech.cpp","commit":"%s","platform":"%s"}\n' "$ENGINE_COMMIT" "$KEY" > "$STAGE/engine.json"
 
 # The binary finds its libraries through its own folder, so it works wherever the app unpacks it.
