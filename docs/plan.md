@@ -164,11 +164,11 @@ Today: local voice = NVIDIA NeMo-Speech.cpp + nemotron-3.5-asr-streaming-0.6b, w
 - [ ] when voice isn't ready, the mic says why and what to do; audio is never stored (invariant 4)
 Code reviewed and merged. Still to prove on real runs: CI builds both engines; hold-to-talk with the real engine on Linux and Mac; Mac mic prompt.
 
-## F-021 Organic mind-map branches [doing]
+## F-021 Organic mind-map branches [done]
 Captain (screenshot of a child above the centre): the branch "twists itself… it has to be flatter… thicker at the beginning and tapers down… when you rotate it spatially entangles itself" — wants Tony Buzan / iMindMap / Ayoa style.
-- [ ] a branch leaves its parent heading toward the child and meets the child on the side facing the parent: one smooth bend, never an S, for children in any direction (above, below, behind)
-- [ ] the ribbon tapers steadily from parent to child, measured across the curve, with no pinch or crossing edges
-- [ ] dragging a node around its parent (including straight above or below) sweeps the branch smoothly with no flips; saved map JSON format unchanged
+- [x] a branch leaves its parent heading toward the child and meets the child on the side facing the parent: one smooth bend, never an S, for children in any direction (above, below, behind)
+- [x] the ribbon tapers steadily from parent to child, measured across the curve, with no pinch or crossing edges
+- [x] dragging a node around its parent (including straight above or below) sweeps the branch smoothly with no flips; saved map JSON format unchanged
 More mind-map features to come from the captain's detailed list (Ayoa / iMindMap).
 
 ## F-022 Native Mac window [doing]
