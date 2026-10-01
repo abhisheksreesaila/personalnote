@@ -469,4 +469,24 @@
   @media (max-width: 640px) { .speed-meter { right: auto; bottom: auto; left: 12px; top: 64px; } }
   .speed-meter small { color: var(--ui-muted); font: inherit; font-size: 10px; }
   .setting-row input[type="checkbox"] { accent-color: var(--sk-accent); width: 16px; height: 16px; margin: 0; }
+
+  /* ---------- macOS window (F-022): content runs under a transparent title bar ----------
+     desktop.py opens the window with ?host=desktop&chrome=mac and the page adds html.chrome-mac. The traffic
+     lights sit in the top-left 78 x 36px, so the sidebar's contents and (when the sidebar is closed) the top bar
+     start clear of them, and the empty strips along the top drag the window. Full screen hides the lights. */
+  .app-shell .mac-drag-strip { display: none; }
+  :root.chrome-mac { --mac-lights: 78px; --mac-bar: 36px; }
+  :root.chrome-mac .app-shell .mac-drag-strip { display: block; position: absolute; left: 0; right: 0; top: 0; height: calc(var(--mac-bar) + 4px); z-index: 9; }
+  :root.chrome-mac .app-shell .mac-drag-sidebar { z-index: 0; }
+  :root.chrome-mac .app-shell .sidebar { padding-top: 34px; }
+  :root.chrome-mac .app-shell .topbar { top: 4px; height: var(--mac-bar); }
+  :root.chrome-mac .app-shell .topbar-title { height: var(--mac-bar); }
+  :root.chrome-mac-fullscreen .app-shell .mac-drag-strip { display: none; }
+  :root.chrome-mac-fullscreen .app-shell .sidebar { padding-top: 14px; }
+  @media (max-width: 800px) {
+    :root.chrome-mac .app-shell .topbar { top: 4px; left: calc(var(--mac-lights) - 4px); height: var(--mac-bar); }
+    :root.chrome-mac .app-shell .glass-button.sidebar-toggle { flex-basis: 36px; width: 36px; height: 36px; }
+    :root.chrome-mac .app-shell .topbar-title { height: var(--mac-bar); }
+    :root.chrome-mac-fullscreen .app-shell .topbar { left: 8px; }
+  }
 }

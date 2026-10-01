@@ -38,7 +38,7 @@ rm -rf build/pyinstaller dist-app/personal-note "dist-app/$NAME" "dist-app/$NAME
   --exclude-module webview \
   --hidden-import routes --hidden-import services --hidden-import portability \
   --hidden-import app_schema --hidden-import note_text --hidden-import app_paths --hidden-import migration \
-  --hidden-import plugin_manifest --hidden-import startup --hidden-import voice_runtime --hidden-import chromium_app
+  --hidden-import plugin_manifest --hidden-import startup --hidden-import voice_runtime --hidden-import chromium_app --hidden-import desktop_menu
 
 STAGE="dist-app/$NAME"
 mkdir -p "$STAGE"

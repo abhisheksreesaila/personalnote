@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 PROCESS_START = time.perf_counter()
 
 from app_paths import app_data_dir, default_database_path, instance_file, resource_root  # noqa: E402
+import desktop_menu  # noqa: E402
 from chromium_app import child_env, find_chromium, focus_window, profile_owner_pid, run_chromium_window  # noqa: E402
 
 HOST = "127.0.0.1"
@@ -273,9 +274,67 @@ def show_notice(window, message: str) -> None:
     window.evaluate_js(script)
 
 
-def window_url(base_url: str) -> str:
-    # window.pywebview is injected after page load; the flag lets the page know it is the desktop app at once.
-    return base_url + "/notes?host=desktop"
+def window_url(base_url: str, platform: str = sys.platform) -> str:
+    # window.pywebview is injected after page load; the flags let the page know it is the desktop app at once
+    # and, on macOS, that its content runs under a transparent title bar (desktop_menu.py).
+    return desktop_menu.window_url(base_url, platform)
+
+
+class DesktopApi:
+    """The only Python the page can call (macOS window only): double-clicking the top bar zooms the window."""
+
+    def __init__(self, zoom: Callable[[], None]):
+        self._zoom = zoom
+
+    def zoom_window(self) -> bool:
+        try:
+            self._zoom()
+            return True
+        except Exception:
+            logger.warning("Could not zoom the window.", exc_info=True)
+            return False
+
+
+def _page_call(window, call: str) -> None:
+    try:
+        window.evaluate_js(f"window.personalNote && window.personalNote.{call}")
+    except Exception:
+        logger.warning("Could not tell the page about the window state.", exc_info=True)
+
+
+def setup_mac_window(window, actions: "desktop_menu.MenuActions") -> None:
+    """Unified title bar, menu bar and full-screen sync for the macOS window. Never raises. Unverified on a Mac."""
+
+    def apply():
+        try:
+            native = window.native
+            if native is None:
+                raise RuntimeError("the native window is not available yet")
+            desktop_menu.style_unified_title_bar(native)
+        except Exception:
+            logger.warning("Could not extend the page under the title bar; using the standard title bar.", exc_info=True)
+            threading.Thread(target=_page_call, args=(window, "setMacChrome(false)"), daemon=True).start()
+        desktop_menu.install_native_menu(actions)
+
+    def sync_full_screen():
+        native = getattr(window, "native", None)
+        if native is None:
+            return
+        full = desktop_menu.on_main_thread(lambda: desktop_menu.is_full_screen(native))
+        if full is not None:
+            _page_call(window, f"setFullscreen({'true' if full else 'false'})")
+
+    def after_show():
+        try:
+            from PyObjCTools import AppHelper
+
+            AppHelper.callAfter(apply)  # runs once the app loop has built the menu bar
+        except Exception:
+            logger.warning("Could not set up the macOS window chrome.", exc_info=True)
+
+    window.events.shown += after_show
+    window.events.maximized += sync_full_screen  # pywebview reports entering native full screen as "maximized"
+    window.events.restored += sync_full_screen
 
 
 def run_window(base_url: str, database: Path, server: LocalServer, timing: bool) -> None:
@@ -285,6 +344,9 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
     import webview
 
     webview.settings["ALLOW_DOWNLOADS"] = True  # backup and Markdown export are downloads
+    mac = sys.platform == "darwin"
+    mac_zoom: list[Callable[[], None]] = []  # filled once the window exists; the page's js_api needs the window first
+    window_options = {"js_api": DesktopApi(lambda: mac_zoom[0]())} if mac else {}
     window = webview.create_window(
         WINDOW_TITLE,
         window_url(base_url),
@@ -292,7 +354,19 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
         height=WINDOW_SIZE[1],
         min_size=WINDOW_MIN_SIZE,
         text_select=True,
+        **window_options,
     )
+    menus = None
+    if mac:
+        try:
+            from webview.menu import Menu, MenuAction, MenuSeparator
+
+            mac_zoom.append(lambda: desktop_menu.on_main_thread(lambda: desktop_menu.zoom_native_window(window.native)))
+            actions = desktop_menu.MenuActions(window, mac_zoom[0])
+            menus = desktop_menu.webview_menus(actions, Menu, MenuAction, MenuSeparator)
+            setup_mac_window(window, actions)
+        except Exception:
+            logger.warning("Could not set up the macOS menu bar; the default menus stay.", exc_info=True)
     server.on_focus = lambda: (window.restore(), window.show())
 
     flushed = threading.Event()
@@ -325,7 +399,8 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
     # A persistent web context: the page keeps localStorage (display preferences) between runs.
     storage = app_data_dir() / "webview"
     storage.mkdir(parents=True, exist_ok=True)
-    webview.start(on_started, private_mode=False, storage_path=str(storage))
+    start_options = {"menu": menus} if menus else {}
+    webview.start(on_started, private_mode=False, storage_path=str(storage), **start_options)
 
 
 def report_timing(window) -> None:

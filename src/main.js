@@ -419,7 +419,9 @@ document.querySelector('#app').innerHTML = `
 `
 
 createIcons({ icons })
-mountSkinSwitcher(document.querySelector('#skin-switcher'))
+const skinSwitcher = mountSkinSwitcher(document.querySelector('#skin-switcher'))
+// The macOS window (desktop.py opens it with ?host=desktop&chrome=mac) extends under its title bar.
+if (/[?&]chrome=mac(&|$)/.test(location.search)) document.documentElement.classList.add('chrome-mac')
 
 const elements = {
   shell: document.querySelector('.app-shell'),
@@ -4082,6 +4084,37 @@ document.addEventListener('keydown', (event) => {
     else if (event.key.toLowerCase() === 'i' && state.activeNoteType === 'canvas' && elements.printPreview.hidden) elements.imageFile.click()
   }
 })
+
+// Desktop window only (desktop.py): the native menu bar calls window.personalNote.command(name), and the macOS
+// window gets its title-bar chrome. The code is a separate chunk, loaded only inside the desktop app.
+if (hostFlag === 'desktop') {
+  const clickWhenPresent = (selector) => document.querySelector(selector)?.click()
+  const canvasNote = () => state.activeNoteType === 'canvas'
+  void import('./modules/desktop/host.js').then(({ installDesktopHost }) => installDesktopHost({
+    root: document.documentElement,
+    search: location.search,
+    api: window.personalNote,
+    zoomWindow: () => window.pywebview?.api?.zoom_window?.(),
+    handlers: {
+      newNote: () => { setNoteCreateMenuOpen(false); void createNote() },
+      exportBackup: () => downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json'),
+      exportMarkdown: () => downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip'),
+      print: () => { if (canvasNote()) void openPrintPreview() },
+      settings: () => setPropertiesOpen(true),
+      history: (name) => {
+        const step = name === 'undo' ? -1 : 1
+        if (state.activeNoteType === 'mindmap') clickWhenPresent(`[data-map-action="${name}"]`)
+        else restoreHistory(state.historyIndex + step)
+      },
+      zoom: (direction) => {
+        if (direction === 'fit') (canvasNote() ? fitAllPages() : clickWhenPresent('[data-map-action="fit"]'))
+        else if (canvasNote()) zoomStep(direction)
+      },
+      skin: (id) => { startSkins().select(id); skinSwitcher.sync() },
+      speedMeter: () => { setSpeedMeter(!state.speedMeter); savePreferences() },
+    },
+  }))
+}
 
 document.querySelector('#zoom-in').addEventListener('click', () => zoomStep(1))
 document.querySelector('#zoom-out').addEventListener('click', () => zoomStep(-1))
