@@ -2,7 +2,7 @@
 
 Runs the same FastHTML app as `main.py`, in-process on a free loopback port, and
 shows it in a Chromium app window (Linux, when installed) or a pywebview window.
-Closing the window flushes pending edits and stops the server. Start it with `npm run desktop` or `python desktop.py`.
+Closing the window flushes pending edits and stops the server, and the voice engine if it was started. Start it with `npm run desktop` or `python desktop.py`.
 """
 
 from __future__ import annotations
@@ -448,7 +448,8 @@ def main(argv: list[str] | None = None) -> int:
             ensure_frontend_built()
         from routes import create_app
 
-        server = LocalServer(create_app(database), preferred_port=(args.port or 0) if args.serve else PREFERRED_PORT)
+        app = create_app(database)
+        server = LocalServer(app, preferred_port=(args.port or 0) if args.serve else PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:
         print(error, file=sys.stderr)
@@ -464,6 +465,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.timing:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
     record_instance(database, base_url, server.nonce)
+    app.state.voice.autostart()  # when voice is installed, its engine starts with the window (in the background)
     try:
         if engine == "serve":
             wait_for_stop(base_url)
@@ -491,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         clear_instance(database)
+        app.state.voice.shutdown()
         server.stop()
     return 0
 

@@ -1,3 +1,4 @@
+import atexit
 import logging
 import os
 import sys
@@ -17,6 +18,7 @@ logging.basicConfig(
 )
 
 app = create_app()
+atexit.register(app.state.voice.shutdown)  # a voice engine started on demand never outlives the server
 
 
 if __name__ == "__main__":

@@ -299,6 +299,66 @@ class ServeOnlyTests(TempDirCase):
         self.assertFalse(instance_file(self.root / "n.db").exists())
 
 
+class VoiceLifecycleTests(TempDirCase):
+    def pid_alive(self, pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    def test_an_installed_engine_starts_with_the_app_and_stops_when_it_closes(self):
+        import signal
+        import subprocess
+        import sys
+
+        import voice_runtime
+        from tests.test_voice import FAKE_ENGINE
+
+        voice = self.root / "voice"
+        (voice / "engine" / "bin").mkdir(parents=True)
+        engine = voice / "engine" / "bin" / voice_runtime.ENGINE_BINARY
+        engine.write_text(FAKE_ENGINE)
+        engine.chmod(0o755)
+        (voice / "models").mkdir()
+        with open(voice / "models" / voice_runtime.MODEL_FILE, "wb") as handle:
+            handle.truncate(voice_runtime.MODEL_BYTES)  # sparse: the fake engine never reads it
+        (voice / "installed.json").write_text(json.dumps({"model": {"sha256": voice_runtime.MODEL_SHA256}}))
+
+        env = {
+            **os.environ, "PERSONAL_NOTE_DB": str(self.root / "n.db"), "XDG_DATA_HOME": str(self.root / "xdg"),
+            "PERSONAL_NOTE_VOICE_DIR": str(voice),
+        }
+        root = Path(__file__).resolve().parent.parent
+        process = subprocess.Popen(
+            [sys.executable, str(root / "desktop.py"), "--serve", "--port", "0", "--no-build"],
+            cwd=self.root, env=env, stdout=subprocess.PIPE, text=True,
+        )
+        engine_pid = None
+        try:
+            url = process.stdout.readline().strip().removeprefix("Serving on ")
+            status = {}
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline and not status.get("running"):
+                with urlopen(f"{url}/api/voice/status", timeout=3) as response:
+                    status = json.load(response)
+                time.sleep(0.1)
+            self.assertTrue(status["running"], status)
+            self.assertTrue(status["endpoint"].startswith("ws://127.0.0.1:"))
+            engine_pid = int(subprocess.check_output(["pgrep", "-f", str(engine)], text=True).split()[0])
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=15), 0)
+            time.sleep(0.3)
+            self.assertFalse(self.pid_alive(engine_pid), "the engine stops with the app")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            process.stdout.close()
+            if engine_pid and self.pid_alive(engine_pid):
+                os.kill(engine_pid, signal.SIGKILL)
+
+
 class WindowUrlTests(unittest.TestCase):
     def test_desktop_window_tells_the_page_it_is_the_desktop_app(self):
         self.assertEqual(window_url("http://127.0.0.1:5000"), "http://127.0.0.1:5000/notes?host=desktop")
