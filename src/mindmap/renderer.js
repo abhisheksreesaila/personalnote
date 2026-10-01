@@ -1,3 +1,4 @@
+import { branchGeometry as computeBranch, cubicAt, PORT_VECTORS, ribbonPath } from './geometry.js'
 import { descendantsOf, getDepth, nodeById, visibleNodes } from './model.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -28,88 +29,20 @@ function nodeFrame(node) {
   return { width, height, left: -width / 2 }
 }
 
-const PORT_VECTORS = {
-  top: { x: 0, y: -1 },
-  right: { x: 1, y: 0 },
-  bottom: { x: 0, y: 1 },
-  left: { x: -1, y: 0 },
-}
-
-function pointOnFrame(node, side, gap = 0) {
-  if (nodePresentation(node) === 'branch') return { x: node.x, y: node.y + 5 }
-  const frame = nodeFrame(node)
-  const vector = PORT_VECTORS[side]
-  return {
-    x: node.x + vector.x * (frame.width / 2 + gap),
-    y: node.y + vector.y * (frame.height / 2 + gap),
-  }
-}
-
-function branchEndpoints(parent, child) {
-  const right = child.x >= parent.x
-  const sourcePort = child.branchPorts?.source || (right ? 'right' : 'left')
-  const targetPort = child.branchPorts?.target || (right ? 'left' : 'right')
-  const source = pointOnFrame(parent, sourcePort)
-  const target = pointOnFrame(child, targetPort)
-  return {
-    sx: source.x,
-    sy: source.y,
-    ex: target.x,
-    ey: target.y,
-    right,
-    sourcePort,
-    targetPort,
-  }
-}
-
-function resolveAnchor(anchor, sx, sy, ex, ey) {
-  const dx = ex - sx
-  const dy = ey - sy
-  return { x: sx + dx * anchor.t - dy * anchor.n, y: sy + dy * anchor.t + dx * anchor.n }
-}
+const frameOf = (node) => ({ x: node.x, y: node.y, hw: nodeFrame(node).width / 2, hh: nodeFrame(node).height / 2, pin: nodePresentation(node) === 'branch' })
 
 function branchGeometry(parent, child, depth) {
-  const { sx, sy, ex, ey, sourcePort, targetPort } = branchEndpoints(parent, child)
-  const dx = ex - sx
-  const dy = ey - sy
-  const curve = (child.curve ?? 78) / 100
-  const bend = Math.max(35, Math.hypot(dx, dy) * (0.25 + curve * 0.27))
-  const wobble = Math.sin((child.x + child.y) * 0.013) * 9 * curve
-  const sourceVector = PORT_VECTORS[sourcePort]
-  const targetVector = PORT_VECTORS[targetPort]
-  const defaults = [
-    { x: sx + sourceVector.x * bend - sourceVector.y * wobble, y: sy + sourceVector.y * bend + sourceVector.x * wobble },
-    { x: ex + targetVector.x * bend * 0.72 + targetVector.y * wobble, y: ey + targetVector.y * bend * 0.72 - targetVector.x * wobble },
-  ]
-  const controls = child.branchAnchors?.length === 2
-    ? child.branchAnchors.map((anchor) => resolveAnchor(anchor, sx, sy, ex, ey))
-    : defaults
-  return { sx, sy, ex, ey, controls, widths: branchWidths(depth), sourceVector, targetVector }
-}
-
-function ribbonPath(geometry) {
-  const { sx, sy, ex, ey, controls: [first, second], widths: { start, end } } = geometry
-  return `M ${sx} ${sy - start / 2} C ${first.x} ${first.y - start / 2}, ${second.x} ${second.y - end / 2}, ${ex} ${ey - end / 2} L ${ex} ${ey + end / 2} C ${second.x} ${second.y + end / 2}, ${first.x} ${first.y + start / 2}, ${sx} ${sy + start / 2} Z`
+  const geometry = computeBranch(frameOf(parent), frameOf(child), {
+    curve: child.curve ?? 78,
+    anchors: child.branchAnchors,
+    sourcePort: child.branchPorts?.source,
+    targetPort: child.branchPorts?.target,
+  })
+  return { ...geometry, widths: branchWidths(depth) }
 }
 
 function centerLine({ sx, sy, ex, ey, controls: [first, second] }) {
   return `M ${sx} ${sy} C ${first.x} ${first.y}, ${second.x} ${second.y}, ${ex} ${ey}`
-}
-
-function cubicPoint({ sx, sy, ex, ey, controls: [first, second] }, t) {
-  const inverse = 1 - t
-  const startWeight = inverse ** 3
-  const firstWeight = 3 * inverse ** 2 * t
-  const secondWeight = 3 * inverse * t ** 2
-  const endWeight = t ** 3
-  return {
-    x: startWeight * sx + firstWeight * first.x + secondWeight * second.x + endWeight * ex,
-    y: startWeight * sy + firstWeight * first.y + secondWeight * second.y + endWeight * ey,
-  }
-}
-
-function branchMidpoint({ sx, sy, ex, ey, controls: [first, second] }) {
-  return { x: (sx + 3 * first.x + 3 * second.x + ex) / 8, y: (sy + 3 * first.y + 3 * second.y + ey) / 8 }
 }
 
 export class MindMapRenderer {
@@ -175,7 +108,7 @@ export class MindMapRenderer {
     const parent = nodeById(this.document, node.parentId)
     const geometry = branchGeometry(parent, node, getDepth(this.document, node.id))
     this.branchLayer.append(
-      createSvg('path', { class: 'map-branch-ribbon', d: ribbonPath(geometry), fill: node.color }),
+      createSvg('path', { class: 'map-branch-ribbon', d: ribbonPath(geometry, geometry.widths), fill: node.color }),
       createSvg('path', { class: 'map-branch-hit', d: centerLine(geometry), 'data-node-id': node.id }),
     )
   }
@@ -188,7 +121,7 @@ export class MindMapRenderer {
       class: 'map-branch-control-guide',
       d: centerLine(geometry),
     }))
-    ;[1 / 3, 2 / 3].map((t) => cubicPoint(geometry, t)).forEach((point, index) => {
+    ;[1 / 3, 2 / 3].map((t) => cubicAt(geometry, t)).forEach((point, index) => {
       group.append(
         createSvg('circle', { class: 'map-branch-control-hit', cx: point.x, cy: point.y, r: 18, 'data-branch-anchor-id': node.id, 'data-anchor-index': index }),
         createSvg('circle', { class: 'map-branch-control-anchor', cx: point.x, cy: point.y, r: 6, fill: node.color, 'data-branch-anchor-id': node.id, 'data-anchor-index': index }),
@@ -256,7 +189,7 @@ export class MindMapRenderer {
     const frame = nodeFrame(node)
     const parent = nodeById(this.document, node.parentId)
     const midpoint = nodePresentation(node) === 'branch'
-      ? branchMidpoint(branchGeometry(parent, node, getDepth(this.document, node.id)))
+      ? cubicAt(branchGeometry(parent, node, getDepth(this.document, node.id)), 0.5)
       : null
     const labelX = midpoint ? midpoint.x - node.x : 0
     const labelY = midpoint ? midpoint.y - node.y - 5 : 1

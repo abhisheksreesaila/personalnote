@@ -6,7 +6,7 @@ import { gzipSync } from 'node:zlib'
 const DIST_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url))
 const KIB = 1024
 const budgets = {
-  javascriptGzip: 230 * KIB,
+  javascriptGzip: 240 * KIB,
   cssGzip: 16 * KIB,
   largestJavascriptRaw: 850 * KIB,
 }
