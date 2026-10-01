@@ -153,3 +153,12 @@ Captain: "how do we package for mac / linux… no windows. just mac and linux is
 - [x] the Mac app opens with right-click › Open the first time and keeps notes in Application Support
 - [x] README explains installing from a Release on both systems; Windows is out of scope
 Open: first tag proves the GitHub build and the Mac app (captain checks on a Mac).
+
+## F-020 Voice on Mac and Linux, one-click [doing]
+Captain (after using the Mac app): "the voice did not work… we can have a plugin for voice where we download the same NVIDIA model… like the VS Code speech extension."
+Today: local voice = NVIDIA NeMo-Speech.cpp + nemotron-3.5-asr-streaming-0.6b, with Windows-only setup scripts; Mac/Linux fall back to browser dictation, which the app windows don't provide.
+- [ ] NeMo-Speech.cpp builds for Linux x86_64 and macOS arm64 (Metal where supported) in GitHub Actions, published as downloadable voice engine files on the release
+- [ ] Settings › Voice shows status and a "Download voice" button: fetches the engine for this OS and the Nemotron model (size shown, resumable, checksum-verified) into the app-data folder; no terminal needed
+- [ ] when voice is installed, the app starts the engine with the window and stops it on close (loopback only, its own port); hold-to-talk streams text into the note on Mac and Linux
+- [ ] the mic works inside the Mac app window (permission prompt appears) and the Linux Chromium window
+- [ ] when voice isn't ready, the mic says why and what to do; audio is never stored (invariant 4)
