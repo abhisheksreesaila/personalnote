@@ -22,6 +22,7 @@ fi
 export APP_VERSION="${APP_VERSION:-$(node -p "require('./package.json').version")}"
 
 rm -rf build/pyinstaller dist-app
+printf '%s\n' "$APP_VERSION" > app_version.txt # the app finds its voice engine on the release with this version
 "$PY" -m PyInstaller desktop.py \
   --noconfirm --clean --windowed \
   --name "Personal Note" \
@@ -29,11 +30,12 @@ rm -rf build/pyinstaller dist-app
   --distpath dist-app --workpath build/pyinstaller --specpath build/pyinstaller \
   --paths . \
   --add-data "$PWD/dist:dist" \
+  --add-data "$PWD/app_version.txt:." \
   --collect-all fasthtml --collect-all fastcore --collect-submodules uvicorn \
   --collect-submodules webview \
   --hidden-import routes --hidden-import services --hidden-import portability \
   --hidden-import app_schema --hidden-import note_text --hidden-import app_paths --hidden-import migration \
-  --hidden-import plugin_manifest --hidden-import startup
+  --hidden-import plugin_manifest --hidden-import startup --hidden-import voice_runtime
 
 # WKWebView only prompts for the microphone if the bundle says why it wants it.
 "$PY" - <<'PY'

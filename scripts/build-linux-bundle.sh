@@ -18,6 +18,10 @@ if [ "${SKIP_FRONTEND:-}" != "1" ]; then
 fi
 [ -f dist/index.html ] || { echo "dist/ is missing; run npm run build first." >&2; exit 1; }
 
+# The app looks for its voice engine on the release with this version (empty or 0.0.0 in a checkout).
+APP_VERSION="${APP_VERSION:-$(node -p "require('./package.json').version")}"
+printf '%s\n' "$APP_VERSION" > app_version.txt
+
 ARCH="$(uname -m)"
 NAME="personal-note-linux-$ARCH"
 rm -rf build/pyinstaller dist-app/personal-note "dist-app/$NAME" "dist-app/$NAME.tar.gz"
@@ -29,11 +33,12 @@ rm -rf build/pyinstaller dist-app/personal-note "dist-app/$NAME" "dist-app/$NAME
   --distpath dist-app --workpath build/pyinstaller --specpath build/pyinstaller \
   --paths . \
   --add-data "$PWD/dist:dist" \
+  --add-data "$PWD/app_version.txt:." \
   --collect-all fasthtml --collect-all fastcore --collect-submodules uvicorn \
   --exclude-module webview \
   --hidden-import routes --hidden-import services --hidden-import portability \
   --hidden-import app_schema --hidden-import note_text --hidden-import app_paths --hidden-import migration \
-  --hidden-import plugin_manifest --hidden-import startup --hidden-import chromium_app
+  --hidden-import plugin_manifest --hidden-import startup --hidden-import voice_runtime --hidden-import chromium_app
 
 STAGE="dist-app/$NAME"
 mkdir -p "$STAGE"
