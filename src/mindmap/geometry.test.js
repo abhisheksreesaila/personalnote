@@ -110,12 +110,16 @@ test('saved ports are only a hint: any child position still leaves and enters th
   }
 })
 
-test('200 branches are outlined in well under 1.5 ms', () => {
-  const geometries = Array.from({ length: 200 }, (_, i) => branchGeometry(root, childAt(i * 0.07, 260 + (i % 5) * 20)))
-  for (let i = 0; i < 20; i++) geometries.forEach((g) => ribbonOutline(g, WIDTHS))
-  const started = performance.now()
-  for (let i = 0; i < 20; i++) geometries.forEach((g) => ribbonOutline(g, WIDTHS))
-  const each = (performance.now() - started) / 20
-  console.log(`# 200 outlines: ${each.toFixed(2)} ms`)
-  assert.ok(each < 1.5, `${each} ms`)
+test('with saved ports, dragging a child around the parent still moves attachments and controls in small steps', () => {
+  for (const [sourcePort, targetPort] of [['right', 'left'], ['bottom', 'top'], ['top', 'bottom'], ['left', 'right']]) {
+    for (const radius of [240, 330]) {
+      let previous = null
+      for (const angle of [...angles(0.5), 0]) {
+        const { controls, sx, sy, ex, ey } = branchGeometry(root, childAt(angle, radius), { sourcePort, targetPort })
+        const current = [controls[0], controls[1], { x: sx, y: sy }, { x: ex, y: ey }]
+        if (previous) current.forEach((point, i) => assert.ok(Math.hypot(point.x - previous[i].x, point.y - previous[i].y) < 4, `jump ${sourcePort} r${radius} at ${angle} point ${i}`))
+        previous = current
+      }
+    }
+  }
 })

@@ -19,16 +19,23 @@ function attach(frame, tx, ty, inset) {
   return { x: frame.x + dx * reach, y: frame.y + dy * reach }
 }
 
-// A saved port is only a creation hint: its edge midpoint is used while the port faces the
-// other node and the chord from it still heads outward; otherwise the facing side is computed.
-function portPoint(frame, name, from, other, sign, inset) {
+const smooth = (value, low, high) => {
+  const x = Math.min(1, Math.max(0, (value - low) / (high - low)))
+  return x * x * (3 - 2 * x)
+}
+
+// A saved port is only a creation hint. Its edge midpoint is blended with the computed facing
+// point by a weight that fades in smoothly as the port comes to face the other node and the
+// chord from it heads outward, so attachment points never snap while a node is dragged.
+function portPoint(frame, name, ray, otherCentre, otherRay, inset) {
   const vector = PORT_VECTORS[name]
-  if (!vector || frame.pin) return from
-  const dx = (other.x - frame.x) * sign
-  const dy = (other.y - frame.y) * sign
-  if (!(vector.x * dx + vector.y * dy >= 0.5 * (Math.hypot(dx, dy) || 1))) return from
-  const point = { x: frame.x + vector.x * (frame.hw - inset), y: frame.y + vector.y * (frame.hh - inset), vector }
-  return point
+  if (!vector || frame.pin) return ray
+  const dx = otherCentre.x - frame.x
+  const dy = otherCentre.y - frame.y
+  const point = { x: frame.x + vector.x * (frame.hw - inset), y: frame.y + vector.y * (frame.hh - inset) }
+  const chord = Math.hypot(otherRay.x - point.x, otherRay.y - point.y) || 1
+  const weight = smooth((vector.x * dx + vector.y * dy) / (Math.hypot(dx, dy) || 1), 0.3, 0.8) * smooth(((otherRay.x - point.x) * vector.x + (otherRay.y - point.y) * vector.y) / chord, 0, 0.5)
+  return { x: ray.x + (point.x - ray.x) * weight, y: ray.y + (point.y - ray.y) * weight, vector, weight }
 }
 
 const lerpAnchor = (s, e, { t, n }) => ({ x: s.x + (e.x - s.x) * t - (e.y - s.y) * n, y: s.y + (e.y - s.y) * t + (e.x - s.x) * n })
@@ -41,28 +48,24 @@ const lerpAnchor = (s, e, { t, n }) => ({ x: s.x + (e.x - s.x) * t - (e.y - s.y)
 export function branchGeometry(parent, child, { curve = 78, anchors = null, sourcePort = null, targetPort = null } = {}) {
   let s = attach(parent, child.x, child.y, INSET.start)
   let e = attach(child, parent.x, parent.y, INSET.end)
-  const outward = (point, other, sign) => {
-    const chord = Math.hypot(other.x - point.x, other.y - point.y) || 1
-    return !point.vector || ((other.x - point.x) * point.vector.x + (other.y - point.y) * point.vector.y) * sign >= 0.2 * chord
-  }
-  const ported = portPoint(parent, sourcePort, s, child, 1, 12)
-  if (outward(ported, e, 1)) s = ported
-  const portedEnd = portPoint(child, targetPort, e, parent, 1, 1)
-  if (outward(portedEnd, s, 1)) e = portedEnd
+  const s0 = s
+  s = portPoint(parent, sourcePort, s0, child, e, 12)
+  e = portPoint(child, targetPort, e, parent, s0, 1)
   const length = Math.hypot(e.x - s.x, e.y - s.y) || 1
   const cx = (e.x - s.x) / length
   const cy = (e.y - s.y) / length
   let side = Math.tanh(2.2 * cx) * (0.04 + (curve / 100) * 0.26)
   // On a port edge the curve must not turn back into the node: keep it leaving/arriving outward.
+  const free = side
   if (s.vector) {
     const along = Math.max(0, cx * s.vector.x + cy * s.vector.y)
     const across = -cy * s.vector.x + cx * s.vector.y
-    if (0.3 * along + side * across < 0) side = (-0.3 * along) / across
+    if (0.3 * along + side * across < 0) side = free + ((-0.3 * along) / across - free) * s.weight
   }
   if (e.vector) {
     const along = Math.min(0, cx * e.vector.x + cy * e.vector.y)
     const across = -cy * e.vector.x + cx * e.vector.y
-    if (side * across < 0.3 * along) side = (0.3 * along) / across
+    if (side * across < 0.3 * along) side += ((0.3 * along) / across - side) * e.weight
   }
   const controls = (anchors?.length === 2 ? anchors : [{ t: 0.3, n: side }, { t: 0.7, n: side }]).map((anchor) => lerpAnchor(s, e, anchor))
   return { sx: s.x, sy: s.y, ex: e.x, ey: e.y, controls }
