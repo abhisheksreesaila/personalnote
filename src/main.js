@@ -3206,7 +3206,7 @@ let handPanKeep = null
 // Fabric deselects on a press over empty canvas; remember the selection so a hand pan (held Space or
 // the sticky hand) gives it back when the drag ends.
 canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
-  handPanKeep = state.tool === 'hand' && event.button === 0 ? canvas.getActiveObject() || null : null
+  handPanKeep = state.tool === 'hand' && event.button === 0 ? canvas.getActiveObjects() : null
 }, { capture: true })
 let mousePan = null
 canvas.on('mouse:down', ({ e }) => {
@@ -3218,11 +3218,17 @@ canvas.on('mouse:move', ({ e }) => {
   if (!mousePan) return
   setCanvasViewportOffset(mousePan.offsetX + e.clientX - mousePan.x, mousePan.offsetY + e.clientY - mousePan.y)
 })
+function restorePanSelection() {
+  const keep = handPanKeep
+  handPanKeep = null
+  if (!keep?.length || canvas.getActiveObjects().length) return
+  const live = keep.filter((object) => canvas.getObjects().includes(object))
+  if (live.length) canvas.setActiveObject(live.length > 1 ? new ActiveSelection(live, { canvas }) : live[0])
+}
 canvas.on('mouse:up', () => {
+  restorePanSelection()
   if (!mousePan) return
   mousePan = null
-  if (handPanKeep && !canvas.getActiveObject() && canvas.getObjects().includes(handPanKeep)) canvas.setActiveObject(handPanKeep)
-  handPanKeep = null
   canvas.setCursor('grab')
 })
 
@@ -3840,7 +3846,22 @@ function canPanFromKeyboard(activeElement) {
   })
 }
 
+// Space is only a hand between drags: while any pointer is down the tool must not change under a stroke,
+// connector drag, object drag or eraser pass, so the switch waits for the release.
+let pointersDown = 0
+let spaceHeld = false
+function settleSpaceAfterPointer() {
+  if (pointersDown) return
+  if (spaceHeld) beginTemporaryHand()
+  else endTemporaryHand()
+}
+document.addEventListener('pointerdown', () => { pointersDown += 1 }, { capture: true })
+const pointerReleased = () => { pointersDown = Math.max(0, pointersDown - 1); setTimeout(settleSpaceAfterPointer, 0) }
+window.addEventListener('pointerup', pointerReleased, { capture: true })
+window.addEventListener('pointercancel', pointerReleased, { capture: true })
+
 function beginTemporaryHand() {
+  if (pointersDown) return
   const hand = temporaryHand.begin(state.tool)
   if (!hand) return
   applyingTemporaryHand = true
@@ -3848,6 +3869,7 @@ function beginTemporaryHand() {
 }
 
 function endTemporaryHand() {
+  if (pointersDown) return
   const back = temporaryHand.end()
   if (!back) return
   applyingTemporaryHand = true
@@ -3860,8 +3882,8 @@ document.addEventListener('click', (event) => {
   const button = event.target.closest?.('.tool-dock button, .zoom-control button, .page-minimap button')
   if (button && event.detail > 0) button.blur()
 })
-document.addEventListener('keyup', (event) => { if (event.key === ' ') endTemporaryHand() })
-window.addEventListener('blur', endTemporaryHand)
+document.addEventListener('keyup', (event) => { if (event.key === ' ') { spaceHeld = false; endTemporaryHand() } })
+window.addEventListener('blur', () => { spaceHeld = false; pointersDown = 0; endTemporaryHand() })
 
 function panWithKeyboard(event) {
   const delta = keyboardPan(event, { viewH: canvas.getHeight() })
@@ -3943,6 +3965,7 @@ document.addEventListener('keydown', (event) => {
     }
   } else if (!isTyping && event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey && canPanFromKeyboard(activeElement)) {
     event.preventDefault()
+    spaceHeld = true
     if (!event.repeat) beginTemporaryHand()
   } else if (!isTyping && canPanFromKeyboard(activeElement) && panWithKeyboard(event)) {
     event.preventDefault()
@@ -4074,5 +4097,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()

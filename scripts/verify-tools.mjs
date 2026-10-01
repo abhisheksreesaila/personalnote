@@ -1,5 +1,5 @@
-// Drives the real app (Vite dev server, in-memory mocked /api) through the F-017 quick tool switching checks:
-// instant pages and zoom, one settings entry, monospace default, Clear all with Undo.  node scripts/verify-snappy.mjs <shotsDir>
+// Drives the real app (Vite dev server on a random port, headless, mocked /api) through the F-017 checks: Paper default,
+// hold-Space hand, V/H keys, middle-mouse pan, selection kept while panning, Space during a drag.  node scripts/verify-tools.mjs
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import fs from 'node:fs'
@@ -123,6 +123,54 @@ const count = (page) => page.evaluate(() => window.__personalNote.canvas.getObje
   check('an explicit tool switch still deselects', await page.evaluate(() => window.__personalNote.canvas.getActiveObject() == null))
   await page.keyboard.press('v')
   await page.evaluate(() => { window.__personalNote.canvas.discardActiveObject(); window.__personalNote.canvas.getObjects().forEach((o) => window.__personalNote.canvas.remove(o)) })
+
+  // Space pressed while the pointer is down must not switch tools until it is released
+  await page.keyboard.press('p')
+  await page.mouse.move(mx - 200, my - 100); await page.mouse.down(); await page.mouse.move(mx - 150, my - 80, { steps: 5 })
+  await page.keyboard.down('Space')
+  check('Space mid-stroke keeps the pen', await tool(page) === 'pen')
+  await page.mouse.move(mx - 100, my - 60, { steps: 5 }); await page.mouse.up()
+  await page.waitForTimeout(100)
+  check('the stroke is kept whole (one path, no extra ink)', await page.evaluate(() => window.__personalNote.canvas.getObjects().length) === 1)
+  check('the hand takes over once the pointer is released', await tool(page) === 'hand')
+  await page.keyboard.up('Space')
+  check('and releasing Space returns to the pen', await tool(page) === 'pen')
+  await page.mouse.move(mx + 100, my + 100); await page.mouse.down(); await page.mouse.move(mx + 150, my + 120, { steps: 5 }); await page.mouse.up()
+  await page.waitForTimeout(150)
+  check('the next stroke is a normal stroke', await page.evaluate(() => window.__personalNote.canvas.getObjects().length) === 2)
+  await page.evaluate(() => { const c = window.__personalNote.canvas; c.getObjects().forEach((o) => c.remove(o)) })
+  // Space released mid-drag with the hand: pen comes back only after the drag
+  await page.keyboard.down('Space')
+  await page.mouse.move(mx, my); await page.mouse.down(); await page.mouse.move(mx + 20, my + 10, { steps: 3 })
+  await page.keyboard.up('Space')
+  check('releasing Space mid-pan keeps the hand until the drag ends', await tool(page) === 'hand')
+  await page.mouse.up()
+  await page.waitForTimeout(50)
+  check('then the pen returns', await tool(page) === 'pen')
+  check('no ink was drawn by those pans', await count(page) === 0)
+
+  // a multi-selection survives Space, hand and middle-mouse pans, without history or saves
+  await page.keyboard.press('v')
+  await page.evaluate(async () => {
+    const N = window.__personalNote, c = N.canvas
+    const { Rect, ActiveSelection } = N.fabric
+    const a = new Rect({ left: 100, top: 100, width: 60, height: 40 }), b = new Rect({ left: 300, top: 100, width: 60, height: 40 })
+    c.add(a, b)
+    c.setActiveObject(new ActiveSelection([a, b], { canvas: c }))
+    window.__multi = [a, b]
+  })
+  await page.waitForTimeout(1500)
+  const hist0 = await page.evaluate(() => window.__personalNote.state.historyIndex)
+  const sameSelection = () => page.evaluate(() => { const cur = window.__personalNote.canvas.getActiveObjects(); return cur.length === 2 && window.__multi.every((o) => cur.includes(o)) })
+  await page.mouse.move(mx, my)
+  await page.keyboard.down('Space'); await page.mouse.down(); await page.mouse.move(mx + 30, my + 20, { steps: 4 }); await page.mouse.up(); await page.keyboard.up('Space')
+  check('Space pan keeps a multi-selection', await sameSelection())
+  await page.mouse.down({ button: 'middle' }); await page.mouse.move(mx - 30, my - 20, { steps: 4 }); await page.mouse.up({ button: 'middle' })
+  check('middle-mouse pan keeps a multi-selection', await sameSelection())
+  await page.keyboard.press('h'); await page.keyboard.press('v')
+  await page.waitForTimeout(1500)
+  check('panning added no history entry', await page.evaluate(() => window.__personalNote.state.historyIndex) === hist0)
+  await page.evaluate(() => { const c = window.__personalNote.canvas; c.discardActiveObject(); c.getObjects().forEach((o) => c.remove(o)) })
 
   // Space no longer pages the canvas
   await page.keyboard.press('v')
