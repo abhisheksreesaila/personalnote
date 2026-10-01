@@ -34,6 +34,7 @@ export function readPreferences(storage = browserStorage()) {
   if (FONT_FAMILIES.has(parsed?.fontFamily)) result.fontFamily = parsed.fontFamily
   const fontSize = Number(parsed?.fontSize)
   if (Number.isFinite(fontSize)) result.fontSize = Math.min(72, Math.max(12, Math.round(fontSize)))
+  if (parsed?.speedMeter === true) result.speedMeter = true
   return result
 }
 
