@@ -116,9 +116,9 @@ Needs: F-013
 - [ ] the same canvas benchmark is measured in the current desktop window (WebKitGTK) and in a Chromium app window on this machine, with GPU
 - [ ] the Linux launcher uses whichever is faster, keeping one-window, single-instance and save-on-close behavior
 
-## F-015 Speed meter and engine badge [doing]
+## F-015 Speed meter and engine badge [done]
 Captain: "I don't know whether it's a Chromium window or NPM window… put some sort of a speedometer."
-- [ ] a shortcut toggles a small meter showing frames per second and the slowest recent frame while drawing, dragging and zooming
-- [ ] the meter names the engine the window runs on (Chromium, WebKit, Firefox) and whether it's the desktop app or a browser window
-- [ ] the meter is off by default, costs nothing when off, and its on/off choice is remembered
-- [ ] `npm start` uses the project's own Python environment when it exists
+- [x] a shortcut toggles a small meter showing frames per second and the slowest recent frame while drawing, dragging and zooming
+- [x] the meter names the engine the window runs on (Chromium, WebKit, Firefox) and whether it's the desktop app or a browser window
+- [x] the meter is off by default, costs nothing when off, and its on/off choice is remembered
+- [x] `npm start` uses the project's own Python environment when it exists
