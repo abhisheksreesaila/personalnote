@@ -302,7 +302,7 @@ def _page_call(window, call: str) -> None:
         logger.warning("Could not tell the page about the window state.", exc_info=True)
 
 
-def setup_mac_window(window, actions: "desktop_menu.MenuActions") -> None:
+def setup_mac_window(window, actions: "desktop_menu.MenuActions", menus=None) -> None:
     """Unified title bar, menu bar and full-screen sync for the macOS window. Never raises. Unverified on a Mac."""
 
     def apply():
@@ -314,6 +314,8 @@ def setup_mac_window(window, actions: "desktop_menu.MenuActions") -> None:
         except Exception:
             logger.warning("Could not extend the page under the title bar; using the standard title bar.", exc_info=True)
             threading.Thread(target=_page_call, args=(window, "setMacChrome(false)"), daemon=True).start()
+        if menus is not None:
+            desktop_menu.install_menu_guard(getattr(window, "native", None), actions, menus)
         desktop_menu.install_native_menu(actions)
 
     def sync_full_screen():
@@ -364,7 +366,7 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
             mac_zoom.append(lambda: desktop_menu.on_main_thread(lambda: desktop_menu.zoom_native_window(window.native)))
             actions = desktop_menu.MenuActions(window, mac_zoom[0])
             menus = desktop_menu.webview_menus(actions, Menu, MenuAction, MenuSeparator)
-            setup_mac_window(window, actions)
+            setup_mac_window(window, actions, menus)
         except Exception:
             logger.warning("Could not set up the macOS menu bar; the default menus stay.", exc_info=True)
     server.on_focus = lambda: (window.restore(), window.show())

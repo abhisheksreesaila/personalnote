@@ -3,6 +3,7 @@ import './workspace-theme.css'
 import './skins.css'
 import './chrome.css'
 import { mountSkinSwitcher, startSkins } from './skins.js'
+import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
 import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
@@ -421,7 +422,7 @@ document.querySelector('#app').innerHTML = `
 createIcons({ icons })
 const skinSwitcher = mountSkinSwitcher(document.querySelector('#skin-switcher'))
 // The macOS window (desktop.py opens it with ?host=desktop&chrome=mac) extends under its title bar.
-if (/[?&]chrome=mac(&|$)/.test(location.search)) document.documentElement.classList.add('chrome-mac')
+if (readHostChrome(location.search).chrome === 'mac') document.documentElement.classList.add(MAC_CHROME_CLASS)
 
 const elements = {
   shell: document.querySelector('.app-shell'),
@@ -2069,7 +2070,13 @@ function flushPendingEdits(reason) {
 bindPageLifecycle({ windowTarget: window, documentTarget: document, flush: flushPendingEdits })
 
 // Lets the desktop window wait for edits to land before it closes: resolves true once nothing is unsaved.
+// Window-state hooks desktop.py calls; defined here, not in the lazy desktop chunk, so an early call is never lost.
+const windowHooks = {
+  setFullscreen: (on) => setMacFullscreen(document.documentElement, on),
+  setMacChrome: (on) => document.documentElement.classList.toggle(MAC_CHROME_CLASS, Boolean(on)),
+}
 window.personalNote = {
+  ...windowHooks,
   flush: () => settleSaves({
     flushPending: () => {
       void commitPendingDelete({ keepalive: true })

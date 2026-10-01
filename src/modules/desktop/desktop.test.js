@@ -101,6 +101,5 @@ test('installDesktopHost publishes the page API for desktop.py', () => {
   assert.equal(typeof api.command, 'function')
   assert.equal(api.command('zoom-in'), true)
   assert.equal(api.command('nope'), false)
-  api.setFullscreen(true); assert.ok(root.has('chrome-mac-fullscreen'))
-  api.setMacChrome(false); assert.equal(root.has('chrome-mac'), false)
+  assert.ok(root.has('chrome-mac'))
 })

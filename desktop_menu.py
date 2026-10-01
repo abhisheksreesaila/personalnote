@@ -44,6 +44,7 @@ class Item:
     action: str | None = None
     key: str = ""
     mods: tuple[str, ...] = ("command",)
+    hidden: bool = False  # an extra key equivalent that is not shown in the menu
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,8 @@ EDIT_ITEMS = (
 
 # Added at the top of pywebview's default View menu (Enter Full Screen stays native).
 VIEW_ITEMS = (
-    Item("Zoom In", command="zoom-in", key="+"),
+    Item("Zoom In", command="zoom-in", key="="),  # ⌘= works on US layouts; ⇧⌘= (a "+") is the hidden item below
+    Item("Zoom In (plus key)", command="zoom-in", key="+", mods=("command", "shift"), hidden=True),
     Item("Zoom Out", command="zoom-out", key="-"),
     Item("Fit", command="zoom-fit", key="0"),
     SEPARATOR,
@@ -211,6 +213,19 @@ def style_unified_title_bar(native) -> None:
     native.setTitlebarAppearsTransparent_(True)
     native.setTitleVisibility_(NS_WINDOW_TITLE_HIDDEN)
     native.setStyleMask_(native.styleMask() | NS_FULL_SIZE_CONTENT_VIEW)
+    clear_title_bar_background(native)
+
+
+def clear_title_bar_background(native, appkit: Any = None) -> bool:
+    """pywebview paints the title-bar container with the window colour; clear it so the page shows through."""
+    try:
+        if appkit is None:
+            import AppKit as appkit  # noqa: N813
+        native.contentView().superview().subviews().lastObject().setBackgroundColor_(appkit.NSColor.clearColor())
+        return True
+    except Exception:
+        logger.warning("Could not clear the title bar background.", exc_info=True)
+        return False
 
 
 def is_full_screen(native) -> bool:
@@ -267,6 +282,8 @@ def install_native_menu(actions: MenuActions, appkit: Any = None, handler: Any =
             item.setTarget_(handler)
             item.setRepresentedObject_(action_id)
             apply_shortcut(item, entry)
+            if entry.hidden:
+                item.setHidden_(True)
             return item
 
         def apply_shortcut(item, entry: Item):
@@ -293,12 +310,14 @@ def install_native_menu(actions: MenuActions, appkit: Any = None, handler: Any =
 
         edit = _submenu(main, "Edit")
         if edit is not None:
-            fill(edit, EDIT_ITEMS, 0)
+            if _find_item(edit, "Undo") is None:  # idempotent: a second run only refreshes shortcuts
+                fill(edit, EDIT_ITEMS, 0)
         else:
             logger.warning("No Edit menu to add Undo and Redo to.")
         view = _submenu(main, "View")
         if view is not None:
-            fill(view, VIEW_ITEMS, 0)
+            if _find_item(view, "Fit") is None:
+                fill(view, VIEW_ITEMS, 0)
         else:
             logger.warning("No View menu to add the zoom items to.")
 
@@ -323,4 +342,33 @@ def install_native_menu(actions: MenuActions, appkit: Any = None, handler: Any =
         return True
     except Exception:
         logger.warning("Could not finish the macOS menu bar; the default menus stay.", exc_info=True)
+        return False
+
+
+def install_menu_guard(native, actions: MenuActions, menus: Any, appkit: Any = None, cocoa: Any = None, call_after: Callable | None = None) -> bool:
+    """Keeps the added menu items when pywebview rebuilds its menu.
+
+    pywebview's window delegate rebuilds the whole menu on becoming key whenever BrowserView.current_menu
+    differs from the window's menu list, which would wipe our additions. Setting current_menu to that same
+    list stops the rebuild, and a become-key observer re-runs the (idempotent) install as a second defence.
+    """
+    try:
+        if appkit is None:
+            import AppKit as appkit  # noqa: N813
+        if cocoa is None:
+            from webview.platforms import cocoa
+        if call_after is None:
+            from PyObjCTools import AppHelper
+
+            call_after = AppHelper.callAfter
+        cocoa.BrowserView.current_menu = menus
+        center = appkit.NSNotificationCenter.defaultCenter()
+
+        def became_key(_notification):
+            call_after(lambda: install_native_menu(actions))  # next loop turn, after pywebview's own delegate
+
+        center.addObserverForName_object_queue_usingBlock_(appkit.NSWindowDidBecomeKeyNotification, native, None, became_key)
+        return True
+    except Exception:
+        logger.warning("Could not guard the macOS menu against rebuilds.", exc_info=True)
         return False

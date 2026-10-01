@@ -1,8 +1,8 @@
 // Desktop-window wiring (F-022), loaded only when the page is opened with ?host=desktop.
 // `handlers` come from main.js; this maps each menu command name (see commands.js) onto them and
-// publishes window.personalNote.command / setFullscreen / setMacChrome for desktop.py to call.
+// publishes window.personalNote.command for desktop.py to call (setFullscreen and setMacChrome live in main.js).
 import { createCommandDispatcher, runHistoryCommand } from './commands.js'
-import { applyHostChrome, MAC_CHROME_CLASS, setMacFullscreen } from './hostChrome.js'
+import { applyHostChrome } from './hostChrome.js'
 
 export function menuHandlers(h, runHistory = runHistoryCommand) {
   const skin = (id) => () => h.skin(id)
@@ -28,7 +28,5 @@ export function menuHandlers(h, runHistory = runHistoryCommand) {
 export function installDesktopHost({ root, search, api, handlers, zoomWindow }) {
   applyHostChrome({ root, search, zoomWindow: () => { try { void zoomWindow?.() } catch { /* best effort */ } } })
   api.command = createCommandDispatcher(menuHandlers(handlers))
-  api.setFullscreen = (on) => setMacFullscreen(root, on)
-  api.setMacChrome = (on) => root.classList.toggle(MAC_CHROME_CLASS, Boolean(on))
   return api
 }

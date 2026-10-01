@@ -52,6 +52,7 @@ class FakeItem:
     def setKeyEquivalent_(self, k): self.key = k
     def setKeyEquivalentModifierMask_(self, m): self.mask = m
     def setTarget_(self, t): self.target = t
+    def setHidden_(self, h): self.hidden = h
     def setRepresentedObject_(self, o): self.represented = o
 
 
@@ -142,7 +143,7 @@ class MenuModelTests(unittest.TestCase):
         by_title = {item.title: item for item in dm.iter_items()}
         cmd, shift = dm.MODIFIER_FLAGS["command"], dm.MODIFIER_FLAGS["shift"]
         expect = {"New note": ("n", cmd), "Print…": ("p", cmd), "Settings…": (",", cmd), "Undo": ("z", cmd),
-                  "Redo": ("z", cmd | shift), "Zoom In": ("+", cmd), "Zoom Out": ("-", cmd), "Fit": ("0", cmd),
+                  "Redo": ("z", cmd | shift), "Zoom In": ("=", cmd), "Zoom In (plus key)": ("+", cmd | shift), "Zoom Out": ("-", cmd), "Fit": ("0", cmd),
                   "Minimize": ("m", cmd), "Speed meter": ("f", cmd | shift)}
         for title, (key, mask) in expect.items():
             self.assertEqual((by_title[title].key, dm.modifier_mask(by_title[title].mods)), (key, mask), title)
@@ -218,8 +219,8 @@ class NativeMenuTests(unittest.TestCase):
         self.assertEqual(self.titles(edit)[:3], ["Undo", "Redo", "---"])
         self.assertEqual(self.titles(edit)[3:], ["Cut", "Copy", "Paste", "Select All"])
         view = main.items[3].submenu()
-        self.assertEqual(self.titles(view), ["Zoom In", "Zoom Out", "Fit", "---", "Skins", "Speed meter", "---", "Enter Fullscreen"])
-        self.assertEqual(self.titles(view.items[4].submenu()), ["Crayon", "Paper", "Night"])
+        self.assertEqual(self.titles(view), ["Zoom In", "Zoom In (plus key)", "Zoom Out", "Fit", "---", "Skins", "Speed meter", "---", "Enter Fullscreen"])
+        self.assertEqual(self.titles(view.items[5].submenu()), ["Crayon", "Paper", "Night"])
 
     def test_native_items_run_their_command_and_carry_shortcuts(self):
         ok, main, kit, handler, window = self.install()
@@ -228,7 +229,7 @@ class NativeMenuTests(unittest.TestCase):
         self.assertEqual(undo.action, "handleMenuAction:")
         handler.actions[undo.represented]()
         self.assertEqual(window.scripts, [dm.command_script("undo")])
-        night = main.items[3].submenu().items[4].submenu().items[2]
+        night = main.items[3].submenu().items[5].submenu().items[2]
         handler.actions[night.represented]()
         self.assertEqual(window.scripts[-1], dm.command_script("skin-night"))
 
@@ -259,7 +260,61 @@ class NativeMenuTests(unittest.TestCase):
         self.assertFalse(dm.install_native_menu(dm.MenuActions(FakeWindow(), lambda: None), appkit=kit, handler=FakeHandler()))
 
 
+class GuardTests(unittest.TestCase):
+    def test_install_twice_adds_nothing_twice(self):
+        main = pywebview_like_main_menu()
+        kit, handler = FakeAppKit(main), FakeHandler()
+        actions = dm.MenuActions(FakeWindow(), lambda: None)
+        dm.install_native_menu(actions, appkit=kit, handler=handler)
+        once = [[i.title() for i in m.submenu().items] for m in main.items if m.submenu()]
+        dm.install_native_menu(actions, appkit=kit, handler=handler)
+        twice = [[i.title() for i in m.submenu().items] for m in main.items if m.submenu()]
+        self.assertEqual(once, twice)
+
+    def test_the_hidden_plus_item_is_hidden(self):
+        main = pywebview_like_main_menu()
+        dm.install_native_menu(dm.MenuActions(FakeWindow(), lambda: None), appkit=FakeAppKit(main), handler=FakeHandler())
+        plus = next(i for i in main.items[3].submenu().items if i.title() == "Zoom In (plus key)")
+        self.assertTrue(plus.hidden)
+
+    def test_guard_stops_pywebview_rebuilding_and_restores_after_one(self):
+        main = pywebview_like_main_menu()
+        kit, handler = FakeAppKit(main), FakeHandler()
+        actions = dm.MenuActions(FakeWindow(), lambda: None)
+        menus = ["the", "menus"]
+        blocks = []
+        kit.NSWindowDidBecomeKeyNotification = "key"
+        kit.NSNotificationCenter = type("C", (), {"defaultCenter": staticmethod(lambda: types.SimpleNamespace(
+            addObserverForName_object_queue_usingBlock_=lambda name, obj, queue, block: blocks.append((name, obj, block))))})
+        cocoa = types.SimpleNamespace(BrowserView=types.SimpleNamespace(current_menu=None))
+        native = object()
+        ok = dm.install_menu_guard(native, actions, menus, appkit=kit, cocoa=cocoa, call_after=lambda fn: fn())
+        self.assertTrue(ok)
+        self.assertIs(cocoa.BrowserView.current_menu, menus)  # same list as webview.start(menu=...): no rebuild
+        self.assertEqual(blocks[0][:2], ("key", native))
+        # Simulate a rebuild that wipes the additions, then the observer firing: the additions come back.
+        calls = []
+        with mock.patch.object(dm, "install_native_menu", lambda a, **kw: calls.append(a) or True):
+            blocks[0][2](None)
+        self.assertEqual(calls, [actions])
+
+    def test_guard_failure_is_logged(self):
+        with self.assertLogs("personal-note.desktop", "WARNING"):
+            self.assertFalse(dm.install_menu_guard(object(), None, [], appkit=object(), cocoa=object(), call_after=lambda f: f()))
+
+
 class TitleBarTests(unittest.TestCase):
+    def test_title_bar_background_is_cleared(self):
+        seen = []
+        container = types.SimpleNamespace(setBackgroundColor_=lambda c: seen.append(c))
+        native = types.SimpleNamespace(contentView=lambda: types.SimpleNamespace(superview=lambda: types.SimpleNamespace(
+            subviews=lambda: types.SimpleNamespace(lastObject=lambda: container))))
+        kit = types.SimpleNamespace(NSColor=types.SimpleNamespace(clearColor=lambda: "clear"))
+        self.assertTrue(dm.clear_title_bar_background(native, appkit=kit))
+        self.assertEqual(seen, ["clear"])
+        with self.assertLogs("personal-note.desktop", "WARNING"):
+            self.assertFalse(dm.clear_title_bar_background(object(), appkit=kit))
+
     def test_style_flags(self):
         calls = []
 
