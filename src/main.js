@@ -3,6 +3,7 @@ import './workspace-theme.css'
 import './skins.css'
 import './chrome.css'
 import { mountSkinSwitcher, startSkins } from './skins.js'
+import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
 import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
@@ -419,7 +420,9 @@ document.querySelector('#app').innerHTML = `
 `
 
 createIcons({ icons })
-mountSkinSwitcher(document.querySelector('#skin-switcher'))
+const skinSwitcher = mountSkinSwitcher(document.querySelector('#skin-switcher'))
+// The macOS window (desktop.py opens it with ?host=desktop&chrome=mac) extends under its title bar.
+if (readHostChrome(location.search).chrome === 'mac') document.documentElement.classList.add(MAC_CHROME_CLASS)
 
 const elements = {
   shell: document.querySelector('.app-shell'),
@@ -2067,7 +2070,13 @@ function flushPendingEdits(reason) {
 bindPageLifecycle({ windowTarget: window, documentTarget: document, flush: flushPendingEdits })
 
 // Lets the desktop window wait for edits to land before it closes: resolves true once nothing is unsaved.
+// Window-state hooks desktop.py calls; defined here, not in the lazy desktop chunk, so an early call is never lost.
+const windowHooks = {
+  setFullscreen: (on) => setMacFullscreen(document.documentElement, on),
+  setMacChrome: (on) => document.documentElement.classList.toggle(MAC_CHROME_CLASS, Boolean(on)),
+}
 window.personalNote = {
+  ...windowHooks,
   flush: () => settleSaves({
     flushPending: () => {
       void commitPendingDelete({ keepalive: true })
@@ -4082,6 +4091,37 @@ document.addEventListener('keydown', (event) => {
     else if (event.key.toLowerCase() === 'i' && state.activeNoteType === 'canvas' && elements.printPreview.hidden) elements.imageFile.click()
   }
 })
+
+// Desktop window only (desktop.py): the native menu bar calls window.personalNote.command(name), and the macOS
+// window gets its title-bar chrome. The code is a separate chunk, loaded only inside the desktop app.
+if (hostFlag === 'desktop') {
+  const clickWhenPresent = (selector) => document.querySelector(selector)?.click()
+  const canvasNote = () => state.activeNoteType === 'canvas'
+  void import('./modules/desktop/host.js').then(({ installDesktopHost }) => installDesktopHost({
+    root: document.documentElement,
+    search: location.search,
+    api: window.personalNote,
+    zoomWindow: () => window.pywebview?.api?.zoom_window?.(),
+    handlers: {
+      newNote: () => { setNoteCreateMenuOpen(false); void createNote() },
+      exportBackup: () => downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json'),
+      exportMarkdown: () => downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip'),
+      print: () => { if (canvasNote()) void openPrintPreview() },
+      settings: () => setPropertiesOpen(true),
+      history: (name) => {
+        const step = name === 'undo' ? -1 : 1
+        if (state.activeNoteType === 'mindmap') clickWhenPresent(`[data-map-action="${name}"]`)
+        else restoreHistory(state.historyIndex + step)
+      },
+      zoom: (direction) => {
+        if (direction === 'fit') (canvasNote() ? fitAllPages() : clickWhenPresent('[data-map-action="fit"]'))
+        else if (canvasNote()) zoomStep(direction)
+      },
+      skin: (id) => { startSkins().select(id); skinSwitcher.sync() },
+      speedMeter: () => { setSpeedMeter(!state.speedMeter); savePreferences() },
+    },
+  }))
+}
 
 document.querySelector('#zoom-in').addEventListener('click', () => zoomStep(1))
 document.querySelector('#zoom-out').addEventListener('click', () => zoomStep(-1))

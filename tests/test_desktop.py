@@ -361,7 +361,7 @@ class VoiceLifecycleTests(TempDirCase):
 
 class WindowUrlTests(unittest.TestCase):
     def test_desktop_window_tells_the_page_it_is_the_desktop_app(self):
-        self.assertEqual(window_url("http://127.0.0.1:5000"), "http://127.0.0.1:5000/notes?host=desktop")
+        self.assertEqual(window_url("http://127.0.0.1:5000", "linux"), "http://127.0.0.1:5000/notes?host=desktop")
 
 
 if __name__ == "__main__":

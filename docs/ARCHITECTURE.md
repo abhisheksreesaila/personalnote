@@ -166,6 +166,7 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `scripts/build-voice-engine.sh` | Builds the pinned NeMo-Speech.cpp engine for the release (Linux x86_64 CPU, macOS arm64 Metal) |
 | `routes.py` | Core HTTP routes |
 | `desktop.py` | Native-window entry point: in-process server, single instance, close-time flush |
+| `desktop_menu.py` | macOS window chrome and menu bar: menu model, commands sent to `window.personalNote.command(name)`, guarded AppKit calls |
 | `app_paths.py` | Default database location shared by the app, CLI and server |
 | `scripts/build-mac-app.sh`, `packaging/` | macOS app bundle build and Linux launcher |
 | `personal_note_cli.py`, `bin/personal-note` | Machine-readable local CLI for agents, using the same service and portability contracts |
