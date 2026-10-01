@@ -192,7 +192,9 @@ def allow_microphone(window) -> None:
     """Let the page ask for the microphone where the webview needs to be told it may.
 
     WebKitGTK (Linux) denies media requests unless the app answers them. On macOS WKWebView
-    shows the system prompt itself, and the bundle's NSMicrophoneUsageDescription backs it.
+    shows the system prompt itself (pywebview 6.2.1 implements no media-capture permission hook, so
+    WebKit's default prompt applies, and only audio is ever requested), and the bundle's
+    NSMicrophoneUsageDescription backs it. Not verified on a Mac.
     A failure here leaves the app's own "voice unavailable" message to explain it.
     """
     if not sys.platform.startswith("linux"):

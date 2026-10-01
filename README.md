@@ -34,7 +34,7 @@ python main.py
 
 ## Install from a release
 
-Releases are built by GitHub Actions when a `v*` tag is pushed (`.github/workflows/release.yml`); Windows is not supported.
+Releases are built by GitHub Actions when a `v*` tag is pushed (`.github/workflows/release.yml`); Windows is not supported. A release also carries the voice engines (`personal-note-voice-engine-linux-x86_64.tar.gz`, `personal-note-voice-engine-macos-arm64.tar.gz`, each with a `.sha256`); the app downloads the right one itself when you press **Download voice** in Settings, so you never need them by hand (see Voice capture and privacy).
 
 **macOS (Apple Silicon)**
 
@@ -77,7 +77,7 @@ npm run desktop                         # or: .venv/bin/python desktop.py
 - Linux needs a system web view: `webkit2gtk-4.1` and `python-gobject` (Arch/Omarchy: `sudo pacman -S webkit2gtk-4.1 python-gobject`; Debian/Ubuntu: `gir1.2-webkit2-4.1 python3-gi`). The virtualenv must see them: create it with `python -m venv --system-site-packages .venv`. `npm run desktop` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which Wayland sessions need.
 - Launcher entry on Linux: `sh scripts/install-linux-launcher.sh` adds "Personal Note" to the application menu (re-run it after updating so the window class matches).
 - macOS app: on a Mac, `npm run desktop:mac-app` builds `dist-app/Personal Note.app` and a zip of it with PyInstaller (microphone usage text included). Not yet verified on a Mac.
-- Microphone: Linux grants the window microphone access automatically; macOS asks once. If access is refused the app shows its usual "voice unavailable" message. In the Chromium window the browser asks once per origin; the fixed port keeps the origin stable, so it is not asked again on each launch.
+- Microphone: the Chromium window asks once per origin (the fixed port keeps the origin stable, so it is not asked again on each launch); the Linux pywebview window grants audio (never video) itself. On macOS the web view shows the system prompt (pywebview 6.2.1 has no media-permission hook, so WebKit's default prompt is what appears; not yet verified on a Mac). If access is refused the app says so and the note stays untouched. Voice itself is a separate one-click download, see Voice capture and privacy.
 
 ### Where the notebook lives
 
@@ -123,16 +123,26 @@ See [`docs/MODULE-CONTRACTS.md`](docs/MODULE-CONTRACTS.md) and [`docs/ARCHITECTU
 
 ## Voice capture and privacy
 
-Desktop voice capture streams short-lived mono PCM frames directly from the browser to the loopback transcription service at `ws://127.0.0.1:8080/v1/realtime`. Personal Note does **not** write audio or PCM to IndexedDB, SQLite, files, backups, or exports. Partial text is transient. Final transcript text is inserted as an ordinary editable canvas object and is then saved normally.
+Voice dictation runs on your computer with NVIDIA's Nemotron speech model. It is optional and downloaded once, from inside the app:
 
-On Windows, install and start the pinned local Nemotron runtime:
+1. Open **Settings › Voice** and press **Download voice (≈750 MB)**. The app fetches the speech engine for your system from the matching GitHub release (Linux x86_64 CPU, macOS Apple Silicon with Metal) and the model from Hugging Face, resumes an interrupted download, checks both against pinned SHA-256 checksums, and unpacks them into the app-data folder (`voice/`, next to the notebook: `~/.local/share/personal-note/voice` on Linux, `~/Library/Application Support/Personal Note/voice` on macOS). No terminal needed. **Remove voice** deletes all of it; your notes are never touched.
+2. From then on the app starts the engine with its window and stops it when the window closes (loopback only, `127.0.0.1`, port 8080 when free and another free port when not; it is restarted once if it crashes; its log is `voice/logs/engine.log`). Hold the mic button to dictate, or tap it to keep listening.
+3. When voice is not ready the mic button says why (not installed, still downloading, setup failed) and opens Settings › Voice.
+
+Running from a checkout (`npm start`, `npm run desktop`) works the same: the server starts the engine on demand. Windows keeps the older route below.
+
+Audio is streamed as short-lived mono PCM frames from the page to that loopback engine. Personal Note does **not** write audio or PCM to IndexedDB, SQLite, files, backups, or exports. Partial text is transient. Final transcript text is inserted as an ordinary editable canvas object and is then saved normally.
+
+Environment overrides, for mirrors and testing: `PERSONAL_NOTE_VOICE_ENGINE_URL` (folder holding `personal-note-voice-engine-<os>-<arch>.tar.gz` and its `.sha256`), `PERSONAL_NOTE_VOICE_MODEL_URL`, `PERSONAL_NOTE_VOICE_DIR`; a `voice/settings.json` with `{"engineBaseUrl": "https://..."}` does the same for the engine. The engine files are built by `scripts/build-voice-engine.sh` (see the Release workflow); an app that finds no engine on its own release falls back to the latest release.
+
+On Windows, install and start the pinned local Nemotron runtime by hand:
 
 ```powershell
 npm run voice:setup
 npm run voice:start
 ```
 
-If the loopback service is unavailable, the interface says so. When the browser offers `SpeechRecognition`, Personal Note explicitly labels that fallback as browser voice; provider and network behavior then follow the browser's own privacy policy. If neither path is available, capture stops and the note remains unchanged.
+If no local engine is available the interface says so. In an ordinary browser tab, when the browser offers `SpeechRecognition`, Personal Note explicitly labels that fallback as browser voice; provider and network behavior then follow the browser's own privacy policy (the app windows never use it). If neither path is available, capture stops and the note remains unchanged.
 
 On screens at or below 560px, the white paper canvas is the only capture surface. Hold **Hold to speak** to stream and finalize into selected canvas text (or a new text object); **Draw** explicitly enables the pen. Desktop remains the v1 release target.
 
