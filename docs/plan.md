@@ -100,3 +100,15 @@ Captain: "the mock-up was way better"; buttons not as intended; nothing to drop 
 - [x] the dock has Sticky note, Shape and Image tools like the mockup; stickies and shapes save, undo, connect and print
 - [x] dock, top bar, sidebar and zoom buttons match the mockup's sizes, radii, glass and states, checked side by side with screenshots in all three skins
 Note: notes with more than ~150 objects open on the first page instead of the zoomed-out desk, to keep panning at 60fps.
+
+## F-013 Snappy and tidy [doing]
+Captain, after first use of the desktop app: page grow/shrink "feels sluggish… has to be rapid, no animation"; two settings buttons are redundant (keep top right); monospace should be the default; Clear all needs a quick place.
+- [ ] pages appear and fold away instantly when objects cross or leave an edge (no grow/fold animation); zoom, zoom-to-fit and minimap jumps are instant too
+- [ ] one settings entry point, top right; the sidebar gear is gone and its settings live in the same panel
+- [ ] new text defaults to monospace (existing notes unchanged)
+- [ ] Clear all is one click from the top right, and can be undone right after (Undo in a toast and Ctrl/⌘+Z)
+
+## F-014 Fastest engine for the Linux app [todo]
+Needs: F-013
+- [ ] the same canvas benchmark is measured in the current desktop window (WebKitGTK) and in a Chromium app window on this machine, with GPU
+- [ ] the Linux launcher uses whichever is faster, keeping one-window, single-instance and save-on-close behavior
