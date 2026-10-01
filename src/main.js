@@ -3642,6 +3642,17 @@ const speedMeter = createSpeedMeter({
   },
 })
 
+const hostFlag = new URLSearchParams(location.search).get('host')
+
+function renderSpeedMeterWhere() {
+  if (!speedMeterPill) return
+  const standalone = typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches
+  const engine = detectEngine({ userAgentData: navigator.userAgentData, userAgent: navigator.userAgent })
+  const host = detectHost({ pywebview: window.pywebview, hostFlag, standalone, menubarVisible: window.menubar?.visible })
+  speedMeterPill.querySelector('[data-speed-where]').textContent = `${engine} · ${host}`
+}
+window.addEventListener('pywebviewready', renderSpeedMeterWhere)
+
 function setSpeedMeter(visible) {
   state.speedMeter = visible
   elements.settingsSpeedMeter.checked = visible
@@ -3653,8 +3664,7 @@ function setSpeedMeter(visible) {
       speedMeterPill.innerHTML = '<span data-speed-frames>measuring…</span><small data-speed-where></small>'
       document.body.append(speedMeterPill)
     }
-    const standalone = typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches
-    speedMeterPill.querySelector('[data-speed-where]').textContent = `${detectEngine({ userAgentData: navigator.userAgentData, userAgent: navigator.userAgent })} · ${detectHost({ pywebview: window.pywebview, standalone, menubarVisible: window.menubar?.visible })}`
+    renderSpeedMeterWhere()
     speedMeterPill.hidden = false
     speedMeter.start()
   } else {

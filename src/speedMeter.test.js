@@ -22,6 +22,7 @@ test('engine from userAgent strings', () => {
 
 test('host: desktop app, app window, or browser', () => {
   assert.equal(detectHost({ pywebview: {} }), 'Desktop app')
+  assert.equal(detectHost({ hostFlag: 'desktop' }), 'Desktop app')
   assert.equal(detectHost({ standalone: true }), 'App window')
   assert.equal(detectHost({ menubarVisible: false }), 'App window')
   assert.equal(detectHost({ menubarVisible: true }), 'Browser')
@@ -52,12 +53,12 @@ test('old frames fall out of the window', () => {
 })
 
 test('shortcut is Ctrl/Cmd+Shift+F, never while typing', () => {
-  const key = { key: 'F', ctrlKey: true, shiftKey: true }
+  const key = { code: 'KeyF', ctrlKey: true, shiftKey: true }
   assert.equal(isSpeedMeterShortcut(key), true)
-  assert.equal(isSpeedMeterShortcut({ key: 'f', metaKey: true, shiftKey: true }), true)
+  assert.equal(isSpeedMeterShortcut({ code: 'KeyF', metaKey: true, shiftKey: true }), true)
   assert.equal(isSpeedMeterShortcut(key, { blocked: true }), false)
-  assert.equal(isSpeedMeterShortcut({ key: 'f', ctrlKey: true }), false)
-  assert.equal(isSpeedMeterShortcut({ key: 'F', shiftKey: true }), false)
+  assert.equal(isSpeedMeterShortcut({ code: 'KeyF', ctrlKey: true }), false)
+  assert.equal(isSpeedMeterShortcut({ code: 'KeyF', shiftKey: true }), false)
   assert.equal(isSpeedMeterShortcut({ ...key, altKey: true }), false)
 })
 
@@ -78,5 +79,33 @@ test('the meter schedules no frames until started and none after stop', () => {
   assert.ok(updates.length >= 2)
   meter.stop()
   assert.equal(queued, null)
+  assert.equal(meter.running, false)
+})
+
+test('hiding the page pauses the loop and showing it restarts with fresh stats', () => {
+  const listeners = []
+  const doc = { hidden: false, addEventListener: (type, fn) => listeners.push(fn) }
+  let queued = null
+  const updates = []
+  const meter = createSpeedMeter({
+    doc, intervalMs: 0,
+    onUpdate: (s) => updates.push(s),
+    raf: (fn) => { queued = fn; return 1 },
+    caf: () => { queued = null },
+  })
+  meter.start()
+  queued(0); queued(16)
+  doc.hidden = true
+  listeners.forEach((fn) => fn())
+  assert.equal(queued, null)
+  doc.hidden = false
+  listeners.forEach((fn) => fn())
+  queued(30000); queued(30016)
+  assert.ok(updates.at(-1).slowestMs < 20, `slowest ${updates.at(-1).slowestMs}`)
+  meter.stop()
+  doc.hidden = true
+  listeners.forEach((fn) => fn())
+  doc.hidden = false
+  listeners.forEach((fn) => fn())
   assert.equal(meter.running, false)
 })

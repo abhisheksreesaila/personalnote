@@ -27,7 +27,7 @@ const browser = await chromium.launch({ headless: true })
 const results = []
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`) }
 
-async function open(width = 1440, height = 900, skin = 'crayon') {
+async function open(width = 1440, height = 900, skin = 'crayon', query = '') {
   stored = { version: '7.4.0', objects: [] }; pageState = { columns: 1, rows: 1 }; deleteCalls = 0; deletedFirst = false; slowSecond = false
   const context = await browser.newContext({ viewport: { width, height } })
   const page = await context.newPage()
@@ -51,13 +51,19 @@ async function open(width = 1440, height = 900, skin = 'crayon') {
     }
     return json([])
   })
-  await page.goto(new URL('notes', baseUrl).href)
+  await page.goto(new URL('notes' + query, baseUrl).href)
   await page.waitForFunction(() => window.__personalNote?.canvas && document.querySelector('.note-list-item.active'), null, { timeout: 30000 })
   await page.waitForTimeout(900)
   return { context, page }
 }
 
 
+const toClient = (page, x, y) => page.evaluate(([px, py]) => {
+  const { canvas } = window.__personalNote
+  const v = canvas.viewportTransform
+  const r = canvas.upperCanvasEl.getBoundingClientRect()
+  return { x: r.left + px * v[0] + v[4], y: r.top + py * v[3] + v[5] }
+}, [x, y])
 const pill = (page) => page.locator('.speed-meter')
 const rafOver = async (page, ms) => { const a = await page.evaluate(() => window.__raf); await page.waitForTimeout(ms); return (await page.evaluate(() => window.__raf)) - a }
 {
@@ -95,8 +101,32 @@ const rafOver = async (page, ms) => { const a = await page.evaluate(() => window
   await page.keyboard.press('Control+Shift+F')
   await page.waitForTimeout(200)
   check('shortcut ignored while typing', await pill(page).isVisible())
+  await page.keyboard.press('Escape')
+  await page.click('[data-tool="text"]')
+  const c = await toClient(page, 200, 200)
+  await page.mouse.click(c.x, c.y)
+  await page.keyboard.type('hi')
+  await page.keyboard.press('Control+Shift+F')
+  await page.waitForTimeout(200)
+  check('shortcut ignored while editing canvas text', await pill(page).isVisible())
+  await page.keyboard.press('Escape')
   await page.emulateMedia({ media: 'print' })
   check('pill hidden in print', !(await pill(page).isVisible()))
+  await context.close()
+}
+{
+  const { context, page } = await open(1440, 900, 'crayon', '?host=desktop')
+  await page.keyboard.press('Control+Shift+F')
+  await page.waitForTimeout(500)
+  check('desktop flag labels the host before pywebview exists', /Chromium · Desktop app/.test(await pill(page).innerText()))
+  await context.close()
+}
+{
+  const { context, page } = await open(1440, 900, 'crayon')
+  await page.keyboard.press('Control+Shift+F')
+  await page.waitForTimeout(500)
+  await page.evaluate(() => { window.pywebview = {}; window.dispatchEvent(new Event('pywebviewready')) })
+  check('pywebviewready re-renders the host label', /Desktop app/.test(await pill(page).innerText()))
   await context.close()
 }
 {

@@ -260,6 +260,11 @@ def show_notice(window, message: str) -> None:
     window.evaluate_js(script)
 
 
+def window_url(base_url: str) -> str:
+    # window.pywebview is injected after page load; the flag lets the page know it is the desktop app at once.
+    return base_url + "/notes?host=desktop"
+
+
 def run_window(base_url: str, database: Path, server: LocalServer, timing: bool) -> None:
     if sys.platform.startswith("linux"):
         # WebKitGTK's DMABUF renderer crashes some Wayland sessions with a protocol error.
@@ -269,7 +274,7 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
     webview.settings["ALLOW_DOWNLOADS"] = True  # backup and Markdown export are downloads
     window = webview.create_window(
         WINDOW_TITLE,
-        base_url + "/notes",
+        window_url(base_url),
         width=WINDOW_SIZE[0],
         height=WINDOW_SIZE[1],
         min_size=WINDOW_MIN_SIZE,
