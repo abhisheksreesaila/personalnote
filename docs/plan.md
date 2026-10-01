@@ -111,12 +111,14 @@ Captain, after first use of the desktop app: page grow/shrink "feels sluggish…
 - [x] Clear all is one click from the top right, and can be undone right after (Undo in a toast and Ctrl/⌘+Z)
 - [x] Delete note is undoable for 8 s; switching notes saves the outgoing note first
 
-## F-014 Fastest engine for the Linux app [doing]
+## F-014 Fastest engine for the Linux app [done]
 Captain: "the chromium window feels fast, use that for the launcher."
 Needs: F-013
-- [ ] the same canvas benchmark is measured in the current desktop window (WebKitGTK) and in a Chromium app window on this machine, with GPU (superseded: captain chose Chromium by feel)
-- [ ] the Linux launcher uses Chromium when installed, keeping one-window and single-instance behavior; save-on-close narrowed (save ~250ms after the last edit plus keepalive flush) but not guaranteed: notes over ~60 KiB can lose edits made in the last fraction of a second before closing
-- [ ] stable origin: the desktop app prefers port 3138 so saved preferences and the microphone permission survive restarts
+- [x] the same canvas benchmark is measured in the current desktop window (WebKitGTK) and in a Chromium app window on this machine, with GPU (superseded: captain chose Chromium by feel)
+- [x] the Linux launcher uses Chromium when installed, keeping one-window and single-instance behavior; save-on-close narrowed (save ~250ms after the last edit plus keepalive flush) but not guaranteed: notes over ~60 KiB can lose edits made in the last fraction of a second before closing
+- [x] stable origin: the desktop app prefers port 3138 so saved preferences and the microphone permission survive restarts
+
+Captain accepted (2026-09-30): "Chromium was a better launcher"; close-time limit for large notes stays documented.
 
 ## F-015 Speed meter and engine badge [done]
 Captain: "I don't know whether it's a Chromium window or NPM window… put some sort of a speedometer."
@@ -125,7 +127,13 @@ Captain: "I don't know whether it's a Chromium window or NPM window… put some 
 - [x] the meter is off by default, costs nothing when off, and its on/off choice is remembered
 - [x] `npm start` uses the project's own Python environment when it exists
 
-## F-016 Remove the writing guide [doing]
+## F-016 Remove the writing guide [done]
 Captain: "no need for a translucent line underneath the text… remove and save some cycles of drawing time."
-- [ ] no ruled guide lines appear while editing text, on desktop or phone
-- [ ] the code that placed and redrew them is gone, not just hidden
+- [x] no ruled guide lines appear while editing text, on desktop or phone
+- [x] the code that placed and redrew them is gone, not just hidden
+
+## F-017 Red skin default and quick select/hand switching [doing]
+Captain: "not the blue one… I like the red one, which looked like Claude"; "I have to click between the arrow tool and the hand tool… there has to be an easy shortcut."
+- [ ] Paper (the red skin) is the default for a first launch; a skin the user already picked is kept
+- [ ] hold Space to pan with the hand, release to go back to the previous tool; V selects the arrow, H the hand; middle-mouse drag pans from any tool
+- [ ] Space no longer pages the canvas (arrows and PageUp/PageDown still do), and none of this fires while typing
