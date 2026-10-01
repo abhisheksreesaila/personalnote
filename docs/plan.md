@@ -76,6 +76,8 @@ Needs: F-002
 - [ ] on a real retina Mac: zoom-out on the 600-object note stays smooth; decide objectCaching for ink paths
 - [ ] large transparent images in WebKit (Mac app) stay PNG because WebP encoding falls back; check and handle
 - [ ] verify-objects sticky-lock check asserts the sticky count
+- [ ] a note whose save keeps failing doesn't trap you: a second click switches anyway, or "Leave without saving"
+- [ ] stale-load guard also after loadFromJSON / mind-map mount
 
 ## F-010 Save pending edits on close [done]
 - [x] edits made just before a reload or close are saved (flush on pagehide / hidden, keepalive under 64 KiB)
@@ -101,12 +103,13 @@ Captain: "the mock-up was way better"; buttons not as intended; nothing to drop 
 - [x] dock, top bar, sidebar and zoom buttons match the mockup's sizes, radii, glass and states, checked side by side with screenshots in all three skins
 Note: notes with more than ~150 objects open on the first page instead of the zoomed-out desk, to keep panning at 60fps.
 
-## F-013 Snappy and tidy [doing]
+## F-013 Snappy and tidy [done]
 Captain, after first use of the desktop app: page grow/shrink "feels sluggish… has to be rapid, no animation"; two settings buttons are redundant (keep top right); monospace should be the default; Clear all needs a quick place.
-- [ ] pages appear and fold away instantly when objects cross or leave an edge (no grow/fold animation); zoom, zoom-to-fit and minimap jumps are instant too
-- [ ] one settings entry point, top right; the sidebar gear is gone and its settings live in the same panel
-- [ ] new text defaults to monospace (existing notes unchanged)
-- [ ] Clear all is one click from the top right, and can be undone right after (Undo in a toast and Ctrl/⌘+Z)
+- [x] pages appear and fold away instantly when objects cross or leave an edge (no grow/fold animation); zoom, zoom-to-fit and minimap jumps are instant too
+- [x] one settings entry point, top right; the sidebar gear is gone and its settings live in the same panel
+- [x] new text defaults to monospace (existing notes unchanged)
+- [x] Clear all is one click from the top right, and can be undone right after (Undo in a toast and Ctrl/⌘+Z)
+- [x] Delete note is undoable for 8 s; switching notes saves the outgoing note first
 
 ## F-014 Fastest engine for the Linux app [todo]
 Needs: F-013
