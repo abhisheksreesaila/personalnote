@@ -37,6 +37,7 @@ import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
+import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
 import { createLiftEffect } from './modules/editor/lift.js'
@@ -162,11 +163,11 @@ document.querySelector('#app').innerHTML = `
         <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
           <div class="dock-canvas" id="dock-canvas">
             <div class="tool-group dock-tools">
-              <button class="tool-button mobile-hand-tool" data-tool="hand" title="Move canvas" aria-label="Move canvas"><i data-lucide="hand"></i></button>
               <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select">${dockIcon('select')}</button>
+              <button class="tool-button" data-tool="hand" title="Hand (H) - drag to move the canvas; or hold Space" aria-label="Hand"><i data-lucide="hand"></i></button>
               <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text">${dockIcon('text')}</button>
               <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen">${dockIcon('pen')}</button>
-              <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (H) - hold for color and width" aria-label="Highlighter">${dockIcon('marker')}</button>
+              <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (M) - hold for color and width" aria-label="Highlighter">${dockIcon('marker')}</button>
               <button class="tool-button" data-tool="shape" data-tool-options title="Shape (R) - click the page to place, hold for color" aria-label="Shape">${dockIcon('shape')}</button>
               <button class="tool-button" data-tool="sticky" data-tool-options title="Sticky note (N) - click the page to place, hold for color" aria-label="Sticky note">${dockIcon('sticky')}</button>
               <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect">${dockIcon('connect')}</button>
@@ -1663,7 +1664,11 @@ function createInkDot(point, tool) {
   return dot
 }
 
+const temporaryHand = createTemporaryHand()
+let applyingTemporaryHand = false
+
 function setTool(tool) {
+  if (!applyingTemporaryHand) temporaryHand.cancel()
   state.tool = tool
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
   canvas.isDrawingMode = tool === 'pen' || tool === 'highlight'
@@ -1679,13 +1684,14 @@ function setTool(tool) {
     canvas.freeDrawingBrush.width = tool === 'highlight' ? state.highlightWidth : state.penWidth
     canvas.freeDrawingBrush.decimate = 0.8
   }
+  canvas.setCursor(canvas.isDrawingMode ? canvas.freeDrawingCursor : canvas.defaultCursor)
   elements.mobileConnect.classList.toggle('active', tool === 'connect')
   elements.mobileConnect.setAttribute('aria-pressed', String(tool === 'connect'))
   updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
   connectDraft = null
   connectHover = null
-  canvas.discardActiveObject()
+  if (!applyingTemporaryHand) canvas.discardActiveObject()
   canvas.requestRenderAll()
 }
 
@@ -3196,6 +3202,12 @@ elements.workspace.addEventListener('wheel', (event) => {
   setCanvasViewportOffset(viewportOffsetX - dx, viewportOffsetY - dy)
 }, { passive: false })
 
+let handPanKeep = null
+// Fabric deselects on a press over empty canvas; remember the selection so a hand pan (held Space or
+// the sticky hand) gives it back when the drag ends.
+canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
+  handPanKeep = state.tool === 'hand' && event.button === 0 ? canvas.getActiveObjects() : null
+}, { capture: true })
 let mousePan = null
 canvas.on('mouse:down', ({ e }) => {
   if (state.tool !== 'hand' || e.pointerType === 'touch' || e.touches) return
@@ -3206,11 +3218,46 @@ canvas.on('mouse:move', ({ e }) => {
   if (!mousePan) return
   setCanvasViewportOffset(mousePan.offsetX + e.clientX - mousePan.x, mousePan.offsetY + e.clientY - mousePan.y)
 })
+function restorePanSelection() {
+  const keep = handPanKeep
+  handPanKeep = null
+  if (!keep?.length || canvas.getActiveObjects().length) return
+  const live = keep.filter((object) => canvas.getObjects().includes(object))
+  if (live.length) canvas.setActiveObject(live.length > 1 ? new ActiveSelection(live, { canvas }) : live[0])
+}
 canvas.on('mouse:up', () => {
+  restorePanSelection()
   if (!mousePan) return
   mousePan = null
   canvas.setCursor('grab')
 })
+
+// Middle-mouse drag pans from any tool. Fabric ignores the middle button, so this listens itself and
+// keeps the press away from drawing, selecting and placing.
+let middlePan = null
+canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
+  if (event.button !== 1 || event.pointerType === 'touch' || state.activeNoteType !== 'canvas') return
+  middlePan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: viewportOffsetX, offsetY: viewportOffsetY }
+  canvas.upperCanvasEl.setPointerCapture(event.pointerId)
+  canvas.upperCanvasEl.style.cursor = 'grabbing'
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true })
+canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
+  if (middlePan?.pointerId !== event.pointerId) return
+  setCanvasViewportOffset(middlePan.offsetX + event.clientX - middlePan.x, middlePan.offsetY + event.clientY - middlePan.y)
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true })
+function endMiddlePan(event) {
+  if (middlePan?.pointerId !== event.pointerId) return
+  middlePan = null
+  canvas.upperCanvasEl.style.cursor = ''
+  event.stopImmediatePropagation()
+}
+canvas.upperCanvasEl.addEventListener('pointerup', endMiddlePan, { capture: true })
+canvas.upperCanvasEl.addEventListener('pointercancel', endMiddlePan, { capture: true })
+canvas.upperCanvasEl.addEventListener('mousedown', (event) => { if (event.button === 1) event.preventDefault() })
 
 canvas.on('before:path:created', ({ path }) => {
   const points = canvas.freeDrawingBrush?._points || []
@@ -3799,6 +3846,67 @@ function canPanFromKeyboard(activeElement) {
   })
 }
 
+// Space is only a hand between drags: while any pointer is down the tool must not change under a stroke,
+// connector drag, object drag or eraser pass, so the switch waits for the release.
+// A pointerup can be lost (a native context menu eats it), so the set is re-synced from `buttons` and
+// cleared on contextmenu, blur and when the page is hidden; a stuck entry must never disable Space.
+const activePointers = new Set()
+let lastPointerButtons = 0
+let spaceHeld = false
+function releaseAllPointers() {
+  if (!activePointers.size) return
+  activePointers.clear()
+  setTimeout(settleSpaceAfterPointer, 0)
+}
+function settleSpaceAfterPointer() {
+  if (activePointers.size) return
+  if (spaceHeld) beginTemporaryHand()
+  else endTemporaryHand()
+}
+document.addEventListener('pointerdown', (event) => {
+  lastPointerButtons = event.buttons
+  activePointers.add(event.pointerId)
+}, { capture: true })
+window.addEventListener('pointermove', (event) => {
+  lastPointerButtons = event.buttons
+  if (event.buttons === 0) releaseAllPointers()
+}, { capture: true })
+document.addEventListener('keydown', () => { if (lastPointerButtons === 0) releaseAllPointers() }, { capture: true })
+document.addEventListener('contextmenu', releaseAllPointers, { capture: true })
+document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAllPointers() })
+const pointerReleased = (event) => {
+  lastPointerButtons = event.buttons
+  activePointers.delete(event.pointerId)
+  setTimeout(settleSpaceAfterPointer, 0)
+}
+window.addEventListener('pointerup', pointerReleased, { capture: true })
+window.addEventListener('pointercancel', pointerReleased, { capture: true })
+
+function beginTemporaryHand() {
+  if (activePointers.size) return
+  const hand = temporaryHand.begin(state.tool)
+  if (!hand) return
+  applyingTemporaryHand = true
+  try { setTool(hand) } finally { applyingTemporaryHand = false }
+}
+
+function endTemporaryHand() {
+  if (activePointers.size) return
+  const back = temporaryHand.end()
+  if (!back) return
+  applyingTemporaryHand = true
+  try { setTool(back) } finally { applyingTemporaryHand = false }
+}
+
+// A mouse click leaves focus on the dock, zoom and page buttons, and Space would then press that button
+// instead of holding the hand. Let go of focus after a mouse click; keyboard use is unaffected.
+document.addEventListener('click', (event) => {
+  const button = event.target.closest?.('.tool-dock button, .zoom-control button, .page-minimap button')
+  if (button && event.detail > 0) button.blur()
+})
+document.addEventListener('keyup', (event) => { if (event.key === ' ') { spaceHeld = false; endTemporaryHand() } })
+window.addEventListener('blur', () => { spaceHeld = false; activePointers.clear(); endTemporaryHand() })
+
 function panWithKeyboard(event) {
   const delta = keyboardPan(event, { viewH: canvas.getHeight() })
   if (!delta) return false
@@ -3877,11 +3985,16 @@ document.addEventListener('keydown', (event) => {
       reconcilePages()
       recordHistory()
     }
+  } else if (!isTyping && event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey && canPanFromKeyboard(activeElement)) {
+    event.preventDefault()
+    spaceHeld = true
+    if (!event.repeat) beginTemporaryHand()
   } else if (!isTyping && canPanFromKeyboard(activeElement) && panWithKeyboard(event)) {
     event.preventDefault()
   } else if (!isTyping && !event.ctrlKey && !event.metaKey) {
-    const shortcuts = { v: 'select', t: 'text', p: 'pen', d: 'pen', h: 'highlight', e: 'eraser', c: 'connect', r: 'shape', n: 'sticky' }
-    if (shortcuts[event.key.toLowerCase()]) setTool(shortcuts[event.key.toLowerCase()])
+    const shortcuts = { t: 'text', p: 'pen', d: 'pen', e: 'eraser', c: 'connect', r: 'shape', n: 'sticky' }
+    const quick = toolShortcut(event) || shortcuts[event.key.toLowerCase()]
+    if (quick) setTool(quick)
     else if (event.key.toLowerCase() === 'i' && state.activeNoteType === 'canvas' && elements.printPreview.hidden) elements.imageFile.click()
   }
 })
@@ -4006,5 +4119,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()

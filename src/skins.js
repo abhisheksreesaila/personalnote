@@ -1,4 +1,4 @@
-// Skins: Crayon (default), Paper and Night. Tokens live in skins.css; this module
+// Skins: Crayon, Paper (default) and Night. Tokens live in skins.css; this module
 // only decides which skin is active, remembers it locally, and loads its fonts.
 
 export const SKINS = [
@@ -6,7 +6,7 @@ export const SKINS = [
   { id: 'paper', name: 'Paper', swatch: '#e5533d', themeColor: '#efebe3', fonts: 'Fraunces:wght@500;600' },
   { id: 'night', name: 'Night', swatch: '#1b2130', themeColor: '#0d1015', fonts: 'Instrument+Serif:ital@0;1' },
 ]
-export const DEFAULT_SKIN = 'crayon'
+export const DEFAULT_SKIN = 'paper'
 export const SKIN_STORAGE_KEY = 'personal-note:skin'
 export const CROSSFADE_MS = 400
 

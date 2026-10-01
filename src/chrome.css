@@ -233,7 +233,6 @@
   .app-shell .tool-dock .tool-button:focus-visible { outline: none; box-shadow: var(--ring); }
   .app-shell .tool-dock .tool-button.active { background: var(--sk-ink); color: var(--sk-panel); box-shadow: none; }
   .app-shell .tool-dock .tool-button.active:hover { background: var(--sk-ink); }
-  .app-shell .tool-dock .mobile-hand-tool { display: none; }
   .app-shell .tool-dock .tool-button svg { width: 20px; height: 20px; stroke-width: 1.7; }
   .app-shell .tool-button[data-tool-options]::after { right: 6px; bottom: 6px; }
   .app-shell .dock-divider { flex: none; width: 1px; height: 24px; margin: 0 6px; background: var(--sk-line); }
@@ -407,7 +406,7 @@
     }
     .app-shell .tool-dock::-webkit-scrollbar { display: none; }
     .app-shell .tool-dock .tool-button { width: 44px; height: 44px; flex-basis: 44px; }
-    .app-shell .tool-dock .mobile-hand-tool { display: grid; }
+    .app-shell .tool-dock [data-tool="hand"] { order: -1; }
     .app-shell .tool-dock .ink-options-trigger { width: 32px; height: 32px; flex-basis: 32px; }
     .app-shell .voice-button { flex-basis: 46px; width: 46px; height: 46px; }
     .app-shell .ink-options-popover { bottom: 84px; width: min(266px, calc(100vw - 24px)); }
