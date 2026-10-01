@@ -338,6 +338,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .portability-actions button { min-height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-row); color: var(--ink); background: var(--surface-cool); cursor: pointer; font-size: 10px; text-align: left; }
 .portability-actions button:hover { border-color: var(--green); color: var(--green); }
 .portability-actions svg { width: 15px; }
+#voice-setup-progress { display: block; width: 100%; height: 6px; margin-top: 6px; accent-color: var(--green); }
+#voice-setup-progress[hidden] { display: none; }
+.portability-actions button[hidden] { display: none; }
 .portability-help, .portability-status { margin: 10px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .portability-status:empty { display: none; }
 .portability-status.error { color: var(--terracotta); }

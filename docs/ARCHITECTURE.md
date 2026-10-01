@@ -9,7 +9,8 @@ flowchart LR
     Shell[Browser notebook shell] --> Canvas[Fabric canvas editor]
     Shell -. on mind-map open .-> Map[Lazy SVG mind-map module]
     Shell -. on voice start .-> Voice[Lazy voice capture module]
-    Voice -->|ephemeral PCM over loopback| ASR[Local transcription :8080]
+    Voice -->|ephemeral PCM over loopback| ASR[Local voice engine, port from /api/voice/status]
+    API -. install, start, stop .-> ASR
     ASR -->|partial and final text| Shell
     Canvas --> API[FastHTML API :3137]
     Map --> API
@@ -69,7 +70,11 @@ The editor chunk is fetched only when a mind-map note opens. Canvas notes create
 - `microphone-pcm-capture.js` emits in-memory mono 16 kHz PCM frames.
 - `local-transcription-provider.js` exchanges those frames for transcript events over a loopback WebSocket.
 
-`capture.js` is dynamically imported only when desktop voice starts. There is deliberately no audio repository. PCM frames are not written to IndexedDB, SQLite, the filesystem, backups, or exports. Final transcript text is inserted through the same Fabric history/save path as typed text. Browser speech may be offered as a clearly labeled fallback; if neither provider is available, the UI explains how to start the local service.
+`voice-setup.js` turns the server's voice status into the Settings › Voice section and decides what the mic button does when voice is not ready (a short reason, then Settings opens). It is in the main chunk because Settings needs it at once; it stays small to keep the bundle budget.
+
+`voice_runtime.py` (stdlib only; `routes.py` exposes it under `/api/voice/*`) owns everything outside the page: it downloads the engine (a per-OS tarball from the release matching the running version, falling back to the latest) and the model (Hugging Face, pinned revision), resumes partial `.part` files, verifies SHA-256 and size, unpacks safely, and writes `installed.json` last, so an interrupted install is never mistaken for a finished one. It also runs the engine process: `desktop.py` starts it when voice is installed and stops it on close; `main.py` stops it at exit, and the page can start it on demand through `POST /api/voice/engine/start`. The engine binds `127.0.0.1` only, on port 8080 when free and another free port otherwise, so the page reads its WebSocket address from `/api/voice/status` instead of assuming 8080. A crashed engine is restarted once. The state-changing routes require an `X-Personal-Note` header, which another web page cannot send without a CORS preflight the server never answers. Everything lives in `app-data/voice/`; `remove` deletes that folder only. Windows and CPUs without a release engine report `unsupported`, and the page keeps the older "look for a service on port 8080" behaviour there.
+
+`capture.js` is dynamically imported only when desktop voice starts. There is deliberately no audio repository. PCM frames are not written to IndexedDB, SQLite, the filesystem, backups, or exports. Final transcript text is inserted through the same Fabric history/save path as typed text. Browser speech may be offered as a clearly labeled fallback; if neither provider is available, the UI says why and opens Settings › Voice. In the app windows the browser fallback is never used.
 
 ### Portability
 
@@ -156,7 +161,9 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `src/core/api.js` | Browser API boundary |
 | `src/modules/mindmap.js` | Lazy mind-map boundary |
 | `src/mindmap/` | Built-in mind-map implementation |
-| `src/modules/voice/` | Transcript, capture, and local provider modules |
+| `src/modules/voice/` | Transcript, capture, local provider and Settings › Voice modules |
+| `voice_runtime.py` | Voice engine and model download, verification, removal and process lifecycle |
+| `scripts/build-voice-engine.sh` | Builds the pinned NeMo-Speech.cpp engine for the release (Linux x86_64 CPU, macOS arm64 Metal) |
 | `routes.py` | Core HTTP routes |
 | `desktop.py` | Native-window entry point: in-process server, single instance, close-time flush |
 | `app_paths.py` | Default database location shared by the app, CLI and server |

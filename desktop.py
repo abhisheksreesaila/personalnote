@@ -2,7 +2,7 @@
 
 Runs the same FastHTML app as `main.py`, in-process on a free loopback port, and
 shows it in a Chromium app window (Linux, when installed) or a pywebview window.
-Closing the window flushes pending edits and stops the server. Start it with `npm run desktop` or `python desktop.py`.
+Closing the window flushes pending edits and stops the server, and the voice engine if it was started. Start it with `npm run desktop` or `python desktop.py`.
 """
 
 from __future__ import annotations
@@ -192,7 +192,9 @@ def allow_microphone(window) -> None:
     """Let the page ask for the microphone where the webview needs to be told it may.
 
     WebKitGTK (Linux) denies media requests unless the app answers them. On macOS WKWebView
-    shows the system prompt itself, and the bundle's NSMicrophoneUsageDescription backs it.
+    shows the system prompt itself (pywebview 6.2.1 implements no media-capture permission hook, so
+    WebKit's default prompt applies, and only audio is ever requested), and the bundle's
+    NSMicrophoneUsageDescription backs it. Not verified on a Mac.
     A failure here leaves the app's own "voice unavailable" message to explain it.
     """
     if not sys.platform.startswith("linux"):
@@ -448,7 +450,8 @@ def main(argv: list[str] | None = None) -> int:
             ensure_frontend_built()
         from routes import create_app
 
-        server = LocalServer(create_app(database), preferred_port=(args.port or 0) if args.serve else PREFERRED_PORT)
+        app = create_app(database, bound_host=HOST)
+        server = LocalServer(app, preferred_port=(args.port or 0) if args.serve else PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:
         print(error, file=sys.stderr)
@@ -464,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.timing:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
     record_instance(database, base_url, server.nonce)
+    app.state.voice.autostart()  # when voice is installed, its engine starts with the window (in the background)
     try:
         if engine == "serve":
             wait_for_stop(base_url)
@@ -491,6 +495,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         clear_instance(database)
+        app.state.voice.shutdown()
         server.stop()
     return 0
 

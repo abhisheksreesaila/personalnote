@@ -6,6 +6,7 @@ import { mountSkinSwitcher, startSkins } from './skins.js'
 import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
+import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
 import { createMobileHoldController } from './modules/voice/mobile-hold-controller.js'
@@ -296,6 +297,17 @@ document.querySelector('#app').innerHTML = `
         <div class="setting-row"><span><i data-lucide="git-fork"></i>Mind maps</span><small id="settings-mindmap">On demand</small></div>
         <div class="setting-row"><span><i data-lucide="mic"></i>Voice capture</span><small id="settings-voice">Transcript only</small></div>
         <div class="setting-row"><span><i data-lucide="audio-lines"></i>Audio retention</span><small>None</small></div>
+      </section>
+      <section class="settings-section" id="settings-voice-section" aria-labelledby="settings-voice-label">
+        <p class="settings-section-label" id="settings-voice-label">Voice</p>
+        <div class="setting-row"><span><i data-lucide="mic"></i>Dictation</span><small id="voice-setup-headline">Checking…</small></div>
+        <progress id="voice-setup-progress" max="100" value="0" aria-label="Voice download progress" hidden></progress>
+        <p class="portability-help" id="voice-setup-detail" role="status" aria-live="polite"></p>
+        <div class="portability-actions">
+          <button id="voice-download" hidden><i data-lucide="download"></i><span></span></button>
+          <button id="voice-cancel" hidden><i data-lucide="x"></i><span></span></button>
+          <button id="voice-remove" hidden><i data-lucide="trash-2"></i><span></span></button>
+        </div>
       </section>
       <section class="settings-section">
         <p class="settings-section-label">Workspace data</p>
@@ -2421,6 +2433,56 @@ async function loadCapabilitySettings() {
   }
 }
 
+const voiceClient = createVoiceClient(api)
+let voicePoll = null
+
+function renderVoiceSetup(status) {
+  const view = describeVoice(status)
+  document.querySelector('#voice-setup-headline').textContent = view.headline
+  document.querySelector('#voice-setup-detail').textContent = view.detail
+  const progress = document.querySelector('#voice-setup-progress')
+  progress.hidden = view.percent === null
+  if (view.percent !== null) progress.value = view.percent
+  for (const [id, label] of [['#voice-download', view.download], ['#voice-cancel', view.cancel], ['#voice-remove', view.remove]]) {
+    const button = document.querySelector(id)
+    button.hidden = !label
+    button.querySelector('span').textContent = label || ''
+  }
+}
+
+async function refreshVoiceSetup() {
+  clearTimeout(voicePoll)
+  let status
+  try {
+    status = await voiceClient.status()
+  } catch {
+    renderVoiceSetup({ state: 'error', error: 'The local server did not answer.' })
+    return null
+  }
+  renderVoiceSetup(status)
+  // Keep the progress bar moving while the server downloads.
+  if (status.state === 'downloading') voicePoll = setTimeout(refreshVoiceSetup, 1000)
+  return status
+}
+
+async function voiceSetupAction(action) {
+  try {
+    renderVoiceSetup(await action(voiceClient))
+  } catch (error) {
+    renderVoiceSetup({ state: 'error', error: error.message })
+    return
+  }
+  void refreshVoiceSetup()
+}
+
+function openVoiceSettings() {
+  setPropertiesOpen(true)
+  void refreshVoiceSetup()
+  const section = document.querySelector('#settings-voice-section')
+  section.scrollIntoView?.({ block: 'center' })
+  section.querySelector('button:not([hidden])')?.focus({ preventScroll: true })
+}
+
 function setPortabilityStatus(message, error = false) {
   elements.portabilityStatus.textContent = message
   elements.portabilityStatus.classList.toggle('error', error)
@@ -2702,13 +2764,13 @@ function insertVoiceTranscript(transcript) {
   updateVoiceTextBox(dictationSession.commit(transcript), { record: true })
 }
 
-function showVoiceNotice(message) {
+function showVoiceNotice(message, duration = 2600) {
   elements.voiceCaption.hidden = false
   elements.voiceStatus.textContent = message
   clearTimeout(showVoiceNotice.timer)
   showVoiceNotice.timer = setTimeout(() => {
     if (!state.listening) elements.voiceCaption.hidden = true
-  }, 2600)
+  }, duration)
 }
 
 function completeLocalDictation(message = '') {
@@ -2742,9 +2804,10 @@ async function stopLocalDictation({ cancel = false } = {}) {
   state.localFinishTimer = setTimeout(() => completeLocalDictation(), 4000)
 }
 
-async function startLocalDictation(attempt) {
+async function startLocalDictation(attempt, endpoint) {
   const { LocalTranscriptionProvider, MicrophonePcmCapture } = await import('./modules/voice/capture.js')
-  const provider = new LocalTranscriptionProvider()
+  // The server picks the engine's port (8080 when free), so the page uses the endpoint it reports.
+  const provider = new LocalTranscriptionProvider(endpoint ? { endpoint, connectionTimeout: 3000 } : {})
   state.localTranscription = provider
   await provider.connect({
     language: (navigator.language || 'en').split('-')[0],
@@ -2831,8 +2894,23 @@ function setupVoiceInput() {
     state.voiceAttempt = attempt
     state.voiceMode = 'connecting'
     setVoiceListening(true, 'Connecting local voice')
+    const plan = await prepareLocalVoice(voiceClient, {
+      onStarting: () => { elements.voiceStatus.textContent = 'Starting voice' },
+    })
+    if (attempt !== state.voiceAttempt) return
+    const inAppWindow = hostFlag === 'desktop' || Boolean(window.pywebview)
+    if (plan.blocked && (inAppWindow || !recognition)) {
+      // Not ready: say why and take the user to where it is fixed, never fail silently.
+      state.voiceMode = null
+      removeEmptyVoiceTextBox()
+      dictationSession.cancel()
+      setVoiceListening(false)
+      showVoiceNotice(plan.blocked, 6000)
+      openVoiceSettings()
+      return
+    }
     try {
-      if (await startLocalDictation(attempt)) return
+      if (!plan.blocked && await startLocalDictation(attempt, plan.endpoint)) return
     } catch (error) {
       state.localTranscription?.cancel()
       state.localTranscription = null
@@ -3631,6 +3709,12 @@ elements.shareMenu.addEventListener('keydown', (event) => {
 })
 document.querySelector('#top-properties').addEventListener('click', () => setPropertiesOpen(!elements.properties.classList.contains('open')))
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
+document.querySelector('#top-properties').addEventListener('click', () => {
+  if (elements.properties.classList.contains('open')) void refreshVoiceSetup()
+})
+document.querySelector('#voice-download').addEventListener('click', () => void voiceSetupAction((client) => client.install()))
+document.querySelector('#voice-cancel').addEventListener('click', () => void voiceSetupAction((client) => client.cancel()))
+document.querySelector('#voice-remove').addEventListener('click', () => void voiceSetupAction((client) => client.remove()))
 document.querySelector('#download-backup').addEventListener('click', () => {
   void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
 })

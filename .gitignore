@@ -35,3 +35,4 @@ data/*.db-wal
 *.njsproj
 *.sln
 *.sw?
+app_version.txt
