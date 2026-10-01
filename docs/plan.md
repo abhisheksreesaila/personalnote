@@ -162,3 +162,4 @@ Today: local voice = NVIDIA NeMo-Speech.cpp + nemotron-3.5-asr-streaming-0.6b, w
 - [ ] when voice is installed, the app starts the engine with the window and stops it on close (loopback only, its own port); hold-to-talk streams text into the note on Mac and Linux
 - [ ] the mic works inside the Mac app window (permission prompt appears) and the Linux Chromium window
 - [ ] when voice isn't ready, the mic says why and what to do; audio is never stored (invariant 4)
+Code reviewed and merged. Still to prove on real runs: CI builds both engines; hold-to-talk with the real engine on Linux and Mac; Mac mic prompt.
