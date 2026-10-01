@@ -53,6 +53,7 @@ class FakeItem:
     def setKeyEquivalentModifierMask_(self, m): self.mask = m
     def setTarget_(self, t): self.target = t
     def setHidden_(self, h): self.hidden = h
+    def setAllowsKeyEquivalentWhenHidden_(self, a): self.allows_hidden = a
     def setRepresentedObject_(self, o): self.represented = o
 
 
@@ -276,6 +277,7 @@ class GuardTests(unittest.TestCase):
         dm.install_native_menu(dm.MenuActions(FakeWindow(), lambda: None), appkit=FakeAppKit(main), handler=FakeHandler())
         plus = next(i for i in main.items[3].submenu().items if i.title() == "Zoom In (plus key)")
         self.assertTrue(plus.hidden)
+        self.assertTrue(plus.allows_hidden)
 
     def test_guard_stops_pywebview_rebuilding_and_restores_after_one(self):
         main = pywebview_like_main_menu()
@@ -306,7 +308,9 @@ class GuardTests(unittest.TestCase):
 class TitleBarTests(unittest.TestCase):
     def test_title_bar_background_is_cleared(self):
         seen = []
-        container = types.SimpleNamespace(setBackgroundColor_=lambda c: seen.append(c))
+        class NSTitlebarContainerView:
+            setBackgroundColor_ = staticmethod(lambda c: seen.append(c))
+        container = NSTitlebarContainerView()
         native = types.SimpleNamespace(contentView=lambda: types.SimpleNamespace(superview=lambda: types.SimpleNamespace(
             subviews=lambda: types.SimpleNamespace(lastObject=lambda: container))))
         kit = types.SimpleNamespace(NSColor=types.SimpleNamespace(clearColor=lambda: "clear"))
@@ -314,6 +318,12 @@ class TitleBarTests(unittest.TestCase):
         self.assertEqual(seen, ["clear"])
         with self.assertLogs("personal-note.desktop", "WARNING"):
             self.assertFalse(dm.clear_title_bar_background(object(), appkit=kit))
+        other = types.SimpleNamespace(setBackgroundColor_=lambda c: seen.append("wrong"))
+        native2 = types.SimpleNamespace(contentView=lambda: types.SimpleNamespace(superview=lambda: types.SimpleNamespace(
+            subviews=lambda: types.SimpleNamespace(lastObject=lambda: other))))
+        with self.assertLogs("personal-note.desktop", "WARNING"):
+            self.assertFalse(dm.clear_title_bar_background(native2, appkit=kit))
+        self.assertEqual(seen, ["clear"])
 
     def test_style_flags(self):
         calls = []

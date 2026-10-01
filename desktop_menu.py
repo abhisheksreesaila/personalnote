@@ -221,7 +221,12 @@ def clear_title_bar_background(native, appkit: Any = None) -> bool:
     try:
         if appkit is None:
             import AppKit as appkit  # noqa: N813
-        native.contentView().superview().subviews().lastObject().setBackgroundColor_(appkit.NSColor.clearColor())
+        target = native.contentView().superview().subviews().lastObject()
+        name = type(target).__name__
+        if "Titlebar" not in name:
+            logger.warning("Not clearing %s: it is not the title bar container.", name)
+            return False
+        target.setBackgroundColor_(appkit.NSColor.clearColor())
         return True
     except Exception:
         logger.warning("Could not clear the title bar background.", exc_info=True)
@@ -284,6 +289,10 @@ def install_native_menu(actions: MenuActions, appkit: Any = None, handler: Any =
             apply_shortcut(item, entry)
             if entry.hidden:
                 item.setHidden_(True)
+                try:
+                    item.setAllowsKeyEquivalentWhenHidden_(True)
+                except Exception:
+                    logger.warning("Could not let %r fire while hidden.", entry.title, exc_info=True)
             return item
 
         def apply_shortcut(item, entry: Item):
