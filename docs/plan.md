@@ -171,11 +171,12 @@ Captain (screenshot of a child above the centre): the branch "twists itself… i
 - [x] dragging a node around its parent (including straight above or below) sweeps the branch smoothly with no flips; saved map JSON format unchanged
 More mind-map features to come from the captain's detailed list (Ayoa / iMindMap).
 
-## F-022 Native Mac window [doing]
+## F-022 Native Mac window [done]
 Captain: web apps "don't use… the bar with the three lights… How can we make it feel like a native app."
-- [ ] on macOS the app's content extends under a transparent title bar; the top bar (breadcrumb, title, search, settings) sits beside the traffic lights, and that strip drags the window
-- [ ] the Mac menu bar has File (New note, Quick note, Export…), Edit (Undo, Redo, Cut, Copy, Paste, Select All), View (Zoom in/out/fit, Skins, Speed meter), Window and Help, with standard ⌘ shortcuts that work in text and on the canvas
-- [ ] Linux and browser windows are unchanged
+- [x] on macOS the app's content extends under a transparent title bar; the top bar (breadcrumb, title, search, settings) sits beside the traffic lights, and that strip drags the window
+- [x] the Mac menu bar has File (New note, Quick note, Export…), Edit (Undo, Redo, Cut, Copy, Paste, Select All), View (Zoom in/out/fit, Skins, Speed meter), Window and Help, with standard ⌘ shortcuts that work in text and on the canvas
+- [x] Linux and browser windows are unchanged
+Open: captain checks on a Mac (title bar look, drag, menus survive app switching, shortcuts).
 
 ## F-023 Media library [todo]
 Captain: "if they drag files onto this… what happens to the media… does it compress and store, or does it store as an object separately?"
