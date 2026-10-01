@@ -35,7 +35,7 @@ import { readPreferences, writePreferences } from './preferences.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
-import { KEEPALIVE_LIMIT, bindPageLifecycle, canKeepAlive, confirmedRevision, settleSaves } from './modules/editor/save-flush.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
@@ -60,16 +60,8 @@ const EDGE_OVERFLOW = 6
 const EDGE_SHRINK = 0
 const TRANSFORM_EDGE_MARGIN = 24
 const ERASER_RADIUS = 13
-// The Chromium app window (desktop.py adds engine=chromium) has no pre-close hook, so it saves sooner: about
-// 250ms after the last edit instead of 830ms. A note too big for a keepalive request keeps the normal delays,
-// because a close-time save could not be sent for it anyway and frequent big autosaves cost frames.
-const CHROMIUM_WINDOW = new URLSearchParams(location.search).get('engine') === 'chromium'
-let lastSaveBytes = 0
-// Until a save measures the real size, a note with many objects is assumed too big for the fast delays.
-const guessSaveSize = (content) => { lastSaveBytes = (content?.objects?.length ?? 0) > 40 ? Infinity : 0 }
-const fastSaves = () => CHROMIUM_WINDOW && lastSaveBytes <= KEEPALIVE_LIMIT
-const historyDelay = () => (fastSaves() ? 100 : 180)
-const saveDelay = () => (fastSaves() ? 150 : 650)
+// desktop.py opens the Chromium app window with engine=chromium (see createSaveTiming).
+const saveTiming = createSaveTiming({ fast: new URLSearchParams(location.search).get('engine') === 'chromium' })
 const INK_COLORS = [
   ['Charcoal', '#20201e'],
   ['Graphite', '#5f6368'],
@@ -2006,7 +1998,7 @@ async function saveActiveNote({ unloading = false } = {}) {
       notebookId: note?.notebookId,
       revision: note?.revision,
     })
-    lastSaveBytes = body.length
+    saveTiming.saved(body)
     // While the page is going away a keepalive request is the only one guaranteed to be sent.
     const result = await api(`/notes/${noteId}`, { method: 'PUT', body, keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
@@ -2036,7 +2028,7 @@ function queueSave() {
   if (pendingClearUndo) hideToast()
   setSaveState('Saving')
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(saveActiveNote, saveDelay())
+  saveTimer = setTimeout(saveActiveNote, saveTiming.saveDelay())
 }
 
 // Sends anything still waiting on the two debounces (history 180ms, save 650ms; 100ms and 150ms in the Chromium window) right now.
@@ -2097,7 +2089,7 @@ function recordHistory() {
   clearTimeout(historyTimer)
   historyTimer = setTimeout(() => {
     if (commitHistorySnapshot()) queueSave()
-  }, historyDelay())
+  }, saveTiming.historyDelay())
 }
 
 async function restoreHistory(index) {
@@ -2187,7 +2179,7 @@ async function selectNote(id) {
       resizePaper()
       openCanvasView()
       await canvas.loadFromJSON(note.content || { objects: [] })
-      guessSaveSize(note.content)
+      saveTiming.noteLoaded(note.content)
       bindCanvasTextObjects()
       normalizedNote = normalizeNotebookFonts()
       normalizedNote = rebuildConnectors() || normalizedNote
@@ -2232,7 +2224,7 @@ async function applyRemoteNote(note) {
     state.pages = note.pageState || { columns: 1, rows: 1 }
     resizePaper()
     await canvas.loadFromJSON(note.content || { objects: [] })
-    guessSaveSize(note.content)
+    saveTiming.noteLoaded(note.content)
     bindCanvasTextObjects()
     rebuildConnectors()
     setTool(state.tool)

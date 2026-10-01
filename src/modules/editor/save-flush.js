@@ -6,7 +6,7 @@
 export const KEEPALIVE_LIMIT = 60 * 1024
 
 export function canKeepAlive(body) {
-  return typeof body === 'string' && new TextEncoder().encode(body).length <= KEEPALIVE_LIMIT
+  return typeof body === "string" && bodyBytes(body) <= KEEPALIVE_LIMIT
 }
 
 /** Runs `flush` on pagehide and when the page becomes hidden. Returns an unbind function. */
@@ -44,4 +44,23 @@ export async function settleSaves({ flushPending, isSaving, hasUnsaved, save, wa
   if (hasUnsaved()) await save()
   while (isSaving()) await wait(15)
   return !hasUnsaved()
+}
+
+export const bodyBytes = (body) => new TextEncoder().encode(body).length
+
+/**
+ * Debounce delays for the Chromium app window, which has no pre-close hook and so saves sooner (about 250ms
+ * after the last edit instead of 830ms). A note too big for a keepalive request keeps the normal delays: its
+ * close-time save could not be sent anyway, and frequent large autosaves cost frames.
+ */
+export function createSaveTiming({ fast }) {
+  let lastBytes = 0
+  const useFast = () => fast && lastBytes <= KEEPALIVE_LIMIT
+  return {
+    // Until a save measures the real size, a note with many objects is assumed too big.
+    noteLoaded: (content) => { lastBytes = (content?.objects?.length ?? 0) > 40 ? Infinity : 0 },
+    saved: (body) => { lastBytes = bodyBytes(body) },
+    historyDelay: () => (useFast() ? 100 : 180),
+    saveDelay: () => (useFast() ? 150 : 650),
+  }
 }
