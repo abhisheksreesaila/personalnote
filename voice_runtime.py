@@ -325,6 +325,10 @@ class VoiceRuntime:
                 raise VoiceError("The downloaded voice engine failed its checksum check. Nothing was installed; try again.")
             self._unpack_engine(target)
             target.unlink(missing_ok=True)
+            try:
+                target.parent.rmdir()  # the empty downloads folder
+            except OSError:
+                pass
             self._set_phase("model", done=size, total=size + self.model_bytes)
             return
         raise VoiceError(last_error)
