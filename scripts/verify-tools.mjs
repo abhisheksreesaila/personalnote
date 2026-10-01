@@ -104,6 +104,26 @@ const count = (page) => page.evaluate(() => window.__personalNote.canvas.getObje
   await page.keyboard.up('Space')
   check('releasing Space returns to the pen', await tool(page) === 'pen')
 
+  // panning keeps the current selection
+  await page.keyboard.press('v')
+  await page.evaluate(() => { const n = window.__personalNote; const o = n.canvas.getObjects()[0] || null; window.__keep = o; if (o) n.canvas.setActiveObject(o) })
+  if (await page.evaluate(() => !window.__keep)) {
+    await page.keyboard.press('t'); await page.mouse.click(mx, my + 120); await page.waitForTimeout(100); await page.keyboard.type('x'); await page.keyboard.press('Escape')
+    await page.keyboard.press('v')
+    await page.evaluate(() => { const n = window.__personalNote; window.__keep = n.canvas.getObjects()[0]; n.canvas.setActiveObject(window.__keep) })
+  }
+  await page.mouse.move(mx, my)
+  await page.keyboard.down('Space')
+  await page.mouse.down(); await page.mouse.move(mx + 30, my + 20, { steps: 4 }); await page.mouse.up()
+  await page.keyboard.up('Space')
+  check('Space pan keeps the selection', await page.evaluate(() => window.__personalNote.canvas.getActiveObject() === window.__keep))
+  await page.mouse.down({ button: 'middle' }); await page.mouse.move(mx - 30, my - 20, { steps: 4 }); await page.mouse.up({ button: 'middle' })
+  check('middle-mouse pan keeps the selection', await page.evaluate(() => window.__personalNote.canvas.getActiveObject() === window.__keep))
+  await page.keyboard.press('h')
+  check('an explicit tool switch still deselects', await page.evaluate(() => window.__personalNote.canvas.getActiveObject() == null))
+  await page.keyboard.press('v')
+  await page.evaluate(() => { window.__personalNote.canvas.discardActiveObject(); window.__personalNote.canvas.getObjects().forEach((o) => window.__personalNote.canvas.remove(o)) })
+
   // Space no longer pages the canvas
   await page.keyboard.press('v')
   const idle = await vpt(page)

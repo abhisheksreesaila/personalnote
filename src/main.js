@@ -1691,7 +1691,7 @@ function setTool(tool) {
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
   connectDraft = null
   connectHover = null
-  canvas.discardActiveObject()
+  if (!applyingTemporaryHand) canvas.discardActiveObject()
   canvas.requestRenderAll()
 }
 
@@ -3202,6 +3202,12 @@ elements.workspace.addEventListener('wheel', (event) => {
   setCanvasViewportOffset(viewportOffsetX - dx, viewportOffsetY - dy)
 }, { passive: false })
 
+let handPanKeep = null
+// Fabric deselects on a press over empty canvas; remember the selection so a hand pan (held Space or
+// the sticky hand) gives it back when the drag ends.
+canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
+  handPanKeep = state.tool === 'hand' && event.button === 0 ? canvas.getActiveObject() || null : null
+}, { capture: true })
 let mousePan = null
 canvas.on('mouse:down', ({ e }) => {
   if (state.tool !== 'hand' || e.pointerType === 'touch' || e.touches) return
@@ -3215,6 +3221,8 @@ canvas.on('mouse:move', ({ e }) => {
 canvas.on('mouse:up', () => {
   if (!mousePan) return
   mousePan = null
+  if (handPanKeep && !canvas.getActiveObject() && canvas.getObjects().includes(handPanKeep)) canvas.setActiveObject(handPanKeep)
+  handPanKeep = null
   canvas.setCursor('grab')
 })
 
