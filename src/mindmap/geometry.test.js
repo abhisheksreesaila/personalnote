@@ -76,10 +76,46 @@ test('dragging a child around its parent moves the branch in small steps', () =>
   }
 })
 
-test('a pinned branch title and explicit ports keep their attachment points', () => {
+test('a pinned branch title keeps its attachment point', () => {
   const pinned = branchGeometry(root, { x: 200, y: 100, hw: 50, hh: 20, pin: true })
   assert.deepEqual([pinned.ex, pinned.ey], [200, 105])
-  const ported = branchGeometry(root, childAt(0, 260), { sourcePort: 'top', targetPort: 'bottom' })
-  assert.deepEqual([ported.sx, ported.sy], [0, -38])
-  assert.deepEqual([ported.ex, ported.ey], [260, 21])
+})
+
+test('a saved port that faces the other node is honoured', () => {
+  const g = branchGeometry(root, childAt(0, 260), { sourcePort: 'right', targetPort: 'left' })
+  assert.deepEqual([g.sx, g.sy], [93, 0])
+  assert.deepEqual([g.ex, g.ey], [191, 0])
+})
+
+test('saved ports are only a hint: any child position still leaves and enters the facing sides', () => {
+  const inside = (p, f) => Math.abs(p.x - f.x) < f.hw - 0.5 && Math.abs(p.y - f.y) < f.hh - 0.5
+  for (const [sourcePort, targetPort] of [['right', 'left'], ['bottom', 'top'], ['top', 'bottom'], ['left', 'right']]) {
+    for (const radius of [240, 330]) {
+      for (const angle of angles(3)) {
+        const child = childAt(angle, radius)
+        const g = branchGeometry(root, child, { sourcePort, targetPort })
+        assert.ok(curvatureSigns(g).size <= 1, `S-bend ${sourcePort} at ${angle}`)
+        let left = false
+        for (let i = 0; i <= 100; i++) {
+          const inParent = inside(cubicAt(g, i / 100), root)
+          if (!inParent) left = true
+          assert.ok(!(left && inParent), `back under the parent: ${sourcePort} at ${angle} t=${i}`)
+        }
+        assert.ok(left)
+        const toward = { x: Math.cos(angle), y: Math.sin(angle) }
+        assert.ok((g.sx - root.x) * toward.x + (g.sy - root.y) * toward.y > 0, 'leaves the parent on its facing side')
+        assert.ok((g.ex - child.x) * toward.x + (g.ey - child.y) * toward.y < 0, 'enters the child on its facing side')
+      }
+    }
+  }
+})
+
+test('200 branches are outlined in well under 1.5 ms', () => {
+  const geometries = Array.from({ length: 200 }, (_, i) => branchGeometry(root, childAt(i * 0.07, 260 + (i % 5) * 20)))
+  for (let i = 0; i < 20; i++) geometries.forEach((g) => ribbonOutline(g, WIDTHS))
+  const started = performance.now()
+  for (let i = 0; i < 20; i++) geometries.forEach((g) => ribbonOutline(g, WIDTHS))
+  const each = (performance.now() - started) / 20
+  console.log(`# 200 outlines: ${each.toFixed(2)} ms`)
+  assert.ok(each < 1.5, `${each} ms`)
 })
