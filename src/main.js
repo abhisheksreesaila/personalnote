@@ -37,12 +37,11 @@ import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLab
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
+import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
 import { createLiftEffect } from './modules/editor/lift.js'
 import { chooseOpeningView, fitView, openingView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
 import {
   clampView,
-  easeInOut,
-  lerpExtents,
   pageExtents,
   parseBoxShadow,
   shadowBands,
@@ -59,8 +58,6 @@ const CANVAS_ZOOM_MAX = 4
 const EDGE_OVERFLOW = 6
 const EDGE_SHRINK = 0
 const TRANSFORM_EDGE_MARGIN = 24
-const PAGE_EXPAND_DURATION = 560
-const PAGE_RESIZE_DURATION = 560
 const ERASER_RADIUS = 13
 const INK_COLORS = [
   ['Charcoal', '#20201e'],
@@ -132,7 +129,6 @@ document.querySelector('#app').innerHTML = `
       <div class="sidebar-footer">
         <span class="skin-label">Skin</span>
         <span class="skin-switcher" id="skin-switcher"></span>
-        <button class="icon-button" id="rail-settings" title="Settings" aria-label="Open settings"><i data-lucide="settings"></i></button>
       </div>
     </aside>
 
@@ -154,6 +150,7 @@ document.querySelector('#app').innerHTML = `
               <button role="menuitem" id="share-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
             </div>
           </div>
+          <button class="icon-button glass-button" id="clear-note" title="Clear all" aria-label="Clear all"><i data-lucide="eraser"></i></button>
           <button class="icon-button glass-button properties-trigger" id="top-properties" title="Note properties" aria-label="Open note properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
         </div>
       </header>
@@ -273,17 +270,7 @@ document.querySelector('#app').innerHTML = `
         <div><span id="note-surface-label">Canvas</span><strong id="note-surface-detail">Expands automatically</strong></div>
         <div><span>Storage</span><strong>On this device</strong></div>
       </section>
-      <div class="properties-footer">
-        <button class="clear-note-action" id="clear-note"><i data-lucide="eraser"></i><span>Clear all</span></button>
-        <button class="delete-note-action" id="delete-note"><i data-lucide="trash-2"></i><span>Delete note</span></button>
-      </div>
-    </aside>
-
-    <aside class="settings-panel" id="settings-panel" aria-label="Settings" aria-hidden="true" inert>
-      <div class="properties-heading">
-        <div><span>Workspace</span><h2>Settings</h2></div>
-        <button class="icon-button" id="close-settings" title="Close settings" aria-label="Close settings"><i data-lucide="x"></i></button>
-      </div>
+      <div class="properties-section-heading"><span>Workspace settings</span></div>
       <section class="settings-section">
         <p class="settings-section-label">Writing</p>
         <div class="setting-field-heading"><span>Default text</span><small>New objects</small></div>
@@ -315,8 +302,11 @@ document.querySelector('#app').innerHTML = `
         <p class="portability-help">Backup JSON preserves editable canvas and mind-map data. Import merges copies without replacing existing notes.</p>
         <p class="portability-status" id="portability-status" role="status" aria-live="polite"></p>
       </section>
-      <div class="settings-footer-status" id="settings-footer-status"><span></span>Saved locally · exports stay under your control</div>
+      <div class="properties-footer">
+        <button class="delete-note-action" id="delete-note"><i data-lucide="trash-2"></i><span>Delete note</span></button>
+      </div>
     </aside>
+
   </div>
 
   <div class="search-backdrop" id="search-backdrop" hidden>
@@ -405,23 +395,7 @@ document.querySelector('#app').innerHTML = `
     </form>
   </dialog>
 
-  <dialog class="notebook-dialog clear-note-dialog" id="clear-note-dialog" aria-labelledby="clear-note-title">
-    <form method="dialog">
-      <div class="dialog-heading-row">
-        <div>
-          <p class="dialog-eyebrow">Current note</p>
-          <h2 id="clear-note-title">Clear all content?</h2>
-        </div>
-        <button class="icon-button" value="cancel" aria-label="Close"><i data-lucide="x"></i></button>
-      </div>
-      <p class="clear-note-copy" id="clear-note-copy">This removes every text and ink object and returns the canvas to one page. The note title and notebook stay in place.</p>
-      <p class="dialog-note">You can undo this immediately from the writing dock.</p>
-      <div class="dialog-actions">
-        <button class="dialog-cancel" value="cancel">Cancel</button>
-        <button class="dialog-danger" id="confirm-clear-note" value="default">Clear all</button>
-      </div>
-    </form>
-  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden><span></span><button id="toast-action" type="button">Undo</button></div>
 
   <style id="editor-polish-screen">
     .writing-guide{position:absolute;z-index:3;pointer-events:none;opacity:.28;background:repeating-linear-gradient(to bottom,transparent 0 calc(1.45em - 1px),#8ca1a0 calc(1.45em - 1px) 1.45em)}.writing-guide[hidden]{display:none}
@@ -462,7 +436,8 @@ const elements = {
   searchInput: document.querySelector('#search-input'),
   searchResults: document.querySelector('#search-results'),
   notebookDialog: document.querySelector('#notebook-dialog'),
-  clearNoteDialog: document.querySelector('#clear-note-dialog'),
+  toast: document.querySelector('#toast'),
+  toastAction: document.querySelector('#toast-action'),
   mobileSpeak: document.querySelector('#mobile-speak'),
   mobileConnect: document.querySelector('#mobile-connect'),
   notebookForm: document.querySelector('#notebook-form'),
@@ -472,9 +447,7 @@ const elements = {
   canvasTypographyProperties: document.querySelector('#canvas-typography-properties'),
   noteSurfaceLabel: document.querySelector('#note-surface-label'),
   noteSurfaceDetail: document.querySelector('#note-surface-detail'),
-  clearNoteCopy: document.querySelector('#clear-note-copy'),
   printButton: document.querySelector('#share-print'),
-  settings: document.querySelector('#settings-panel'),
   fontSize: document.querySelector('#font-size-control'),
   fontSizeValue: document.querySelector('#font-size-value'),
   settingsFontSize: document.querySelector('#settings-font-size'),
@@ -517,7 +490,7 @@ const state = {
   objectColor: 0,
   penWidth: 3,
   highlightWidth: 20,
-  fontFamily: 'Source Serif 4',
+  fontFamily: DEFAULT_FONT_CHOICE,
   fontSize: 24,
   displayScale: 1,
   canvasZoom: 1,
@@ -558,9 +531,6 @@ function setActiveNoteType(noteType) {
   elements.properties.querySelector('.properties-heading h2').textContent = isMindMap ? 'Node properties' : 'Note properties'
   elements.noteSurfaceLabel.textContent = isMindMap ? 'Mind map' : 'Canvas'
   elements.noteSurfaceDetail.textContent = isMindMap ? 'Infinite SVG workspace' : 'Expands automatically'
-  elements.clearNoteCopy.textContent = isMindMap
-    ? 'This removes every branch and returns the map to one starting topic. The note title and notebook stay in place.'
-    : 'This removes every text and ink object and returns the canvas to one page. The note title and notebook stay in place.'
   elements.printButton.disabled = isMindMap
   elements.printButton.title = isMindMap ? 'Print preview is available for canvas notes' : 'Print preview'
   if (!isMindMap) {
@@ -609,8 +579,10 @@ const CANVAS_FONT_SPECS = [
   '400 24px "IBM Plex Sans"',
   '600 24px "IBM Plex Sans"',
   '500 34px "Caveat"',
+  '400 24px "Geist Mono"',
 ]
 let canvasFontLoadPromise
+
 
 function loadCanvasFonts() {
   canvasFontLoadPromise ||= Promise.allSettled(
@@ -886,7 +858,6 @@ function setSaveState(status, isError = false) {
 let viewportOffsetX = 0
 let viewportOffsetY = 0
 let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
-let pageAnimation = null
 let pageColors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', accent: '#0a6cff', accentInk: '#ffffff', shadows: [] }
 let edgeGhost = null
 let voiceOutline = false
@@ -957,8 +928,7 @@ function clampedViewOffset(offsetX, offsetY, keep = false, scale = getCanvasScal
   })
 }
 
-function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY, keep = false, animating = false) {
-  if (!animating) cancelViewAnimation()
+function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY, keep = false) {
   const next = clampedViewOffset(offsetX, offsetY, keep)
   const previousX = viewportOffsetX
   const moved = next.y !== viewportOffsetY
@@ -974,7 +944,6 @@ function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOf
 // ---- Page minimap, zoom control and scroll indicator. They only read the view; the canvas owns it.
 let miniGridKey = ''
 let scrollFadeTimer
-let viewAnimation = null
 
 function updateMiniGrid() {
   const { columns, rows } = state.pages
@@ -1026,43 +995,17 @@ function updateNavigationUi(reveal = false) {
   updateScrollIndicators(reveal)
 }
 
-function cancelViewAnimation() {
-  if (!viewAnimation) return
-  cancelAnimationFrame(viewAnimation.frame)
-  viewAnimation = null
-}
-
-// Glides the view to a target { x, y, scale } (scale is the real canvas scale, not the relative zoom).
-function animateViewTo(target, duration = 280) {
-  cancelViewAnimation()
-  const from = { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }
-  const apply = (view) => {
-    state.canvasZoom = view.scale / state.displayScale
-    const scale = getCanvasScale()
-    viewportOffsetX = view.x
-    viewportOffsetY = view.y
-    canvas.setViewportTransform([scale, 0, 0, scale, view.x, view.y])
-    canvas.requestRenderAll()
-    if (writingGuideText) showWritingGuide(writingGuideText)
-    updateNavigationUi(true)
-  }
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || duration <= 0) {
-    apply(target)
-    return
-  }
-  const startedAt = performance.now()
-  viewAnimation = { frame: 0 }
-  const step = (now) => {
-    const t = easeInOut((now - startedAt) / duration)
-    apply({
-      x: from.x + (target.x - from.x) * t,
-      y: from.y + (target.y - from.y) * t,
-      scale: from.scale + (target.scale - from.scale) * t,
-    })
-    if (now - startedAt < duration) viewAnimation.frame = requestAnimationFrame(step)
-    else viewAnimation = null
-  }
-  viewAnimation.frame = requestAnimationFrame(step)
+// Jumps the view to a target { x, y, scale } (scale is the real canvas scale, not the relative zoom). No glide: the
+// view lands on the next paint, like a zoom.
+function setViewTo(view) {
+  state.canvasZoom = view.scale / state.displayScale
+  const scale = getCanvasScale()
+  viewportOffsetX = view.x
+  viewportOffsetY = view.y
+  canvas.setViewportTransform([scale, 0, 0, scale, view.x, view.y])
+  canvas.requestRenderAll()
+  if (writingGuideText) showWritingGuide(writingGuideText)
+  updateNavigationUi(true)
 }
 
 function zoomTarget(nextZoom, point = { x: canvas.getWidth() / 2, y: canvas.getHeight() / 2 }) {
@@ -1075,7 +1018,7 @@ function zoomTarget(nextZoom, point = { x: canvas.getWidth() / 2, y: canvas.getH
 
 function zoomStep(direction) {
   const next = stepZoom(state.canvasZoom, direction, { min: CANVAS_ZOOM_MIN, max: CANVAS_ZOOM_MAX })
-  animateViewTo(zoomTarget(next), 180)
+  setViewTo(zoomTarget(next))
 }
 
 function fitAllPages() {
@@ -1086,11 +1029,11 @@ function fitAllPages() {
     margins, min: state.displayScale * CANVAS_ZOOM_MIN, max: state.displayScale * 1,
   })
   const clamped = clampedViewOffset(fit.x, fit.y, false, fit.scale)
-  animateViewTo({ x: clamped.x, y: clamped.y, scale: fit.scale })
+  setViewTo({ x: clamped.x, y: clamped.y, scale: fit.scale })
 }
 
 function resetZoom() {
-  animateViewTo(zoomTarget(1), 220)
+  setViewTo(zoomTarget(1))
 }
 
 function goToPage(index) {
@@ -1099,7 +1042,7 @@ function goToPage(index) {
   const scale = getCanvasScale()
   const view = viewForPage({ column, row, scale, viewW: canvas.getWidth(), viewH: canvas.getHeight(), pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT })
   const clamped = clampedViewOffset(view.x, view.y, false, scale)
-  animateViewTo({ x: clamped.x, y: clamped.y, scale })
+  setViewTo({ x: clamped.x, y: clamped.y, scale })
 }
 
 const OPEN_ZOOM_MIN = 0.4
@@ -1124,7 +1067,6 @@ function openCanvasView() {
   const actual = { scale: max, x: (viewW - PAGE_WIDTH * max) / 2, y: margins.top }
   const boxes = canvas.getObjects().filter((object) => !isConnector(object)).map((object) => object.getBoundingRect())
   const view = chooseOpeningView([whole, firstPage, actual], viewW, viewH, boxes, OPEN_OBJECT_LIMIT, { width: target.right, height: target.bottom })
-  cancelViewAnimation()
   state.canvasZoom = view.scale / state.displayScale
   setCanvasViewportOffset(view.x, view.y)
 }
@@ -1148,39 +1090,22 @@ function zoomCanvasAt(nextZoom, point) {
   setCanvasViewportOffset(next.x, next.y)
 }
 
-function stepPageAnimation(now) {
-  if (!pageAnimation) return
-  const progress = (now - pageAnimation.startedAt) / PAGE_EXPAND_DURATION
-  pageExtentsNow = lerpExtents(pageAnimation.from, pageAnimation.to, easeInOut(progress))
-  canvas.requestRenderAll()
-  if (progress < 1) pageAnimation.frame = requestAnimationFrame(stepPageAnimation)
-  else pageAnimation = null
-}
-
-// Retargets the drawn page tiles. `shift` is the world distance every object
+// Retargets the drawn page tiles at once. `shift` is the world distance every object
 // moved when pages were prepended, so the view is compensated and nothing jumps.
-function resizePaper(animate = false, shiftX = 0, shiftY = 0) {
+function resizePaper(shiftX = 0, shiftY = 0) {
   state.displayScale = getDisplayScale()
   syncCanvasSize()
   const target = pageExtentsTarget()
   const from = shiftExtents(pageExtentsNow, shiftX, shiftY)
-  if (pageAnimation) cancelAnimationFrame(pageAnimation.frame)
-  pageAnimation = null
   const changed = from.left !== target.left || from.top !== target.top
     || from.right !== target.right || from.bottom !== target.bottom
-  if (animate && changed && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    pageExtentsNow = from
-    pageAnimation = { from, to: target, startedAt: performance.now(), frame: 0 }
-    pageAnimation.frame = requestAnimationFrame(stepPageAnimation)
-  } else {
-    pageExtentsNow = target
-  }
+  pageExtentsNow = target
   const scale = getCanvasScale()
   if (shiftX || shiftY) {
     viewportOffsetX -= shiftX * scale
     viewportOffsetY -= shiftY * scale
   }
-  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, Boolean(shiftX || shiftY || animate))
+  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, Boolean(shiftX || shiftY || changed))
   elements.pageCount.textContent = pageLabel(state.pages.columns, state.pages.rows)
   updateMiniGrid()
   updateScrollIndicators(false)
@@ -1315,10 +1240,7 @@ function moveAllObjects(deltaX, deltaY) {
   })
 }
 
-function getContentBounds() {
-  // Connectors are derived from their endpoints, so they never decide the page extents.
-  const objects = canvas.getObjects().filter((object) => !isConnector(object))
-  if (!objects.length) return null
+function boundsOf(objects) {
   return objects.reduce((bounds, object) => {
     const rect = object.getBoundingRect()
     return {
@@ -1328,6 +1250,12 @@ function getContentBounds() {
       bottom: Math.max(bounds.bottom, rect.top + rect.height),
     }
   }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
+}
+
+function getContentBounds() {
+  // Connectors are derived from their endpoints, so they never decide the page extents.
+  const objects = canvas.getObjects().filter((object) => !isConnector(object))
+  return objects.length ? boundsOf(objects) : null
 }
 
 const LEGACY_TEXT_PLACEHOLDER = 'Start typing'
@@ -1411,7 +1339,7 @@ function reconcilePages(force = false) {
   if (!bounds) {
     const changed = state.pages.columns !== 1 || state.pages.rows !== 1
     state.pages = { columns: 1, rows: 1 }
-    if (changed) resizePaper(true)
+    if (changed) resizePaper()
     return changed
   }
 
@@ -1471,15 +1399,35 @@ function reconcilePages(force = false) {
   }
 
   if (changed) {
-    resizePaper(true, viewportDeltaX, viewportDeltaY)
+    resizePaper(viewportDeltaX, viewportDeltaY)
   }
   canvas.requestRenderAll()
   return changed
 }
 
-function expandPagesDuringTransform() {
+// While one object is dragged, everything else stands still, so the bounds of "everything else" are measured once
+// per drag instead of on every pointer move (that was O(objects) work per move on a dense note).
+let dragRestBounds = null
+function contentBoundsDuringDrag(moving) {
+  if (!moving || moving.type === 'activeselection' || canvas.getActiveObjects().length !== 1) return getContentBounds()
+  if (!dragRestBounds || dragRestBounds.object !== moving) {
+    const rest = canvas.getObjects().filter((object) => object !== moving && !isConnector(object))
+    dragRestBounds = { object: moving, box: rest.length ? boundsOf(rest) : null }
+  }
+  const own = moving.getBoundingRect()
+  const box = { left: own.left, top: own.top, right: own.left + own.width, bottom: own.top + own.height }
+  const rest = dragRestBounds.box
+  if (!rest) return box
+  return {
+    left: Math.min(rest.left, box.left), top: Math.min(rest.top, box.top),
+    right: Math.max(rest.right, box.right), bottom: Math.max(rest.bottom, box.bottom),
+  }
+}
+;['mouse:down', 'mouse:up', 'object:modified'].forEach((eventName) => canvas.on(eventName, () => { dragRestBounds = null }))
+
+function expandPagesDuringTransform({ target } = {}) {
   if (state.loading) return
-  const bounds = getContentBounds()
+  const bounds = contentBoundsDuringDrag(target)
   if (!bounds) return
   elements.workspace.classList.add('is-object-dragging')
 
@@ -1491,6 +1439,13 @@ function expandPagesDuringTransform() {
     state.pages.columns += prependColumns
     state.pages.rows += prependRows
     moveAllObjects(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
+    if (dragRestBounds?.box) {
+      const box = dragRestBounds.box
+      box.left += prependColumns * PAGE_WIDTH
+      box.right += prependColumns * PAGE_WIDTH
+      box.top += prependRows * PAGE_HEIGHT
+      box.bottom += prependRows * PAGE_HEIGHT
+    }
     changed = true
   }
 
@@ -1510,7 +1465,7 @@ function expandPagesDuringTransform() {
   }
 
   if (changed) {
-    resizePaper(true, prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
+    resizePaper(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
   }
   elements.paper.classList.add('is-dragging')
   canvas.requestRenderAll()
@@ -1521,7 +1476,7 @@ function addText(point, value = '', beginEditing = true) {
     left: point.x,
     top: point.y,
     fill: state.color,
-    fontFamily: state.fontFamily,
+    fontFamily: canvasFontFamily(state.fontFamily),
     fontSize: getInputFontSize(),
     lineHeight: 1.45,
     padding: 8,
@@ -2157,7 +2112,7 @@ async function restoreHistory(index) {
   state.historyIndex = index
   const entry = JSON.parse(state.history[index])
   state.pages = entry.pages
-  resizePaper(true)
+  resizePaper()
   await canvas.loadFromJSON(entry.content)
   bindCanvasTextObjects()
   rebuildConnectors()
@@ -2274,7 +2229,7 @@ async function mergeRemoteNote(note) {
   const rows = Math.max(state.pages.rows, remotePages.rows || 1)
   if (columns !== state.pages.columns || rows !== state.pages.rows) {
     state.pages = { columns, rows }
-    resizePaper(true)
+    resizePaper()
   }
   enlivened.forEach((object) => canvas.add(object))
   bindCanvasTextObjects()
@@ -2391,7 +2346,6 @@ function recentSearchResults() {
 }
 
 function setPropertiesOpen(open) {
-  if (open) setSettingsOpen(false)
   elements.properties.classList.toggle('open', open)
   elements.properties.setAttribute('aria-hidden', String(!open))
   elements.properties.inert = !open
@@ -2399,14 +2353,6 @@ function setPropertiesOpen(open) {
   trigger.classList.toggle('active', open)
   trigger.setAttribute('aria-expanded', String(open))
   trigger.setAttribute('aria-label', open ? 'Close note properties' : 'Open note properties')
-}
-
-function setSettingsOpen(open) {
-  if (open) setPropertiesOpen(false)
-  elements.settings.classList.toggle('open', open)
-  elements.settings.setAttribute('aria-hidden', String(!open))
-  elements.settings.inert = !open
-  document.querySelector('#rail-settings').classList.toggle('active', open)
 }
 
 function syncDefaultTypographySettings() {
@@ -2489,7 +2435,7 @@ function selectedTextObject() {
 
 function syncTypographyControls() {
   const text = selectedTextObject()
-  const fontFamily = text?.fontFamily || state.fontFamily
+  const fontFamily = fontChoice(text?.fontFamily || state.fontFamily)
   const fontSize = Math.round(text?.fontSize || state.fontSize)
   document.querySelector('#text-selection-status').textContent = text ? 'Selected text' : 'New text'
   document.querySelectorAll('[data-font-family]').forEach((button) => {
@@ -2536,7 +2482,7 @@ function applyTypography(property, value) {
   const text = selectedTextObject()
   state[property] = value
   if (text) {
-    text.set(property, value)
+    text.set(property, property === 'fontFamily' ? canvasFontFamily(value) : value)
     text.setCoords()
     canvas.requestRenderAll()
     if (!isPlaceholderText(text.text)) recordHistory()
@@ -2594,7 +2540,6 @@ async function openPrintPreview() {
   const sequence = ++printRenderSequence
   setSidebarOpen(false)
   setPropertiesOpen(false)
-  setSettingsOpen(false)
   elements.printPreview.hidden = false
   elements.printPreview.setAttribute('aria-hidden', 'false')
   elements.shell.inert = true
@@ -2669,7 +2614,7 @@ function createVoiceTextBox() {
     top: layout.y,
     width: layout.width,
     fill: state.color,
-    fontFamily: state.fontFamily,
+    fontFamily: canvasFontFamily(state.fontFamily),
     fontSize: getInputFontSize(),
     lineHeight: 1.45,
     padding: 8,
@@ -2975,23 +2920,58 @@ async function deleteActiveNote() {
   else await selectNote(state.notes[0].id)
 }
 
+// Clear all runs at once and offers Undo in a toast (and Ctrl/Cmd+Z), so no confirmation dialog is needed.
+let pendingClearUndo = null
+let toastTimer
+
+function showToast(message, actionLabel, onAction) {
+  elements.toast.firstElementChild.textContent = message
+  elements.toastAction.textContent = actionLabel || ''
+  elements.toastAction.hidden = !actionLabel
+  elements.toast.onAction = onAction
+  elements.toast.hidden = false
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(hideToast, 8000)
+}
+
+function hideToast() {
+  clearTimeout(toastTimer)
+  elements.toast.hidden = true
+  pendingClearUndo = null
+}
+
+async function undoClear() {
+  const pending = pendingClearUndo
+  hideToast()
+  if (!pending || pending.noteId !== state.activeNoteId) return
+  if (pending.mindmap) {
+    await mountActiveMindMap(pending.mindmap)
+    queueSave()
+  } else if (state.historyIndex === pending.historyIndex) {
+    await restoreHistory(pending.historyIndex - 1)
+  }
+}
+
 async function clearActiveNote() {
+  if (!state.activeNoteId) return
   if (state.activeNoteType === 'mindmap') {
-    if (!state.activeNoteId) return elements.clearNoteDialog.close()
+    const previous = mindmapEditor?.getDocument()
     await mountActiveMindMap(structuredClone(DEFAULT_MINDMAP_DOCUMENT))
     queueSave()
-    elements.clearNoteDialog.close()
+    pendingClearUndo = { noteId: state.activeNoteId, mindmap: previous }
+    showToast('Note cleared', 'Undo', undoClear)
     return
   }
-  if (!state.activeNoteId || !canvas.getObjects().length) return elements.clearNoteDialog.close()
+  if (!canvas.getObjects().length) return
   clearTimeout(historyTimer)
   canvas.discardActiveObject()
   canvas.clear()
   state.pages = { columns: 1, rows: 1 }
-  resizePaper(true)
+  resizePaper()
   setTool('text')
   if (commitHistorySnapshot()) queueSave()
-  elements.clearNoteDialog.close()
+  pendingClearUndo = { noteId: state.activeNoteId, historyIndex: state.historyIndex }
+  showToast('Note cleared', 'Undo', undoClear)
 }
 
 function updateEraserCursor(event) {
@@ -3128,7 +3108,7 @@ canvas.on('before:render', ({ ctx }) => drawPageTiles(ctx))
 })
 
 elements.workspace.addEventListener('wheel', (event) => {
-  if (state.activeNoteType !== 'canvas' || event.target.closest?.('.tool-dock, .page-minimap, .zoom-control, .properties-panel, .settings-panel, .sidebar')) return
+  if (state.activeNoteType !== 'canvas' || event.target.closest?.('.tool-dock, .page-minimap, .zoom-control, .properties-panel, .sidebar')) return
   event.preventDefault()
   if (event.ctrlKey || event.metaKey) {
     const rect = elements.workspace.getBoundingClientRect()
@@ -3222,7 +3202,7 @@ canvas.on('mouse:move', (event) => {
     state.pages.rows += 1
     changed = true
   }
-  if (changed) resizePaper(true)
+  if (changed) resizePaper()
 })
 
 ;['object:modified', 'path:created'].forEach((eventName) => {
@@ -3384,14 +3364,8 @@ elements.strokeWidths.addEventListener('click', (event) => {
   closeInkOptions()
 })
 
-document.querySelector('#clear-note').addEventListener('click', () => {
-  elements.clearNoteDialog.showModal()
-  requestAnimationFrame(() => elements.clearNoteDialog.querySelector('.dialog-cancel').focus())
-})
-document.querySelector('#confirm-clear-note').addEventListener('click', (event) => {
-  event.preventDefault()
-  clearActiveNote()
-})
+document.querySelector('#clear-note').addEventListener('click', clearActiveNote)
+elements.toastAction.addEventListener('click', () => elements.toast.onAction?.())
 document.querySelector('#delete-note').addEventListener('click', deleteActiveNote)
 document.querySelector('#prettify').addEventListener('click', prettifyActiveNote)
 document.querySelector('#undo').addEventListener('click', () => restoreHistory(state.historyIndex - 1))
@@ -3534,10 +3508,8 @@ elements.shareMenu.addEventListener('keydown', (event) => {
   const index = items.indexOf(document.activeElement)
   items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
 })
-document.querySelector('#rail-settings').addEventListener('click', () => setSettingsOpen(!elements.settings.classList.contains('open')))
 document.querySelector('#top-properties').addEventListener('click', () => setPropertiesOpen(!elements.properties.classList.contains('open')))
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
-document.querySelector('#close-settings').addEventListener('click', () => setSettingsOpen(false))
 document.querySelector('#download-backup').addEventListener('click', () => {
   void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
 })
@@ -3600,11 +3572,6 @@ document.addEventListener('pointerdown', (event) => {
     elements.properties.classList.contains('open')
     && !target.closest('.properties-panel, #top-properties')
   ) setPropertiesOpen(false)
-
-  if (
-    elements.settings.classList.contains('open')
-    && !target.closest('.settings-panel, #rail-settings')
-  ) setSettingsOpen(false)
 })
 elements.title.addEventListener('input', () => {
   if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(elements.title.value.trim())
@@ -3754,12 +3721,13 @@ document.addEventListener('keydown', (event) => {
     closeSearch()
   } else if (event.key === 'Escape' && elements.properties.classList.contains('open')) {
     setPropertiesOpen(false)
-  } else if (event.key === 'Escape' && elements.settings.classList.contains('open')) {
-    setSettingsOpen(false)
   } else if (event.key === 'Escape' && !elements.inkOptionsPopover.hidden) {
     closeInkOptions()
   } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open')) {
     setSidebarOpen(false)
+  } else if (pendingClearUndo && !isTyping && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+    event.preventDefault()
+    undoClear()
   } else if (state.activeNoteType === 'mindmap') {
     return
   } else if (event.key === 'Escape' && activeText?.isEditing) {
@@ -3808,7 +3776,7 @@ elements.miniGrid.addEventListener('click', (event) => {
 // previews the page that would be added. Both are paint-only and never reach the saved note.
 const lift = createLiftEffect({
   requestRender: () => canvas.requestRenderAll(),
-  reducedMotion: () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  reducedMotion: () => true, // the lifted look lands at once; no tilt-in animation
 })
 function endDragPreview() {
   lift.end()
@@ -3914,5 +3882,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds }
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget }
 initialize()

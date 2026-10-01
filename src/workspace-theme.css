@@ -21,7 +21,7 @@
   }
 
   .sidebar, .topbar, .tool-dock, .properties-panel,
-  .settings-panel, .search-button, .voice-button, .properties-trigger,
+  .search-button, .voice-button, .properties-trigger,
   .ink-options-popover, .voice-caption, .print-preview-bar, .mindmap-hint,
   .note-title:hover, .note-title:focus {
     backdrop-filter: none;
@@ -32,7 +32,7 @@
   .properties-heading, .property-section, .settings-section,
   .mindmap-inspector section, .spotlight-input-row, .search-footer,
   .print-summary { border-color: var(--line); }
-  .sidebar, .properties-panel, .settings-panel { box-shadow: none; }
+  .sidebar, .properties-panel { box-shadow: none; }
   .paper { color-scheme: light; animation: none; }
 
   .note-title, .properties-heading h2,
@@ -49,7 +49,7 @@
 
   .notebook-picker,
   .property-note-info strong, .setting-row, .setting-field-heading,
-  .clear-note-copy, .spotlight-input-row input, .search-result-copy strong,
+  .spotlight-input-row input, .search-result-copy strong,
   .search-empty strong, .mindmap-inspector header strong, .print-summary dd,
   .paper-select select { color: var(--ink); }
   .ink-options-heading > span, .ink-options-heading button, .stroke-options > span,
@@ -79,7 +79,7 @@
 
   .note-create-menu, .notebook-picker-menu, .tool-dock, .ink-options-popover,
   .search-button, .voice-button, .properties-trigger, .voice-caption, .page-count,
-  .properties-panel, .settings-panel, .spotlight, .notebook-dialog,
+  .properties-panel, .spotlight, .notebook-dialog,
   .mindmap-branch-chooser, .mindmap-zoom, .mindmap-minimap, .mindmap-hint,
   .print-preview-bar, .print-summary {
     color: var(--ink); background: var(--surface); border-color: var(--line); box-shadow: none;
@@ -91,7 +91,7 @@
   .stroke-width-button, .search-close, .search-result-icon,
   .notebook-name-input,
   .property-section .notebook-picker, .font-family-control, .font-size-row output,
-  .clear-note-action, .delete-note-action, .dialog-cancel,
+  .delete-note-action, .dialog-cancel,
   .paper-select, .print-summary-mark, .mindmap-segments,
   .mindmap-format button, .mindmap-inspector footer button {
     color: var(--ink); background: var(--surface-cool); border-color: var(--line); box-shadow: none;
@@ -102,8 +102,7 @@
   .font-size-row input, .mindmap-inspector input[type="range"], .mindmap-toggle input { accent-color: var(--accent); }
   .delete-note-action, .mindmap-inspector footer .danger { color: var(--terracotta); background: var(--terracotta-soft); border-color: var(--terracotta); }
   .delete-note-action:hover, .delete-notebook:hover { color: var(--terracotta); background: var(--terracotta-soft); }
-  .clear-note-action { color: var(--accent); }
-  .clear-note-action:hover, .dialog-primary, .print-button {
+  .dialog-primary, .print-button {
     color: var(--rail); background: var(--accent); border-color: var(--accent);
   }
   .dialog-danger { color: var(--rail); background: var(--terracotta); border-color: var(--terracotta); }

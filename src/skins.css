@@ -77,13 +77,13 @@
   /* Text sitting on the accent color uses the skin's own ink, not the (now light) rail. */
   .tool-dock .tool-button.active, .font-family-control button.active, .mindmap-segments button.active,
   .properties-trigger:hover, .properties-trigger.active, .voice-button.active,
-  .clear-note-action:hover, .dialog-primary, .print-button { color: var(--skin-on-accent); }
+  .dialog-primary, .print-button { color: var(--skin-on-accent); }
   .dialog-primary:hover, .print-button:hover { background: color-mix(in srgb, var(--sk-accent) 88%, var(--sk-ink)); }
   .dialog-danger:hover { background: color-mix(in srgb, var(--sk-danger) 88%, var(--sk-ink)); }
 
   /* Geometry: controls and panels follow the skin's radii and shadows. */
   .tool-dock, .ink-options-popover, .note-create-menu, .notebook-picker-menu, .spotlight,
-  .notebook-dialog, .properties-panel, .settings-panel, .print-summary {
+  .notebook-dialog, .properties-panel, .print-summary {
     border-radius: var(--sk-radius);
     box-shadow: var(--sk-shadow);
   }
