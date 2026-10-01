@@ -11,9 +11,10 @@ export function canKeepAlive(body) {
 
 /** Runs `flush` on pagehide and when the page becomes hidden. Returns an unbind function. */
 export function bindPageLifecycle({ windowTarget, documentTarget, flush }) {
-  const onHide = () => flush()
+  // `flush` gets the reason: only 'pagehide' means the page is really going away.
+  const onHide = () => flush('pagehide')
   const onVisibility = () => {
-    if (documentTarget.visibilityState === 'hidden') flush()
+    if (documentTarget.visibilityState === 'hidden') flush('hidden')
   }
   windowTarget.addEventListener('pagehide', onHide)
   documentTarget.addEventListener('visibilitychange', onVisibility)

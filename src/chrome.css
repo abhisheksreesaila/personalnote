@@ -145,9 +145,6 @@
   .app-shell .skin-swatch:hover { transform: scale(1.14); }
   .app-shell .skin-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--sk-accent); }
   .app-shell .skin-swatch:focus-visible { outline: none; box-shadow: var(--ring); }
-  .app-shell #rail-settings { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 9px; color: var(--ui-muted); }
-  .app-shell #rail-settings:hover, .app-shell #rail-settings.active { background: var(--hover); color: var(--sk-ink); }
-  .app-shell #rail-settings svg { width: 16px; height: 16px; }
   .app-shell .sidebar-scrim { display: none; }
 
   /* ---------- Top bar ---------- */
@@ -332,12 +329,12 @@
   .app-shell .mindmap-host { inset: 66px 12px 12px 4px; border-radius: var(--sk-radius); overflow: hidden; border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); }
 
   /* ---------- Side panels float like the sidebar ---------- */
-  .app-shell .properties-panel, .app-shell .settings-panel {
+  .app-shell .properties-panel {
     inset: 12px 12px 12px auto; padding-top: 16px; border: 1px solid var(--glass-border); border-radius: var(--sk-radius); box-shadow: var(--sk-shadow);
     background: var(--glass-solid); -webkit-backdrop-filter: blur(24px) saturate(1.1); backdrop-filter: blur(24px) saturate(1.1);
     transform: translateX(calc(100% + 28px)); transition: transform 260ms var(--ease-out);
   }
-  .app-shell .properties-panel.open, .app-shell .settings-panel.open { transform: none; }
+  .app-shell .properties-panel.open { transform: none; }
 
   /* ---------- Notebook dialog: section picker ---------- */
   .category-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: color-mix(in srgb, var(--sk-ink) 6%, var(--sk-panel)); }
@@ -418,7 +415,7 @@
     .app-shell .page-minimap { left: 12px; bottom: 84px; height: 34px; padding: 0 10px; }
     .app-shell .zoom-control { right: 12px; bottom: 84px; height: 34px; }
     .app-shell .scroll-indicator-y { top: 64px; bottom: 120px; right: 2px; }
-    .app-shell .properties-panel, .app-shell .settings-panel { inset: 8px 8px 8px auto; width: min(92vw, 340px); max-width: none; transform: translateX(calc(100% + 24px)); }
+    .app-shell .properties-panel { inset: 8px 8px 8px auto; width: min(92vw, 340px); max-width: none; transform: translateX(calc(100% + 24px)); }
     .app-shell .mindmap-host { inset: 0; border: 0; border-radius: 0; box-shadow: none; }
   }
 
