@@ -6,6 +6,7 @@ its lifetime is trackable and it never joins the user's everyday browser.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -18,11 +19,18 @@ SETTLE_SECONDS = 0.4  # lets the page's closing save (pagehide, keepalive) reach
 GRACE_SECONDS = 1.5  # upper bound on waiting for requests still in flight
 
 
-def find_chromium(which: Callable[[str], str | None] = shutil.which) -> str | None:
+REAL_CHROMIUM = "/usr/lib/chromium/chromium"  # the wrapper at /usr/bin/chromium also reads ~/.config/chromium-flags.conf
+
+
+def find_chromium(
+    which: Callable[[str], str | None] = shutil.which,
+    exists: Callable[[str], bool] = os.path.exists,
+) -> str | None:
     for name in BINARIES:
         found = which(name)
         if found:
-            return found
+            # Start the real binary directly so the user's browser flags (extensions, ozone) do not apply.
+            return REAL_CHROMIUM if name == "chromium" and exists(REAL_CHROMIUM) else found
     return None
 
 
@@ -31,11 +39,34 @@ def chromium_command(binary: str, url: str, profile_dir: Path) -> list[str]:
         binary,
         f"--app={url}",
         f"--user-data-dir={profile_dir}",
-        f"--class={WM_CLASS}",  # window class / Wayland app id, matched by StartupWMClass and the compositor
+        f"--class={WM_CLASS}",  # best effort: sets the window class / app id; focusing goes by PID instead
         "--ozone-platform-hint=auto",  # native Wayland where available, X11 otherwise
+        "--disable-extensions",
         "--no-first-run",
         "--no-default-browser-check",
     ]
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def profile_owner_pid(profile_dir: Path, alive: Callable[[int], bool] = pid_alive) -> int | None:
+    """PID of the live Chromium holding this profile (its SingletonLock symlink is `host-pid`), else None."""
+    try:
+        target = os.readlink(Path(profile_dir) / "SingletonLock")
+        pid = int(target.rsplit("-", 1)[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return pid if alive(pid) else None
 
 
 def server_is_idle(server) -> bool:
@@ -65,26 +96,36 @@ def wait_for_idle(
         sleep(0.05)
 
 
+def wait_for_profile_release(
+    profile_dir: Path,
+    own_pid: int | None,
+    sleep: Callable[[float], None] = time.sleep,
+    owner: Callable[[Path], int | None] = profile_owner_pid,
+) -> None:
+    """Chromium may hand the window to another process and exit; keep serving until that process is gone."""
+    while True:
+        pid = owner(profile_dir)
+        if pid is None or pid == own_pid:
+            return
+        sleep(0.5)
+
+
 def focus_window(
-    command: list[str],
+    pid: int | None,
     run: Callable = subprocess.run,
     which: Callable[[str], str | None] = shutil.which,
 ) -> bool:
-    """Bring the running app window forward. Tries Hyprland; otherwise re-launching with the
-    same profile makes Chromium hand the request to the running instance."""
+    """Bring the window of Chromium process `pid` forward with Hyprland. Never opens another window."""
     hyprctl = which("hyprctl")
-    if hyprctl:
-        try:
-            result = run([hyprctl, "dispatch", "focuswindow", f"class:{WM_CLASS}"], capture_output=True, timeout=3)
-            if result.returncode == 0 and b"ok" in (result.stdout or b"").lower():
-                return True
-        except (OSError, subprocess.SubprocessError):
-            pass
+    if not hyprctl or pid is None:
+        return False
     try:
-        run(command, capture_output=True, timeout=5)
-        return True
+        result = run([hyprctl, "dispatch", "focuswindow", f"pid:{pid}"], capture_output=True, timeout=3)
     except (OSError, subprocess.SubprocessError):
         return False
+    out = result.stdout or b""
+    out = out.decode("utf-8", "replace") if isinstance(out, bytes) else out
+    return result.returncode == 0 and out.strip().lower() == "ok"
 
 
 def run_chromium_window(
@@ -96,18 +137,21 @@ def run_chromium_window(
     run: Callable = subprocess.run,
     which: Callable[[str], str | None] = shutil.which,
     idle_wait: Callable = wait_for_idle,
+    release_wait: Callable = wait_for_profile_release,
+    owner: Callable[[Path], int | None] = profile_owner_pid,
 ) -> int:
-    """Open the window, block until its process exits, then let the closing save land.
+    """Open the window, block until it is really gone, then let the closing save land.
 
     The caller stops the server afterwards. Returns Chromium's exit code.
     """
     url = base_url + "/notes?host=desktop"  # same host flag as the pywebview window
     profile_dir.mkdir(parents=True, exist_ok=True)
     command = chromium_command(binary, url, profile_dir)
-    server.on_focus = lambda: focus_window(command, run=run, which=which)
+    server.on_focus = lambda: focus_window(owner(profile_dir), run=run, which=which)
     process = popen(command)
     try:
         code = process.wait()
+        release_wait(profile_dir, getattr(process, "pid", None))
     finally:
         idle_wait(server)
     return code

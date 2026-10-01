@@ -60,6 +60,10 @@ const EDGE_OVERFLOW = 6
 const EDGE_SHRINK = 0
 const TRANSFORM_EDGE_MARGIN = 24
 const ERASER_RADIUS = 13
+// The Chromium app window has no pre-close hook, so the desktop host saves sooner (about 250ms after the last edit).
+const DESKTOP_HOST = new URLSearchParams(location.search).get('host') === 'desktop'
+const HISTORY_DELAY_MS = DESKTOP_HOST ? 100 : 180
+const SAVE_DELAY_MS = DESKTOP_HOST ? 150 : 650
 const INK_COLORS = [
   ['Charcoal', '#20201e'],
   ['Graphite', '#5f6368'],
@@ -401,8 +405,6 @@ document.querySelector('#app').innerHTML = `
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span></span><button id="toast-action" type="button">Undo</button></div>
 
-  <style id="editor-polish-screen">
-  </style>
 `
 
 createIcons({ icons })
@@ -2027,7 +2029,7 @@ function queueSave() {
   if (pendingClearUndo) hideToast()
   setSaveState('Saving')
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(saveActiveNote, 650)
+  saveTimer = setTimeout(saveActiveNote, SAVE_DELAY_MS)
 }
 
 // Sends anything still waiting on the two debounces (history 180ms, save 650ms) right now.
@@ -2088,7 +2090,7 @@ function recordHistory() {
   clearTimeout(historyTimer)
   historyTimer = setTimeout(() => {
     if (commitHistorySnapshot()) queueSave()
-  }, 180)
+  }, HISTORY_DELAY_MS)
 }
 
 async function restoreHistory(index) {

@@ -1,4 +1,7 @@
+import os
+import socket
 import tempfile
+import chromium_app
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -8,6 +11,8 @@ from chromium_app import (
     chromium_command,
     find_chromium,
     focus_window,
+    profile_owner_pid,
+    wait_for_profile_release,
     run_chromium_window,
     wait_for_idle,
 )
@@ -20,9 +25,13 @@ def which_from(*present):
 
 class DiscoveryTests(unittest.TestCase):
     def test_prefers_chromium_then_chrome_in_order(self):
-        self.assertEqual(find_chromium(which_from("google-chrome", "chromium-browser")), "/usr/bin/chromium-browser")
+        self.assertEqual(find_chromium(which_from("google-chrome", "chromium-browser"), exists=lambda p: False), "/usr/bin/chromium-browser")
         self.assertEqual(find_chromium(which_from("google-chrome", "google-chrome-stable")), "/usr/bin/google-chrome-stable")
-        self.assertEqual(find_chromium(which_from("chromium", "google-chrome")), "/usr/bin/chromium")
+        self.assertEqual(find_chromium(which_from("chromium", "google-chrome"), exists=lambda p: False), "/usr/bin/chromium")
+
+    def test_uses_the_real_binary_directly_when_it_exists(self):
+        self.assertEqual(find_chromium(which_from("chromium"), exists=lambda p: True), "/usr/lib/chromium/chromium")
+        self.assertEqual(find_chromium(which_from("chromium"), exists=lambda p: False), "/usr/bin/chromium")
 
     def test_none_when_no_binary(self):
         self.assertIsNone(find_chromium(which_from()))
@@ -30,7 +39,7 @@ class DiscoveryTests(unittest.TestCase):
 
 class EngineChoiceTests(unittest.TestCase):
     def test_auto_uses_chromium_on_linux_when_found(self):
-        self.assertEqual(choose_engine("auto", "linux", which_from("chromium")), ("chromium", "/usr/bin/chromium"))
+        self.assertEqual(choose_engine("auto", "linux", which_from("chromium")), ("chromium", chromium_app.find_chromium(which_from("chromium"))))
 
     def test_auto_falls_back_to_webview(self):
         self.assertEqual(choose_engine("auto", "linux", which_from()), ("webview", None))
@@ -54,6 +63,7 @@ class CommandTests(unittest.TestCase):
         self.assertIn("--app=http://127.0.0.1:5000/notes?host=desktop", command)
         self.assertIn("--user-data-dir=/data/chromium-profile", command)
         self.assertIn("--class=PersonalNote", command)
+        self.assertIn("--disable-extensions", command)
 
 
 class FakeServer:
@@ -138,39 +148,201 @@ class RunWindowTests(unittest.TestCase):
 
 
 class FocusTests(unittest.TestCase):
-    command = ["/usr/bin/chromium", "--app=http://x"]
-
-    def test_uses_hyprctl_when_it_finds_the_window(self):
+    def test_focuses_by_pid_with_hyprctl(self):
         calls = []
 
         def run(cmd, **kwargs):
             calls.append(cmd)
-            return SimpleNamespace(returncode=0, stdout=b"ok")
+            return SimpleNamespace(returncode=0, stdout=b"ok\n")
 
-        self.assertTrue(focus_window(self.command, run=run, which=which_from("hyprctl")))
-        self.assertEqual(calls, [["/usr/bin/hyprctl", "dispatch", "focuswindow", "class:PersonalNote"]])
+        self.assertTrue(focus_window(4242, run=run, which=which_from("hyprctl")))
+        self.assertEqual(calls, [["/usr/bin/hyprctl", "dispatch", "focuswindow", "pid:4242"]])
 
-    def test_relaunches_with_the_same_profile_without_hyprctl(self):
-        calls = []
-        ok = focus_window(self.command, run=lambda cmd, **kw: calls.append(cmd) or SimpleNamespace(returncode=0, stdout=b""), which=which_from())
-        self.assertTrue(ok)
-        self.assertEqual(calls, [self.command])
-
-    def test_relaunches_when_hyprctl_finds_no_window(self):
+    def test_never_launches_another_window(self):
         calls = []
 
         def run(cmd, **kwargs):
             calls.append(cmd)
             return SimpleNamespace(returncode=0, stdout=b"No such window found")
 
-        focus_window(self.command, run=run, which=which_from("hyprctl"))
-        self.assertEqual(calls[-1], self.command)
+        self.assertFalse(focus_window(4242, run=run, which=which_from("hyprctl")))
+        self.assertFalse(focus_window(4242, run=run, which=which_from()))
+        self.assertFalse(focus_window(None, run=run, which=which_from("hyprctl")))
+        self.assertTrue(all(call[1:3] == ["dispatch", "focuswindow"] for call in calls))
+
+    def test_output_must_be_exactly_ok(self):
+        run = lambda cmd, **kw: SimpleNamespace(returncode=0, stdout=b"not ok at all")
+        self.assertFalse(focus_window(1, run=run, which=which_from("hyprctl")))
 
     def test_a_missing_binary_never_raises(self):
         def run(cmd, **kwargs):
             raise FileNotFoundError
 
-        self.assertFalse(focus_window(self.command, run=run, which=which_from()))
+        self.assertFalse(focus_window(1, run=run, which=which_from("hyprctl")))
+
+
+class ProfileLockTests(unittest.TestCase):
+    def test_reads_the_pid_from_the_singleton_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.symlink("myhost-4321", Path(tmp) / "SingletonLock")
+            self.assertEqual(profile_owner_pid(Path(tmp), alive=lambda pid: True), 4321)
+            self.assertIsNone(profile_owner_pid(Path(tmp), alive=lambda pid: False))
+
+    def test_no_lock_or_a_garbled_lock_means_free(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(profile_owner_pid(Path(tmp)))
+            os.symlink("garbage", Path(tmp) / "SingletonLock")
+            self.assertIsNone(profile_owner_pid(Path(tmp)))
+
+    def test_our_own_dead_process_is_not_an_owner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.symlink("h-999999999", Path(tmp) / "SingletonLock")
+            self.assertIsNone(profile_owner_pid(Path(tmp)))
+
+    def test_keeps_waiting_while_another_process_holds_the_profile(self):
+        owners = iter([777, 777, None])
+        sleeps = []
+        wait_for_profile_release(Path("p"), 100, sleep=sleeps.append, owner=lambda p: next(owners))
+        self.assertEqual(len(sleeps), 2)
+
+    def test_does_not_wait_on_its_own_process(self):
+        sleeps = []
+        wait_for_profile_release(Path("p"), 100, sleep=sleeps.append, owner=lambda p: 100)
+        self.assertEqual(sleeps, [])
+
+
+class HandoffTests(unittest.TestCase):
+    def test_server_keeps_running_while_a_handed_off_window_is_open(self):
+        events = []
+
+        class Process:
+            pid = 100
+
+            def wait(self):
+                events.append("child-exited")
+                return 0
+
+        owners = iter([777, None])  # a different live process holds the profile, then it closes
+
+        def owner(profile):
+            value = next(owners)
+            events.append(f"owner={value}")
+            return value
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_chromium_window(
+                "http://127.0.0.1:5000", "/usr/bin/chromium", Path(tmp) / "p", FakeServer(),
+                popen=lambda c: Process(), idle_wait=lambda s: events.append("idle-wait"),
+                owner=owner, release_wait=lambda profile, pid: wait_for_profile_release(profile, pid, sleep=lambda s: None, owner=owner),
+            )
+        self.assertEqual(events, ["child-exited", "owner=777", "owner=None", "idle-wait"])
+
+    def test_non_zero_exit_is_returned(self):
+        class Process:
+            pid = 1
+
+            def wait(self):
+                return 3
+
+        with tempfile.TemporaryDirectory() as tmp:
+            code = run_chromium_window(
+                "http://x", "/b", Path(tmp) / "p", FakeServer(),
+                popen=lambda c: Process(), idle_wait=lambda s: None, release_wait=lambda p, pid: None,
+            )
+        self.assertEqual(code, 3)
+
+
+class StartupTests(unittest.TestCase):
+    def run_main(self, **patches):
+        import desktop
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict("os.environ", {"PERSONAL_NOTE_DB": str(Path(tmp) / "n.db"), "XDG_DATA_HOME": tmp}), \
+                mock.patch.object(desktop, "focus_running_instance", return_value=None), \
+                mock.patch.object(desktop, "choose_engine", return_value=("chromium", "/usr/bin/chromium")), \
+                mock.patch.object(desktop, "check_profile_free", side_effect=patches.get("free")), \
+                mock.patch.object(desktop, "LocalServer") as server, \
+                mock.patch.object(desktop, "run_chromium_window", side_effect=patches.get("run", lambda *a, **k: 0)):
+            server.return_value.start.return_value = "http://127.0.0.1:1"
+            server.return_value.nonce = "n"
+            return desktop.main(["--no-build"]), server
+
+    def test_nonzero_chromium_exit_is_reported(self):
+        import io
+        from contextlib import redirect_stderr
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            code, _ = self.run_main(run=lambda *a, **k: 5)
+        self.assertEqual(code, 1)
+        self.assertIn("code 5", err.getvalue())
+
+    def test_failure_to_launch_is_reported(self):
+        import io
+        from contextlib import redirect_stderr
+
+        def boom(*a, **k):
+            raise FileNotFoundError("chromium")
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            code, _ = self.run_main(run=boom)
+        self.assertEqual(code, 1)
+        self.assertIn("Could not start the Chromium window", err.getvalue())
+
+    def test_an_open_window_without_a_server_is_refused_before_any_server_starts(self):
+        import desktop
+        import io
+        from contextlib import redirect_stderr
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            code, server = self.run_main(free=desktop.DesktopError("A Personal Note window is already open"))
+        self.assertEqual(code, 1)
+        server.assert_not_called()
+        self.assertIn("already open", err.getvalue())
+
+    def test_server_asks_for_the_stable_port(self):
+        import desktop
+
+        _, server = self.run_main()
+        self.assertEqual(server.call_args.kwargs["preferred_port"], desktop.PREFERRED_PORT)
+
+
+class StablePortTests(unittest.TestCase):
+    def free_port(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
+
+    def test_uses_the_preferred_port_when_free_and_the_same_one_next_time(self):
+        from desktop import LocalServer
+        from routes import create_app
+
+        port = self.free_port()
+        with tempfile.TemporaryDirectory() as tmp:
+            urls = []
+            for _ in range(2):
+                server = LocalServer(create_app(Path(tmp) / "n.db"), preferred_port=port)
+                try:
+                    urls.append(server.start())
+                finally:
+                    server.stop()
+        self.assertEqual(urls, [f"http://127.0.0.1:{port}"] * 2)
+
+    def test_falls_back_to_another_port_when_taken(self):
+        from desktop import LocalServer
+        from routes import create_app
+
+        with socket.socket() as holder, tempfile.TemporaryDirectory() as tmp:
+            holder.bind(("127.0.0.1", 0))
+            holder.listen()
+            taken = holder.getsockname()[1]
+            server = LocalServer(create_app(Path(tmp) / "n.db"), preferred_port=taken)
+            try:
+                self.assertNotEqual(server.start(), f"http://127.0.0.1:{taken}")
+            finally:
+                server.stop()
 
 
 class SingleInstanceTests(unittest.TestCase):

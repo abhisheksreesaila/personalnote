@@ -26,9 +26,12 @@ from urllib.request import Request, urlopen
 PROCESS_START = time.perf_counter()
 
 from app_paths import app_data_dir, default_database_path, instance_file  # noqa: E402
-from chromium_app import find_chromium, run_chromium_window  # noqa: E402
+from chromium_app import find_chromium, focus_window, profile_owner_pid, run_chromium_window  # noqa: E402
 
 HOST = "127.0.0.1"
+# A fixed preferred port keeps the page's origin stable, so localStorage (skin, speed meter, preferences)
+# and the microphone permission survive restarts. Another port is used only when this one is taken.
+PREFERRED_PORT = 3138
 WINDOW_TITLE = "Personal Note"
 WINDOW_SIZE = (1280, 860)
 WINDOW_MIN_SIZE = (900, 600)
@@ -89,9 +92,10 @@ def ensure_frontend_built(root: Path = ROOT, run: Callable = subprocess.run) -> 
 class LocalServer:
     """Runs the ASGI app with uvicorn in a background thread on a free loopback port."""
 
-    def __init__(self, app, host: str = HOST, on_focus: Callable[[], None] | None = None):
+    def __init__(self, app, host: str = HOST, on_focus: Callable[[], None] | None = None, preferred_port: int = 0):
         self.app = app
         self.host = host
+        self.preferred_port = preferred_port
         self.on_focus = on_focus
         self.nonce = secrets.token_hex(16)
         self.base_url: str | None = None
@@ -118,7 +122,11 @@ class LocalServer:
 
         # Bind here, then hand the socket to uvicorn, so the port cannot be taken in between.
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.bind((self.host, 0))
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self._sock.bind((self.host, self.preferred_port))
+        except OSError:
+            self._sock.bind((self.host, 0))  # the preferred port is taken by something else
         port = self._sock.getsockname()[1]
         config = uvicorn.Config(self.app, log_level=os.getenv("LOG_LEVEL", "warning").lower(), lifespan="off")
         self._server = uvicorn.Server(config)
@@ -349,6 +357,22 @@ def choose_engine(requested: str, platform: str = sys.platform, which: Callable 
     return "webview", None
 
 
+def check_profile_free(profile: Path) -> None:
+    """Refuse to start when a Chromium already holds the app profile but no server answered.
+
+    Starting a second server would put the open window on a dead origin while a new one saves to the
+    same database, so bring the window forward and stop with a clear message instead.
+    """
+    pid = profile_owner_pid(profile)
+    if pid is None:
+        return
+    focus_window(pid)
+    raise DesktopError(
+        "A Personal Note window is already open but its server is not answering. "
+        "Close that window (it may be saving), then start Personal Note again."
+    )
+
+
 # ---- entry point ----------------------------------------------------------------------------
 
 
@@ -370,11 +394,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Personal Note is already open ({running}); brought it forward.")
             return 0
         engine, chromium = choose_engine(args.engine)
+        if engine == "chromium":
+            check_profile_free(app_data_dir() / "chromium-profile")
         if not args.no_build and not getattr(sys, "frozen", False):
             ensure_frontend_built()
         from routes import create_app
 
-        server = LocalServer(create_app(database))
+        server = LocalServer(create_app(database), preferred_port=PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:
         print(error, file=sys.stderr)
@@ -384,9 +410,17 @@ def main(argv: list[str] | None = None) -> int:
     record_instance(database, base_url, server.nonce)
     try:
         if engine == "chromium":
-            run_chromium_window(base_url, chromium, app_data_dir() / "chromium-profile", server)
+            code = run_chromium_window(base_url, chromium, app_data_dir() / "chromium-profile", server)
+            if code != 0:
+                print(f"The Chromium window exited with an error (code {code}). Try `--engine webview`.", file=sys.stderr)
+                return 1
         else:
             run_window(base_url, database, server, args.timing)
+    except OSError as error:
+        if engine != "chromium":
+            raise
+        print(f"Could not start the Chromium window ({error}). Try `--engine webview`.", file=sys.stderr)
+        return 1
     except ImportError as error:
         print(
             f"The desktop window needs pywebview and a system web view ({error}).\n"
