@@ -864,7 +864,7 @@ function setSaveState(status, isError = false) {
 let viewportOffsetX = 0
 let viewportOffsetY = 0
 let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
-let pageColors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', accent: '#0a6cff', accentInk: '#ffffff', shadows: [] }
+let pageColors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', accent: '#2f6fe0', accentInk: '#ffffff', shadows: [] }
 let edgeGhost = null
 let voiceOutline = false
 

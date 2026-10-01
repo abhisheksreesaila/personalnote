@@ -1,18 +1,25 @@
 #!/bin/sh
 # Builds "Personal Note.app" with PyInstaller. Run on a Mac from the repo root:
 #   npm run desktop:mac-app
+# Also builds dist-app/personal-note-macos-<arch>.zip (ditto, keeps the bundle intact), which the release workflow attaches.
+# Environment: PYTHON (default .venv/bin/python), SKIP_FRONTEND=1 to reuse an existing dist/ (CI builds it first),
+# APP_VERSION (default: package.json version).
 # UNVERIFIED on macOS at the time of writing: check the result on a Mac.
 set -eu
 cd "$(dirname "$0")/.."
 
 [ "$(uname)" = "Darwin" ] || { echo "This script builds a macOS app; run it on a Mac." >&2; exit 1; }
 
-PY=".venv/bin/python"
+PY="${PYTHON:-.venv/bin/python}"
 [ -x "$PY" ] || { echo "Create the virtualenv first: python3 -m venv .venv" >&2; exit 1; }
 "$PY" -m pip install -q -r requirements-build.txt
 
-npm install
-npm run build
+if [ "${SKIP_FRONTEND:-}" != "1" ]; then
+  npm ci
+  npm run build
+fi
+[ -f dist/index.html ] || { echo "dist/ is missing; run npm run build first." >&2; exit 1; }
+export APP_VERSION="${APP_VERSION:-$(node -p "require('./package.json').version")}"
 
 rm -rf build/pyinstaller dist-app
 "$PY" -m PyInstaller desktop.py \
@@ -30,17 +37,21 @@ rm -rf build/pyinstaller dist-app
 
 # WKWebView only prompts for the microphone if the bundle says why it wants it.
 "$PY" - <<'PY'
+import os
 import plistlib
 path = "dist-app/Personal Note.app/Contents/Info.plist"
 with open(path, "rb") as f:
     info = plistlib.load(f)
 info["NSMicrophoneUsageDescription"] = "Personal Note uses the microphone only while you hold the voice button, to turn speech into text on this Mac. Audio is never stored."
 info["NSHighResolutionCapable"] = True
-info["CFBundleShortVersionString"] = "1.0"
+info["CFBundleShortVersionString"] = os.environ["APP_VERSION"]
 with open(path, "wb") as f:
     plistlib.dump(info, f)
 PY
 
 # Ad-hoc signature so macOS accepts the edited Info.plist; use a Developer ID to distribute.
 codesign --force --deep --sign - "dist-app/Personal Note.app"
-echo "Built dist-app/Personal Note.app (drag it to /Applications). First launch: right-click > Open."
+ARCH="$(uname -m)"; [ "$ARCH" = "arm64" ] || ARCH="x86_64"
+rm -f "dist-app/personal-note-macos-$ARCH.zip"
+ditto -c -k --keepParent "dist-app/Personal Note.app" "dist-app/personal-note-macos-$ARCH.zip"
+echo "Built dist-app/Personal Note.app and dist-app/personal-note-macos-$ARCH.zip (drag the app to /Applications). First launch: right-click > Open."

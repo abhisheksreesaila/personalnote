@@ -9,6 +9,8 @@ from urllib.request import Request, urlopen
 
 from desktop import (
     LocalServer,
+    MISSING_CHROMIUM,
+    report_startup_error,
     EMPTY_NOTICE,
     clear_instance,
     empty_notebook_notice,
@@ -191,6 +193,110 @@ class FrontendBuildTests(TempDirCase):
         self.set_mtime(root / "dist" / "index.html", now - 100)
         self.set_mtime(root / "src" / "main.js", now)
         self.assertTrue(frontend_is_stale(root))
+
+
+class StartupErrorTests(unittest.TestCase):
+    def which(self, *present):
+        return lambda name: f"/usr/bin/{name}" if name in present else None
+
+    def test_uses_a_desktop_notification_when_available(self):
+        calls = []
+        used = report_startup_error("boom", which=self.which("notify-send", "zenity"), run=lambda c, **k: calls.append(c))
+        self.assertEqual(used, "notify-send")
+        self.assertEqual(calls[0][0], "/usr/bin/notify-send")
+        self.assertIn("boom", calls[0])
+
+    def test_falls_back_to_a_dialog(self):
+        calls = []
+        self.assertEqual(report_startup_error("boom", which=self.which("zenity"), run=lambda c, **k: calls.append(c)), "zenity")
+        calls.clear()
+        self.assertEqual(report_startup_error("boom", which=self.which("kdialog"), run=lambda c, **k: calls.append(c)), "kdialog")
+
+    def test_without_any_tool_it_only_writes_to_stderr(self):
+        import io
+        from contextlib import redirect_stderr
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertIsNone(report_startup_error("boom", which=self.which(), run=lambda c, **k: self.fail("no tool")))
+        self.assertIn("boom", err.getvalue())
+
+    def test_a_failing_tool_never_raises(self):
+        def broken(c, **k):
+            raise OSError("no display")
+
+        self.assertIsNone(report_startup_error("boom", which=self.which("notify-send"), run=broken))
+
+
+class MissingChromiumTests(TempDirCase):
+    def run_main(self, frozen, platform):
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+
+        import desktop
+
+        shown = []
+        err = io.StringIO()
+        with mock.patch.dict("os.environ", {"PERSONAL_NOTE_DB": str(self.root / "n.db")}), \
+                mock.patch.object(desktop.sys, "frozen", frozen, create=True), \
+                mock.patch.object(desktop.sys, "platform", platform), \
+                mock.patch.object(desktop, "focus_running_instance", return_value=None), \
+                mock.patch.object(desktop, "choose_engine", return_value=("webview", None)), \
+                mock.patch.object(desktop, "report_startup_error", side_effect=shown.append), \
+                mock.patch.object(desktop, "LocalServer") as server, \
+                redirect_stderr(err):
+            code = desktop.main(["--no-build"])
+        return code, shown, server
+
+    def test_the_packaged_linux_app_stops_before_starting_a_server_and_says_why(self):
+        code, shown, server = self.run_main(True, "linux")
+        self.assertEqual(code, 1)
+        self.assertEqual(shown, [MISSING_CHROMIUM])
+        server.assert_not_called()
+
+
+class SessionKeyLocationTests(TempDirCase):
+    def test_the_session_key_is_kept_beside_the_database_not_in_the_working_directory(self):
+        # Launched from a menu the working directory is the home folder or / (not writable in a bundle).
+        work = self.root / "cwd"
+        work.mkdir()
+        previous = os.getcwd()
+        os.chdir(work)
+        try:
+            create_app(self.root / "data" / "n.db")
+        finally:
+            os.chdir(previous)
+        self.assertFalse((work / ".sesskey").exists())
+        self.assertTrue((self.root / "data" / ".sesskey").exists())
+
+
+class ServeOnlyTests(TempDirCase):
+    def test_serve_runs_the_app_without_a_window_until_told_to_stop(self):
+        import signal
+        import subprocess
+        import sys
+
+        env = {**os.environ, "PERSONAL_NOTE_DB": str(self.root / "n.db"), "XDG_DATA_HOME": str(self.root / "xdg")}
+        root = Path(__file__).resolve().parent.parent
+        process = subprocess.Popen(
+            [sys.executable, str(root / "desktop.py"), "--serve", "--port", "0", "--no-build"],
+            cwd=self.root, env=env, stdout=subprocess.PIPE, text=True,
+        )
+        try:
+            line = process.stdout.readline().strip()
+            self.assertTrue(line.startswith("Serving on http://127.0.0.1:"), line)
+            url = line.removeprefix("Serving on ")
+            with urlopen(f"{url}/health", timeout=3) as response:
+                self.assertEqual(json.load(response)["app"], "personal-note")
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=10), 0)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            process.stdout.close()
+        self.assertFalse(instance_file(self.root / "n.db").exists())
 
 
 class WindowUrlTests(unittest.TestCase):

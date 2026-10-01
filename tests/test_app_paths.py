@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app_paths import app_data_dir, default_database_path, marker_path, write_migration_marker
+from app_paths import app_data_dir, default_database_path, marker_path, resource_root, write_migration_marker
 
 
 class AppDataDirTests(unittest.TestCase):
@@ -101,9 +101,39 @@ class DefaultDatabasePathTests(unittest.TestCase):
         write_migration_marker(self.legacy, self.appdata_db)
         self.assertEqual(self.resolve(), self.legacy)
 
+    def test_a_packaged_app_never_uses_a_legacy_database(self):
+        # the frozen bundle has no checkout: whatever sits next to it is not the user's notebook
+        self.make_legacy()
+        path = default_database_path(
+            platform="linux", env=self.env, home=self.home, legacy_path=self.legacy, frozen=True
+        )
+        self.assertEqual(path, self.appdata_db)
+
+    def test_a_packaged_app_still_honours_the_env_override(self):
+        path = default_database_path(
+            platform="darwin", env={"PERSONAL_NOTE_DB": "/tmp/x.db"}, home=self.home, frozen=True
+        )
+        self.assertEqual(path, Path("/tmp/x.db"))
+
+    def test_packaged_macos_app_uses_application_support(self):
+        path = default_database_path(platform="darwin", env={}, home=self.home, frozen=True)
+        self.assertEqual(path, self.home / "Library" / "Application Support" / "Personal Note" / "personal-note.db")
+
     def test_resolution_never_touches_the_filesystem(self):
         self.resolve()
         self.assertFalse(self.appdata_db.parent.exists())
+
+
+class ResourceRootTests(unittest.TestCase):
+    def test_a_checkout_uses_the_source_folder(self):
+        self.assertEqual(resource_root(frozen=False, source=Path("/repo")), Path("/repo"))
+
+    def test_a_frozen_app_uses_the_pyinstaller_bundle_folder(self):
+        root = resource_root(frozen=True, meipass="/opt/pn/_internal", source=Path("/repo"))
+        self.assertEqual(root, Path("/opt/pn/_internal"))
+
+    def test_a_frozen_app_without_a_bundle_folder_falls_back_to_the_source_folder(self):
+        self.assertEqual(resource_root(frozen=True, meipass=None, source=Path("/repo")), Path("/repo"))
 
 
 if __name__ == "__main__":

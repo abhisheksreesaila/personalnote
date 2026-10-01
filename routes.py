@@ -5,7 +5,7 @@ from fasthtml.common import FastHTML
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
-from app_paths import default_database_path
+from app_paths import default_database_path, resource_root
 from portability import (
     PortabilityError,
     import_workspace_backup,
@@ -17,7 +17,7 @@ from services import ConflictError, NoteService, NotFoundError, WorkspaceImportE
 
 
 logger = logging.getLogger(__name__)
-ROOT = Path(__file__).resolve().parent
+ROOT = resource_root()
 
 
 def runtime_capabilities() -> dict:
@@ -48,7 +48,8 @@ def runtime_capabilities() -> dict:
 def create_app(database_path: Path | str | None = None) -> FastHTML:
     data_path = Path(database_path or default_database_path())
     service = NoteService(data_path)
-    app = FastHTML(sess_cls=None)
+    # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
+    app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service
 
     def json_error(error: Exception) -> JSONResponse:

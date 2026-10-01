@@ -32,6 +32,33 @@ npm run build
 python main.py
 ```
 
+## Install from a release
+
+Releases are built by GitHub Actions when a `v*` tag is pushed (`.github/workflows/release.yml`); Windows is not supported.
+
+**macOS (Apple Silicon)**
+
+1. Download `personal-note-macos-arm64.zip` from the Releases page and unzip it.
+2. Move **Personal Note** to Applications.
+3. The app is not notarized (only ad-hoc signed), so macOS blocks the first launch.
+   - macOS 14 and earlier: right-click the app, choose **Open**, then **Open** again.
+   - macOS 15 and later: right-click › Open no longer works for such apps. Double-click the app once, then open **System Settings › Privacy & Security**, scroll to the message about "Personal Note" and click **Open Anyway**.
+   - Or remove the quarantine flag in Terminal: `xattr -dr com.apple.quarantine "/Applications/Personal Note.app"`.
+
+Your notes are kept in `~/Library/Application Support/Personal Note`. Not yet verified on a Mac.
+
+**Linux (x86_64)**
+
+1. Install Chromium or Google Chrome (the app opens in a Chromium app window; without one it shows an error and exits).
+2. Download `personal-note-linux-x86_64.tar.gz`, then `tar -xzf personal-note-linux-x86_64.tar.gz && cd personal-note-linux-x86_64`.
+3. Run `./install.sh`. It copies the app to `~/.local/opt/personal-note` and adds "Personal Note" to your application menu (`personal-note-app.desktop`, separate from the checkout launcher `personal-note.desktop`). `./uninstall.sh` removes both; each only touches a folder it installed itself.
+
+The bundle is built on Ubuntu 22.04, so it needs glibc 2.35 or newer: Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch and similar. It needs no repo, npm or Python.
+
+Your notes are kept in `${XDG_DATA_HOME:-~/.local/share}/personal-note`; install and uninstall never touch them. A packaged app never reads a checkout's `data/` folder, so to bring existing notes from a source checkout into the app, run `bin/personal-note migrate-data` in that checkout first. The `bin/personal-note` command-line tool for local agents stays a checkout tool for now (it is not in either package); point it at the same notes with `--database` if you use both.
+
+Build the packages yourself with `npm run desktop:mac-app` (on a Mac) or `npm run desktop:linux-bundle` (on Linux); the output goes to `dist-app/`. `python desktop.py --serve [--port N]` runs the server with no window.
+
 ## Desktop app
 
 Personal Note runs in its own app window around the same local server, no browser tab: a Chromium app window on Linux when Chromium or Chrome is installed (it feels fastest there), a pywebview window otherwise and on macOS and Windows.
@@ -49,7 +76,7 @@ npm run desktop                         # or: .venv/bin/python desktop.py
 - `python desktop.py --timing` prints cold-start timings; `--no-build` skips the stale-build check. Measured on Linux (Wayland, WebKitGTK, hidden window, build in place, three runs): server ready 0.15s; canvas drawn and notes listed 0.90-1.03s after process start.
 - Linux needs a system web view: `webkit2gtk-4.1` and `python-gobject` (Arch/Omarchy: `sudo pacman -S webkit2gtk-4.1 python-gobject`; Debian/Ubuntu: `gir1.2-webkit2-4.1 python3-gi`). The virtualenv must see them: create it with `python -m venv --system-site-packages .venv`. `npm run desktop` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which Wayland sessions need.
 - Launcher entry on Linux: `sh scripts/install-linux-launcher.sh` adds "Personal Note" to the application menu (re-run it after updating so the window class matches).
-- macOS app: on a Mac, `npm run desktop:mac-app` builds `dist-app/Personal Note.app` with PyInstaller (microphone usage text included). Not yet verified on a Mac.
+- macOS app: on a Mac, `npm run desktop:mac-app` builds `dist-app/Personal Note.app` and a zip of it with PyInstaller (microphone usage text included). Not yet verified on a Mac.
 - Microphone: Linux grants the window microphone access automatically; macOS asks once. If access is refused the app shows its usual "voice unavailable" message. In the Chromium window the browser asks once per origin; the fixed port keeps the origin stable, so it is not asked again on each launch.
 
 ### Where the notebook lives
