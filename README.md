@@ -40,17 +40,22 @@ Releases are built by GitHub Actions when a `v*` tag is pushed (`.github/workflo
 
 1. Download `personal-note-macos-arm64.zip` from the Releases page and unzip it.
 2. Move **Personal Note** to Applications.
-3. The first time, right-click it and choose **Open**, then **Open** again. The app is not notarized (only ad-hoc signed), so a plain double-click is refused once.
+3. The app is not notarized (only ad-hoc signed), so macOS blocks the first launch.
+   - macOS 14 and earlier: right-click the app, choose **Open**, then **Open** again.
+   - macOS 15 and later: right-click › Open no longer works for such apps. Double-click the app once, then open **System Settings › Privacy & Security**, scroll to the message about "Personal Note" and click **Open Anyway**.
+   - Or remove the quarantine flag in Terminal: `xattr -dr com.apple.quarantine "/Applications/Personal Note.app"`.
 
 Your notes are kept in `~/Library/Application Support/Personal Note`. Not yet verified on a Mac.
 
 **Linux (x86_64)**
 
-1. Install Chromium or Google Chrome (the app opens in a Chromium app window).
+1. Install Chromium or Google Chrome (the app opens in a Chromium app window; without one it shows an error and exits).
 2. Download `personal-note-linux-x86_64.tar.gz`, then `tar -xzf personal-note-linux-x86_64.tar.gz && cd personal-note-linux-x86_64`.
-3. Run `./install.sh`. It copies the app to `~/.local/opt/personal-note` and adds "Personal Note" to your application menu. `./uninstall.sh` removes both.
+3. Run `./install.sh`. It copies the app to `~/.local/opt/personal-note` and adds "Personal Note" to your application menu (`personal-note-app.desktop`, separate from the checkout launcher `personal-note.desktop`). `./uninstall.sh` removes both; each only touches a folder it installed itself.
 
-Your notes are kept in `${XDG_DATA_HOME:-~/.local/share}/personal-note`; install and uninstall never touch them. The bundle needs no repo, npm or Python. A packaged app never reads a checkout's `data/` folder. The `bin/personal-note` command-line tool for local agents stays a checkout tool for now (it is not in either package); point it at the same notes with `--database` if you use both.
+The bundle is built on Ubuntu 22.04, so it needs glibc 2.35 or newer: Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch and similar. It needs no repo, npm or Python.
+
+Your notes are kept in `${XDG_DATA_HOME:-~/.local/share}/personal-note`; install and uninstall never touch them. A packaged app never reads a checkout's `data/` folder, so to bring existing notes from a source checkout into the app, run `bin/personal-note migrate-data` in that checkout first. The `bin/personal-note` command-line tool for local agents stays a checkout tool for now (it is not in either package); point it at the same notes with `--database` if you use both.
 
 Build the packages yourself with `npm run desktop:mac-app` (on a Mac) or `npm run desktop:linux-bundle` (on Linux); the output goes to `dist-app/`. `python desktop.py --serve [--port N]` runs the server with no window.
 

@@ -10,6 +10,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable
@@ -21,6 +22,23 @@ GRACE_SECONDS = 1.5  # upper bound on waiting for requests still in flight
 
 
 REAL_CHROMIUM = "/usr/lib/chromium/chromium"  # the wrapper at /usr/bin/chromium also reads ~/.config/chromium-flags.conf
+
+
+def child_env(env: dict | None = None, frozen: bool | None = None) -> dict:
+    """Environment for programs this app starts (Chromium, hyprctl).
+
+    A PyInstaller app points LD_LIBRARY_PATH at its own bundled libraries and keeps the user's value in
+    LD_LIBRARY_PATH_ORIG; handing the bundle's value on makes system programs load the wrong libraries.
+    """
+    env = dict(os.environ if env is None else env)
+    if not (bool(getattr(sys, "frozen", False)) if frozen is None else frozen):
+        return env
+    original = env.pop("LD_LIBRARY_PATH_ORIG", "")
+    if original:
+        env["LD_LIBRARY_PATH"] = original
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
 
 
 def find_chromium(
@@ -137,7 +155,7 @@ def focus_window(
     if not hyprctl or pid is None:
         return False
     try:
-        result = run([hyprctl, "dispatch", "focuswindow", f"pid:{pid}"], capture_output=True, timeout=3)
+        result = run([hyprctl, "dispatch", "focuswindow", f"pid:{pid}"], capture_output=True, timeout=3, env=child_env())
     except (OSError, subprocess.SubprocessError):
         return False
     out = result.stdout or b""
@@ -165,7 +183,7 @@ def run_chromium_window(
     profile_dir.mkdir(parents=True, exist_ok=True)
     command = chromium_command(binary, url, profile_dir)
     server.on_focus = lambda: focus_window(owner(profile_dir), run=run, which=which)
-    process = popen(command)
+    process = popen(command, env=child_env())
     try:
         code = process.wait()
         release_wait(profile_dir, getattr(process, "pid", None))

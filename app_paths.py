@@ -74,7 +74,7 @@ def default_database_path(
     appdata_db = app_data_dir(platform, env, home) / DATABASE_FILENAME
     if bool(getattr(sys, "frozen", False)) if frozen is None else frozen:
         return appdata_db  # a packaged app has no checkout, so there is no legacy database to keep
-    legacy =LEGACY_DATABASE if legacy_path is None else legacy_path
+    legacy = LEGACY_DATABASE if legacy_path is None else legacy_path
     if legacy.exists() and not (marker_path(legacy).exists() and appdata_db.exists()):
         return legacy
     return appdata_db

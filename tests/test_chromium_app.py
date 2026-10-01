@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from chromium_app import (
+    child_env,
     chromium_command,
     find_chromium,
     focus_window,
@@ -115,7 +116,7 @@ class RunWindowTests(unittest.TestCase):
                 events.append("exited")
                 return 0
 
-        def popen(command):
+        def popen(command, **kwargs):
             events.append(("launch", command))
             return Process()
 
@@ -142,7 +143,7 @@ class RunWindowTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 run_chromium_window(
                     "http://127.0.0.1:5000", "/usr/bin/chromium", Path(tmp) / "p", FakeServer(),
-                    popen=lambda c: Process(), idle_wait=lambda s: events.append("idle-wait"),
+                    popen=lambda c, **k: Process(), idle_wait=lambda s: events.append("idle-wait"),
                 )
         self.assertEqual(events, ["idle-wait"])
 
@@ -249,7 +250,7 @@ class HandoffTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             run_chromium_window(
                 "http://127.0.0.1:5000", "/usr/bin/chromium", Path(tmp) / "p", FakeServer(),
-                popen=lambda c: Process(), idle_wait=lambda s: events.append("idle-wait"),
+                popen=lambda c, **k: Process(), idle_wait=lambda s: events.append("idle-wait"),
                 owner=owner, release_wait=lambda profile, pid: wait_for_profile_release(profile, pid, sleep=lambda s: None, owner=owner),
             )
         self.assertEqual(events, ["child-exited", "owner=777", "owner=None", "idle-wait"])
@@ -264,7 +265,7 @@ class HandoffTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             code = run_chromium_window(
                 "http://x", "/b", Path(tmp) / "p", FakeServer(),
-                popen=lambda c: Process(), idle_wait=lambda s: None, release_wait=lambda p, pid: None,
+                popen=lambda c, **k: Process(), idle_wait=lambda s: None, release_wait=lambda p, pid: None,
             )
         self.assertEqual(code, 3)
 
@@ -389,3 +390,54 @@ class SingleInstanceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChildEnvTests(unittest.TestCase):
+    def test_restores_the_library_path_pyinstaller_replaced(self):
+        env = child_env({"LD_LIBRARY_PATH": "/opt/pn/_internal", "LD_LIBRARY_PATH_ORIG": "/usr/local/lib", "HOME": "/h"}, frozen=True)
+        self.assertEqual(env["LD_LIBRARY_PATH"], "/usr/local/lib")
+        self.assertEqual(env["HOME"], "/h")
+
+    def test_removes_the_library_path_when_there_was_none(self):
+        # PyInstaller sets LD_LIBRARY_PATH_ORIG to "" when the variable was unset... or leaves it absent
+        self.assertNotIn("LD_LIBRARY_PATH", child_env({"LD_LIBRARY_PATH": "/opt/pn/_internal", "LD_LIBRARY_PATH_ORIG": ""}, frozen=True))
+        self.assertNotIn("LD_LIBRARY_PATH", child_env({"LD_LIBRARY_PATH": "/opt/pn/_internal"}, frozen=True))
+
+    def test_an_unfrozen_run_is_left_alone(self):
+        env = {"LD_LIBRARY_PATH": "/mine"}
+        self.assertEqual(child_env(env, frozen=False), env)
+
+    def test_the_input_is_not_modified(self):
+        env = {"LD_LIBRARY_PATH": "/x", "LD_LIBRARY_PATH_ORIG": "/y"}
+        child_env(env, frozen=True)
+        self.assertEqual(env["LD_LIBRARY_PATH"], "/x")
+
+
+class ChildProcessEnvTests(unittest.TestCase):
+    def test_chromium_and_hyprctl_get_the_restored_environment(self):
+        seen = {}
+
+        class Process:
+            pid = 1
+
+            def wait(self):
+                return 0
+
+        def popen(command, **kwargs):
+            seen["popen"] = kwargs.get("env")
+            return Process()
+
+        def run(cmd, **kwargs):
+            seen["run"] = kwargs.get("env")
+            return SimpleNamespace(returncode=0, stdout=b"ok")
+
+        with mock.patch.dict("os.environ", {"LD_LIBRARY_PATH": "/bundle", "LD_LIBRARY_PATH_ORIG": "/orig"}), \
+                mock.patch.object(chromium_app.sys, "frozen", True, create=True), \
+                tempfile.TemporaryDirectory() as tmp:
+            run_chromium_window(
+                "http://x", "/usr/bin/chromium", Path(tmp) / "p", FakeServer(), popen=popen, run=run,
+                idle_wait=lambda s: None, release_wait=lambda p, pid: None,
+            )
+            focus_window(5, run=run, which=which_from("hyprctl"))
+        self.assertEqual(seen["popen"]["LD_LIBRARY_PATH"], "/orig")
+        self.assertEqual(seen["run"]["LD_LIBRARY_PATH"], "/orig")

@@ -2,7 +2,7 @@
 Type=Application
 Name=Personal Note
 Comment=Local spatial notebook
-Exec=@PREFIX@/personal-note
+Exec="@PREFIX@/personal-note"
 Icon=@PREFIX@/personal-note.svg
 Terminal=false
 Categories=Office;Utility;

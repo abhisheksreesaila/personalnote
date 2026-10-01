@@ -26,7 +26,7 @@ from urllib.request import Request, urlopen
 PROCESS_START = time.perf_counter()
 
 from app_paths import app_data_dir, default_database_path, instance_file, resource_root  # noqa: E402
-from chromium_app import find_chromium, focus_window, profile_owner_pid, run_chromium_window  # noqa: E402
+from chromium_app import child_env, find_chromium, focus_window, profile_owner_pid, run_chromium_window  # noqa: E402
 
 HOST = "127.0.0.1"
 # A fixed preferred port keeps the page's origin stable, so localStorage (skin, speed meter, preferences)
@@ -360,6 +360,35 @@ def choose_engine(requested: str, platform: str = sys.platform, which: Callable 
     return "webview", None
 
 
+MISSING_CHROMIUM = (
+    "Personal Note opens in Chromium or Google Chrome, and neither was found. "
+    "Install one (for example: sudo apt install chromium) and start Personal Note again."
+)
+
+
+def report_startup_error(message: str, which: Callable = shutil.which, run: Callable = subprocess.run) -> str | None:
+    """Show a start-up problem where a user launching from the menu will see it, and on stderr.
+
+    Tries a notification, then a dialog. Returns the tool used, or None when only stderr was possible.
+    """
+    print(message, file=sys.stderr)
+    tools = (
+        ("notify-send", ["-u", "critical", "Personal Note", message]),
+        ("zenity", ["--error", "--title=Personal Note", f"--text={message}"]),
+        ("kdialog", ["--error", message, "--title", "Personal Note"]),
+    )
+    for name, args in tools:
+        binary = which(name)
+        if not binary:
+            continue
+        try:
+            run([binary, *args], timeout=30, env=child_env())
+            return name
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return None
+
+
 def check_profile_free(profile: Path) -> None:
     """Refuse to start when a Chromium already holds the app profile but no server answered.
 
@@ -410,6 +439,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Personal Note is already open ({running}); brought it forward.")
             return 0
         engine, chromium = ("serve", None) if args.serve else choose_engine(args.engine)
+        if getattr(sys, "frozen", False) and sys.platform.startswith("linux") and engine == "webview":
+            report_startup_error(MISSING_CHROMIUM)  # the Linux bundle has no pywebview to fall back to
+            return 1
         if engine == "chromium":
             check_profile_free(app_data_dir() / "chromium-profile")
         if not args.no_build and not getattr(sys, "frozen", False):
@@ -449,10 +481,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except ImportError as error:
         if getattr(sys, "frozen", False):
-            print(
-                f"Personal Note needs Chromium or Google Chrome installed to open its window ({error}).",
-                file=sys.stderr,
-            )
+            print(f"Personal Note could not open its window ({error}).", file=sys.stderr)
         else:
             print(
                 f"The desktop window needs pywebview and a system web view ({error}).\n"

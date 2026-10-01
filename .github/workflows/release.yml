@@ -24,7 +24,7 @@ jobs:
             requirements: requirements-build.txt
             artifact: dist-app/personal-note-macos-*.zip
           - name: Linux
-            os: ubuntu-latest
+            os: ubuntu-22.04 # an older glibc (2.35) than ubuntu-latest, so the bundle runs on more distros
             script: scripts/build-linux-bundle.sh
             requirements: requirements.txt
             artifact: dist-app/personal-note-linux-*.tar.gz

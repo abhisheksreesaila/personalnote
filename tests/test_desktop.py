@@ -9,6 +9,8 @@ from urllib.request import Request, urlopen
 
 from desktop import (
     LocalServer,
+    MISSING_CHROMIUM,
+    report_startup_error,
     EMPTY_NOTICE,
     clear_instance,
     empty_notebook_notice,
@@ -191,6 +193,67 @@ class FrontendBuildTests(TempDirCase):
         self.set_mtime(root / "dist" / "index.html", now - 100)
         self.set_mtime(root / "src" / "main.js", now)
         self.assertTrue(frontend_is_stale(root))
+
+
+class StartupErrorTests(unittest.TestCase):
+    def which(self, *present):
+        return lambda name: f"/usr/bin/{name}" if name in present else None
+
+    def test_uses_a_desktop_notification_when_available(self):
+        calls = []
+        used = report_startup_error("boom", which=self.which("notify-send", "zenity"), run=lambda c, **k: calls.append(c))
+        self.assertEqual(used, "notify-send")
+        self.assertEqual(calls[0][0], "/usr/bin/notify-send")
+        self.assertIn("boom", calls[0])
+
+    def test_falls_back_to_a_dialog(self):
+        calls = []
+        self.assertEqual(report_startup_error("boom", which=self.which("zenity"), run=lambda c, **k: calls.append(c)), "zenity")
+        calls.clear()
+        self.assertEqual(report_startup_error("boom", which=self.which("kdialog"), run=lambda c, **k: calls.append(c)), "kdialog")
+
+    def test_without_any_tool_it_only_writes_to_stderr(self):
+        import io
+        from contextlib import redirect_stderr
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertIsNone(report_startup_error("boom", which=self.which(), run=lambda c, **k: self.fail("no tool")))
+        self.assertIn("boom", err.getvalue())
+
+    def test_a_failing_tool_never_raises(self):
+        def broken(c, **k):
+            raise OSError("no display")
+
+        self.assertIsNone(report_startup_error("boom", which=self.which("notify-send"), run=broken))
+
+
+class MissingChromiumTests(TempDirCase):
+    def run_main(self, frozen, platform):
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+
+        import desktop
+
+        shown = []
+        err = io.StringIO()
+        with mock.patch.dict("os.environ", {"PERSONAL_NOTE_DB": str(self.root / "n.db")}), \
+                mock.patch.object(desktop.sys, "frozen", frozen, create=True), \
+                mock.patch.object(desktop.sys, "platform", platform), \
+                mock.patch.object(desktop, "focus_running_instance", return_value=None), \
+                mock.patch.object(desktop, "choose_engine", return_value=("webview", None)), \
+                mock.patch.object(desktop, "report_startup_error", side_effect=shown.append), \
+                mock.patch.object(desktop, "LocalServer") as server, \
+                redirect_stderr(err):
+            code = desktop.main(["--no-build"])
+        return code, shown, server
+
+    def test_the_packaged_linux_app_stops_before_starting_a_server_and_says_why(self):
+        code, shown, server = self.run_main(True, "linux")
+        self.assertEqual(code, 1)
+        self.assertEqual(shown, [MISSING_CHROMIUM])
+        server.assert_not_called()
 
 
 class SessionKeyLocationTests(TempDirCase):
