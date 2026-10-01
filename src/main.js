@@ -32,6 +32,7 @@ import {
   connectorsLeftDangling,
 } from './modules/editor/connectors.js'
 import { readPreferences, writePreferences } from './preferences.js'
+import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, settleSaves } from './modules/editor/save-flush.js'
@@ -285,6 +286,10 @@ document.querySelector('#app').innerHTML = `
         </label>
       </section>
       <section class="settings-section">
+        <p class="settings-section-label">Performance</p>
+        <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
+      </section>
+      <section class="settings-section">
         <p class="settings-section-label">Built-in modules</p>
         <div class="setting-row"><span><i data-lucide="git-fork"></i>Mind maps</span><small id="settings-mindmap">On demand</small></div>
         <div class="setting-row"><span><i data-lucide="mic"></i>Voice capture</span><small id="settings-voice">Transcript only</small></div>
@@ -451,6 +456,7 @@ const elements = {
   fontSize: document.querySelector('#font-size-control'),
   fontSizeValue: document.querySelector('#font-size-value'),
   settingsFontSize: document.querySelector('#settings-font-size'),
+  settingsSpeedMeter: document.querySelector('#settings-speed-meter'),
   settingsFontSizeValue: document.querySelector('#settings-font-size-value'),
   voiceButton: document.querySelector('#voice-button'),
   voiceCaption: document.querySelector('#voice-caption'),
@@ -492,6 +498,7 @@ const state = {
   highlightWidth: 20,
   fontFamily: DEFAULT_FONT_CHOICE,
   fontSize: 24,
+  speedMeter: false,
   displayScale: 1,
   canvasZoom: 1,
   recognition: null,
@@ -554,10 +561,11 @@ function loadPreferences() {
   const preferences = readPreferences()
   if (preferences.fontFamily) state.fontFamily = preferences.fontFamily
   if (preferences.fontSize) state.fontSize = preferences.fontSize
+  if (preferences.speedMeter) state.speedMeter = true
 }
 
 function savePreferences() {
-  writePreferences(undefined, { fontFamily: state.fontFamily, fontSize: state.fontSize })
+  writePreferences(undefined, { fontFamily: state.fontFamily, fontSize: state.fontSize, speedMeter: state.speedMeter })
 }
 
 loadPreferences()
@@ -3626,6 +3634,51 @@ document.querySelectorAll('[data-default-font-family]').forEach((button) => {
     syncTypographyControls()
   })
 })
+// Speed meter: a corner pill, created on first use. The frame loop only runs while it is visible.
+let speedMeterPill = null
+const speedMeter = createSpeedMeter({
+  onUpdate({ fps, slowestMs }) {
+    if (speedMeterPill) speedMeterPill.querySelector('[data-speed-frames]').textContent = `${Math.round(fps)} fps · slowest ${Math.round(slowestMs)} ms`
+  },
+})
+
+const hostFlag = new URLSearchParams(location.search).get('host')
+
+function renderSpeedMeterWhere() {
+  if (!speedMeterPill) return
+  const standalone = typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches
+  const engine = detectEngine({ userAgentData: navigator.userAgentData, userAgent: navigator.userAgent })
+  const host = detectHost({ pywebview: window.pywebview, hostFlag, standalone, menubarVisible: window.menubar?.visible })
+  speedMeterPill.querySelector('[data-speed-where]').textContent = `${engine} · ${host}`
+}
+window.addEventListener('pywebviewready', renderSpeedMeterWhere)
+
+function setSpeedMeter(visible) {
+  state.speedMeter = visible
+  elements.settingsSpeedMeter.checked = visible
+  if (visible) {
+    if (!speedMeterPill) {
+      speedMeterPill = document.createElement('div')
+      speedMeterPill.className = 'speed-meter'
+      speedMeterPill.setAttribute('role', 'status')
+      speedMeterPill.innerHTML = '<span data-speed-frames>measuring…</span><small data-speed-where></small>'
+      document.body.append(speedMeterPill)
+    }
+    renderSpeedMeterWhere()
+    speedMeterPill.hidden = false
+    speedMeter.start()
+  } else {
+    speedMeter.stop()
+    if (speedMeterPill) speedMeterPill.hidden = true
+  }
+}
+
+elements.settingsSpeedMeter.addEventListener('change', () => {
+  setSpeedMeter(elements.settingsSpeedMeter.checked)
+  savePreferences()
+})
+if (state.speedMeter) setSpeedMeter(true)
+
 elements.settingsFontSize.addEventListener('input', () => {
   state.fontSize = Number(elements.settingsFontSize.value)
   savePreferences()
@@ -3799,6 +3852,10 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault()
     setNoteCreateMenuOpen(false)
     createNote()
+  } else if (isSpeedMeterShortcut(event, { blocked: shortcutBlocked })) {
+    event.preventDefault()
+    setSpeedMeter(!state.speedMeter)
+    savePreferences()
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
     event.preventDefault()
     if (state.activeNoteType === 'canvas') openPrintPreview()

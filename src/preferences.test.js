@@ -17,6 +17,15 @@ test('reads saved preferences and ignores unknown fonts', () => {
   assert.deepEqual(readPreferences(memoryStorage({ [PREFERENCES_KEY]: JSON.stringify({ fontFamily: 'Comic' }) })), {})
 })
 
+test('speed meter choice is remembered and defaults to off', () => {
+  const storage = memoryStorage()
+  assert.equal(readPreferences(storage).speedMeter, undefined)
+  writePreferences(storage, { fontFamily: 'monospace', fontSize: 24, speedMeter: true })
+  assert.equal(readPreferences(storage).speedMeter, true)
+  writePreferences(storage, { speedMeter: 'yes' })
+  assert.equal(readPreferences(storage).speedMeter, undefined)
+})
+
 test('corrupt preferences are dropped without throwing', () => {
   const storage = memoryStorage({ [PREFERENCES_KEY]: '{nope' })
   assert.deepEqual(readPreferences(storage), {})

@@ -17,6 +17,7 @@ from desktop import (
     frontend_is_stale,
     instance_file,
     record_instance,
+    window_url,
 )
 from routes import create_app
 
@@ -190,6 +191,11 @@ class FrontendBuildTests(TempDirCase):
         self.set_mtime(root / "dist" / "index.html", now - 100)
         self.set_mtime(root / "src" / "main.js", now)
         self.assertTrue(frontend_is_stale(root))
+
+
+class WindowUrlTests(unittest.TestCase):
+    def test_desktop_window_tells_the_page_it_is_the_desktop_app(self):
+        self.assertEqual(window_url("http://127.0.0.1:5000"), "http://127.0.0.1:5000/notes?host=desktop")
 
 
 if __name__ == "__main__":
