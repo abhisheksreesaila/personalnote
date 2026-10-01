@@ -34,7 +34,7 @@ python main.py
 
 ## Desktop app
 
-Personal Note runs in its own native window (pywebview around the same local server, no browser tab).
+Personal Note runs in its own app window around the same local server, no browser tab: a Chromium app window on Linux when Chromium or Chrome is installed (it feels fastest there), a pywebview window otherwise and on macOS and Windows.
 
 ```bash
 npm install && npm run build            # once; the app rebuilds a stale frontend itself
@@ -44,9 +44,10 @@ npm run desktop                         # or: .venv/bin/python desktop.py
 ```
 
 - It serves the built frontend on a free loopback port, opens a window titled "Personal Note", and stops the server when the window closes (pending edits are saved first, waiting up to 3 seconds). Opening it a second time brings the existing window forward instead of starting another server.
+- Engine: `--engine auto` (default) uses Chromium on Linux when `chromium`, `chromium-browser`, `google-chrome-stable` or `google-chrome` is on the PATH, else pywebview; `--engine chromium` or `--engine webview` forces one. The Chromium window uses its own profile in the app-data folder (`chromium-profile`), so it is a separate process from your everyday browser, with window class `PersonalNote`. When you close it, the server stays up for a moment (at most 1.5 seconds) so the closing save lands, then stops. A second launch brings the open window forward (`hyprctl` on Hyprland, otherwise Chromium's own handoff) and never starts a second server. The speed meter reads "Desktop app" in this window.
 - `python desktop.py --timing` prints cold-start timings; `--no-build` skips the stale-build check. Measured on Linux (Wayland, WebKitGTK, hidden window, build in place, three runs): server ready 0.15s; canvas drawn and notes listed 0.90-1.03s after process start.
 - Linux needs a system web view: `webkit2gtk-4.1` and `python-gobject` (Arch/Omarchy: `sudo pacman -S webkit2gtk-4.1 python-gobject`; Debian/Ubuntu: `gir1.2-webkit2-4.1 python3-gi`). The virtualenv must see them: create it with `python -m venv --system-site-packages .venv`. `npm run desktop` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which Wayland sessions need.
-- Launcher entry on Linux: `sh scripts/install-linux-launcher.sh` adds "Personal Note" to the application menu.
+- Launcher entry on Linux: `sh scripts/install-linux-launcher.sh` adds "Personal Note" to the application menu (re-run it after updating so the window class matches).
 - macOS app: on a Mac, `npm run desktop:mac-app` builds `dist-app/Personal Note.app` with PyInstaller (microphone usage text included). Not yet verified on a Mac.
 - Microphone: Linux grants the window microphone access automatically; macOS asks once. If access is refused the app shows its usual "voice unavailable" message.
 

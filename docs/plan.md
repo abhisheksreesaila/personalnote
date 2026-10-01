@@ -114,8 +114,8 @@ Captain, after first use of the desktop app: page grow/shrink "feels sluggish…
 ## F-014 Fastest engine for the Linux app [doing]
 Captain: "the chromium window feels fast, use that for the launcher."
 Needs: F-013
-- [ ] the same canvas benchmark is measured in the current desktop window (WebKitGTK) and in a Chromium app window on this machine, with GPU
-- [ ] the Linux launcher uses whichever is faster, keeping one-window, single-instance and save-on-close behavior
+- [ ] the same canvas benchmark is measured in the current desktop window (WebKitGTK) and in a Chromium app window on this machine, with GPU (superseded: captain chose Chromium by feel)
+- [ ] the Linux launcher uses Chromium when installed, keeping one-window, single-instance and save-on-close behavior
 
 ## F-015 Speed meter and engine badge [done]
 Captain: "I don't know whether it's a Chromium window or NPM window… put some sort of a speedometer."

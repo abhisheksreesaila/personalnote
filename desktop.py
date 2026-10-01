@@ -1,8 +1,8 @@
 """Personal Note desktop app: the local server inside a native window.
 
 Runs the same FastHTML app as `main.py`, in-process on a free loopback port, and
-shows it in a pywebview window. Closing the window flushes pending edits and stops
-the server. Start it with `npm run desktop` or `python desktop.py`.
+shows it in a Chromium app window (Linux, when installed) or a pywebview window.
+Closing the window flushes pending edits and stops the server. Start it with `npm run desktop` or `python desktop.py`.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 PROCESS_START = time.perf_counter()
 
 from app_paths import app_data_dir, default_database_path, instance_file  # noqa: E402
+from chromium_app import find_chromium, run_chromium_window  # noqa: E402
 
 HOST = "127.0.0.1"
 WINDOW_TITLE = "Personal Note"
@@ -327,12 +328,37 @@ def report_timing(window) -> None:
     print("[timing] canvas did not appear within 30s", flush=True)
 
 
+# ---- engine ---------------------------------------------------------------------------------
+
+
+def choose_engine(requested: str, platform: str = sys.platform, which: Callable = shutil.which) -> tuple[str, str | None]:
+    """Pick the window engine: ("chromium", binary) or ("webview", None).
+
+    `auto` uses a Chromium app window on Linux when a Chromium/Chrome binary exists, and the
+    pywebview window everywhere else (macOS and Windows keep it for now).
+    """
+    if requested == "webview":
+        return "webview", None
+    binary = find_chromium(which)
+    if requested == "chromium":
+        if binary is None:
+            raise DesktopError("No Chromium or Chrome found (tried chromium, chromium-browser, google-chrome-stable, google-chrome).")
+        return "chromium", binary
+    if platform.startswith("linux") and binary:
+        return "chromium", binary
+    return "webview", None
+
+
 # ---- entry point ----------------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="personal-note-desktop", description="Open Personal Note in its own window.")
     parser.add_argument("--no-build", action="store_true", help="Do not rebuild the frontend even if it looks stale")
+    parser.add_argument(
+        "--engine", choices=("auto", "chromium", "webview"), default="auto",
+        help="Window engine: a Chromium app window (default on Linux when installed) or the pywebview window",
+    )
     parser.add_argument("--timing", action="store_true", help="Print cold-start timings")
     args = parser.parse_args(argv)
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "WARNING"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -343,6 +369,7 @@ def main(argv: list[str] | None = None) -> int:
         if running:
             print(f"Personal Note is already open ({running}); brought it forward.")
             return 0
+        engine, chromium = choose_engine(args.engine)
         if not args.no_build and not getattr(sys, "frozen", False):
             ensure_frontend_built()
         from routes import create_app
@@ -356,7 +383,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
     record_instance(database, base_url, server.nonce)
     try:
-        run_window(base_url, database, server, args.timing)
+        if engine == "chromium":
+            run_chromium_window(base_url, chromium, app_data_dir() / "chromium-profile", server)
+        else:
+            run_window(base_url, database, server, args.timing)
     except ImportError as error:
         print(
             f"The desktop window needs pywebview and a system web view ({error}).\n"
