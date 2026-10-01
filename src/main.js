@@ -2050,8 +2050,9 @@ function queueSave() {
 }
 
 // Sends anything still waiting on the two debounces (history 180ms, save 650ms) right now.
-function flushPendingEdits() {
-  void commitPendingDelete({ keepalive: true })
+function flushPendingEdits(reason) {
+  // Hiding the window may come back (Undo must still work); only a real close sends the held delete.
+  if (reason !== 'hidden') void commitPendingDelete({ keepalive: true })
   if (state.loading || !state.activeNoteId) return
   flushPendingHistory({
     cancel: () => clearTimeout(historyTimer),
@@ -2127,9 +2128,11 @@ async function restoreHistory(index) {
 }
 
 // Lands the outgoing note's pending history and save, with its own confirmed revision, before another note loads.
+// Waits at most SWITCH_SAVE_LIMIT; returns false when the save did not land, and the edits stay marked unsaved.
+const SWITCH_SAVE_LIMIT = 3000
 async function settleOutgoingNote() {
-  if (state.loading || !state.activeNoteId) return
-  await settleSaves({
+  if (state.loading || !state.activeNoteId) return true
+  const settled = settleSaves({
     flushPending: () => {
       flushPendingHistory({
         cancel: () => clearTimeout(historyTimer),
@@ -2143,13 +2146,26 @@ async function settleOutgoingNote() {
     hasUnsaved: () => unsavedEdits,
     save: () => saveActiveNote(),
   })
+  let timer
+  const limit = new Promise((resolve) => { timer = setTimeout(() => resolve(false), SWITCH_SAVE_LIMIT) })
+  const landed = await Promise.race([settled, limit])
+  clearTimeout(timer)
+  if (!landed) {
+    unsavedEdits = true
+    setSaveState('Could not save', true)
+    queueSave()
+  }
+  return landed
 }
 
+let selectSequence = 0
 async function selectNote(id) {
   if (id === state.activeNoteId) return
   hideToast()
-  await settleOutgoingNote()
-  if (id === state.activeNoteId) return
+  const sequence = ++selectSequence
+  // Stay on the current note rather than drop its edits when they cannot be saved in time.
+  if (!(await settleOutgoingNote())) return
+  if (sequence !== selectSequence || id === state.activeNoteId) return
   clearTimeout(saveTimer)
   unsavedEdits = false
   state.activeNoteId = id
@@ -2160,6 +2176,8 @@ async function selectNote(id) {
   let normalizedNote = false
   try {
     const note = await api(`/notes/${id}`)
+    // A newer pick superseded this one while it loaded: its content must not land under another note's id.
+    if (sequence !== selectSequence) return
     const summary = state.notes.find((item) => item.id === id)
     if (summary) Object.assign(summary, {
       notebookId: note.notebookId,
@@ -2195,7 +2213,7 @@ async function selectNote(id) {
     console.error(error)
     setSaveState('Could not load', true)
   } finally {
-    state.loading = false
+    if (sequence === selectSequence) state.loading = false
     if (normalizedNote) queueSave()
   }
 }
@@ -2204,7 +2222,7 @@ async function refreshWorkspaceLists() {
   const [notebooks, notes] = await Promise.all([api('/notebooks'), api('/notes')])
   state.notebooks = notebooks
   const previous = new Map(state.notes.map((note) => [note.id, note]))
-  state.notes = notes.map((note) => {
+  state.notes = notes.filter((note) => note.id !== pendingDelete?.note.id).map((note) => {
     const known = previous.get(note.id)
     if (!known) return note
     // The open note keeps its own revision and title until sync or save settles them.
@@ -2880,7 +2898,8 @@ function setupVoiceInput() {
   })
 }
 
-function renderSearchResults(results, query = '') {
+function renderSearchResults(allResults, query = '') {
+  const results = allResults.filter((result) => result.id !== pendingDelete?.note.id)
   if (!results.length) {
     elements.searchResults.innerHTML = `
       <div class="search-empty"><i data-lucide="search-x"></i><strong>No notes found</strong><span>Try a title, phrase, or idea.</span></div>
@@ -2985,6 +3004,11 @@ async function commitPendingDelete({ keepalive = false } = {}) {
   const held = pendingDelete
   if (!held) return
   pendingDelete = null
+  // The toast offered Undo for this delete; never leave it up once the delete is sent.
+  if (!pendingClearUndo) {
+    clearTimeout(toastTimer)
+    elements.toast.hidden = true
+  }
   deleteInFlight = true
   try {
     await api(`/notes/${held.note.id}`, { method: 'DELETE', keepalive })
@@ -3002,7 +3026,7 @@ async function undoDelete() {
   pendingDelete = null
   hideToast()
   if (!held) return
-  state.notes.splice(Math.min(held.index, state.notes.length), 0, held.note)
+  if (!state.notes.some((note) => note.id === held.note.id)) state.notes.splice(Math.min(held.index, state.notes.length), 0, held.note)
   renderNoteList()
   await selectNote(held.note.id)
 }
@@ -3021,6 +3045,7 @@ async function undoClear() {
 
 async function clearActiveNote() {
   if (!state.activeNoteId) return
+  await commitPendingDelete()
   if (state.activeNoteType === 'mindmap') {
     const previous = mindmapEditor?.getDocument()
     await mountActiveMindMap(structuredClone(DEFAULT_MINDMAP_DOCUMENT))
@@ -3950,5 +3975,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget }
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()

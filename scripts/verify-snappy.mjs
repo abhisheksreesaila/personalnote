@@ -14,6 +14,7 @@ let revision = 1
 let saves = 0
 let deleteCalls = 0
 let deletedFirst = false
+let slowSecond = false
 const now = new Date().toISOString()
 const second = { id: 2, resourceId: 'res_second', revision: 1, noteType: 'canvas', title: 'Second', notebookId: 1, createdAt: now, updatedAt: now }
 const summary = () => ({ id: 1, resourceId: 'res_note', revision, noteType: 'canvas', title: 'Objects', notebookId: 1, createdAt: now, updatedAt: now })
@@ -27,7 +28,7 @@ const results = []
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`) }
 
 async function open(width = 1440, height = 900, skin = 'crayon') {
-  stored = { version: '7.4.0', objects: [] }; pageState = { columns: 1, rows: 1 }; deleteCalls = 0; deletedFirst = false
+  stored = { version: '7.4.0', objects: [] }; pageState = { columns: 1, rows: 1 }; deleteCalls = 0; deletedFirst = false; slowSecond = false
   const context = await browser.newContext({ viewport: { width, height } })
   const page = await context.newPage()
   page.on('pageerror', (error) => console.error('page error:', error.message))
@@ -40,7 +41,7 @@ async function open(width = 1440, height = 900, skin = 'crayon') {
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     if (route_ === '/notebooks') return json(notebooks)
     if (route_ === '/notes') return json(deletedFirst ? [second] : [summary(), second])
-    if (route_ === '/notes/2' && method === 'GET') return json({ ...second, content: { version: '7.4.0', objects: [] }, pageState: { columns: 1, rows: 1 } })
+    if (route_ === '/notes/2' && method === 'GET') { if (slowSecond) await new Promise((r) => setTimeout(r, 1500)); return json({ ...second, content: { version: '7.4.0', objects: [] }, pageState: { columns: 1, rows: 1 } }) }
     if (route_ === '/notes/1' && method === 'DELETE') { deleteCalls += 1; deletedFirst = true; return route.fulfill({ status: 204 }) }
     if (route_ === '/notes/1' && method === 'GET') return json({ ...summary(), content: stored, pageState })
     if (route_ === '/notes/1' && method === 'PUT') {
@@ -236,6 +237,42 @@ async function typeNote(page, x, y, text) {
   await page.waitForTimeout(1200)
   const back = await page.evaluate(() => window.__personalNote.canvas.getObjects().map((o) => o.text))
   check('switching back shows the edit', back.includes('quick edit'), JSON.stringify(back))
+  await context.close()
+}
+
+{
+  // held delete: hiding the window keeps it, a list refresh does not resurrect it, and a commit hides its toast
+  const { context, page } = await open()
+  const listed = () => page.evaluate(() => [...document.querySelectorAll('.note-list-item')].map((n) => n.textContent.trim().slice(0, 7)))
+  await page.click('#top-properties'); await page.waitForTimeout(450); await page.click('#delete-note'); await page.waitForTimeout(400)
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange'))
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await page.waitForTimeout(300)
+  check('hiding the window does not send the held delete or hide its toast', deleteCalls === 0 && await page.evaluate(() => !document.querySelector('#toast').hidden), `calls ${deleteCalls}`)
+  await page.evaluate(() => window.__personalNote.refreshWorkspaceLists())
+  await page.waitForTimeout(300)
+  check('a list refresh does not bring the held-deleted note back', !(await listed()).includes('Objects'), JSON.stringify(await listed()))
+  await page.click('#toast-action'); await page.waitForTimeout(800)
+  check('Undo after a refresh lists the note exactly once', (await listed()).filter((t) => t === 'Objects').length === 1, JSON.stringify(await listed()))
+  await page.click('#top-properties'); await page.waitForTimeout(450); await page.click('#delete-note'); await page.waitForTimeout(400)
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
+  await page.waitForTimeout(400)
+  check('once the delete is sent its toast is gone', deleteCalls === 1 && await page.evaluate(() => document.querySelector('#toast').hidden), `calls ${deleteCalls}`)
+  await context.close()
+}
+
+{
+  // a slow load for an earlier pick never lands under a later pick
+  const { context, page } = await open()
+  slowSecond = true
+  await page.evaluate(() => [...document.querySelectorAll('.note-list-item')].find((n) => n.textContent.includes('Second')).click())
+  await page.waitForTimeout(200)
+  await page.evaluate(() => [...document.querySelectorAll('.note-list-item')].find((n) => n.textContent.includes('Objects')).click())
+  await page.waitForTimeout(2500)
+  const shown = await page.evaluate(() => ({ title: document.querySelector('#note-title').value, active: document.querySelector('.note-list-item.active')?.textContent.trim().slice(0, 7) }))
+  check('the last note picked is the one shown', shown.title === 'Objects' && shown.active === 'Objects', JSON.stringify(shown))
   await context.close()
 }
 
