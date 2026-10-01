@@ -163,3 +163,22 @@ Today: local voice = NVIDIA NeMo-Speech.cpp + nemotron-3.5-asr-streaming-0.6b, w
 - [ ] the mic works inside the Mac app window (permission prompt appears) and the Linux Chromium window
 - [ ] when voice isn't ready, the mic says why and what to do; audio is never stored (invariant 4)
 Code reviewed and merged. Still to prove on real runs: CI builds both engines; hold-to-talk with the real engine on Linux and Mac; Mac mic prompt.
+
+## F-021 Organic mind-map branches [doing]
+Captain (screenshot of a child above the centre): the branch "twists itself… it has to be flatter… thicker at the beginning and tapers down… when you rotate it spatially entangles itself" — wants Tony Buzan / iMindMap / Ayoa style.
+- [ ] a branch leaves its parent heading toward the child and meets the child on the side facing the parent: one smooth bend, never an S, for children in any direction (above, below, behind)
+- [ ] the ribbon tapers steadily from parent to child, measured across the curve, with no pinch or crossing edges
+- [ ] dragging a node around its parent (including straight above or below) sweeps the branch smoothly with no flips; saved map JSON format unchanged
+More mind-map features to come from the captain's detailed list (Ayoa / iMindMap).
+
+## F-022 Native Mac window [doing]
+Captain: web apps "don't use… the bar with the three lights… How can we make it feel like a native app."
+- [ ] on macOS the app's content extends under a transparent title bar; the top bar (breadcrumb, title, search, settings) sits beside the traffic lights, and that strip drags the window
+- [ ] the Mac menu bar has File (New note, Quick note, Export…), Edit (Undo, Redo, Cut, Copy, Paste, Select All), View (Zoom in/out/fit, Skins, Speed meter), Window and Help, with standard ⌘ shortcuts that work in text and on the canvas
+- [ ] Linux and browser windows are unchanged
+
+## F-023 Media library [todo]
+Captain: "if they drag files onto this… what happens to the media… does it compress and store, or does it store as an object separately?"
+- [ ] dropped images and files are stored once as separate files in the app's data folder; notes hold small references
+- [ ] other files (PDF etc.) appear as cards that open on double-click
+- [ ] existing notes with embedded images migrate safely; backup/export include media; agent CLI read/append unaffected
