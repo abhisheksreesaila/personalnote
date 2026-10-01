@@ -20,8 +20,10 @@ import logging
 import os
 import platform
 import shutil
+import signal
 import socket
 import subprocess
+import sys
 import tarfile
 import threading
 import time
@@ -53,6 +55,7 @@ USER_AGENT = "personal-note-voice-installer"
 CHUNK = 1024 * 256
 LOG_LIMIT = 1024 * 1024
 SETTINGS_FILE = "settings.json"
+UNSUPPORTED_CPU = "This computer's processor isn't supported by the voice engine."
 
 # Environment overrides, for tests, mirrors and development; none of them is reachable from the page.
 ENV_ENGINE_URL = "PERSONAL_NOTE_VOICE_ENGINE_URL"  # folder holding the engine asset and its .sha256
@@ -135,8 +138,10 @@ class VoiceRuntime:
         self._port: int | None = None
         self._log = None
         self._stopping = False
+        self._ready = False
         self._restarts = 0
-        self._monitor: threading.Thread | None = None
+        self._engine_error = ""
+        self._start_lock = threading.Lock()
 
     # ---- paths ---------------------------------------------------------------------------
 
@@ -172,6 +177,16 @@ class VoiceRuntime:
         except (OSError, ValueError, AttributeError):
             return False
 
+    def _engine_note(self) -> str:
+        """Said when the downloaded engine is a different build than this app pins; it is kept and still used."""
+        try:
+            found = json.loads(self.marker_path.read_text(encoding="utf-8")).get("engine", {}).get("commit")
+        except (OSError, ValueError, AttributeError):
+            return ""
+        if found and found != ENGINE_COMMIT:
+            return f"The voice engine is build {found[:8]}, not the {ENGINE_COMMIT[:8]} this version expects. It is kept and used."
+        return ""
+
     def _partial_bytes(self) -> int:
         total = 0
         for part in (self._part(self._engine_target()), self._part(self.model_path)):
@@ -202,6 +217,9 @@ class VoiceRuntime:
                 "phase": "",
                 "error": "",
                 "partialBytes": 0,
+                "starting": self._process is not None and not self._ready,
+                "engineError": self._engine_error,
+                "note": self._engine_note(),
             }
             if self.key is None:
                 return base | {"state": "unsupported"}
@@ -237,11 +255,13 @@ class VoiceRuntime:
         if worker:
             worker.join(timeout)
 
-    def cancel_install(self) -> None:
+    def cancel_install(self) -> dict:
+        """Stop a running download but keep the partial files, so pressing Download again resumes."""
         self._cancel.set()
         worker = self._worker
         if worker:
             worker.join(10)
+        return self.status()
 
     def _fail(self, message: str) -> None:
         with self._lock:
@@ -254,7 +274,7 @@ class VoiceRuntime:
             self._set_phase("verifying")
             self.marker_path.parent.mkdir(parents=True, exist_ok=True)
             marker = {
-                "engineCommit": ENGINE_COMMIT,
+                "engine": {"commit": self._unpacked_engine_commit()},
                 "platform": self.key,
                 "model": {"file": MODEL_FILE, "bytes": self.model_bytes, "sha256": self.model_sha256},
             }
@@ -270,6 +290,13 @@ class VoiceRuntime:
         except Exception as error:  # a bug must still end as a visible error, never a stuck progress bar
             logger.exception("Voice install crashed")
             self._fail(f"Voice setup failed unexpectedly ({type(error).__name__}). Try again.")
+
+    def _unpacked_engine_commit(self) -> str | None:
+        try:
+            value = json.loads((self.engine_dir / "engine.json").read_text(encoding="utf-8")).get("commit")
+        except (OSError, ValueError, AttributeError):
+            return None
+        return value if isinstance(value, str) else None
 
     def _write_marker(self, marker: dict) -> None:
         temporary = self.marker_path.with_name(self.marker_path.name + ".tmp")
@@ -298,7 +325,7 @@ class VoiceRuntime:
             value = json.loads((self.root / SETTINGS_FILE).read_text(encoding="utf-8")).get("engineBaseUrl")
         except (OSError, ValueError, AttributeError):
             return None
-        return value if isinstance(value, str) and value.startswith(("http://", "https://")) else None
+        return value if isinstance(value, str) and value.startswith("https://") else None  # a file on disk must not pick plain http
 
     def _engine_candidates(self) -> list[str]:
         override = self.engine_url or os.environ.get(ENV_ENGINE_URL) or self._settings_engine_url()
@@ -336,6 +363,13 @@ class VoiceRuntime:
     def _download_model(self) -> None:
         url = os.environ.get(ENV_MODEL_URL) or self.model_url
         self.model_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.model_path.is_file():
+            # A finished model from an earlier install: use it if it checks out, else replace it.
+            self._set_phase("verifying")
+            if self.model_path.stat().st_size == self.model_bytes and _sha256(self.model_path) == self.model_sha256:
+                return
+            self.model_path.unlink()
+            self._set_phase("model")
         self._download(url, self.model_path, self.model_bytes)
         self._set_phase("verifying", done=self._progress.total, total=self._progress.total)
         size = self.model_path.stat().st_size
@@ -353,9 +387,7 @@ class VoiceRuntime:
                     destination = (staging / member.name).resolve()
                     if staging.resolve() not in destination.parents and destination != staging.resolve():
                         raise VoiceError("The voice engine archive is not safe to unpack.")
-                    if not (member.isfile() or member.isdir() or member.issym()):
-                        raise VoiceError("The voice engine archive is not safe to unpack.")
-                    if member.issym() and not _link_stays_inside(staging, destination, member.linkname):
+                    if not (member.isfile() or member.isdir()):  # no links of any kind
                         raise VoiceError("The voice engine archive is not safe to unpack.")
                 bundle.extractall(staging, filter="data") if hasattr(tarfile, "data_filter") else bundle.extractall(staging)
         except (tarfile.TarError, OSError) as error:
@@ -451,10 +483,16 @@ class VoiceRuntime:
         return self.status()
 
     # ---- engine process ------------------------------------------------------------------
+    #
+    # One supervisor thread per engine run starts the process and waits for it for as long as it lives. That thread
+    # is also what PR_SET_PDEATHSIG is tied to (Linux delivers the signal when the *thread* that started the child
+    # ends), so no short-lived request thread may start it. Locks: `_start_lock` serialises start attempts and is
+    # held while waiting for the port; `_lock` guards state only and is never held while waiting, so status() and
+    # stop_engine() stay responsive during startup.
 
     def _running(self) -> bool:
         process = self._process
-        return process is not None and process.poll() is None and self._port is not None
+        return process is not None and process.poll() is None and self._port is not None and self._ready
 
     def _choose_port(self) -> int:
         for candidate in (self.preferred_port, 0):
@@ -479,68 +517,156 @@ class VoiceRuntime:
             self.log_path.replace(self.log_path.with_name("engine.log.1"))
         return open(self.log_path, "ab")
 
-    def start_engine(self) -> dict:
-        """Start the engine (if installed and not running) and wait until it accepts connections."""
-        with self._lock:
-            if self._running():
-                return self.status()
-            if self.key is None or not self.installed():
-                raise VoiceError("Voice is not installed. Open Settings, then Voice, and download it.")
-            self._stopping = False
-            self._restarts = 0
-            self._spawn()
-        return self.status()
+    @property
+    def pid_path(self) -> Path:
+        return self.root / "engine.pid"
 
-    def _spawn(self) -> None:
-        port = self._choose_port()
-        if self._log is not None:
-            self._log.close()
-        self._log = self._open_log()
+    def _reap_stale_engine(self) -> None:
+        """Kill an engine an earlier run left behind (the pid file says which); never any other process."""
+        try:
+            record = json.loads(self.pid_path.read_text(encoding="utf-8"))
+            pid, binary = int(record["pid"]), str(record["binary"])
+        except (OSError, ValueError, KeyError, TypeError):
+            self.pid_path.unlink(missing_ok=True)
+            return
+        try:
+            command = subprocess.run(["ps", "-p", str(pid), "-o", "args="], capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            command = ""
+        if binary in command:  # the same pid could now belong to something else
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.kill(pid, sig)
+                except OSError:
+                    break
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline and _alive(pid):
+                    time.sleep(0.05)
+                if not _alive(pid):
+                    break
+        self.pid_path.unlink(missing_ok=True)
+
+    def _popen(self, port: int) -> subprocess.Popen:
+        with self._lock:
+            if self._log is not None:
+                self._log.close()
+            self._log = self._open_log()
+            log = self._log
         try:
             process = subprocess.Popen(
                 self._command(port), cwd=self.binary_path().parent, env=child_env(),
-                stdin=subprocess.DEVNULL, stdout=self._log, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                preexec_fn=_die_with_parent if sys.platform.startswith("linux") else None,
             )
         except OSError as error:
-            self._log.close()
             raise VoiceError("The voice engine could not be started. Remove voice and download it again.") from error
-        self._process, self._port = process, port
         try:
-            self._await_ready(process, port)
-        except VoiceError:
-            self._terminate(process)
-            self._process = self._port = None
-            raise
-        self._monitor = threading.Thread(target=self._watch, args=(process,), name="personal-note-voice-watch", daemon=True)
-        self._monitor.start()
+            self.pid_path.write_text(json.dumps({"pid": process.pid, "binary": str(self.binary_path())}), encoding="utf-8")
+        except OSError:
+            pass
+        return process
+
+    def start_engine(self) -> dict:
+        """Start the engine (if installed and not running) and wait until it accepts connections."""
+        with self._start_lock:
+            if not self._running():
+                if self.key is None or not self.installed():
+                    raise VoiceError("Voice is not installed. Open Settings, then Voice, and download it.")
+                self._reap_stale_engine()
+                with self._lock:
+                    self._stopping = False
+                    self._restarts = 0
+                    self._engine_error = ""
+                port = self._choose_port()
+                spawned = threading.Event()
+                outcome: dict = {}
+                supervisor = threading.Thread(
+                    target=self._supervise, args=(port, spawned, outcome), name="personal-note-voice-engine", daemon=True
+                )
+                supervisor.start()
+                spawned.wait()
+                if "error" in outcome:
+                    self._record_engine_error(outcome["error"])
+                    raise outcome["error"]
+                process = outcome["process"]
+                try:
+                    self._await_ready(process, port)
+                except VoiceError as error:
+                    with self._lock:
+                        if self._process is process:
+                            self._process = self._port = None
+                            self._ready = False
+                    self._terminate(process)
+                    self._record_engine_error(error)
+                    raise
+        return self.status()
+
+    def _record_engine_error(self, error: Exception) -> None:
+        with self._lock:
+            self._engine_error = str(error)
+
+    def _supervise(self, port: int, spawned: threading.Event, outcome: dict) -> None:
+        try:
+            process = self._popen(port)
+        except VoiceError as error:
+            outcome["error"] = error
+            spawned.set()
+            return
+        with self._lock:
+            self._process, self._port, self._ready = process, port, False
+        outcome["process"] = process
+        spawned.set()
+        while True:
+            process.wait()
+            with self._lock:
+                if self._stopping or self._process is not process:
+                    return
+                self._process = self._port = None
+                self._ready = False
+                if process.returncode == -signal.SIGILL:
+                    self._engine_error = UNSUPPORTED_CPU  # restarting cannot help
+                    return
+                if self._restarts >= 1:
+                    logger.warning("Voice engine stopped again; not restarting it.")
+                    return
+                self._restarts += 1
+            logger.warning("Voice engine stopped unexpectedly; restarting it once.")
+            try:
+                port = self._choose_port()
+                process = self._popen(port)
+            except VoiceError as error:
+                self._record_engine_error(error)
+                return
+            with self._lock:
+                self._process, self._port, self._ready = process, port, False
+            try:
+                self._await_ready(process, port)
+            except VoiceError as error:
+                self._terminate(process)
+                with self._lock:
+                    if self._process is process:
+                        self._process = self._port = None
+                self._record_engine_error(error)
+                return
 
     def _await_ready(self, process: subprocess.Popen, port: int) -> None:
         deadline = time.monotonic() + self.ready_timeout
         while time.monotonic() < deadline:
-            if process.poll() is not None:
+            code = process.poll()
+            if code is not None:
+                if code == -signal.SIGILL:
+                    raise VoiceError(UNSUPPORTED_CPU)
                 raise VoiceError("The voice engine stopped while starting. Its log is in the voice folder.")
             try:
                 socket.create_connection((HOST, port), timeout=0.3).close()
-                return
             except OSError:
                 time.sleep(0.05)
+                continue
+            with self._lock:
+                if self._process is process:
+                    self._ready = True
+            return
         raise VoiceError("The voice engine did not become ready in time.")
-
-    def _watch(self, process: subprocess.Popen) -> None:
-        process.wait()
-        with self._lock:
-            if self._stopping or self._process is not process:
-                return
-            self._process = self._port = None
-            if self._restarts >= 1:
-                logger.warning("Voice engine stopped again; not restarting it.")
-                return
-            self._restarts += 1
-            logger.warning("Voice engine stopped unexpectedly; restarting it once.")
-            try:
-                self._spawn()
-            except VoiceError as error:
-                logger.warning("Voice engine restart failed: %s", error)
 
     @staticmethod
     def _terminate(process: subprocess.Popen) -> None:
@@ -556,12 +682,13 @@ class VoiceRuntime:
     def stop_engine(self) -> None:
         with self._lock:
             self._stopping = True
-            process, self._process, self._port = self._process, None, None
+            process, self._process, self._port, self._ready = self._process, None, None, False
             log, self._log = self._log, None
         if process is not None:
             self._terminate(process)
         if log is not None:
             log.close()
+        self.pid_path.unlink(missing_ok=True)
 
     def autostart(self) -> None:
         """Start the engine in the background when voice is installed (desktop launch). Never raises."""
@@ -596,6 +723,21 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _link_stays_inside(root: Path, link: Path, target: str) -> bool:
-    resolved = (link.parent / target).resolve()
-    return root.resolve() in resolved.parents
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _die_with_parent() -> None:
+    """Linux: have the kernel stop the engine if this app dies without cleaning up (runs in the child)."""
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except Exception:
+        pass

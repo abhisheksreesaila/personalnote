@@ -10,6 +10,7 @@ export function createVoiceClient(request) {
   return {
     status: () => request('/voice/status'),
     install: () => request('/voice/install', { method: 'POST', headers: APP_HEADER }),
+    cancel: () => request('/voice/cancel', { method: 'POST', headers: APP_HEADER }),
     startEngine: () => request('/voice/engine/start', { method: 'POST', headers: APP_HEADER }),
     remove: () => request('/voice', { method: 'DELETE', headers: APP_HEADER }),
   }
@@ -24,33 +25,37 @@ export function describeVoice(status) {
       return {
         headline: 'Not available here',
         detail: 'Voice download works on a Mac with Apple Silicon and on 64-bit Linux. Dictation needs a local voice service on this system.',
-        percent: null, download: null, remove: null,
+        percent: null, download: null, cancel: null, remove: null,
       }
     case 'downloading':
       return {
         headline: `Downloading ${status.percent ?? 0}%`,
-        detail: `${PHASES[status.phase] || 'Downloading voice'}. You can keep working; closing the app pauses it and you can resume later.`,
-        percent: status.percent ?? 0, download: null, remove: 'Cancel',
+        detail: `${PHASES[status.phase] || 'Downloading voice'}. You can keep working. Cancel keeps what is downloaded, so you can resume later.`,
+        percent: status.percent ?? 0, download: null, cancel: 'Cancel', remove: null,
       }
     case 'ready':
       return {
         headline: 'Ready',
-        detail: status.running
-          ? 'Runs on this computer. Hold the mic button to dictate. Audio is never stored.'
-          : 'Runs on this computer and starts with the app. Audio is never stored.',
-        percent: null, download: null, remove: 'Remove voice',
+        detail: [
+          status.engineError || (status.running
+            ? 'Runs on this computer. Hold the mic button to dictate. Audio is never stored.'
+            : 'Runs on this computer and starts with the app. Audio is never stored.'),
+          status.note,
+        ].filter(Boolean).join(' '),
+        percent: null, download: null, cancel: null, remove: 'Remove voice',
       }
     case 'error':
       return {
         headline: 'Error',
         detail: status.error || 'Voice could not be set up.',
-        percent: null, download: status.partialBytes ? 'Resume download' : 'Try again', remove: 'Remove voice',
+        percent: null, download: status.partialBytes ? 'Resume download' : 'Try again', cancel: null, remove: 'Remove voice',
       }
     default:
       return {
         headline: 'Not installed',
         detail: `Dictation runs on this computer. Download the voice engine and model once (${label}); audio is never stored.`,
         percent: null,
+        cancel: null,
         download: status?.partialBytes ? 'Resume download' : `Download voice (${label.replace('about ', '≈')})`,
         remove: status?.partialBytes ? 'Discard partial download' : null,
       }

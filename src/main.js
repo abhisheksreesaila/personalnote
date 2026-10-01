@@ -305,6 +305,7 @@ document.querySelector('#app').innerHTML = `
         <p class="portability-help" id="voice-setup-detail" role="status" aria-live="polite"></p>
         <div class="portability-actions">
           <button id="voice-download" hidden><i data-lucide="download"></i><span></span></button>
+          <button id="voice-cancel" hidden><i data-lucide="x"></i><span></span></button>
           <button id="voice-remove" hidden><i data-lucide="trash-2"></i><span></span></button>
         </div>
       </section>
@@ -2442,7 +2443,7 @@ function renderVoiceSetup(status) {
   const progress = document.querySelector('#voice-setup-progress')
   progress.hidden = view.percent === null
   if (view.percent !== null) progress.value = view.percent
-  for (const [id, label] of [['#voice-download', view.download], ['#voice-remove', view.remove]]) {
+  for (const [id, label] of [['#voice-download', view.download], ['#voice-cancel', view.cancel], ['#voice-remove', view.remove]]) {
     const button = document.querySelector(id)
     button.hidden = !label
     button.querySelector('span').textContent = label || ''
@@ -3712,6 +3713,7 @@ document.querySelector('#top-properties').addEventListener('click', () => {
   if (elements.properties.classList.contains('open')) void refreshVoiceSetup()
 })
 document.querySelector('#voice-download').addEventListener('click', () => void voiceSetupAction((client) => client.install()))
+document.querySelector('#voice-cancel').addEventListener('click', () => void voiceSetupAction((client) => client.cancel()))
 document.querySelector('#voice-remove').addEventListener('click', () => void voiceSetupAction((client) => client.remove()))
 document.querySelector('#download-backup').addEventListener('click', () => {
   void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')

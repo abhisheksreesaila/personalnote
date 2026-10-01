@@ -19,8 +19,12 @@ test('each state says what it is and offers only the actions that make sense', (
   assert.equal(busy.headline, 'Downloading 42%')
   assert.equal(busy.percent, 42)
   assert.equal(busy.download, null)
-  assert.equal(busy.remove, 'Cancel')
+  assert.equal(busy.cancel, 'Cancel')
+  assert.equal(busy.remove, null)
 
+  const unsupportedCpu = describeVoice({ ...ready, running: false, engineError: "This computer's processor isn't supported by the voice engine.", note: 'Engine build differs.' })
+  assert.match(unsupportedCpu.detail, /processor isn't supported/)
+  assert.match(unsupportedCpu.detail, /Engine build differs/)
   assert.equal(describeVoice(ready).headline, 'Ready')
   assert.equal(describeVoice(ready).remove, 'Remove voice')
 
@@ -81,9 +85,10 @@ test('changing requests carry the app header and use the right verbs', async () 
   await client.status()
   await client.install()
   await client.startEngine()
+  await client.cancel()
   await client.remove()
   assert.deepEqual(seen.map(([path, method]) => `${method} ${path}`), [
-    'GET /voice/status', 'POST /voice/install', 'POST /voice/engine/start', 'DELETE /voice',
+    'GET /voice/status', 'POST /voice/install', 'POST /voice/engine/start', 'POST /voice/cancel', 'DELETE /voice',
   ])
   assert.equal(seen[0][2], undefined)
   for (const [, , headers] of seen.slice(1)) assert.equal(headers['X-Personal-Note'], '1')

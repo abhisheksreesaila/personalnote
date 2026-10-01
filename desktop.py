@@ -450,7 +450,7 @@ def main(argv: list[str] | None = None) -> int:
             ensure_frontend_built()
         from routes import create_app
 
-        app = create_app(database)
+        app = create_app(database, bound_host=HOST)
         server = LocalServer(app, preferred_port=(args.port or 0) if args.serve else PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:

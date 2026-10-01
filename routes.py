@@ -56,13 +56,49 @@ def default_voice_runtime() -> VoiceRuntime:
     return VoiceRuntime(root=Path(folder) if folder else app_data_dir() / "voice", version=app_version(ROOT))
 
 
-def create_app(database_path: Path | str | None = None, voice: VoiceRuntime | None = None) -> FastHTML:
+LOOPBACK_NAMES = {"127.0.0.1", "localhost", "::1"}
+
+
+def host_name(header: str) -> str:
+    """The host part of a Host header: no port, no IPv6 brackets, lower case."""
+    header = header.strip().lower()
+    if header.startswith("["):
+        return header[1:].split("]", 1)[0]
+    return header.rsplit(":", 1)[0] if header.count(":") == 1 else header
+
+
+class LoopbackHostMiddleware:
+    """Refuse requests whose Host is not a loopback name (DNS rebinding: another site's name resolving to 127.0.0.1)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            headers = dict(scope.get("headers") or [])
+            if host_name(headers.get(b"host", b"").decode("latin-1")) not in LOOPBACK_NAMES:
+                if scope["type"] == "http":
+                    await Response("Forbidden host", status_code=403)(scope, receive, send)
+                else:
+                    await send({"type": "websocket.close", "code": 1008})
+                return
+        await self.app(scope, receive, send)
+
+
+def create_app(
+    database_path: Path | str | None = None,
+    voice: VoiceRuntime | None = None,
+    bound_host: str | None = None,
+) -> FastHTML:
+    """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
     data_path = Path(database_path or default_database_path())
     service = NoteService(data_path)
     # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service
     app.state.voice = voice or default_voice_runtime()
+    if bound_host is not None and host_name(bound_host) in LOOPBACK_NAMES:
+        app.add_middleware(LoopbackHostMiddleware)
 
     def json_error(error: Exception) -> JSONResponse:
         status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 500
@@ -117,6 +153,12 @@ def create_app(database_path: Path | str | None = None, voice: VoiceRuntime | No
         if not from_this_app(request):
             return forbidden()
         return voice_response(lambda: app.state.voice.start_engine())
+
+    @app.post("/api/voice/cancel")
+    def voice_cancel(request):
+        if not from_this_app(request):
+            return forbidden()
+        return voice_response(lambda: app.state.voice.cancel_install())
 
     @app.delete("/api/voice")
     def voice_remove(request):
