@@ -80,6 +80,8 @@ Needs: F-002
 - [ ] stale-load guard also after loadFromJSON / mind-map mount
 - [ ] pointer tracking clears only the moving pointer's own id (pen + mouse at once)
 - [ ] JS bundle is near its 230 KiB budget: trim or split before adding features
+- [ ] landing button hover uses the new softer blue (#2459B8), not #0059D6
+- [ ] startup error: check notify-send exit status; avoid stacking zenity then kdialog
 
 ## F-010 Save pending edits on close [done]
 - [x] edits made just before a reload or close are saved (flush on pagehide / hidden, keepalive under 64 KiB)
@@ -140,13 +142,14 @@ Captain: "not the blue one… I like the red one, which looked like Claude"; "I 
 - [x] hold Space to pan with the hand, release to go back to the previous tool; V selects the arrow, H the hand; middle-mouse drag pans from any tool
 - [x] Space no longer pages the canvas (arrows and PageUp/PageDown still do), and none of this fires while typing
 
-## F-018 Softer blue [doing]
+## F-018 Softer blue [done]
 Captain: "blue should be slightly dimmer, red is good."
-- [ ] the Crayon (blue) skin's accent is a notch softer, still meeting 4.5:1 for text on and beside it; red and Night unchanged
+- [x] the Crayon (blue) skin's accent is a notch softer, still meeting 4.5:1 for text on and beside it; red and Night unchanged
 
-## F-019 Mac and Linux packages from GitHub [doing]
+## F-019 Mac and Linux packages from GitHub [done]
 Captain: "how do we package for mac / linux… no windows. just mac and linux is good enough."
-- [ ] a GitHub Actions workflow builds a macOS app (zipped Personal Note.app, unsigned) and a Linux bundle on each version tag and attaches them to a GitHub Release
-- [ ] the Linux bundle runs without the repo, npm or a virtualenv: unpack, run its install script, launch from the menu (uses the system Chromium)
-- [ ] the Mac app opens with right-click › Open the first time and keeps notes in Application Support
-- [ ] README explains installing from a Release on both systems; Windows is out of scope
+- [x] a GitHub Actions workflow builds a macOS app (zipped Personal Note.app, unsigned) and a Linux bundle on each version tag and attaches them to a GitHub Release
+- [x] the Linux bundle runs without the repo, npm or a virtualenv: unpack, run its install script, launch from the menu (uses the system Chromium)
+- [x] the Mac app opens with right-click › Open the first time and keeps notes in Application Support
+- [x] README explains installing from a Release on both systems; Windows is out of scope
+Open: first tag proves the GitHub build and the Mac app (captain checks on a Mac).
