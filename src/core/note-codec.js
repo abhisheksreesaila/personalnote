@@ -32,10 +32,11 @@ function mediaNames(objects, out = new Set()) {
   return out
 }
 
-// note: { content, contentFormat, pageState } as the API returns it. -> { content: Fabric JSON, pageState }
-export async function decodeNote(note, { fetchMedia = defaultFetchMedia } = {}) {
+// note: { content, contentFormat, pageState } as the API returns it. -> { doc, resolveMedia }: the document model, and how to show
+// each library picture in it (a data URL; a placeholder when it cannot be fetched). This is how the Leafer editor opens a note.
+export async function decodeNoteDocument(note, { fetchMedia = defaultFetchMedia } = {}) {
   const content = note.content || { objects: [] }
-  if (!isJsonCanvas(content)) return { content, pageState: note.pageState || { columns: 1, rows: 1 } }
+  if (!isJsonCanvas(content)) return { doc: fromFabric(content, note.pageState || { columns: 1, rows: 1 }), resolveMedia: undefined }
   // The server canonicalizes every canvas it stores, so every node carries `pn`. One that does not (a file edited by hand behind
   // the server's back) is refused here rather than silently dropped by the lean reader.
   if ((content.nodes || []).some((node) => !node?.pn) || (content.edges || []).some((edge) => !edge?.pn)) throw new Error('This note was not written by Personal Note; import it instead')
@@ -58,6 +59,14 @@ export async function decodeNote(note, { fetchMedia = defaultFetchMedia } = {}) 
     pathByDataUrl.set(placeholder, `media/${ref.id}`)
     return placeholder
   }
+  return { doc, resolveMedia }
+}
+
+// The same, as Fabric JSON for the Fabric editor on main: -> { content: Fabric JSON, pageState }
+export async function decodeNote(note, { fetchMedia = defaultFetchMedia } = {}) {
+  const content = note.content || { objects: [] }
+  if (!isJsonCanvas(content)) return { content, pageState: note.pageState || { columns: 1, rows: 1 } }
+  const { doc, resolveMedia } = await decodeNoteDocument(note, { fetchMedia })
   return { content: toFabricUnchecked(doc, { resolveMedia }), pageState: doc.page }
 }
 

@@ -16,6 +16,7 @@ export const EDITOR_CONFIG = {
   pointSize: 10,
   pointRadius: 5, // round handles, like Fabric's cornerStyle 'circle'
   circle: { fill: '#ffffff', stroke: BLUE, strokeWidth: 1.5, width: 12, height: 12, cornerRadius: 6 }, // the turn handle, off the top edge
+  circleDirection: 'top', // like Fabric's turn handle
   circleMargin: 22,
   rotateGap: 0, // turn freely, as Fabric does
   area: { fill: 'rgba(28, 112, 168, 0.08)', stroke: BLUE },

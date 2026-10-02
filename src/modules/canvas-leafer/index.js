@@ -1,6 +1,5 @@
 // Entry for the Leafer canvas (F-027, F-028): a stored note -> document model -> Leafer nodes, and the edits made there. main.js imports
 // it statically; Leafer is the canvas (ADR 0001), so there is no flag and no separate chunk.
-import { fromFabric } from '../../core/document/index.js'
 import { createScene } from './scene.js'
 
 // Every top-level object needs an id for an edit to name it (a note saved before ids existed has none); the Fabric path gives them
@@ -14,10 +13,9 @@ export function createLeaferCanvas(options) {
   const scene = createScene(options)
   return {
     ...scene,
-    // A note as the app stores it today (Fabric JSON + page state) -> document model -> Leafer nodes.
-    showNote(content, pageState, loadOptions) {
-      const doc = ensureIds(fromFabric(content ?? { objects: [] }, pageState))
-      scene.load(doc, loadOptions)
+    // A document model (read from the stored note) -> Leafer nodes. `loadOptions.resolveMedia` shows library pictures.
+    showDocument(doc, loadOptions) {
+      scene.load(ensureIds(doc), loadOptions)
       return doc
     },
   }

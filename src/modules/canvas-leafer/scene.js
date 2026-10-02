@@ -527,7 +527,7 @@ export function createScene({ host, width, height, onOperation = () => null }) {
     screenBox(id) {
       const node = entries.get(id)?.node
       if (!node) return null
-      const { x, y, width, height } = node.getWorldBounds('box')
+      const { x, y, width, height } = node.getBounds('box', 'world')
       return { x, y, width, height }
     },
     pageCorners(id) {

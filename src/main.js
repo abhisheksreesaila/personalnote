@@ -7,7 +7,7 @@ import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/de
 import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
-import { decodeNote, encodeDocument, encodeNote } from './core/note-codec.js'
+import { decodeNote, decodeNoteDocument, encodeDocument, encodeNote } from './core/note-codec.js'
 import { compactStacking, nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
@@ -2231,15 +2231,15 @@ function leaferHistoryStep(direction) {
 let leaferShowSequence = 0
 // Returns false when a later selection or refresh superseded this one while the note was being converted: nothing is drawn then.
 async function showLeaferNote(note, { openView = true } = {}) {
-  // Leafer reads Fabric JSON for now: the stored JSON Canvas is converted for it, and the note's own content is kept to save back.
+  // The stored JSON Canvas is read straight into the document model; the note's own content is kept to save back until it is edited.
   const showing = ++leaferShowSequence
-  const decoded = await decodeNote(note)
+  const decoded = await decodeNoteDocument(note)
   if (showing !== leaferShowSequence || note.id !== state.activeNoteId) return false
-  leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.pageState }
+  leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.doc.page }
   canvas.remove(...canvas.getObjects()) // the Fabric canvas holds nothing in this mode, whatever happened before
-  state.pages = decoded.pageState
+  state.pages = decoded.doc.page
   resizePaper()
-  const shown = leaferCanvas.showNote(decoded.content, state.pages)
+  const shown = leaferCanvas.showDocument(decoded.doc, { resolveMedia: decoded.resolveMedia })
   if (openView) leaferEdits.open(note.id, shown) // a newly opened note starts a new undo history; an agent's newer content does not (undo never reverts it)
   else leaferEdits.remote(note.id, shown)
   leaferCanvas.adopt(leaferEdits.doc) // the scene edits the document the history holds
