@@ -872,7 +872,12 @@ export function createScene({ host, width, height, onOperation = () => null, onB
           const next = prettifySelection(overlay.value, range.start, range.end)
           return overlay.replaceRange(range.start, range.end, next.text.slice(next.start, next.end))
         }
-        overlay.commit() // the words typed so far are an edit of their own; then the whole note is tidied
+        // No selection: the words being typed are tidied too, the editor stays open and the caret stays where it was (as on Fabric).
+        const value = overlay.value
+        const tidy = prettifySelection(value, 0, 0).text
+        if (tidy !== value) overlay.setValue(tidy, Math.min(range?.start ?? value.length, tidy.length))
+        clearTimeout(draftTimer)
+        storeWords(textEdit, overlay.value, { final: false })
       }
       const plan = planPrettify(doc, { fit: (object) => fitGeometry(object, contentSize(object)) })
       if (!plan.op.changes.length) return false

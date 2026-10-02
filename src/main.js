@@ -2489,9 +2489,25 @@ let selectSequence = 0
 // From the moment a switch to another note starts until it has landed, the old note takes no more input on the Leafer canvas: an edit
 // made then would land on a note that is being left (and be dropped).
 let leaferSwitching = 0
+// Dictation ends when a switch to another note starts: the words already final stay in the note being left (and go out with its save);
+// an interim result still being heard is dropped, and nothing more arrives for the new note.
+async function stopDictationForSwitch() {
+  if (!state.listening) return
+  if (dictationSession.active && dictationSession.partial) updateVoiceTextBox(dictationSession.preview(''), { create: false }) // the interim words go first (before anything is awaited)
+  if (state.voiceMode === 'browser') {
+    state.recognition?.abort?.()
+    removeEmptyVoiceTextBox()
+    dictationSession.cancel()
+    setVoiceListening(false)
+    state.voiceMode = null
+  } else await stopLocalDictation({ cancel: true })
+  leaferCanvas?.finishTextEdit()
+}
+
 async function selectNote(id) {
   if (id === state.activeNoteId) return
   leaferSwitching += 1
+  await stopDictationForSwitch()
   leaferCanvas.clearSelection()
   leaferInk.cancel()
   leaferConnect.cancel()

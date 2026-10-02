@@ -186,10 +186,10 @@ export function createTextOverlay({ host }) {
       onInput(fit())
     },
     // Replaces all the words (voice dictation), the caret at the end. Not while an input method is composing: that is the person typing.
-    setValue(value) {
+    setValue(value, caret = value.length) {
       if (!area || composing) return false
       area.value = value
-      area.setSelectionRange(value.length, value.length)
+      area.setSelectionRange(Math.min(caret, value.length), Math.min(caret, value.length))
       session.onInput(fit())
       return true
     },

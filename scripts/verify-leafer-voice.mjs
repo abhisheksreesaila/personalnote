@@ -31,6 +31,7 @@ fixture.content.objects.push(
 )
 let stored = { content: fixture.content, pageState: fixture.pageState, revision: 1 }
 const puts = []
+const puts2 = []
 
 const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4819' } }, logLevel: 'error' })
 await server.listen()
@@ -43,7 +44,10 @@ async function mock(page) {
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     const summary = { id: 1, resourceId: 'r1', revision: stored.revision, noteType: 'canvas', title: 'Voice', notebookId: 1, createdAt: now, updatedAt: now }
     if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'N', color: '#76669a', noteCount: 1 }])
-    if (p === '/notes' && req.method() === 'GET') return json([summary])
+    const second = { ...summary, id: 2, resourceId: 'r2', title: 'Other', revision: 1 }
+    if (p === '/notes' && req.method() === 'GET') return json([summary, second])
+    if (p === '/notes/2' && req.method() === 'GET') return json({ ...second, content: { version: '7.4.0', objects: [] }, pageState: { columns: 1, rows: 1 } })
+    if (p === '/notes/2' && req.method() === 'PUT') { puts2.push(JSON.parse(req.postData())); return json({ revision: 2, resourceId: 'r2' }) }
     if (p === '/changes') return json({ sequence: 1, changes: [], agents: [] })
     if (p === '/voice/status') return json({ state: 'unsupported' }) // not the download path: the page goes straight to the (mocked) local service
     if (p === '/notes/1' && req.method() === 'GET') return json({ ...summary, content: stored.content, pageState: stored.pageState })
@@ -208,6 +212,50 @@ try {
   check('with words selected in the editor only the selection is tidied', partial === prettifySelection(messyText, 0, 12).text && partial.endsWith('after   '), JSON.stringify(partial))
   check('the editor stays open after Prettify', await page.evaluate(() => Boolean(document.querySelector('.leafer-text-editor'))))
   await page.evaluate(() => window.__personalNote.leaferCanvas().finishTextEdit())
+
+  // with no selection, the editor stays open, the caret stays, and every text is tidied as one step with the typing
+  await page.evaluate(() => window.__personalNote.leaferEdits.undo()) // (the selection test's own step is closed: back to the untidy note)
+  doc = await live(page)
+  const untidy = objectOf(doc, MESSY_STICKY).content
+  stepsBefore = await steps(page)
+  await page.evaluate((id) => window.__personalNote.leaferCanvas().editText(id), MESSY)
+  await page.waitForSelector('.leafer-text-editor')
+  await page.evaluate(() => { const a = document.querySelector('.leafer-text-editor'); a.setSelectionRange(4, 4) })
+  await page.click('#prettify')
+  const open = await page.evaluate(() => { const a = document.querySelector('.leafer-text-editor'); return a ? { value: a.value, start: a.selectionStart, end: a.selectionEnd } : null })
+  check('Prettify with no selection keeps the editor open with the caret where it was', open !== null && open.value === expected(messyText) && open.start === 4 && open.end === 4, JSON.stringify(open))
+  await page.evaluate(() => window.__personalNote.leaferCanvas().finishTextEdit())
+  doc = await live(page)
+  check('and the other texts are tidied too', objectOf(doc, MESSY_STICKY).content === expected(untidy) && objectOf(doc, MESSY).content === expected(messyText))
+  check('all of it is one undo step', (await steps(page)) === stepsBefore + 1, `${stepsBefore} -> ${await steps(page)}`)
+
+  // a note switch ends dictation: final words stay in the note being left, nothing reaches the new one
+  {
+    const listening = () => page.evaluate(() => window.__personalNote.state.listening)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().clearSelection())
+    script = [['half heard wor', 'switch words']]
+    let n1 = puts.length
+    await page.click('#voice-button')
+    check('(switch) the final words are in the editor', await until(async () => (await editorValue(page)) === 'switch words'), String(await editorValue(page)))
+    await page.evaluate(() => window.__personalNote.selectNote(2)) // still listening
+    await page.waitForTimeout(600)
+    check('(switch) dictation stopped when the switch began', !(await listening()))
+    const left = readJsonCanvas(puts.at(-1).content)
+    check('(switch) the final words went out with the old note', puts.length > n1 && left.objects.some((o) => o.content === 'switch words'), JSON.stringify(left.objects.map((o) => o.content).slice(-3)))
+    await page.waitForTimeout(900)
+    check('(switch) nothing reaches the new note', puts2.length === 0 && (await live(page)).objects.length === 0, JSON.stringify([puts2.length, (await live(page)).objects.length]))
+    // words still only interim are dropped
+    await page.evaluate(() => window.__personalNote.selectNote(1))
+    await page.waitForFunction(() => window.__personalNote.leaferEdits.doc.objects.length > 0)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().clearSelection())
+    script = [['heard but not final', 'never final']]
+    n1 = puts.length
+    await page.click('#voice-button')
+    check('(switch) an interim result is showing', await until(async () => (await editorValue(page)) === 'heard but not final'), String(await editorValue(page)))
+    await page.evaluate(() => window.__personalNote.selectNote(2))
+    await page.waitForTimeout(1200)
+    check('(switch) interim words that never became final are not kept in either note', !puts.slice(n1).some((body) => JSON.stringify(body).includes('not final')) && !JSON.stringify(puts2).includes('final') && !(await listening()), JSON.stringify([puts.slice(n1).map((b) => JSON.stringify(b).includes('not final')), puts2.length, await listening(), JSON.stringify(puts2).slice(0, 300)]))
+  }
 
   const realErrors = errors.filter((e) => !/WebSocket|8080|status of 4/.test(e))
   check('no page errors', realErrors.length === 0, realErrors.join(' | '))
