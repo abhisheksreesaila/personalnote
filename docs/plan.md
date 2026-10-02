@@ -223,10 +223,13 @@ Merged into `leafer` at 39992fc. Textarea overlay (native IME), words saved as y
 Merged into `leafer` at ea54a5f. Patch-based history (~1.5 KB/step on 600 objects, undo ~9 ms in app); undo never reverts or corrupts an agent's write (three-way per field, steps never span a merge).
 ## F-031 Pen, highlighter, eraser on Leafer (P-07) [done]
 Merged into `leafer` at 79aa1c2. Live stroke on its own layer; one stroke or erase pass = one undo step; eraser takes ink only and leaves locked strokes (differs from Fabric, captain may overrule); an agent merge cancels an erase pass in progress. Up/left page growth and fold-back are F-032.
-## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [doing]
+## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [done]
+Merged into `leafer` at dbc8cbc. Instant growth on all four sides and fold-back, in the edit's undo step; page shift is a frame op so undo after an agent merge stays on the grid; connectors follow live and saved; lift and ghost. View never snaps; it jumps (instantly) only when no page is in view.
 ## F-033 Images (media library, F-023), export, print on Leafer (P-09) [done]
 Merged into `leafer` at 14ea4a1. Pictures stored as content-addressed media (POST /api/media, streamed 20 MB cap, no SVG); export/print rendered offscreen by Leafer and pixel-matched to Fabric; print keeps app chrome out (fixed a blank extra PDF page). Zoom control and minimap step aside from selection handles. F-023 non-image file cards still to build.
 ## F-034 Performance pass and agent sync on Leafer (P-10) [todo]
+- [ ] history combine(): a later op's page shift must also shift earlier ops' `after` for objects it doesn't name (two prepends in one step; unit test from F-032 review)
+- [ ] merge arriving before our PUT response updates leaferServerShift uses the old server frame (narrow race)
 - [ ] pen at dpr 2: pointer-to-frame p95 ~40 ms with 33-83 ms frames after pointer-down/mid-stroke in headless; confirm on the Mac and fix if real
 - [ ] an agent change arriving mid-erase or mid-stroke can't commit against a doc it wasn't planned on (test)
 - [ ] undo/redo redraws only changed objects instead of reloading the scene (now ~21 ms median on 616 objects vs 9 ms before F-028)
@@ -234,6 +237,7 @@ Merged into `leafer` at 14ea4a1. Pictures stored as content-addressed media (POS
 - [ ] an agent change arriving while you edit in Leafer mode merges in without discarding unsaved local edits (today the remote redraw replaces them; fine only while Leafer was read-only)
 Includes a speed test in the Mac app before shipping.
 ## F-035 Phones and pencil, Leafer becomes default (P-11) [todo]
+- [ ] on a phone-emulated context a mouse drag of an object doesn't reach the editor's move events
 - [ ] voice dictation into text and Prettify work in Leafer mode (disabled there after F-029)
 ## F-036 Remove Fabric (P-12) [todo]
 ## F-037 Blog post: how we made it fast [todo]
