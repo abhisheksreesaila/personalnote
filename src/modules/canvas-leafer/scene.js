@@ -783,6 +783,26 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       return true
     },
 
+    // ---- ink (F-031): the pen and the eraser put model objects on screen without drawing the note again. ink.js owns the gesture and
+    // the live stroke; these are the three things it needs from the scene.
+    view: () => ({ ...view }),
+    // Draws model objects (a new stroke, the pieces of a split one) as nodes at their place in the stack.
+    inkAdd(objects) {
+      for (const object of objects) {
+        const z = object.z ?? 0
+        let at = world.children.length
+        for (let index = 0; index < world.children.length; index += 1) {
+          if ((entryOfNode.get(world.children[index])?.object.z ?? 0) > z) { at = index; break }
+        }
+        addObject(world, object, boxes, at)
+      }
+    },
+    inkRemove(ids) { for (const id of ids) { const entry = entries.get(id); if (entry) dropEntry(entry) } },
+    // Hands the op to the host as one undo step. The nodes are already on screen (inkAdd / inkRemove).
+    inkCommit: (op) => commit(op),
+    // Paints now what changed (so the live stroke can go the moment its final version is on screen).
+    flush() { leafer.renderer.render() },
+
     // Where an object is on screen (CSS pixels from the top-left of the Leafer view) and where its box corners are on the page.
     screenBox(id) {
       const node = entries.get(id)?.node

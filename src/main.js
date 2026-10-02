@@ -39,6 +39,7 @@ import { readPreferences, writePreferences } from './preferences.js'
 import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
 import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
 import { mergeDocuments } from './core/document/merge.js'
+import { createInk } from './modules/canvas-leafer/ink.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
@@ -603,6 +604,7 @@ loadPreferences()
 const useLeafer = true
 let leaferCanvas = null
 let leaferHost = null
+let leaferInk = null // the pen, highlighter and eraser (F-031)
 // Saving an edited note writes only what changed: the encoder keeps the JSON of every object it has written (core/note-codec.js).
 const leaferEncoder = createDocumentEncoder()
 let leaferBase = null // the document as last loaded or last saved: what an agent's merge is measured against
@@ -1719,14 +1721,17 @@ function createInkDot(point, tool) {
 const temporaryHand = createTemporaryHand()
 let applyingTemporaryHand = false
 
+const LEAFER_TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'pen', 'highlight', 'eraser'])
 function setTool(tool) {
-  if (useLeafer && !['hand', 'text', 'sticky'].includes(tool)) tool = 'select' // select, hand, text and sticky are the Leafer tools so far (F-028, F-029); the others come with F-031 onward
+  if (useLeafer && !LEAFER_TOOLS.has(tool)) tool = 'select' // the tools Leafer has so far (F-028 select and hand, F-029 text and sticky, F-031 pen, highlighter, eraser)
   if (!applyingTemporaryHand) temporaryHand.cancel()
   state.tool = tool
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
-  canvas.isDrawingMode = tool === 'pen' || tool === 'highlight'
+  canvas.isDrawingMode = !useLeafer && (tool === 'pen' || tool === 'highlight') // Leafer's ink has its own surface (modules/canvas-leafer/ink.js)
   canvas.selection = tool === 'select'
   if (useLeafer && (tool === 'text' || tool === 'sticky')) leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
+  if (useLeafer && (tool === 'pen' || tool === 'highlight' || tool === 'eraser')) leaferCanvas?.clearSelection()
+  leaferInk?.setTool(tool)
   elements.shell.classList.toggle('leafer-picking', useLeafer && tool === 'select') // Leafer takes the pointer to select and move; the hand gives it to the pan
   canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : tool === 'connect' || tool === 'sticky' || tool === 'shape' ? 'crosshair' : 'default'
   canvas.forEachObject((object) => {
@@ -2323,6 +2328,27 @@ function mountLeaferCanvas() {
 }
 mountLeaferCanvas()
 
+// The pen, highlighter and eraser (F-031). The stroke is a model object recorded as one undo step; a page grows when the pen
+// goes past the right or bottom edge, as it does on the Fabric canvas.
+leaferInk = createInk({
+  host: elements.paper,
+  scene: leaferCanvas,
+  getDoc: () => leaferEdits.doc,
+  getBrush: () => ({ color: state.color, width: state.tool === 'highlight' ? state.highlightWidth : state.penWidth }),
+  getPages: () => state.pages,
+  growPages(point) {
+    let { columns, rows } = state.pages
+    if (point.x > columns * PAGE_WIDTH + EDGE_OVERFLOW) columns += 1
+    if (point.y > rows * PAGE_HEIGHT + EDGE_OVERFLOW) rows += 1
+    if (columns === state.pages.columns && rows === state.pages.rows) return false
+    state.pages = { ...state.pages, columns, rows } // a new object: the document the history holds shares the old one
+    resizePaper()
+    return true
+  },
+  restore: () => leaferCanvas.load(leaferEdits.doc),
+  cursor: elements.eraserCursor,
+})
+
 // The bar over the canvas that does with the mouse what the keys do (Back, Forward, Lock, Delete); it shows while something is selected.
 leaferCanvas.onSelection(() => { updateSelectionBar(); syncTypographyControls() })
 function updateSelectionBar() {
@@ -2350,6 +2376,7 @@ async function selectNote(id) {
   if (id === state.activeNoteId) return
   leaferSwitching += 1
   leaferCanvas.clearSelection()
+  leaferInk.cancel()
   elements.shell.classList.add('leafer-switching')
   try { await selectNoteNow(id) } finally {
     if (!--leaferSwitching) elements.shell.classList.remove('leafer-switching')
@@ -3424,6 +3451,7 @@ function isOutsidePages(event) {
 function onCanvasInput(type, handler, options) {
   canvas.upperCanvasEl.addEventListener(type, handler, options)
   leaferHost.addEventListener(type, handler, options)
+  leaferInk?.surface.addEventListener(type, handler, options)
 }
 const canvasTouchPointers = new Map()
 let canvasPinchGesture = null
@@ -3445,6 +3473,7 @@ function beginCanvasPinch() {
   }
   state.drawingGesture = null
   canvasPanGesture = null
+  leaferInk?.cancel() // a second finger is a pinch: the stroke the first one began is dropped
   canvas.isDrawingMode = false
   canvas.clearContext(canvas.contextTop)
   finishErasing()
@@ -3507,7 +3536,7 @@ onCanvasInput('pointerup', (event) => {
   if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
   if (canvasPinchGesture && !canvasTouchPointers.size) {
     canvasPinchGesture = null
-    canvas.isDrawingMode = state.tool === 'pen' || state.tool === 'highlight'
+    canvas.isDrawingMode = !useLeafer && (state.tool === 'pen' || state.tool === 'highlight')
   }
   event.preventDefault()
   event.stopImmediatePropagation()
@@ -3518,7 +3547,7 @@ onCanvasInput('pointercancel', (event) => {
   if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
   if (canvasPinchGesture && !canvasTouchPointers.size) {
     canvasPinchGesture = null
-    canvas.isDrawingMode = state.tool === 'pen' || state.tool === 'highlight'
+    canvas.isDrawingMode = !useLeafer && (state.tool === 'pen' || state.tool === 'highlight')
   }
 }, { capture: true })
 
