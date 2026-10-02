@@ -540,6 +540,26 @@ try {
     const undone = await doc(page)
     check('undoing the user\'s move leaves the agent\'s object and moves it back with the frame', Boolean(objectOf(undone, 'AG')) && objectOf(undone, 'AG').geometry.x === 120 && objectOf(undone, 'AG').geometry.y === 900 && undone.page.rows === start.page.rows + 0 || Boolean(objectOf(undone, 'AG')), JSON.stringify(objectOf(undone, 'AG')?.geometry))
   }
+
+  // ---------------------------------------------------------------- a picture placed near an edge grows the page (F-033's pictures go through the same step)
+  {
+    const GIF = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
+    const startDoc = await doc(page)
+    const stepsBefore = await steps(page)
+    const add = (x, y) => page.evaluate(([px, py]) => window.__personalNote.leaferCanvas().addImages([{ mediaId: 'pic-edge', url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', width: 400, height: 300 }], { x: px, y: py }), [x, y])
+    const [rightId] = await add(startDoc.page.columns * W - 20, 500)
+    let d5 = await doc(page)
+    check('a picture put over the right edge adds a page, in the same undo step', Boolean(rightId) && d5.page.columns === startDoc.page.columns + 1 && (await steps(page)) === stepsBefore + 1, JSON.stringify([d5.page, await steps(page)]))
+    await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    d5 = await doc(page)
+    check('one undo takes the picture and the page away', d5.page.columns === startDoc.page.columns && !d5.objects.some((o) => o.id === rightId))
+    const [leftId] = await add(40, 40)
+    d5 = await doc(page)
+    check('a picture put over the top-left corner adds pages above and to the left (and tidies the spare ones), moves everything a page, in one step', Boolean(leftId) && d5.page.rows > startDoc.page.rows && near(objectOf(d5, 'C').geometry.x, objectOf(startDoc, 'C').geometry.x + W, 1e-6) && (await steps(page)) === stepsBefore + 1, JSON.stringify([startDoc.page, d5.page, objectOf(startDoc, 'C')?.geometry?.x, objectOf(d5, 'C')?.geometry?.x, await steps(page), stepsBefore]))
+    await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    d5 = await doc(page)
+    check('and one undo puts the picture, the pages and every object back', d5.page.columns === startDoc.page.columns && near(objectOf(d5, 'C').geometry.x, objectOf(startDoc, 'C').geometry.x, 1e-6) && consistent(d5))
+  }
 } finally {
   await browser.close()
   await server.close()
