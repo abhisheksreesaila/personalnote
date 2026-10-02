@@ -17,6 +17,7 @@ import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
 const TEXT_DEFAULTS = { fontFamily: 'Times New Roman', fontSize: 40, fontWeight: 'normal', fontStyle: 'normal', lineHeight: 1.16, textAlign: 'left', color: 'rgb(0,0,0)' }
 const SHAPE_DEFAULT_FILL = 'rgb(0,0,0)'
 const CONNECTOR_HEAD = 15
+const INK_HIT_RADIUS = 10 // a pen line is a few pixels wide; a click this close to it (page pixels) picks it
 const CONNECTOR_DEFAULTS = { lineWidth: 2.6, color: '#20201e' }
 
 const LEGACY_TEXT_PLACEHOLDER = 'Start typing'
@@ -89,6 +90,7 @@ export function createScene({ host, width, height, onOperation = () => null }) {
   const uniformStrokes = [] // strokeScaleFixed keeps a stroke a constant number of SCREEN pixels; Fabric's uniform stroke still follows the zoom
   let resolveMedia = null
   let doc = null // the document model on screen: edits change it, the nodes follow
+  let committing = false // true while an edit made here is being handed to the host: the host need not draw it again
   const entries = new Map() // object id -> { id, node, built }: every top-level object that has a node
   const entryOfNode = new WeakMap()
 
@@ -208,7 +210,7 @@ export function createScene({ host, width, height, onOperation = () => null }) {
           const radius = object.radius ?? g.width / 2
           return { node: new Ellipse({ ...base, ...blend, width: radius * 2, height: radius * 2, fill: color }), size: {} }
         }
-        return { node: new Path({ ...base, ...blend, path: pathString(object.path), fill: undefined, ...strokeProps(color, object.width ?? 1, object.strokeUniform, object.cap, object.join) }), size: {} }
+        return { node: new Path({ ...base, ...blend, hitRadius: INK_HIT_RADIUS, path: pathString(object.path), fill: undefined, ...strokeProps(color, object.width ?? 1, object.strokeUniform, object.cap, object.join) }), size: {} }
       }
       case 'image': {
         const ref = object.mediaRef
@@ -312,7 +314,6 @@ export function createScene({ host, width, height, onOperation = () => null }) {
   function rebuild(entry) {
     const { object } = entry
     const index = world.children.indexOf(entry.node)
-    const wasSelected = editing.nodes().includes(entry.node)
     const old = entry.node
     const slot = measuredText.findIndex((item) => item.object === object)
     if (slot !== -1) measuredText.splice(slot, 1)
@@ -323,8 +324,13 @@ export function createScene({ host, width, height, onOperation = () => null }) {
     if (at !== -1) boxes.splice(at, 1)
     addObject(world, object, boxes, index)
     old.remove()
-    const fresh = entries.get(object.id)
-    if (fresh && wasSelected) editing.select([fresh.node])
+  }
+
+  // The selection holds nodes; when nodes are made again or taken away, the same objects are selected again afterwards.
+  function keepingSelection(change) {
+    const keep = selectedIds()
+    editing.clear()
+    try { change() } finally { editing.select(keep.map((id) => entries.get(id)?.node).filter(Boolean)) }
   }
 
   // ---- edits. The document is an immutable value the host owns (and the undo history keeps): an edit is an `op` of { id, before, after }
@@ -336,7 +342,8 @@ export function createScene({ host, width, height, onOperation = () => null }) {
   function commit(op, { coalesce, selection } = {}) {
     if (!op.changes.length) return false
     const withSelection = selection ? { ...op, selection } : op
-    doc = onOperation(withSelection, { coalesce }) ?? applyChanges(doc, op)
+    committing = true
+    try { doc = onOperation(withSelection, { coalesce }) ?? applyChanges(doc, op) } finally { committing = false }
     const latest = objectsById(doc)
     for (const change of op.changes) {
       const entry = entries.get(change.id)
@@ -368,7 +375,8 @@ export function createScene({ host, width, height, onOperation = () => null }) {
     }
     if (!changes.length) return
     commit({ label: 'Transform', changes }, { selection: { before: ids, after: ids } })
-    for (const entry of rebuilds) { refreshBox(entry); rebuild(entry) }
+    for (const entry of rebuilds) refreshBox(entry)
+    if (rebuilds.length) keepingSelection(() => { for (const entry of rebuilds) rebuild(entry) })
     for (const entry of selectedEntries()) refreshBox(entry)
   }
 
@@ -415,23 +423,8 @@ export function createScene({ host, width, height, onOperation = () => null }) {
       pages = { columns: doc.page?.columns ?? 1, rows: doc.page?.rows ?? 1 }
       drawChrome()
     },
-    // A new document that differs from the one on screen in `ids` only (an undo, a redo): the nodes of those objects are made again,
-    // taken away or added, and the rest of the scene is left alone.
-    sync(next, ids) {
-      doc = next
-      const latest = objectsById(doc)
-      for (const id of ids) {
-        const object = latest.get(id)
-        const entry = entries.get(id)
-        if (entry && !object) { dropEntry(entry); continue }
-        if (!object) continue
-        if (entry) { entry.object = object; rebuild(entry) } else addObject(world, object, boxes)
-      }
-      pages = { columns: doc.page?.columns ?? 1, rows: doc.page?.rows ?? 1 }
-      syncStacking(ids)
-      editing.update()
-      drawChrome()
-    },
+    // True while the scene is handing its own edit to the host (so the host does not draw it a second time).
+    isCommitting: () => committing,
     document: () => doc,
     // The same document, held by the history now (a new open, an agent's merge): the objects are equal, so only the references change.
     adopt(next) {
@@ -464,7 +457,7 @@ export function createScene({ host, width, height, onOperation = () => null }) {
       }
     },
     boxes: () => boxes,
-    stats: () => ({ ...stats }),
+    stats: () => ({ ...stats, drawn: entries.size }),
 
     // ---- selection and edits (F-028)
     onSelection(listener) { selectionListeners.add(listener); return () => selectionListeners.delete(listener) },

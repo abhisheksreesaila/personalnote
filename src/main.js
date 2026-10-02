@@ -601,6 +601,7 @@ loadPreferences()
 // own content back untouched, and only for the note that content was loaded from. An edited note is saved from the document model.
 const useLeafer = true
 let leaferCanvas = null
+let leaferHost = null
 let leaferSource = { noteId: null, content: { objects: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
 
 const canvas = new Canvas('note-canvas', {
@@ -2208,12 +2209,13 @@ async function settleOutgoingNote() {
 
 // Leafer mode undo/redo (F-030): the history lives in modules/canvas-leafer/edits.js; this puts each new document on screen and saves it.
 const leaferEdits = createLeaferEdits({
-  onChange(doc, { kind, changed, page, selection }) {
+  onChange(doc, { page, selection }) {
     if (leaferSource.noteId !== state.activeNoteId) return
     if (page) { state.pages = { ...doc.page }; resizePaper() }
-    // An edit made on the canvas is already on screen (the scene recorded it); an undo or redo changes only the objects it names.
-    if (kind !== 'edit') {
-      leaferCanvas.sync(doc, changed)
+    // An edit made on the canvas is already on screen (the scene recorded it); any other change (an undo, a redo, an edit recorded
+    // from elsewhere) draws the document again, with the objects the step names selected.
+    if (!leaferCanvas.isCommitting()) {
+      leaferCanvas.load(doc)
       leaferCanvas.select(selection)
     }
     leaferSource = { noteId: leaferSource.noteId, content: encodeDocument(compactStacking(doc)), pageState: { ...doc.page } }
@@ -2251,6 +2253,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
 
 function mountLeaferCanvas() {
   const host = document.createElement('div')
+  leaferHost = host
   host.id = 'leafer-host'
   elements.paper.prepend(host)
   leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options) })
@@ -3325,6 +3328,11 @@ function isOutsidePages(event) {
   return worldX < 0 || worldY < 0 || worldX > target.right || worldY > target.bottom
 }
 
+// Touch pinch and pan and the middle-button pan work from either layer: Fabric's (the hand, Space) or Leafer's (the select tool).
+function onCanvasInput(type, handler, options) {
+  canvas.upperCanvasEl.addEventListener(type, handler, options)
+  leaferHost.addEventListener(type, handler, options)
+}
 const canvasTouchPointers = new Map()
 let canvasPinchGesture = null
 let canvasPanGesture = null
@@ -3364,12 +3372,12 @@ function updateCanvasPinch() {
   return true
 }
 
-canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
+onCanvasInput('pointerdown', (event) => {
   if (event.pointerType !== 'touch' || window.innerWidth > 800) return
   canvasTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
   if (canvasTouchPointers.size === 2) {
     beginCanvasPinch()
-    canvas.upperCanvasEl.setPointerCapture(event.pointerId)
+    event.currentTarget.setPointerCapture(event.pointerId)
     event.preventDefault()
     event.stopImmediatePropagation()
     return
@@ -3382,12 +3390,12 @@ canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
     offsetX: viewportOffsetX,
     offsetY: viewportOffsetY,
   }
-  canvas.upperCanvasEl.setPointerCapture(event.pointerId)
+  event.currentTarget.setPointerCapture(event.pointerId)
   event.preventDefault()
   event.stopImmediatePropagation()
 }, { capture: true })
 
-canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
+onCanvasInput('pointermove', (event) => {
   if (!canvasTouchPointers.has(event.pointerId)) return
   canvasTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
   if (canvasPinchGesture) updateCanvasPinch()
@@ -3401,7 +3409,7 @@ canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
   event.stopImmediatePropagation()
 }, { capture: true })
 
-canvas.upperCanvasEl.addEventListener('pointerup', (event) => {
+onCanvasInput('pointerup', (event) => {
   if (!canvasTouchPointers.has(event.pointerId)) return
   canvasTouchPointers.delete(event.pointerId)
   if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
@@ -3413,7 +3421,7 @@ canvas.upperCanvasEl.addEventListener('pointerup', (event) => {
   event.stopImmediatePropagation()
 }, { capture: true })
 
-canvas.upperCanvasEl.addEventListener('pointercancel', (event) => {
+onCanvasInput('pointercancel', (event) => {
   canvasTouchPointers.delete(event.pointerId)
   if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
   if (canvasPinchGesture && !canvasTouchPointers.size) {
@@ -3475,15 +3483,15 @@ canvas.on('mouse:up', () => {
 // Middle-mouse drag pans from any tool. Fabric ignores the middle button, so this listens itself and
 // keeps the press away from drawing, selecting and placing.
 let middlePan = null
-canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
+onCanvasInput('pointerdown', (event) => {
   if (event.button !== 1 || event.pointerType === 'touch' || state.activeNoteType !== 'canvas') return
   middlePan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: viewportOffsetX, offsetY: viewportOffsetY }
-  canvas.upperCanvasEl.setPointerCapture(event.pointerId)
-  canvas.upperCanvasEl.style.cursor = 'grabbing'
+  event.currentTarget.setPointerCapture(event.pointerId)
+  event.currentTarget.style.cursor = 'grabbing'
   event.preventDefault()
   event.stopImmediatePropagation()
 }, { capture: true })
-canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
+onCanvasInput('pointermove', (event) => {
   if (middlePan?.pointerId !== event.pointerId) return
   setCanvasViewportOffset(middlePan.offsetX + event.clientX - middlePan.x, middlePan.offsetY + event.clientY - middlePan.y)
   event.preventDefault()
@@ -3492,12 +3500,12 @@ canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
 function endMiddlePan(event) {
   if (middlePan?.pointerId !== event.pointerId) return
   middlePan = null
-  canvas.upperCanvasEl.style.cursor = ''
+  event.currentTarget.style.cursor = ''
   event.stopImmediatePropagation()
 }
-canvas.upperCanvasEl.addEventListener('pointerup', endMiddlePan, { capture: true })
-canvas.upperCanvasEl.addEventListener('pointercancel', endMiddlePan, { capture: true })
-canvas.upperCanvasEl.addEventListener('mousedown', (event) => { if (event.button === 1) event.preventDefault() })
+onCanvasInput('pointerup', endMiddlePan, { capture: true })
+onCanvasInput('pointercancel', endMiddlePan, { capture: true })
+onCanvasInput('mousedown', (event) => { if (event.button === 1) event.preventDefault() })
 
 canvas.on('before:path:created', ({ path }) => {
   const points = canvas.freeDrawingBrush?._points || []

@@ -47,12 +47,13 @@ try {
   const hostShot = () => page.screenshot({ clip: { x: 300, y: 90, width: 460, height: 540 } }) // the sheet only: no status text or toasts
   const jsonCanvas = () => page.evaluate(() => JSON.stringify(window.__personalNote.encodeDocument(window.__personalNote.leaferEdits.doc)))
   const drawn = () => page.evaluate(() => { const s = window.__personalNote.leaferCanvas().stats(); return s.drawn + s.skipped + s.unknown })
+  // a pixel counts as different beyond anti-aliasing noise: the selection layer repaints a few edge pixels by 1-4 levels (F-028)
   const pixelDiff = (one, two) => page.evaluate(async ([a, b]) => {
     const read = async (b64) => { const img = new Image(); img.src = `data:image/png;base64,${b64}`; await img.decode(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return x.getImageData(0, 0, c.width, c.height) }
     const [one, two] = [await read(a), await read(b)]
     let count = 0, minX = 1e9, minY = 1e9, maxX = -1, maxY = -1
     for (let i = 0; i < one.data.length; i += 4) {
-      if (one.data[i] !== two.data[i] || one.data[i + 1] !== two.data[i + 1] || one.data[i + 2] !== two.data[i + 2]) { count++; const px = (i / 4) % one.width, py = Math.floor(i / 4 / one.width); minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py) }
+      if (Math.abs(one.data[i] - two.data[i]) > 8 || Math.abs(one.data[i + 1] - two.data[i + 1]) > 8 || Math.abs(one.data[i + 2] - two.data[i + 2]) > 8) { count++; const px = (i / 4) % one.width, py = Math.floor(i / 4 / one.width); minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py) }
     }
     return { count, box: [minX, minY, maxX, maxY] }
   }, [one.toString('base64'), two.toString('base64')])
@@ -83,6 +84,8 @@ try {
   await page.waitForTimeout(300)
   check('Ctrl+Z restores the document exactly (JSON Canvas equal to before the delete)', (await jsonCanvas()) === before)
   check('the restored note is what gets saved', (await lastSaved()) === before)
+  await page.evaluate(() => window.__personalNote.leaferCanvas().whenSettled())
+  await page.evaluate(() => window.__personalNote.leaferCanvas().clearSelection()) // undo selects what it restored (F-028); the handles are not part of the picture
   await page.evaluate(() => window.__personalNote.leaferCanvas().whenSettled())
   const shotAfter = await hostShot()
   let diff

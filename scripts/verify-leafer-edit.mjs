@@ -128,6 +128,13 @@ try {
   await deselect()
   check('selecting alone saves nothing', puts.length === 0, `${puts.length} saves`)
 
+  // a thin pen line can be picked by clicking near it
+  const stroke = (await live()).objects.find((o) => o.type === 'ink' && o.kind === 'stroke')
+  const onStroke = await pagePoint(page, stroke.geometry.x + stroke.path[0][1] + 1, stroke.geometry.y + stroke.path[0][2] + 1)
+  await page.mouse.click(onStroke.x, onStroke.y)
+  check('a click on a pen line picks it', (await call(page, 'selection')).includes(stroke.id), JSON.stringify(await call(page, 'selection')))
+  await deselect()
+
   // ---- move
   let before = await live()
   await selectOnly(A)
@@ -259,13 +266,23 @@ try {
   check('delete: and from the screen', !(await call(page, 'hasNode', B)) && (await call(page, 'selection')).length === 0)
   check('delete: other objects stay', doc0.objects.filter((o) => o.id !== B && !attached.includes(o.id)).every((o) => objectOf(now, o.id)))
 
+  // ---- undo and redo (F-030's history) take the edits back
+  check('Ctrl+Z brings the deleted sticky and its connectors back', await act(() => page.keyboard.press('Control+z')) && Boolean(objectOf(savedDoc(), B)) && attached.every((id) => objectOf(savedDoc(), id)) && await call(page, 'hasNode', B))
+  check('Ctrl+Shift+Z deletes them again', await act(() => page.keyboard.press('Control+Shift+z')) && !objectOf(savedDoc(), B) && !(await call(page, 'hasNode', B)))
+  before = await live()
+  await selectOnly(A)
+  c = await centre(page, A)
+  await act(() => drag(c, { x: c.x + 30, y: c.y + 30 }))
+  check('a drag is one undo step', await act(() => page.keyboard.press('Control+z')) && JSON.stringify(objectOf(savedDoc(), A).geometry) === JSON.stringify(objectOf(before, A).geometry), JSON.stringify(objectOf(savedDoc(), A).geometry))
+  await sameGeometryAsOracle(A, 'undo of a move')
+  check('undo selects what it restored', (await call(page, 'selection')).includes(A))
+
   // ---- reload shows the same result
   const all = (await live()).objects.filter((o) => o.type !== 'unknown').map((o) => o.id)
   const allInOrder = (await live()).objects.sort((a, b) => a.z - b.z).map((o) => o.id)
   const cornersBefore = Object.fromEntries(await Promise.all(all.map(async (id) => [id, await liveCorners(page, id)])))
   const lockedBefore = (await live()).objects.filter((o) => o.locked).map((o) => o.id)
   const putsAtReload = puts.length
-  console.log('saved locked before reload:', JSON.stringify(stored.content.nodes.filter((n) => n.pn?.locked).map((n) => n.id.slice(-3))), 'puts', puts.length, 'live locked', JSON.stringify(lockedBefore.map((i) => i.slice(-3))))
   await page.reload()
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   await page.waitForTimeout(700)
