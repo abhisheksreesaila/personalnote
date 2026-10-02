@@ -159,14 +159,13 @@ class ConversionTests(Folder):
         return connection.execute("SELECT title, content_format, revision, page_state FROM notes ORDER BY id").fetchall()
 
     def test_old_notes_convert_once_and_the_old_file_is_kept_aside(self):
-        search_before = None
         service = NoteService(self.database)
         backup = self.folder / "personal-note.db.fabric-backup"
         self.assertTrue(backup.exists())
         old = sqlite3.connect(backup)
         self.addCleanup(old.close)
         self.assertEqual(old.execute("SELECT count(*) FROM notes").fetchone()[0], len(self.NOTES))
-        self.assertTrue(old.execute("SELECT content FROM notes WHERE title='Tools'").fetchone()[0].startswith('{"version"') or '"objects"' in old.execute("SELECT content FROM notes WHERE title='Tools'").fetchone()[0])
+        self.assertEqual(json.loads(old.execute("SELECT content FROM notes WHERE title='Tools'").fetchone()[0]), self.NOTES["Tools"]["content"], "the copy holds the Fabric JSON untouched")
         self.assertNotIn("content_format", [r[1] for r in old.execute("PRAGMA table_info(notes)")], "the copy is exactly what the old app wrote")
         for title, fmt, revision, _ in self.rows():
             self.assertEqual(fmt, FORMAT_CANVAS, title)
@@ -180,7 +179,6 @@ class ConversionTests(Folder):
             before = dm.from_fabric(fixture["content"], fixture["pageState"])
             after = jc.from_json_canvas(loaded["content"])
             self.assertEqual(len(after["objects"]), len(before["objects"]), title)
-        self.assertIsNone(search_before)
 
     def test_converting_again_changes_nothing(self):
         NoteService(self.database)
@@ -208,9 +206,9 @@ class ConversionTests(Folder):
 
     def test_search_still_finds_converted_notes(self):
         service = NoteService(self.database)
-        found = [item["title"] for item in service.search("Buy paper")]
-        self.assertIn("Tools", found)
-        self.assertEqual([item["title"] for item in service.search("ship the export")][:1], ["Text"] if "ship the export" in json.dumps(FIXTURES["app-text"]) else found[:1])
+        self.assertIn("Tools", [item["title"] for item in service.search("Buy paper")])
+        self.assertIn("Agent", [item["title"] for item in service.search("Agent follow-up")])
+        self.assertEqual([item["title"] for item in service.search("Geist")], [], "style names are not text")
 
     def test_a_note_that_fails_to_convert_stays_old_and_still_opens(self):
         connection = sqlite3.connect(self.database)
