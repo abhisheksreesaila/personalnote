@@ -34,7 +34,14 @@ export const rectEdges = (rect) => ({ left: rect.left, top: rect.top, right: rec
 export function contentBounds(objects, sizeOf = () => ({})) {
   let bounds = null
   for (const object of objects) {
-    if (!object?.geometry || object.type === 'connector' || object.type === 'unknown') continue
+    if (object?.type === 'unknown') { // not modelled: where its raw Fabric left, top, width and height put it; a page it occupies never folds
+      const raw = object.raw
+      if (!raw || typeof raw !== 'object' || !Number.isFinite(raw.left) || !Number.isFinite(raw.top)) continue
+      const edges = { left: raw.left, top: raw.top, right: raw.left + (Number.isFinite(raw.width) ? raw.width : 0), bottom: raw.top + (Number.isFinite(raw.height) ? raw.height : 0) }
+      bounds = bounds ? { left: Math.min(bounds.left, edges.left), top: Math.min(bounds.top, edges.top), right: Math.max(bounds.right, edges.right), bottom: Math.max(bounds.bottom, edges.bottom) } : edges
+      continue
+    }
+    if (!object?.geometry || object.type === 'connector') continue
     const edges = rectEdges(boundingRect(object, sizeOf(object)))
     bounds = bounds
       ? { left: Math.min(bounds.left, edges.left), top: Math.min(bounds.top, edges.top), right: Math.max(bounds.right, edges.right), bottom: Math.max(bounds.bottom, edges.bottom) }

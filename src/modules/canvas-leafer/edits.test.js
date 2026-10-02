@@ -61,3 +61,21 @@ test('delete leaves a locked object alone and removes the others', () => {
   edits.deleteObjects(['a', 'd'])
   assert.deepEqual(edits.doc.objects.map((o) => o.id), ['a', 'b', 'c'])
 })
+
+test('undoing a growth on the top and left after an agent wrote moves the agent\'s object back and keeps it inside the grid', async () => {
+  const { finalizeOp } = await import('./pages.js')
+  const UPRIGHT = { rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
+  const box = (id, x, y, z) => ({ id, type: 'image', z, geometry: { x, y, width: 100, height: 60, ...UPRIGHT } })
+  const base = { schemaVersion: 1, page: { columns: 1, rows: 1 }, objects: [box('a', 100, 100, 0), box('c', 300, 600, 1)], extras: {} }
+  const edits = createLeaferEdits({ onChange: () => {} })
+  edits.open('n', base)
+  const { op } = finalizeOp(base, { label: 'Move', changes: [{ id: 'a', before: base.objects[0], after: { ...base.objects[0], geometry: { ...base.objects[0].geometry, x: -40, y: -60 } } }] })
+  edits.record(op)
+  assert.equal(edits.doc.page.columns, 2)
+  edits.remote('n', { ...edits.doc, objects: [...edits.doc.objects, box('ag', 120 + 860, 900 + 1080, 5)] }) // the agent's object, in the user's frame
+  edits.undo()
+  const ag = edits.doc.objects.find((o) => o.id === 'ag')
+  assert.deepEqual([ag.geometry.x, ag.geometry.y], [120, 900])
+  assert.deepEqual([edits.doc.page.columns, edits.doc.page.rows], [1, 1])
+  assert.equal(edits.doc.objects.find((o) => o.id === 'c').geometry.x, 300)
+})

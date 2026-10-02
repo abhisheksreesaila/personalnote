@@ -9,6 +9,7 @@
 import { PAGE } from '../../core/document/schema.js'
 import { applyChanges } from '../../core/document/operations.js'
 import { deepEqual } from '../../core/document/history.js'
+import { shiftedDocument, shiftedObject } from '../../core/document/frame.js'
 import { boundingRect, contentBounds } from './bounds.js'
 import { danglingChanges, followChanges, indexById, rectOfObject } from './connectors.js'
 
@@ -67,17 +68,7 @@ export function growForDrag(pages, bounds, { pageW = PAGE.width, pageH = PAGE.he
   return { columns, rows, shiftX: prependColumns * pageW, shiftY: prependRows * pageH, changed: columns !== pages.columns || rows !== pages.rows }
 }
 
-// The object moved by whole distances in the page frame (a group's children are in the group's own frame, so they stay).
-export function shiftedObject(object, dx, dy) {
-  if (!object?.geometry || (!dx && !dy)) return object
-  return { ...object, geometry: { ...object.geometry, x: (object.geometry.x ?? 0) + dx, y: (object.geometry.y ?? 0) + dy } }
-}
-
-// The whole document moved by whole distances (what a page added on the top or left does to every object).
-export function shiftedDocument(doc, dx, dy) {
-  if (!dx && !dy) return doc
-  return { ...doc, objects: doc.objects.map((object) => shiftedObject(object, dx, dy)) }
-}
+export { shiftedDocument, shiftedObject }
 
 // The document with the changes applied, new objects (before: null) included.
 function withChanges(doc, changes) {
@@ -105,48 +96,41 @@ function mayChangeBounds(changes) {
 
 // An edit as one history op. `doc` is the document before the edit, `op` the edit ({ label, changes, selection?, page? }). Returns
 //   { op, shift }  `op` is the edit plus the connectors that follow what moved, the connectors left without an end, and the page change
-//                  the edit causes (`op.page = { before, after, shift }`, and every object moved when pages were added or folded on the
-//                  top or left); `shift` is that move (x, y), in total.
+//                  the edit causes (`op.page = { before, after, shift }`); `shift` is the distance the page frame moved when pages were added
+//                  or folded on the top or left. The objects the op names are given in the NEW frame; every other object is moved by the
+//                  history, as a frame operation, whenever the step is applied, undone or redone (core/document/history.js), so an object
+//                  that arrived since (an agent's) is moved back with the rest.
 // options.sizeOf(object): the measured { width, height } of an object the model gives no size for (text laid out by the engine).
-// options.grid: the grid on screen now when it is ahead of the document's (a drag grew it); options.preShift: the distance the nodes of
-//   every object NOT in the op were already moved (live growth on the top or left while dragging), so the model catches up.
-export function finalizeOp(doc, op, { sizeOf = () => ({}), grid = null, preShift = { x: 0, y: 0 } } = {}) {
+export function finalizeOp(doc, op, { sizeOf = () => ({}) } = {}) {
   const changes = op.changes.map((change) => ({ ...change }))
   const byId = new Map(changes.map((change) => [change.id, change]))
   const original = indexById(doc.objects)
   const rectOf = (object) => rectOfObject(object, sizeOf)
   const objectsNow = () => withChanges(doc, changes).objects
 
-  if (preShift.x || preShift.y) { // the objects the edit did not name were moved on screen already
-    for (const object of doc.objects) if (object?.geometry && object.id !== undefined && !byId.has(object.id)) mergeInto(changes, byId, object.id, object, shiftedObject(object, preShift.x, preShift.y))
-  }
   // connectors follow what moved; none is left without an end
   const named = op.changes.filter((change) => change.after && change.after.type !== 'connector').map((change) => change.id)
-  const touched = preShift.x || preShift.y ? null : named
-  if (touched === null || touched.length) {
-    for (const change of followChanges(objectsNow(), touched, rectOf)) mergeInto(changes, byId, change.id, original.get(change.id) ?? change.before, change.after)
+  if (named.length) {
+    for (const change of followChanges(objectsNow(), named, rectOf)) mergeInto(changes, byId, change.id, original.get(change.id) ?? change.before, change.after)
   }
   for (const change of danglingChanges(objectsNow())) mergeInto(changes, byId, change.id, original.get(change.id) ?? change.before, null)
   for (const change of [...changes]) if (change.before === null && change.after === null) { changes.splice(changes.indexOf(change), 1); byId.delete(change.id) }
 
   const before = op.page?.before ?? doc.page
-  const start = grid ?? op.page?.after ?? doc.page
-  let shiftX = preShift.x
-  let shiftY = preShift.y
+  const start = op.page?.after ?? doc.page
+  let shiftX = 0
+  let shiftY = 0
   let after = { columns: start.columns, rows: start.rows }
-  if (op.page || grid || mayChangeBounds(op.changes)) {
+  if (op.page || mayChangeBounds(op.changes)) {
     const settled = settlePages(start, contentBounds(objectsNow(), (object) => sizeOf(object)))
     after = { columns: settled.columns, rows: settled.rows }
-    if (settled.shiftX || settled.shiftY) {
-      for (const object of objectsNow()) if (object?.geometry && object.id !== undefined) mergeInto(changes, byId, object.id, original.get(object.id) ?? object, shiftedObject(object, settled.shiftX, settled.shiftY))
-      shiftX += settled.shiftX
-      shiftY += settled.shiftY
-    }
+    shiftX = settled.shiftX
+    shiftY = settled.shiftY
+    if (shiftX || shiftY) for (const change of changes) if (change.after) change.after = shiftedObject(change.after, shiftX, shiftY)
   }
   const result = { ...op, changes: changes.filter((change) => !(change.before && change.after && (change.before === change.after || deepEqual(change.before, change.after)))) }
   delete result.page
-  const columnsOrRowsChanged = after.columns !== before.columns || after.rows !== before.rows
-  if (columnsOrRowsChanged || shiftX || shiftY) result.page = { before, after: { ...before, columns: after.columns, rows: after.rows }, shift: { x: shiftX, y: shiftY } }
+  if (after.columns !== before.columns || after.rows !== before.rows || shiftX || shiftY) result.page = { before, after: { ...before, columns: after.columns, rows: after.rows }, shift: { x: shiftX, y: shiftY } }
   return { op: result, shift: { x: shiftX, y: shiftY } }
 }
 

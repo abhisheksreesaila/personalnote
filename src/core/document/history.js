@@ -20,6 +20,8 @@
 // it did not make, and a merge cannot corrupt the stacks. A step with nothing left to revert is dropped and undo continues to
 // the next one.
 
+import { shiftedObject } from './frame.js'
+
 const DEFAULT_MAX_STEPS = 200
 const DEFAULT_MAX_BYTES = 24 * 1024 * 1024
 
@@ -191,6 +193,12 @@ function applyOp(doc, op, direction, force = false) {
   const shift = op.page?.shift
   const signed = (value) => (value ? (direction === 'undo' ? -value : value) : 0)
   const pageShift = shift && (shift.x || shift.y) ? { x: signed(shift.x), y: signed(shift.y) } : null
+  if (pageShift) {
+    // The page frame moved: it is a move of the frame, applied to every object that exists NOW (an agent's included) except the ones this
+    // step itself put back (they are in the right frame already).
+    const handled = new Set([...removed, ...replaced.keys(), ...added.map(({ object }) => object.id)])
+    objects = objects.map((object) => (object && !handled.has(object.id) ? shiftedObject(object, pageShift.x, pageShift.y) : object))
+  }
   return { doc: { ...doc, objects, page }, changed, page: pageChanged, skipped, pageShift }
 }
 

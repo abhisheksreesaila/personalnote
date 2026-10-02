@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createHistory } from '../../core/document/history.js'
 import { PAGE } from '../../core/document/schema.js'
-import { finalizeOp, growForDrag, settlePages, shiftedDocument } from './pages.js'
+import { finalizeOp, growForDrag, settlePages, shiftedDocument, shiftedObject } from './pages.js'
 
 const UPRIGHT = { rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const box = (id, x, y, width = 100, height = 60) => ({ id, type: 'image', z: 0, geometry: { x, y, width, height, ...UPRIGHT } })
 const doc = (objects, columns = 1, rows = 1) => ({ schemaVersion: 1, page: { columns, rows }, objects: objects.map((object, z) => ({ ...object, z })), extras: {} })
 const W = PAGE.width
 const H = PAGE.height
+const objectOf = (d, id) => d.objects.find((o) => o.id === id)
 const rects = (left, top, right, bottom) => ({ left, top, right, bottom })
 
 test('content past the right or bottom edge adds a page, up to 6 px of overflow is allowed', () => {
@@ -100,15 +101,43 @@ test('a connector left without an end goes with it', () => {
   assert.deepEqual(op.changes.map((change) => [change.id, change.after]).sort(), [['ab', null], ['b', null]])
 })
 
-test('the objects an edit did not name catch up with a page shift already shown on screen, and the op carries all of it', () => {
+test('an object that arrives after a step that moved the frame is moved back with the rest when the step is undone, and forward again on redo', () => {
   const a = box('a', 100, 100)
   const b = box('b', 400, 300)
   const before = doc([a, b])
-  const dragged = { ...a, geometry: { ...a.geometry, x: -50 + W } } // the node is already in the shifted frame
-  const { op, shift } = finalizeOp(before, { label: 'Move', changes: [{ id: 'a', before: a, after: dragged }] }, { grid: { columns: 2, rows: 1 }, preShift: { x: W, y: 0 } })
-  assert.deepEqual(shift, { x: W, y: 0 })
-  assert.equal(op.changes.find((change) => change.id === 'b').after.geometry.x, 400 + W)
-  assert.deepEqual(op.page, { before: { columns: 1, rows: 1 }, after: { columns: 2, rows: 1 }, shift: { x: W, y: 0 } })
+  const { op } = finalizeOp(before, { label: 'Move', changes: [{ id: 'a', before: a, after: { ...a, geometry: { ...a.geometry, x: -50 } } }] })
+  const history = createHistory({ doc: before })
+  history.record(op)
+  assert.equal(objectOf(history.doc, 'b').geometry.x, 400 + W)
+  // an agent writes an object in the user's frame (the merge put it there)
+  history.mergeRemote({ ...history.doc, objects: [...history.doc.objects, { ...box('agent', 120 + W, 900), z: 9 }] })
+  history.undo()
+  assert.equal(objectOf(history.doc, 'agent').geometry.x, 120)
+  assert.equal(objectOf(history.doc, 'agent').geometry.y, 900)
+  assert.equal(objectOf(history.doc, 'b').geometry.x, 400)
+  history.redo()
+  assert.equal(objectOf(history.doc, 'agent').geometry.x, 120 + W)
+  assert.equal(objectOf(history.doc, 'b').geometry.x, 400 + W)
+})
+
+test('the op names only what the edit changed: the other objects are not part of it', () => {
+  const a = box('a', 100, 100)
+  const before = doc([a, box('b', 400, 300)])
+  const { op } = finalizeOp(before, { label: 'Move', changes: [{ id: 'a', before: a, after: { ...a, geometry: { ...a.geometry, x: -50 } } }] })
+  assert.deepEqual(op.changes.map((change) => change.id), ['a'])
+  assert.equal(op.changes[0].after.geometry.x, -50 + W)
+  assert.deepEqual(op.page.shift, { x: W, y: 0 })
+})
+
+test('an unknown object moves with the frame and keeps the page it is on from folding', () => {
+  const raw = { type: 'Triangle', left: W + 100, top: 50, width: 80, height: 60 }
+  const unknown = { type: 'unknown', z: 1, raw }
+  assert.equal(shiftedObject(unknown, 5, 7).raw.left, W + 105)
+  assert.equal(shiftedObject(unknown, 5, 7).raw.top, 57)
+  const a = box('a', 100, 100)
+  const before = { ...doc([a], 2, 1), objects: [{ ...a, z: 0 }, unknown] }
+  const { op } = finalizeOp(before, { label: 'Move', changes: [{ id: 'a', before: a, after: { ...a, geometry: { ...a.geometry, x: 120 } } }] })
+  assert.equal(op.page, undefined, 'the second page stays: something is on it')
 })
 
 test('moving everything off the right page folds it away in the same step', () => {

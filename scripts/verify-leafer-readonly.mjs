@@ -106,10 +106,14 @@ try {
   await page.waitForTimeout(300)
   const printHidden = await page.evaluate(() => document.querySelector('#print-preview').hidden)
   const notice = await page.evaluate(() => document.querySelector('#toast')?.textContent || '')
-  check('Print does not open in Leafer mode and says it returns soon', printHidden && /Print returns soon/i.test(notice), notice)
-  await page.evaluate(() => document.querySelector('#share-print')?.click())
+  check('Print opens its preview in Leafer mode (F-033) and says nothing about returning later', !printHidden && !/Print returns soon/i.test(notice), notice)
+  await page.keyboard.press('Escape')
   await page.waitForTimeout(300)
-  check('the Share menu Print entry is inert too', await page.evaluate(() => document.querySelector('#print-preview').hidden))
+  await page.evaluate(() => document.querySelector('#share-print')?.click())
+  await page.waitForTimeout(600)
+  check('the Share menu Print entry opens it too', await page.evaluate(() => !document.querySelector('#print-preview').hidden))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
 
   // 6. fonts finishing late: text without a stored size is measured again and placed again
   await page.evaluate(() => document.querySelector('[data-note-id="2"]')?.click())

@@ -79,13 +79,12 @@ function textProps(object, { width, padding = 0, offsetY = 0 }) {
 const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y2}`).join(' ')
 
 // `onOperation(op, { coalesce })` is how an edit leaves the scene: the host records it (undo history, save) and returns the new document.
-// `onDelete(ids)` records a delete the same way (the host's one owner of the rule) and returns the new document.
 // F-029: `defaults.text()` is the model style for a new text ({ fontFamily, fontSize, color ... }); `defaults.sticky()` is
 // { fill, ink, style } for a new sticky. `onBegin(label)` / `onEnd()` group edits into one undo step (a new sticky and the words typed
 // into it); `onTextEvent(type)` hears 'start', 'end' and 'escape' of a text edit.
 // F-032: `onPages({ columns, rows, shiftX, shiftY })` hears that the page grid grew while an object was being dragged, resized or turned (the
 // host sets its page state and moves the view by the shift so nothing seems to move); an edit's own page change travels in the op instead.
-export function createScene({ host, width, height, onOperation = () => null, onDelete = null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, defaults = {} }) {
+export function createScene({ host, width, height, onOperation = () => null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, defaults = {} }) {
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
   const app = new App({ view: host, width, height, pixelRatio: Math.min(2, globalThis.devicePixelRatio || 1), tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
   const leafer = app.tree
@@ -415,7 +414,10 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       if (change.after) entry.object = latest.get(change.id) ?? change.after
       else if (!named.has(change.id)) dropEntry(entry) // a connector left without an end (the edit's own removals are dropped by its caller)
     }
-    if (shift.x || shift.y) shiftNodes(shift)
+    if (shift.x || shift.y) {
+      for (const entry of entries.values()) entry.object = latest.get(entry.id) ?? entry.object // the frame moved: the history moved every object
+      shiftNodes(shift)
+    }
     if (offset.x || offset.y) applyView() // the note's layer goes back to the view's own place, in the same frame as the nodes catch up
     if (whole.page) pages = { columns: whole.page.after.columns, rows: whole.page.after.rows }
     for (const change of whole.changes) {

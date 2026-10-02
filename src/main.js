@@ -2353,7 +2353,7 @@ function mountLeaferCanvas() {
   leaferHost = host
   host.id = 'leafer-host'
   elements.paper.prepend(host)
-  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options), onDelete: (ids) => { leaferEdits.deleteObjects(ids); return leaferEdits.doc },
+  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options),
     onBegin: (label) => leaferEdits.begin(label),
     onEnd: () => leaferEdits.end(),
     // A drag, a resize or a turn brought an object near an edge: the page grid grows in every direction (the Fabric path's expandPagesDuringTransform).

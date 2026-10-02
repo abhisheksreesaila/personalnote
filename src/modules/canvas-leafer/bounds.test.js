@@ -37,10 +37,11 @@ test('a text block without a stored size is measured by the host', () => {
   assert.equal(rect.left, 9.5)
 })
 
-test('the content bounds leave out connectors and unknown objects, and are null for an empty note', () => {
+test('the content bounds leave out connectors, and are null for an empty note', () => {
   const geometry = { x: 0, y: 0, width: 10, height: 10, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
   assert.equal(contentBounds([]), null)
   const box = (x, y, extras) => ({ type: 'image', geometry: { ...geometry, x, y }, ...extras })
   const bounds = contentBounds([box(0, 0), box(100, 50), { type: 'connector', geometry: { ...geometry, x: -999, y: -999 } }, { type: 'unknown', raw: {} }])
   assert.deepEqual(bounds, { left: 0, top: 0, right: 110, bottom: 60 })
+  assert.deepEqual(contentBounds([box(0, 0), { type: 'unknown', raw: { left: 900, top: 20, width: 50, height: 30 } }]), { left: 0, top: 0, right: 950, bottom: 50 }, 'an unknown object counts by its raw left, top and size')
 })

@@ -13,6 +13,9 @@
 // the object ids that should be selected afterwards (undo: what the step restored or the selection it began with).
 import { createHistory } from '../../core/document/history.js'
 import { planRemove } from '../../core/document/operations.js'
+import { shiftedDocument } from '../../core/document/frame.js'
+import { contentBounds } from './bounds.js'
+import { settlePages } from './pages.js'
 
 export function createLeaferEdits({ onChange = () => {} } = {}) {
   let history = null
@@ -21,10 +24,29 @@ export function createLeaferEdits({ onChange = () => {} } = {}) {
   const changed = (kind, info = {}) => onChange(history.doc, { kind, changed: [], page: false, pageShift: null, viewShift: null, selection: [], ...info })
   const live = () => (history ? history : null)
 
+  // After an undo or redo that moved the page grid or its frame, the pages are settled again around the content there is NOW: an object that
+  // arrived meanwhile (an agent's) may sit on a page the step took away, or a page may be left empty. That is the document catching up, not an
+  // edit (nothing is added to the history).
+  function resettle(result) {
+    let { pageShift } = result
+    let page = result.page
+    if (!result.page && !pageShift) return { page, pageShift }
+    const doc = history.doc
+    const settled = settlePages(doc.page, contentBounds(doc.objects))
+    if (settled.columns !== doc.page.columns || settled.rows !== doc.page.rows || settled.shiftX || settled.shiftY) {
+      history.mergeRemote({ ...shiftedDocument(doc, settled.shiftX, settled.shiftY), page: { ...doc.page, columns: settled.columns, rows: settled.rows } })
+      pageShift = { x: (pageShift?.x ?? 0) + settled.shiftX, y: (pageShift?.y ?? 0) + settled.shiftY }
+      page = true
+    }
+    return { page, pageShift: pageShift && (pageShift.x || pageShift.y) ? pageShift : null }
+  }
+
   function wrap(kind) {
     const result = history?.[kind]() ?? null
-    if (result) changed(kind, { changed: result.changed, page: result.page, pageShift: result.pageShift, viewShift: result.pageShift, selection: result.selection })
-    return result
+    if (!result) return null
+    const { page, pageShift } = resettle(result)
+    changed(kind, { changed: result.changed, page, pageShift, viewShift: pageShift, selection: result.selection })
+    return { ...result, page, pageShift, doc: history.doc }
   }
 
   return {
