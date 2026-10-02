@@ -97,8 +97,14 @@ export function createTextOverlay({ host }) {
     return value
   }
 
+  // A control that keeps the editor open must not take the focus either (the textarea would blur, and on a phone the keyboard would close).
+  function keepFocus(event) {
+    if (event.target?.closest?.('[data-keeps-text-editing]')) event.preventDefault()
+  }
+
   function teardown() {
     window.removeEventListener('pointerdown', outside, true)
+    window.removeEventListener('mousedown', keepFocus, true)
     area.removeEventListener('blur', onBlur)
     area.remove()
     area = null
@@ -106,8 +112,10 @@ export function createTextOverlay({ host }) {
     composing = false
   }
 
+  // A press on a control marked data-keeps-text-editing (the voice buttons, Prettify) acts on the words being edited, so it leaves the editor open.
   function outside(event) {
-    if (event.target !== area) finish(true)
+    if (event.target === area || event.target?.closest?.('[data-keeps-text-editing]')) return
+    finish(true)
   }
 
   function onBlur() {
@@ -166,11 +174,29 @@ export function createTextOverlay({ host }) {
       area.addEventListener('keydown', onKeydown)
       area.addEventListener('blur', onBlur)
       window.addEventListener('pointerdown', outside, true)
+      window.addEventListener('mousedown', keepFocus, true)
       area.focus({ preventScroll: true })
       // The caret goes where the person pointed (in the text's own frame), else to the end of the words.
       const at = caret ? indexAtPoint(area, caret.x, caret.y - shift) : area.value.length
       area.setSelectionRange(at, at)
       onInput(fit())
+    },
+    // Replaces all the words (voice dictation), the caret at the end. Not while an input method is composing: that is the person typing.
+    setValue(value) {
+      if (!area || composing) return false
+      area.value = value
+      area.setSelectionRange(value.length, value.length)
+      session.onInput(fit())
+      return true
+    },
+    // The selected range in the field, and a replacement for it ([start, end) -> text), the selection left on the new words.
+    get selection() { return area ? { start: area.selectionStart, end: area.selectionEnd } : null },
+    replaceRange(start, end, text) {
+      if (!area || composing) return false
+      area.value = `${area.value.slice(0, start)}${text}${area.value.slice(end)}`
+      area.setSelectionRange(start, start + text.length)
+      session.onInput(fit())
+      return true
     },
     // The text moved on screen (the view moved, the window changed size): put the overlay back over it.
     setMatrix(matrix) { if (session) { session.matrix = matrix; place() } },

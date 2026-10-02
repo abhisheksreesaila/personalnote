@@ -198,11 +198,11 @@ document.querySelector('#app').innerHTML = `
             </div>
             <div class="dock-divider"></div>
             <div class="tool-group dock-history">
-              <button class="tool-button prettify-button" id="prettify" title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
+              <button class="tool-button prettify-button" id="prettify" data-keeps-text-editing title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
               <button class="tool-button" id="undo" title="Undo" aria-label="Undo">${dockIcon("undo")}</button>
               <button class="tool-button" id="redo" title="Redo" aria-label="Redo">${dockIcon("redo")}</button>
             </div>
-            <button class="voice-button" id="voice-button" title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon">${dockIcon("mic", 2)}</span></button>
+            <button class="voice-button" id="voice-button" data-keeps-text-editing title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon">${dockIcon("mic", 2)}</span></button>
           </div>
           <div class="mindmap-dock-actions mindmap-rail-actions" id="mindmap-rail-actions" aria-label="Mind map tools" hidden>
             <button class="tool-button" data-map-action="image" title="Add image" aria-label="Add image"><i data-lucide="image-plus"></i></button>
@@ -220,7 +220,7 @@ document.querySelector('#app').innerHTML = `
         <div class="mobile-capture-controls" aria-label="Canvas capture controls">
           <button class="mobile-connect-button" id="mobile-connect" title="Connect two objects" aria-label="Connect two objects" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
           <button class="mobile-draw-button" id="mobile-draw" aria-label="Enable drawing"><i data-lucide="pencil"></i><span>Draw</span></button>
-          <button class="mobile-speak-button" id="mobile-speak" title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
+          <button class="mobile-speak-button" id="mobile-speak" data-keeps-text-editing title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
         </div>
         <section class="ink-options-popover" id="ink-options-popover" role="dialog" aria-label="Ink options" hidden>
           <div class="ink-options-heading">
@@ -2390,15 +2390,6 @@ function mountLeaferCanvas() {
   pill.className = 'engine-pill'
   pill.setAttribute('role', 'status')
   pill.textContent = 'Preview: select, arrange, text and notes'
-  // Not on the new canvas yet: say so on the controls instead of leaving them dead.
-  for (const id of ['prettify', 'voice-button', 'mobile-speak']) {
-    const button = document.getElementById(id)
-    if (!button) continue
-    button.disabled = true
-    button.setAttribute('aria-disabled', 'true')
-    button.title = `${button.getAttribute('aria-label') || button.title} (not available yet on the new canvas)`
-    button.dataset.leaferDisabled = 'true'
-  }
   document.body.append(pill)
 }
 mountLeaferCanvas()
@@ -2941,6 +2932,7 @@ function syncTypographyControls() {
 
 function prettifyActiveNote() {
   if (state.activeNoteType !== 'canvas') return
+  if (useLeafer) { leaferCanvas.prettify(); return } // the document model: the same tidy per text, one undo step
   const activeText = selectedTextObject()
   const hasSelection = activeText && activeText.selectionStart !== activeText.selectionEnd
   const textObjects = hasSelection ? [activeText] : canvas.getObjects().filter(isEditableText)
@@ -3141,7 +3133,18 @@ function voiceInsertPoint() {
   }
 }
 
+// Leafer mode (F-035): the words go into the text being edited through the overlay (the selected text, the open one, or a new text box).
+// The "target" is only what the dictation session reads: the words in the editor now.
+let leaferVoiceShown = '' // the words last put in the editor
+function createLeaferVoiceTarget() {
+  const layout = pageBoundedTextLayout(voiceInsertPoint(), { pageWidth: PAGE_WIDTH })
+  const { fresh } = leaferCanvas.beginDictation({ x: layout.x, y: layout.y }, { width: layout.width })
+  leaferVoiceShown = leaferCanvas.dictationText() ?? ''
+  return { __voiceDictationBox: fresh, get text() { return leaferCanvas.dictationText() ?? '' } }
+}
+
 function createVoiceTextBox() {
+  if (useLeafer) return createLeaferVoiceTarget()
   const selected = selectedTextObject()
   if (selected) return selected
   const layout = pageBoundedTextLayout(voiceInsertPoint(), { pageWidth: PAGE_WIDTH })
@@ -3169,6 +3172,11 @@ function createVoiceTextBox() {
 
 function removeEmptyVoiceTextBox() {
   const target = dictationSession.target
+  if (useLeafer) {
+    if (dictationSession.active && dictationSession.partial) updateVoiceTextBox(dictationSession.preview(''), { create: false })
+    if (target?.__voiceDictationBox && !target.text.trim() && leaferCanvas.isEditingText()) leaferCanvas.finishTextEdit() // a new box nothing was said into is never made
+    return
+  }
   if (dictationSession.active && dictationSession.partial) {
     updateVoiceTextBox(dictationSession.preview(''), { create: false })
   }
@@ -3180,7 +3188,19 @@ function removeEmptyVoiceTextBox() {
 }
 
 function updateVoiceTextBox(text, { record = false, create = true } = {}) {
-  if (useLeafer) return
+  if (useLeafer) {
+    if (!dictationSession.target || !leaferCanvas.isEditingText()) { // the editor was closed meanwhile: what comes next goes in a new text box
+      if (!create) return
+      const shown = leaferVoiceShown
+      dictationSession.target = createVoiceTextBox()
+      dictationSession.committed = ''
+      text = text.startsWith(shown) ? text.slice(shown.length).trim() : text
+    }
+    leaferCanvas.setDictation(text)
+    leaferVoiceShown = text
+    if (record) leaferCanvas.flushText() // final words are in the document (and a save) now, inside the same typing session
+    return
+  }
   if (!dictationSession.target || !canvas.getObjects().includes(dictationSession.target)) {
     if (!create) return
     dictationSession.target = createVoiceTextBox()

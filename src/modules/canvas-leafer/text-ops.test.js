@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { applyChanges } from '../../core/document/operations.js'
 import { applyMatrix, placementMatrix } from './placement.js'
-import { fitGeometry, newSticky, newText, nextZ, objectAt, planSetContent, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
 
 const box = { x: 100, y: 50, width: 240, height: 200, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const doc = () => ({
@@ -93,4 +93,16 @@ test('toLocal is the inverse of the placement, turned or not', () => {
   const p = applyMatrix(placementMatrix(g), { x: 40, y: 25 })
   const local = toLocal(g, { width: g.width, height: g.height }, p)
   assert.ok(Math.abs(local.x - 40) < 1e-9 && Math.abs(local.y - 25) < 1e-9)
+})
+
+test('Prettify tidies every unlocked text and sticky in one op, with the geometry the new words need, and records nothing when all is tidy', () => {
+  const d = doc()
+  d.objects[0].content = '- one   \n\n\n\ntwo'
+  d.objects[2].content = '- locked  '
+  const plan = planPrettify(d, { fit: (object) => ({ ...object.geometry, height: 99 }) })
+  assert.deepEqual(plan.op.changes.map((change) => change.id), ['t'])
+  assert.equal(plan.op.changes[0].after.content, '• one\n\ntwo')
+  assert.equal(plan.op.changes[0].after.geometry.height, 99)
+  const tidy = applyChanges(d, plan.op)
+  assert.equal(planPrettify(tidy, { fit: (object) => object.geometry }).op.changes.length, 0)
 })

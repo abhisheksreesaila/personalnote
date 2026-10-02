@@ -4,6 +4,7 @@ import { paletteKeyFor } from '../../core/document/palette.js'
 import { isLocked } from '../../core/document/operations.js'
 import { STICKY_MIN_HEIGHT, STICKY_PADDING, STICKY_WIDTH } from '../editor/objects.js'
 import { applyMatrix, placementMatrix } from './placement.js'
+import { prettifyText } from '../editor/prettify.js'
 
 const UPRIGHT = { rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const isTextual = (object) => object?.type === 'text' || object?.type === 'sticky'
@@ -57,6 +58,20 @@ export function planSetStyle(doc, { ids, style, paper }) {
     if (after !== object) changes.push({ id, before: object, after })
   }
   return result('Text style', changes)
+}
+
+// Prettify (the same mechanical tidy as the Fabric path: prettifyText on the whole of each text) for every text and sticky that is not
+// locked. `fit(object)` gives the geometry the new words need. One op, so one undo step; nothing to record when all is tidy already.
+export function planPrettify(doc, { fit }) {
+  const changes = []
+  for (const object of doc.objects) {
+    if (!isTextual(object) || isLocked(object)) continue
+    const content = prettifyText(object.content ?? '')
+    if (content === (object.content ?? '')) continue
+    const next = { ...object, content }
+    changes.push({ id: object.id, before: object, after: { ...next, geometry: fit(next) } })
+  }
+  return result('Prettify', changes)
 }
 
 // The geometry an object has once its words are measured: `content` is the size of the laid-out words ({ width, height }, for a

@@ -496,11 +496,11 @@
 @media screen {
   #leafer-host { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
   #leafer-host canvas { display: block; }
-  .app-shell.engine-leafer .tool-dock, .app-shell.engine-leafer #voice-button, .app-shell.engine-leafer #mobile-speak { opacity: .35; pointer-events: none; }
+  .app-shell.engine-leafer .tool-dock { opacity: .35; pointer-events: none; }
   /* F-030: Undo and Redo work in Leafer mode; the rest of the dock stays dimmed and inert until F-028 and later tickets bring its tools. */
   .app-shell.engine-leafer .tool-dock { opacity: 1; }
-  .app-shell.engine-leafer .tool-dock > :not(.dock-history), .app-shell.engine-leafer .dock-history .prettify-button { opacity: .35; }
-  .app-shell.engine-leafer .dock-history #undo, .app-shell.engine-leafer .dock-history #redo { pointer-events: auto; }
+  .app-shell.engine-leafer .tool-dock > :not(.dock-history) { opacity: .35; }
+  .app-shell.engine-leafer .dock-history #undo, .app-shell.engine-leafer .dock-history #redo, .app-shell.engine-leafer .dock-history #prettify, .app-shell.engine-leafer #voice-button { pointer-events: auto; opacity: 1; }
   .engine-pill { position: fixed; z-index: 40; right: 16px; bottom: 66px; padding: 4px 10px; border-radius: 999px; font: 500 11px/1.4 "Geist Mono", ui-monospace, monospace; color: var(--ui-muted, #6e6e78); background: color-mix(in srgb, var(--paper, #fbfaf5) 86%, transparent); border: 1px solid var(--line, #d4cec3); pointer-events: none; }
   @media (max-width: 800px) { .engine-pill { bottom: 92px; right: 12px; } }
   /* F-028: select, move, resize, turn, lock and arrange work on Leafer. While the Select tool is on, Leafer takes the pointer; the Hand

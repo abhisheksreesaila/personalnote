@@ -22,7 +22,8 @@ import { bakedStickyShadow, STICKY_CORNERS } from './sticky-shadow.js'
 import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
 import { newImage } from './media.js'
 import { createTextOverlay } from './text.js'
-import { fitGeometry, newSticky, newText, nextZ, objectAt, planSetContent, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
+import { prettifySelection } from '../editor/prettify.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
 const TEXT_DEFAULTS = { fontFamily: 'Times New Roman', fontSize: 40, fontWeight: 'normal', fontStyle: 'normal', lineHeight: 1.16, textAlign: 'left', color: 'rgb(0,0,0)' }
@@ -832,7 +833,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     // A new text at a page point (typed in the overlay; nothing is made until there are words).
     createText(point, options = {}) {
-      const object = newText({ id: newId(), z: nextZ(doc), point, style: defaults.text?.() ?? {} })
+      let object = newText({ id: newId(), z: nextZ(doc), point, style: defaults.text?.() ?? {} })
+      if (options.width) object = { ...object, mode: 'box', geometry: { ...object.geometry, width: options.width } } // a text box that wraps at this width
       return startTextEdit(object, { select: options.select ?? true })
     },
     // A new sticky centred on a page point: made at once, selected, with its first words in the same undo step.
@@ -846,6 +848,38 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const entry = entries.get(object.id)
       if (!entry) { onEnd(); return false }
       return startTextEdit(entry.object, { entry, began: true })
+    },
+    // Voice dictation (F-035): the words go into the text being edited, through the overlay, so they are part of that typing session
+    // (one undo step, saved as typed). beginDictation opens the editor for it: the one already open, else the single selected text or
+    // sticky (caret at its end), else a new text box at `point` (wrapping at `width`; nothing is made until there are words).
+    // Returns { ok, fresh } (fresh: a new text, which an empty dictation leaves unmade).
+    beginDictation(point, { width } = {}) {
+      if (overlay.isOpen) return { ok: true, fresh: !textEdit?.entry }
+      const picked = selectedEntries().filter((entry) => isTextual(entry.object) && !isLocked(entry.object))
+      if (picked.length === 1 && editorEntries().length === 1) return { ok: startTextEdit(picked[0].object, { entry: picked[0] }), fresh: false }
+      return { ok: textApi.createText(point, { width }), fresh: true }
+    },
+    // The words in the editor now (an interim result, the final ones), or null when no editor is open.
+    dictationText: () => (overlay.isOpen ? overlay.value : null),
+    // Puts the words (all of them: what was there plus what is dictated) in the editor. False when no editor is open.
+    setDictation: (words) => overlay.isOpen && overlay.setValue(words),
+    // Prettify (F-035): the words selected in the editor when there are some (the editor stays open), else every text and sticky of the
+    // note, as one step. False when nothing changed.
+    prettify() {
+      if (overlay.isOpen) {
+        const range = overlay.selection
+        if (range && range.start !== range.end) {
+          const next = prettifySelection(overlay.value, range.start, range.end)
+          return overlay.replaceRange(range.start, range.end, next.text.slice(next.start, next.end))
+        }
+        overlay.commit() // the words typed so far are an edit of their own; then the whole note is tidied
+      }
+      const plan = planPrettify(doc, { fit: (object) => fitGeometry(object, contentSize(object)) })
+      if (!plan.op.changes.length) return false
+      const ids = selectedIds()
+      commit(plan.op, { selection: { before: ids, after: ids } })
+      keepingSelection(() => { for (const change of plan.op.changes) { const entry = entries.get(change.id); if (entry) { refreshBox(entry); rebuild(entry) } } })
+      return true
     },
     // What Leafer drew for a text or sticky (for checks): its lines, and the font it used.
     textInfo(id) {
