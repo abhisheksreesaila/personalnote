@@ -2370,6 +2370,15 @@ async function showLeaferNote(note, { openView = true } = {}) {
   return true
 }
 
+// While the text editor is open the page may not zoom (iOS zooms in on a field with small text when it takes the focus); the rest of the
+// time the viewport allows the person's own pinch-zoom.
+function setPageZoomLocked(locked) {
+  const meta = document.querySelector('meta[name="viewport"]')
+  if (!meta) return
+  const base = 'width=device-width, initial-scale=1.0'
+  meta.setAttribute('content', locked ? `${base}, maximum-scale=1.0` : base)
+}
+
 function mountLeaferCanvas() {
   const host = document.createElement('div')
   leaferHost = host
@@ -2382,6 +2391,7 @@ function mountLeaferCanvas() {
     onPages: ({ columns, rows, shiftX, shiftY }) => { state.pages = { ...state.pages, columns, rows }; resizePaper(shiftX, shiftY) },
     onTextEvent: (type) => {
       if (type === 'escape') setTool('select')
+      if (type === 'start' || type === 'end') setPageZoomLocked(type === 'start')
     },
     // What a new text and a new sticky look like: the Fabric path's defaults (addText, stickyDefaults), in the model's words.
     defaults: {
@@ -3680,18 +3690,19 @@ function updateCanvasPinch() {
 }
 
 // What pointer put down last, and whether a pen has touched this window (F-035). An Apple Pencil (pointerType 'pen') draws; once one has
-// been used, a finger is for panning and pinching, never for drawing, so a resting palm leaves no marks.
+// touched, a finger is for panning and pinching, never for drawing, so a resting palm leaves no marks.
 let lastPointerType = 'mouse'
-let penSeen = false
+let penLastAt = -Infinity // when a pen last touched the screen (a hovering pen does not count)
+const penInUse = () => performance.now() - penLastAt < 10000 // after ten seconds without a pen a finger may draw again
 window.addEventListener('pointerdown', (event) => { lastPointerType = event.pointerType || 'mouse' }, true)
-for (const type of ['pointerdown', 'pointermove', 'pointerover']) window.addEventListener(type, (event) => { if (event.pointerType === 'pen') penSeen = true }, true) // (a hovering pencil counts)
+for (const type of ['pointerdown', 'pointermove']) window.addEventListener(type, (event) => { if (event.pointerType === 'pen' && event.buttons > 0) penLastAt = performance.now() }, true)
 
 // Does a finger put down here pan the view, or is it for the tool? Off the pages, with the Hand, or (palm rejection) with a drawing tool
 // while a pen is in use: it pans. On Leafer with the Select, Text or Sticky tool, a finger on paper (not on an object or the handles of
 // the selection) pans too, as on every phone canvas; there is no marquee by finger.
 function fingerPans(event) {
   if (state.tool === 'hand' || isOutsidePages(event)) return true
-  if (penSeen && (state.tool === 'pen' || state.tool === 'highlight' || state.tool === 'eraser')) return true
+  if (penInUse() && (state.tool === 'pen' || state.tool === 'highlight' || state.tool === 'eraser')) return true
   if (useLeafer && (state.tool === 'select' || state.tool === 'text' || state.tool === 'sticky')) return leaferCanvas.touchHit(event.clientX, event.clientY) === 'empty'
   return false
 }
@@ -4208,6 +4219,8 @@ elements.mobileSpeak.addEventListener('pointerup', async (event) => {
 })
 elements.mobileSpeak.addEventListener('pointercancel', async () => mobileHoldController.cancel())
 elements.mobileSpeak.addEventListener('contextmenu', (event) => event.preventDefault())
+// A finger choosing a drawing tool says a finger is going to draw: pen use is forgotten at once.
+for (const selector of ['#mobile-draw', '[data-tool="pen"]', '[data-tool="highlight"]', '[data-tool="eraser"]']) document.querySelectorAll(selector).forEach((button) => button.addEventListener('pointerdown', (event) => { if (event.pointerType === 'touch') penLastAt = -Infinity }))
 document.querySelector('#mobile-draw').addEventListener('click', () => setTool(state.tool === 'pen' ? 'text' : 'pen'))
 // Phones have no dock: Select (to move and resize by finger; the default Text tool edits what a finger taps) and Sticky sit beside Draw.
 document.querySelector('#mobile-select').addEventListener('click', () => setTool(state.tool === 'select' ? 'text' : 'select'))
