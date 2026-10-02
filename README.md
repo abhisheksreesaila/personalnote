@@ -106,8 +106,10 @@ It copies the database (SQLite backup; if the app-data database already has note
 - Optional built-in mind-map note type with SVG editing and JSON/PNG export
 - Optional built-in voice capture that inserts final transcript text into a canvas note
 - Print preview with one physical sheet per logical canvas page
+- Notes are stored as [JSON Canvas](https://jsoncanvas.org) (the open format Obsidian uses) with a small `pn` extension for exact geometry; pictures and ink/shape SVGs are files in a `media/` folder next to the database
 - Whole-workspace JSON backup and non-destructive import
 - Readable Markdown-plus-assets ZIP export
+- Obsidian vault export and import (`.canvas` files and attachments): Share menu › Obsidian vault, or `bin/personal-note export vault --output DIR` and `bin/personal-note import-vault DIR-or-ZIP`. When an older database is first opened, it is converted once and the old file is kept beside it as `personal-note.db.fabric-backup`
 - Screen-only dark neutral/violet workspace chrome; saved canvas content and printed output are unchanged
 
 ## Internal module boundaries

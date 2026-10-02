@@ -51,10 +51,10 @@ Objects and the desk (F-012): a note opens zoomed out so every page is on the de
 
 A note type is immutable after creation:
 
-- `canvas` stores Fabric JSON plus `{columns, rows}` page state.
-- `mindmap` stores normalized map JSON in the same `notes.content` column.
+- `canvas` stores a JSON Canvas 1.0 document with `pn` extensions (see below) in `notes.content`, with `notes.content_format = 'json-canvas'`; `page_state` keeps `{columns, rows}` (also in the document's top-level `pn.page`, which wins). Old rows hold Fabric JSON (`content_format = 'fabric'`) until converted.
+- `mindmap` stores normalized map JSON in the same `notes.content` column (`content_format = 'mindmap'`).
 
-Every write increments an integer revision. A caller that supplies a stale revision receives HTTP 409. FTS5 indexing is updated in the same transaction as note content, using Fabric text or mind-map node labels.
+Every write increments an integer revision. A caller that supplies a stale revision receives HTTP 409. FTS5 indexing is updated in the same transaction as note content, using the Markdown projection of a canvas (its text blocks in reading order: top edge of the box first, then left edge, blank-line separated) or mind-map node labels. The agent CLI's `read` and the Markdown export use the same projection.
 
 ### Optional built-in mind map
 
@@ -80,9 +80,10 @@ The editor chunk is fetched only when a mind-map note opens. Canvas notes create
 
 `portability.py` depends on the storage service's snapshot/import methods:
 
-- `GET /api/export/workspace` returns the versioned, lossless JSON contract.
+- `GET /api/export/workspace` returns the versioned, lossless JSON contract (version 2: canvases as self-contained JSON Canvas with pictures and SVGs inline as data URLs; version 1 Fabric backups still import).
 - `POST /api/import/workspace` validates the entire payload, then merges copied notebooks and notes in one transaction.
 - `GET /api/export/markdown` returns a readable ZIP projection with a manifest and extracted embedded image assets.
+- `GET /api/export/vault` and `POST /api/import/vault` (also `personal-note export vault --output DIR` and `import-vault PATH`) move an Obsidian vault: one folder per notebook of `.canvas` files, pictures and SVGs in `attachments/`, mind maps as `.md` outlines. Import reads `.canvas` and `.md` files as new notes in new notebooks, resolves attachments from the vault, and never touches existing notes (`vault.py`).
 
 Import never deletes or overwrites existing notes. New local resource IDs are assigned, and conflicting canvas object IDs are regenerated. This gives users a safe restore path without inventing sync or conflict-resolution semantics.
 
@@ -107,6 +108,7 @@ erDiagram
         int revision
         int notebook_id FK
         string note_type
+        string content_format
         string title
         text content
         text page_state
@@ -119,11 +121,19 @@ erDiagram
     }
 ```
 
+### JSON Canvas storage and the one-time conversion (F-026)
+
+A canvas note's `content` is JSON Canvas 1.0 (ADR 0002). JSON Canvas fields carry what other apps use: `id`, integer `x/y/width/height` (the nearest rounding of the exact box), `text` as Markdown (a text node, or a sticky with its colour), `file` for pictures, `edges` with `fromNode/toNode/fromSide/toSide/toEnd` for connectors, array order as z-order. A `pn` object on each node and edge holds the exact model object (geometry with rotation/scale/skew, ink points and path, shape kind, sticky style, opacity, shadow, extras); the top-level `pn` holds `schemaVersion`, `page`, `grid`, `extras` and `detached` (connectors whose end is not in the note). `pn` is canonical for what it holds, the native fields for what they hold, so an edit made in Obsidian (moved or retyped text, a recoloured sticky, a reversed arrow) is picked up and an untouched node is exact. Ink strokes, dots and shapes also get a derived SVG written to `media/` and a `file` node pointing at it, so Obsidian shows them; the SVG is rebuilt from `pn` on every save and ignored on read. Anything that is not an object the model knows stays in `pn.raw`. A canvas made by another app (no `pn`) opens as a page-based note: text cards become text (coloured ones stickies), image files pictures, other files and links `[[file]]` / `[url](url)` text, groups a dashed frame with its label; negative coordinates are moved onto the pages. Obsidian may drop `pn` when it rewrites a canvas; the native fields still carry everything visible.
+
+The server canonicalizes every write: whatever arrives (JSON Canvas from the app, Fabric JSON from an older script, a backup) goes to the document model, gets its ids repaired (unique across the workspace) and is written back as JSON Canvas, with data-URL pictures stored once as `media/<sha256>.<ext>`. Reading order for search, `read --text` and the Markdown export is the top edge of the box.
+
+On startup `NoteService` converts each old Fabric note once: the database is first copied beside itself as `<name>.fabric-backup` (exactly the old file; never replaced if it exists), then each note converts in its own transaction after a read-back check; revisions and the change feed are untouched. A note that fails stays in Fabric format (the API reports `contentFormat: "fabric"`, the editor still opens it, its next save converts it) and the failure is logged. A second start does nothing.
+
 `resource_id` is stable inside a workspace and keeps exports independent from local row IDs. Import intentionally creates copies with new resource IDs. Existing installations may retain unused legacy tables; v1 neither reads nor populates them, avoiding destructive database migrations.
 
-### Engine-independent document model (F-025, not yet in use)
+### Engine-independent document model (F-025) and its stored form, JSON Canvas (F-026)
 
-Notes still persist as Fabric JSON; invariant 2 is unchanged. `src/core/document/` and its Python mirror `document_model.py` define the plain-data model that F-026 will persist instead, so the canvas engine can change (ADR 0001) without a second format change. `fromFabric`, `toFabric` and `geometry.js` are the only code that knows Fabric's conventions; the model and the engines that read it do not.
+`src/core/document/` and its Python mirror `document_model.py` define the plain-data model; F-026 stores it as JSON Canvas (ADR 0002), so the canvas engine can change (ADR 0001) without a second format change. `fromFabric`, `toFabric` and `geometry.js` are the only code that knows Fabric's conventions; the model and the engines that read it do not. Until Leafer replaces Fabric (F-036) the browser converts at the edges: load is JSON Canvas -> model -> Fabric (`toFabric`, pictures fetched from `/api/media`), save is Fabric -> model -> JSON Canvas (`src/core/note-codec.js`).
 
 - A document is `{schemaVersion, page: {columns, rows}, objects, extras}`. Each object has `id` (= `semanticId`), `type` (`text`, `sticky`, `shape`, `ink`, `image`, `connector`, `group`, or `unknown`), `z` (stacking order), `geometry` and typed fields per type. `schema.js` is the field reference.
 - Frames: positions are in page pixels, x right and y down, from the top-left of the first page. `geometry` is `{x, y, width, height, rotation, scaleX, scaleY, flipX, flipY, skewX, skewY}`: the box is `width` x `height` with its top-left at `(x, y)` (stroke not included); with centre `c`, a point `p` lands at `c + Rotate(rotation) * Scale(flip) * SkewX * SkewY * (p - c)` (SkewY acts first; skews are `tan(degrees)`; rotation is clockwise degrees about the box centre). There are no origins. A text block saved without a height (an agent-written Textbox) has no `height` in the model; its rotation, scale and skew only mean something once the engine has measured the height, so an adapter measures first. A group's children are in the group's box frame (origin at its top-left). An ink stroke's `path` and `points` are relative to its box's top-left corner, so nothing depends on Fabric's `pathOffset`.
@@ -133,8 +143,8 @@ Notes still persist as Fabric JSON; invariant 2 is unchanged. `src/core/document
 - The highlighter's `#rrggbb55` colour is split into `color` and `alpha`; any other colour spelling is kept whole.
 - Pictures are `mediaRef`: `{kind: 'inline', dataUrl}` today, `{kind: 'media', id}` once the media library exists (`toFabric` takes a `resolveMedia` function for those).
 - `validateDocument` lists problems with their paths, with identical wording in JS and Python. Missing, empty and duplicate ids are errors there but still convert, so old notes load.
-- `search_text` in `document_model.py` returns exactly what `NoteService.canvas_text` returns now. `plain_text` has the same blocks as `note_text.py` but reads them by the box's top edge rather than Fabric's origin point (the centre for app-made objects, the corner for agent-written ones); the order is identical when text blocks share an origin and differs when a tall object and a short one are centred on the same line. F-026 decides whether `note_text.py` moves to the same rule.
-- Shared fixtures live in `tests/fixtures/documents/` (real-app gestures, the agent CLI, Fabric-built transform and edge cases, deliberately damaged notes); `scripts/generate-document-fixtures.mjs` and `scripts/generate_cli_fixture.py` rebuild them reproducibly. The seeded 600-object benchmark note is built at test time from `scripts/benchmark-note.mjs`. `tests/test_document_model.py` runs the JS build through `scripts/dump-document-models.mjs` and requires the same model, validation messages and Fabric output from both (on CI it fails rather than skips when node is missing). The app does not import the model yet, so the bundle is unchanged.
+- `plain_text` is the Markdown projection used by search, `note_text.py` (agent CLI read) and the Markdown export. It reads blocks by the box's top edge, not Fabric's origin point (the centre for app-made objects, the corner for agent-written ones), so a tall sticky and a short text block centred on the same line now read top-edge first; the set of blocks is unchanged. `search_text` is kept as the old stored-order text for comparison tests.
+- Shared fixtures live in `tests/fixtures/documents/` (real-app gestures, the agent CLI, Fabric-built transform and edge cases, deliberately damaged notes); `scripts/generate-document-fixtures.mjs` and `scripts/generate_cli_fixture.py` rebuild them reproducibly. The seeded 600-object benchmark note is built at test time from `scripts/benchmark-note.mjs`. `tests/test_document_model.py` runs the JS build through `scripts/dump-document-models.mjs` and requires the same model, validation messages and Fabric output from both (on CI it fails rather than skips when node is missing). `tests/test_json_canvas.py` does the same for JSON Canvas (same canvas from both builds with content-addressed file names, each reads what the other wrote). The app now imports the model and the lean JSON Canvas reader/writer (about +7 KiB gzip of JavaScript; the extras module is not in the bundle).
 
 ### Leafer canvas (F-027, read-only)
 
@@ -161,6 +171,9 @@ ADR 0001 makes LeaferJS the canvas. This slice draws the open note read-only; ed
 | `GET` | `/api/export/workspace` | Canonical JSON backup |
 | `POST` | `/api/import/workspace` | Non-destructive merge import |
 | `GET` | `/api/export/markdown` | Markdown-plus-assets ZIP |
+| `GET` | `/api/export/vault` | Obsidian vault ZIP (`.canvas` files + attachments) |
+| `POST` | `/api/import/vault` | Merge-only import of a vault ZIP (needs the app header; raw body) |
+| `GET` | `/api/media/{sha256}.{ext}` | A content-addressed picture or SVG; any other name is a 404 |
 | `GET` | `/api/changes?since=` | Cheap change feed plus active agent presence, polled by the open app |
 
 There are no v1 model, suggestion, or remote workspace endpoints. Agents reach the notebook through the local CLI, which writes through `NoteService` to the same SQLite file; the browser notices those writes through `/api/changes`.
@@ -196,7 +209,11 @@ The canvas route statically loads Fabric, Leafer (F-027; about 77 KiB gzip) and 
 | `scripts/build-mac-app.sh`, `packaging/` | macOS app bundle build and Linux launcher |
 | `personal_note_cli.py`, `bin/personal-note` | Machine-readable local CLI for agents, using the same service and portability contracts |
 | `src/modules/canvas-leafer/` | Leafer adapter: draws a document-model note read-only (placement, page chrome, sticky shadow, text metrics) |
-| `src/core/document/`, `document_model.py` | Engine-independent document model with render-equivalent Fabric conversion (JS and Python mirrors; not yet used by the app) |
+| `src/core/document/`, `document_model.py` | Engine-independent document model with render-equivalent Fabric conversion (JS and Python mirrors) |
+| `src/core/document/jsoncanvas.js`, `jsoncanvas-extras.js`, `json_canvas.py` | The model <-> JSON Canvas 1.0 with `pn` extensions: the JS reader/writer the browser ships, the extras (SVG pictures, other apps' canvases, spec validator, projection) for tests and Node, and the complete Python mirror |
+| `src/core/note-codec.js` | Browser load/save adapter between JSON Canvas and the Fabric editor (interim, removed with Fabric) |
+| `media_store.py` | Content-addressed media files `media/<sha256>.<ext>` beside the database |
+| `vault.py` | Obsidian vault export and import |
 | `note_text.py` | Plain-text projections of notes for agents (reading-order canvas text, mind-map outline) |
 | `src/modules/sync/` | Change-feed polling, safe merge of agent writes, and the agent presence chip |
 | `services.py` | SQLite persistence and FTS5 indexing |

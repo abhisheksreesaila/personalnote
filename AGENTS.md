@@ -24,12 +24,12 @@ These are internal contracts, not a public plugin SDK.
 ## Invariants
 
 1. Capture must not wait on an optional service.
-2. Fabric JSON is canonical for `canvas`; normalized map JSON is canonical for `mindmap`.
+2. JSON Canvas 1.0 plus the namespaced `pn` extensions (`json_canvas.py`, `src/core/document/jsoncanvas.js`) is canonical for `canvas`; normalized map JSON is canonical for `mindmap`. Fabric JSON is only the interim editor's working copy on main (`src/core/note-codec.js` converts at load and save) until F-036 removes Fabric. A note's `content_format` says which one a row holds; old `fabric` rows convert once at startup.
 3. A note's `noteType` is immutable after creation.
 4. Voice may persist final editable transcript text only. Do not add IndexedDB, SQLite, filesystem, backup, or export storage for PCM/audio.
 5. Local transcription failure must be visible and must leave the note intact.
-6. Backup JSON is lossless and versioned. Import is validated, transactional, and merge-only; it never deletes or overwrites existing notes.
-7. Markdown export is explicitly lossy and never fetches remote assets.
+6. Backup JSON is lossless and versioned (version 2 carries JSON Canvas with pictures inline; version 1 still imports). Import, including an Obsidian vault import, is validated, transactional, and merge-only; it never deletes or overwrites existing notes.
+7. Markdown export (the reading-order projection) is explicitly lossy and never fetches remote assets. Pictures and ink/shape SVGs are content-addressed files `media/<sha256>.<ext>` beside the database, never inside a note row.
 8. Local agents (Claude Code and similar) are first-class clients through `bin/personal-note` (`personal_note_cli.py`), which goes through `NoteService` with revision checks. There is still no model worker, automatic suggestions, chat, sync, authentication, or remote agent endpoint; agents act only when they run the CLI.
 9. `src/workspace-theme.css` is screen-only. Do not change saved canvas appearance or print output when changing app chrome.
 
@@ -41,7 +41,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run dev
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_webview_smoke -v
+python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_webview_smoke -v
 npm run benchmark:bundle
 ```
 
