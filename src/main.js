@@ -1718,12 +1718,13 @@ const temporaryHand = createTemporaryHand()
 let applyingTemporaryHand = false
 
 function setTool(tool) {
-  if (useLeafer && tool !== 'hand') tool = 'select' // select and hand are the Leafer tools so far (F-028); the others come with F-029 onward
+  if (useLeafer && !['hand', 'text', 'sticky'].includes(tool)) tool = 'select' // select, hand, text and sticky are the Leafer tools so far (F-028, F-029); the others come with F-031 onward
   if (!applyingTemporaryHand) temporaryHand.cancel()
   state.tool = tool
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
   canvas.isDrawingMode = tool === 'pen' || tool === 'highlight'
   canvas.selection = tool === 'select'
+  if (useLeafer && (tool === 'text' || tool === 'sticky')) leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
   elements.shell.classList.toggle('leafer-picking', useLeafer && tool === 'select') // Leafer takes the pointer to select and move; the hand gives it to the pan
   canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : tool === 'connect' || tool === 'sticky' || tool === 'shape' ? 'crosshair' : 'default'
   canvas.forEachObject((object) => {
@@ -1764,6 +1765,13 @@ function finishPlacing(object) {
 }
 
 function placeObject(kind, point) {
+  if (useLeafer) { // F-029: a sticky on Leafer. (The overlay opens on the next tick: the press that placed it must finish first, or it takes the focus back.)
+    if (kind !== 'sticky') return null
+    const at = { x: point.x, y: point.y }
+    setTool('select')
+    setTimeout(() => leaferCanvas.createSticky(at), 0)
+    return null
+  }
   const color = currentObjectPalette()[state.objectColor]
   if (kind === 'sticky') {
     const sticky = new Sticky('', stickyDefaults(color))
@@ -2105,6 +2113,7 @@ function flushPendingEdits(reason) {
   // Hiding the window may come back (Undo must still work); only a real close sends the held delete.
   if (reason !== 'hidden') void commitPendingDelete({ keepalive: true })
   if (state.loading || !state.activeNoteId) return
+  leaferCanvas?.finishTextEdit() // words still being typed in the overlay become an edit (and a save) now
   flushPendingHistory({
     cancel: () => clearTimeout(historyTimer),
     commit: () => {
@@ -2129,6 +2138,7 @@ window.personalNote = {
     flushPending: () => {
       void commitPendingDelete({ keepalive: true })
       if (state.loading || !state.activeNoteId) return
+      leaferCanvas?.finishTextEdit()
       flushPendingHistory({
         cancel: () => clearTimeout(historyTimer),
         commit: () => {
@@ -2190,6 +2200,7 @@ async function restoreHistory(index) {
 const SWITCH_SAVE_LIMIT = 3000
 async function settleOutgoingNote() {
   if (state.loading || !state.activeNoteId) return true
+  leaferCanvas?.finishTextEdit()
   const settled = settleSaves({
     flushPending: () => {
       flushPendingHistory({
@@ -2266,7 +2277,20 @@ function mountLeaferCanvas() {
   leaferHost = host
   host.id = 'leafer-host'
   elements.paper.prepend(host)
-  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options), onDelete: (ids) => { leaferEdits.deleteObjects(ids); return leaferEdits.doc } })
+  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options), onDelete: (ids) => { leaferEdits.deleteObjects(ids); return leaferEdits.doc },
+    onBegin: (label) => leaferEdits.begin(label),
+    onEnd: () => leaferEdits.end(),
+    onTextEvent: (type) => { if (type === 'escape') setTool('select') },
+    // What a new text and a new sticky look like: the Fabric path's defaults (addText, stickyDefaults), in the model's words.
+    defaults: {
+      text: () => ({ fontFamily: canvasFontFamily(state.fontFamily), fontSize: getInputFontSize(), color: state.color }),
+      sticky: () => {
+        const { fill, ink } = currentObjectPalette()[state.objectColor]
+        const { fontFamily, fontSize, fontWeight, lineHeight } = stickyDefaults({ fill, ink })
+        return { fill, ink, style: { fontFamily, fontSize, fontWeight, lineHeight } }
+      },
+    },
+  })
   elements.shell.classList.add('engine-leafer')
   const pill = document.createElement('div')
   pill.className = 'engine-pill'
@@ -2277,7 +2301,7 @@ function mountLeaferCanvas() {
 mountLeaferCanvas()
 
 // The bar over the canvas that does with the mouse what the keys do (Back, Forward, Lock, Delete); it shows while something is selected.
-leaferCanvas.onSelection(() => updateSelectionBar())
+leaferCanvas.onSelection(() => { updateSelectionBar(); syncTypographyControls() })
 function updateSelectionBar() {
   const selection = leaferCanvas.selection()
   elements.selectionBar.hidden = !selection.length
@@ -2711,7 +2735,8 @@ function selectedTextObject() {
 }
 
 function syncTypographyControls() {
-  const text = selectedTextObject()
+  const picked = useLeafer ? leaferCanvas?.selectedText()[0] : null
+  const text = useLeafer ? (picked ? { fontFamily: picked.style.fontFamily, fontSize: picked.style.fontSize } : null) : selectedTextObject()
   const fontFamily = fontChoice(text?.fontFamily || state.fontFamily)
   const fontSize = Math.round(text?.fontSize || state.fontSize)
   document.querySelector('#text-selection-status').textContent = text ? 'Selected text' : 'New text'
@@ -2756,6 +2781,12 @@ function prettifyActiveNote() {
 }
 
 function applyTypography(property, value) {
+  if (useLeafer) { // the selected text and stickies change; the choice is also what the next new text gets
+    state[property] = value
+    leaferCanvas.setTextStyle({ style: { [property]: property === 'fontFamily' ? canvasFontFamily(value) : value } })
+    syncTypographyControls()
+    return
+  }
   const text = selectedTextObject()
   state[property] = value
   if (text) {
@@ -3556,6 +3587,10 @@ canvas.on('mouse:down', (event) => {
   } else if (state.tool === 'sticky' || state.tool === 'shape') {
     if (event.e.button > 0) return
     placeObject(state.tool, event.scenePoint)
+  } else if (state.tool === 'text' && useLeafer) {
+    if (event.e.button > 0) return
+    const at = { x: event.scenePoint.x, y: event.scenePoint.y }
+    setTimeout(() => { if (!leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false }) }, 0)
   } else if (state.tool === 'text') {
     const textTarget = isEditableText(event.target) ? event.target : findEditableTextAt(event.scenePoint)
     if (textTarget) {
@@ -3694,6 +3729,7 @@ document.querySelectorAll('[data-tool]').forEach((button) => button.addEventList
 }))
 document.querySelectorAll('[data-color]').forEach((button) => button.addEventListener('click', () => {
   state.color = button.dataset.color
+  if (useLeafer) leaferCanvas.setTextStyle({ style: { color: state.color } })
   const active = canvas.getActiveObject()
   if (active) {
     active.set('fill', state.color)
@@ -3710,6 +3746,7 @@ elements.objectPalette.addEventListener('click', (event) => {
   if (!swatch) return
   state.objectColor = Number(swatch.dataset.objectColor)
   const color = currentObjectPalette()[state.objectColor]
+  if (useLeafer) leaferCanvas.setTextStyle({ paper: { fill: color.fill, ink: color.ink } })
   const active = canvas.getActiveObject()
   if (active instanceof Sticky) active.set({ stickyColor: color.fill, fill: color.ink })
   else if (active instanceof Rect) active.set('fill', color.fill)
@@ -4408,7 +4445,7 @@ async function initialize() {
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
       },
       // Also true while typing is not yet in history or a text object is being edited.
-      hasUnsavedEdits: () => unsavedEdits || saveInFlight || (!useLeafer && (canvas.getObjects().some((object) => object.isEditing)
+      hasUnsavedEdits: () => unsavedEdits || saveInFlight || Boolean(leaferCanvas?.isEditingText()) || (!useLeafer && (canvas.getObjects().some((object) => object.isEditing)
         || (state.activeNoteType === 'canvas' && snapshot() !== state.history[state.historyIndex]))),
       locateFlagBlock: (action) => {
         const block = pickFlagBlock(action, canvas.getObjects())

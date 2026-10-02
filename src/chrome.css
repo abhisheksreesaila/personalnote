@@ -507,8 +507,11 @@
   .app-shell.engine-leafer.leafer-picking .canvas-container { pointer-events: none; }
   .app-shell.engine-leafer.leafer-picking #leafer-host { pointer-events: auto; }
   .app-shell.engine-leafer .tool-dock { opacity: 1; }
-  .app-shell.engine-leafer .tool-dock .dock-canvas > :not(.dock-tools), .app-shell.engine-leafer .tool-dock .tool-button:not([data-tool="select"]):not([data-tool="hand"]) { opacity: .35; }
-  .app-shell.engine-leafer .tool-dock [data-tool="select"], .app-shell.engine-leafer .tool-dock [data-tool="hand"] { pointer-events: auto; }
+  .app-shell.engine-leafer .tool-dock .dock-canvas > :not(.dock-tools):not(.ink-swatches), .app-shell.engine-leafer .tool-dock .tool-button:not([data-tool="select"]):not([data-tool="hand"]):not([data-tool="text"]):not([data-tool="sticky"]) { opacity: .35; }
+  .app-shell.engine-leafer .tool-dock [data-tool="select"], .app-shell.engine-leafer .tool-dock [data-tool="hand"], .app-shell.engine-leafer .tool-dock [data-tool="text"], .app-shell.engine-leafer .tool-dock [data-tool="sticky"] { pointer-events: auto; }
+  /* F-029: text and stickies work on Leafer, so the Text and Sticky tools and the colour swatches (text colour, sticky colour) are live. */
+  .app-shell.engine-leafer .tool-dock .ink-swatches { pointer-events: auto; opacity: 1; }
+  .leafer-text-editor { z-index: 5; }
   .app-shell.leafer-switching #leafer-host, .app-shell.leafer-switching .selection-bar { pointer-events: none; }
   .selection-bar { position: absolute; z-index: 15; top: 64px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--paper, #fbfaf5) 92%, transparent); border: 1px solid var(--line, #d4cec3); box-shadow: 0 6px 18px rgba(20, 20, 30, .12); }
   .selection-bar[hidden] { display: none; }

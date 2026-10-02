@@ -9,9 +9,11 @@ import { arrowHeadPoints, endpointsFromBox } from '../editor/connectors.js'
 import { STICKY_PADDING } from '../editor/objects.js'
 import { FOLD_COLOR, FOLD_DASH, FOLD_WIDTH, LABEL_FONT_FAMILY, LABEL_FONT_SIZE, pageChrome } from './chrome.js'
 import { createEditing, EDITOR_CONFIG } from './editing.js'
-import { applyMatrix, geometryFromMatrix, placementMatrix } from './placement.js'
+import { applyMatrix, geometryFromMatrix, multiplyMatrices, placementMatrix } from './placement.js'
 import { bakedStickyShadow, STICKY_CORNERS } from './sticky-shadow.js'
 import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
+import { createTextOverlay } from './text.js'
+import { fitGeometry, newSticky, newText, nextZ, objectAt, planSetContent, planSetStyle } from './text-ops.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
 const TEXT_DEFAULTS = { fontFamily: 'Times New Roman', fontSize: 40, fontWeight: 'normal', fontStyle: 'normal', lineHeight: 1.16, textAlign: 'left', color: 'rgb(0,0,0)' }
@@ -71,7 +73,10 @@ const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y
 
 // `onOperation(op, { coalesce })` is how an edit leaves the scene: the host records it (undo history, save) and returns the new document.
 // `onDelete(ids)` records a delete the same way (the host's one owner of the rule) and returns the new document.
-export function createScene({ host, width, height, onOperation = () => null, onDelete = null }) {
+// F-029: `defaults.text()` is the model style for a new text ({ fontFamily, fontSize, color ... }); `defaults.sticky()` is
+// { fill, ink, style } for a new sticky. `onBegin(label)` / `onEnd()` group edits into one undo step (a new sticky and the words typed
+// into it); `onTextEvent(type)` hears 'start', 'end' and 'escape' of a text edit.
+export function createScene({ host, width, height, onOperation = () => null, onDelete = null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, defaults = {} }) {
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
   const app = new App({ view: host, width, height, pixelRatio: Math.min(2, globalThis.devicePixelRatio || 1), tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
   const leafer = app.tree
@@ -193,7 +198,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
           text.width = holder.width - STICKY_PADDING * 2
           shadowImage.set({ width: holder.width + shadow.margin * 2, height: holder.height + shadow.margin * 2 })
         }
-        return { node: holder, size: { width: w, height: h }, sized: true, relayout }
+        return { node: holder, text, size: { width: w, height: h }, sized: true, relayout }
       }
       case 'shape': {
         const fill = isColor(object.fill) ? object.fill : SHAPE_DEFAULT_FILL
@@ -276,6 +281,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     world.set({ x: view.x, y: view.y, scaleX: view.scale, scaleY: view.scale })
     for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale
     drawChrome()
+    placeEditor()
   }
 
   // ---- editing: the nodes of the note's own objects, and the model operations that change them
@@ -405,11 +411,185 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     entry.node.remove()
   }
 
+  // ---- text and sticky editing (F-029). The words are typed in a real textarea laid over them (text.js); this is the glue between that
+  // overlay, the nodes and the document. A typing session is ONE edit: nothing reaches the document until it ends (blur, Esc, a click
+  // elsewhere), so it is one undo step; a new text exists only once it has words, so creating one is one step too; a new sticky is
+  // made at once (an empty sticky stays, as in the Fabric path) and its first words join the step that made it.
+  const overlay = createTextOverlay({ host })
+  let textEdit = null // { id, entry|null, object, size, group, select }
+  const isTextual = (object) => object?.type === 'text' || object?.type === 'sticky'
+  const LAYOUT_KEYS = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'charSpacing', 'textAlign', 'underline', 'linethrough']
+
+  const wrapWidth = (object) => (object.type === 'sticky' ? (object.geometry.width ?? 240) - STICKY_PADDING * 2 : object.mode === 'point' ? undefined : object.geometry.width)
+
+  // How big the words are once laid out ({ width, height }, inside a sticky's padding), measured on a scratch node.
+  function contentSize(object) {
+    const props = textProps(object, { width: wrapWidth(object) })
+    const scratch = new Text({ ...props, x: 0, y: 0 })
+    const size = measure(scratch)
+    scratch.destroy?.()
+    return size
+  }
+
+  const viewMatrix = () => ({ a: view.scale, b: 0, c: 0, d: view.scale, e: view.x, f: view.y })
+  // The overlay sits over the text node: its frame is the text's own (the node's offset inside the object, then the object's matrix, then the view).
+  function overlayMatrix() {
+    const { object, size } = textEdit
+    const props = textProps(object, { width: wrapWidth(object), padding: object.type === 'sticky' ? STICKY_PADDING : 0 })
+    return multiplyMatrices(viewMatrix(), multiplyMatrices(placementMatrix(object.geometry, size), { a: 1, b: 0, c: 0, d: 1, e: props.x, f: props.y }))
+  }
+
+  function overlayFont(object) {
+    const props = textProps(object, { width: wrapWidth(object) })
+    return { family: props.fontFamily, size: props.fontSize, weight: props.fontWeight, italic: props.italic, lineHeight: props.lineHeight, letterSpacing: props.letterSpacing, align: props.textAlign, color: props.fill, decoration: props.textDecoration === 'under' ? 'underline' : props.textDecoration === 'delete' ? 'line-through' : 'none', baseline: (props.lineHeight + 0.7 * props.fontSize) / 2 }
+  }
+
+  function startTextEdit(object, { entry = null, group = false, select = true } = {}) {
+    if (overlay.isOpen) overlay.commit()
+    const size = entry ? entry.size : { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }
+    textEdit = { id: object.id, entry, object, size, group, select }
+    editing.clear()
+    if (entry?.built.text) entry.built.text.visible = false
+    const width = wrapWidth(object)
+    overlay.open({
+      value: object.content ?? '',
+      font: overlayFont(object),
+      wrap: width !== undefined,
+      width: width ?? 0,
+      matrix: overlayMatrix(),
+      onInput: liveTextSize,
+      onCommit: finishTextEdit,
+      onEscape: () => onTextEvent('escape'),
+    })
+    onTextEvent('start')
+    return true
+  }
+
+  // A sticky grows as the words need room (and shrinks back as they go), the paper following the text while it is typed.
+  function liveTextSize(content) {
+    const entry = textEdit?.entry
+    if (!entry || entry.object.type !== 'sticky' || !content) return
+    const wanted = fitGeometry(entry.object, content).height
+    if (wanted !== entry.node.height) { entry.node.height = wanted; entry.built.relayout?.() }
+  }
+
+  function finishTextEdit(value) {
+    const edit = textEdit
+    textEdit = null
+    if (!edit) return
+    try {
+      if (edit.entry) commitExisting(edit.entry, value, edit)
+      else commitNew(edit.object, value, edit)
+    } finally {
+      if (edit.group) onEnd()
+      onTextEvent('end')
+    }
+  }
+
+  function commitExisting(entry, value, edit) {
+    const object = entry.object
+    const select = () => { const node = entries.get(entry.id)?.node; if (edit.select && node) editing.select([node]) }
+    if (object.type === 'text' && !value.trim()) { // an emptied text goes
+      if (onDelete) { committing = true; try { doc = onDelete([entry.id]) ?? doc } finally { committing = false } } else commit(planRemove(doc, { ids: [entry.id] }).op, { selection: { before: [entry.id], after: [] } })
+      dropEntry(entry)
+      return
+    }
+    if ((object.content ?? '') === value) { // nothing changed: the node is shown again as it was, and no step is made
+      if (entry.built.text) entry.built.text.visible = true
+      keepingSelection(() => rebuild(entry))
+      select()
+      return
+    }
+    const next = { ...object, content: value }
+    const plan = planSetContent(doc, { id: entry.id, content: value, geometry: fitGeometry(next, contentSize(next)) })
+    commit(plan.op, { selection: { before: [entry.id], after: [entry.id] } })
+    refreshBox(entry)
+    rebuild(entry)
+    select()
+  }
+
+  function commitNew(object, value, edit) {
+    if (!value.trim()) return // nothing was typed: no object, no step
+    const next = { ...object, content: value }
+    const placed = { ...next, geometry: fitGeometry(next, contentSize(next)) }
+    commit({ label: 'Add text', changes: [{ id: placed.id, before: null, after: placed }] }, { selection: { before: [], after: [placed.id] } })
+    addObject(world, doc.objects.find((candidate) => candidate?.id === placed.id) ?? placed, boxes)
+    const node = entries.get(placed.id)?.node
+    if (edit.select && node) editing.select([node])
+  }
+
+  const newId = () => `res_${globalThis.crypto.randomUUID().replaceAll('-', '')}`
+
+  // Puts the overlay back over its text (the view moved or was resized).
+  function placeEditor() { if (textEdit && overlay.isOpen) overlay.setMatrix(overlayMatrix()) }
+
+  const textApi = {
+    isEditingText: () => overlay.isOpen,
+    // Ends a text edit in progress (the words typed so far are kept). The host calls it before it saves or leaves the note.
+    finishTextEdit() { if (overlay.isOpen) overlay.commit() },
+    // Starts editing the words of a text or sticky (by id, or the topmost one at a page point). False when nothing editable is there.
+    editText(target, options = {}) {
+      const object = typeof target === 'string' ? doc.objects.find((candidate) => candidate?.id === target) : objectAt(doc, new Map([...entries].map(([id, entry]) => [id, entry.size])), target)
+      const entry = object && entries.get(object.id)
+      if (!entry || !isTextual(entry.object) || isLocked(entry.object)) return false
+      return startTextEdit(entry.object, { entry, select: options.select ?? true })
+    },
+    // A new text at a page point (typed in the overlay; nothing is made until there are words).
+    createText(point, options = {}) {
+      const object = newText({ id: newId(), z: nextZ(doc), point, style: defaults.text?.() ?? {} })
+      return startTextEdit(object, { select: options.select ?? true })
+    },
+    // A new sticky centred on a page point: made at once, selected, with its first words in the same undo step.
+    createSticky(point) {
+      const { fill, ink, style } = defaults.sticky?.() ?? { fill: '#ffd60a', ink: '#292202', style: {} }
+      const object = newSticky({ id: newId(), z: nextZ(doc), point, fill, ink, style })
+      if (overlay.isOpen) overlay.commit()
+      onBegin('Add sticky')
+      commit({ label: 'Add sticky', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: [], after: [object.id] } })
+      addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+      const entry = entries.get(object.id)
+      if (!entry) { onEnd(); return false }
+      return startTextEdit(entry.object, { entry, group: true })
+    },
+    // What Leafer drew for a text or sticky (for checks): its lines, and the font it used.
+    textInfo(id) {
+      const node = entries.get(id)?.built.text
+      if (!node) return null
+      const rows = node.__?.__textDrawData?.rows ?? []
+      return { rows: rows.map((row) => row.text), fontSize: node.fontSize, fontFamily: node.fontFamily, fill: node.fill, visible: node.visible, lineHeight: node.lineHeight, height: node.getBounds('box', 'inner').height }
+    },
+    // The text and stickies among the selection.
+    selectedText: () => selectedEntries().filter((entry) => isTextual(entry.object)).map((entry) => ({ id: entry.id, type: entry.object.type, style: entry.object.style ?? {}, color: entry.object.color })),
+    // Font, size, colour of the selected text and stickies (`style`), or the sticky paper (`paper`: { fill, ink }). One step (a slider drag is one).
+    setTextStyle({ style, paper }) {
+      const ids = selectedIds()
+      const plan = planSetStyle(doc, { ids, style, paper })
+      if (!plan.op.changes.length) return false
+      const relayout = style && Object.keys(style).some((key) => LAYOUT_KEYS.includes(key))
+      const changes = plan.op.changes.map((change) => (relayout ? { ...change, after: { ...change.after, geometry: fitGeometry(change.after, contentSize(change.after)) } } : change))
+      commit({ label: plan.op.label, changes }, { coalesce: 'text-style', selection: { before: ids, after: ids } })
+      keepingSelection(() => { for (const change of changes) { const entry = entries.get(change.id); if (entry) { refreshBox(entry); rebuild(entry) } } })
+      return true
+    },
+  }
+
+  // A double click on a text or sticky edits it; on empty paper it makes a new text (the Fabric path does the same).
+  host.addEventListener('dblclick', (event) => {
+    if (event.button !== 0 || event.target === overlay.element) return
+    const rect = host.getBoundingClientRect()
+    const point = { x: (event.clientX - rect.left - view.x) / view.scale, y: (event.clientY - rect.top - view.y) / view.scale }
+    if (textApi.editText(point)) return
+    if (boxes.some((box) => point.x >= box.left && point.x <= box.left + box.width && point.y >= box.top && point.y <= box.top + box.height)) return
+    textApi.createText(point)
+  })
+
   const api = {
     leafer,
+    ...textApi,
     // Draws a note. `next` is a document model (fromFabric output); `options.resolveMedia` turns a media-library picture into a URL.
     load(next, options = {}) {
       resolveMedia = options.resolveMedia ?? null
+      if (overlay.isOpen) overlay.commit() // words being typed are kept
       doc = next
       editing.clear()
       world.clear()
@@ -547,7 +727,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
         app.waitViewCompleted(finish)
       })
     },
-    destroy() { editing.destroy(); app.destroy() },
+    destroy() { overlay.cancel(); editing.destroy(); app.destroy() },
   }
   return api
 }

@@ -32,6 +32,7 @@ export const EDITOR_CONFIG = {
   skewable: false, // Fabric has no skew handles
   flipable: true,
   hideOnSmall: true,
+  openInner: 'none', // a double click edits the words (F-029 overlay, scene.js), not the editor plugin's inner editor
 }
 
 export function createEditing({ app, onResize, onGestureEnd, onSelect }) {
