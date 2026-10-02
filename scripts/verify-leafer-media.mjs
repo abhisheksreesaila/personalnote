@@ -234,11 +234,13 @@ try {
   const scale = (await pn(page, () => window.__personalNote.leaferCanvas().view())).scale
   check('move: dragging the picture moves it by the drag', Math.abs(g1.x - g0.x - 60 / scale) < 1.5 && Math.abs(g1.y - g0.y - 40 / scale) < 1.5, `${JSON.stringify(g0)} -> ${JSON.stringify(g1)}`)
   const moveCorners = await pn(page, (id) => window.__personalNote.leaferCanvas().pageCorners(id), picked.id)
-  const handle = await screenOf(moveCorners[1].x, moveCorners[1].y) // top right (the zoom control covers the bottom right here)
+  const handle = await screenOf(moveCorners[2].x, moveCorners[2].y) // bottom right: the zoom control stands aside when it is over a handle
+  await page.waitForTimeout(150)
+  check('resize: a floating control sitting over the bottom-right handle stands aside (faint, no pointer)', await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); return !el?.closest('.zoom-control, .page-minimap, .tool-dock') }, [handle.x, handle.y]), JSON.stringify(handle))
   await page.mouse.move(handle.x, handle.y)
   await page.mouse.down()
-  await page.mouse.move(handle.x + 20, handle.y - 15, { steps: 4 })
-  await page.mouse.move(handle.x + 60, handle.y - 45, { steps: 4 })
+  await page.mouse.move(handle.x + 20, handle.y + 15, { steps: 4 })
+  await page.mouse.move(handle.x + 60, handle.y + 45, { steps: 4 })
   await page.mouse.up()
   await settle(page)
   const g2 = await geometryOf(picked.id)
@@ -333,6 +335,46 @@ try {
   check('export: "Note as picture" downloads one PNG, 2 x 1 pages at twice size, pixel-equal to the two print sheets side by side', stitched.width === 3440 && stitched.height === 2160 && stitched.different / stitched.pixels < 0.0005 && download.suggestedFilename() === 'Export.png', JSON.stringify(stitched))
 
 
+  // ---------------------------------------------------------------- too large, and pictures that arrive mid-gesture
+  const be = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]
+  const huge = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...be(12000), ...be(10000), 8, 6, 0, 0, 0, ...new Array(64).fill(0)])
+  const countBefore = (await images(page)).length
+  await dropFiles(page, [{ name: 'huge.png', type: 'image/png', bytes: huge }], await screenOf(400, 400))
+  const message = await waitFor(() => page.evaluate(() => document.querySelector('#save-state')?.textContent.includes('too large') ? document.querySelector('#save-state').textContent : ''))
+  check('a picture over 100 megapixels is refused before decoding, with a visible message, and nothing is added', Boolean(message) && (await images(page)).length === countBefore, message ?? 'no message')
+  await pn(page, () => window.__personalNote.setTool('pen'))
+  const penAt = await screenOf(300, 300)
+  const queued = await makePicture(page, { name: 'late.png', kind: 'cutout', width: 300, height: 200, type: 'image/png' })
+  await page.mouse.move(penAt.x, penAt.y)
+  await page.mouse.down()
+  await page.mouse.move(penAt.x + 40, penAt.y + 20, { steps: 3 })
+  await dropFiles(page, [queued], await screenOf(500, 500))
+  await page.waitForTimeout(1200) // long enough for the upload to have finished
+  const during = (await images(page)).length
+  await page.mouse.up()
+  const after = await waitFor(async () => (await images(page)).length === countBefore + 1)
+  check('a picture whose upload finishes in the middle of a pen stroke waits for the stroke to end', during === countBefore && Boolean(after), `${during} during, ${(await images(page)).length} after, was ${countBefore}`)
+  check('the stroke itself was kept', (await doc(page)).objects.some((o) => o.type === 'ink'))
+  await pn(page, () => window.__personalNote.setTool('select'))
+  const strokeEnd = (await doc(page)).objects.length
+  // and one still waiting when the note is left is dropped, not added to the other note
+  await pn(page, () => window.__personalNote.setTool('pen'))
+  await page.mouse.move(penAt.x, penAt.y + 60)
+  await page.mouse.down()
+  await page.mouse.move(penAt.x + 30, penAt.y + 80, { steps: 3 })
+  await dropFiles(page, [queued], await screenOf(500, 500))
+  await page.waitForTimeout(1000)
+  await pn(page, (id) => window.__personalNote.selectNote(id), noteId)
+  await page.waitForFunction((id) => window.__personalNote.state.activeNoteId === id, noteId, { timeout: 30000 })
+  await page.mouse.up()
+  await page.waitForTimeout(1200)
+  check('a picture still waiting when the note is switched is dropped, not added to the other note', (await images(page)).length === 3, `${(await images(page)).length}`) // the first note holds its three
+  void strokeEnd
+  await pn(page, (id) => window.__personalNote.selectNote(id), note2.id)
+  await page.waitForFunction((id) => window.__personalNote.state.activeNoteId === id, note2.id, { timeout: 30000 })
+  await settle(page)
+  await pn(page, () => window.__personalNote.setTool('select'))
+
   // ---------------------------------------------------------------- print preview and the PDF
   await page.click('#share-button')
   await page.click('#share-print')
@@ -341,20 +383,23 @@ try {
   const preview = await page.evaluate(() => [...document.querySelectorAll('.print-sheet-card img')].map((img) => ({ w: img.naturalWidth, h: img.naturalHeight, blob: img.src.startsWith('blob:') })))
   check('print preview: two sheets, 1720 x 2160, drawn from the Leafer render', preview.length === 2 && preview.every((p) => p.w === 1720 && p.h === 2160 && p.blob), JSON.stringify(preview))
   const previewSame = await page.evaluate(async () => { const out = []; for (const img of document.querySelectorAll('.print-sheet-card img')) { const blob = await (await fetch(img.src)).blob(); out.push(blob.size) } return out })
-  check('print preview: the sheets are the same pictures as the export sheets (same size on disk)', previewSame[0] === sheets[0].leafer.length && previewSame[1] === sheets[1].leafer.length, `${previewSame} vs ${sheets.map((x) => x.leafer.length)}`)
+  const fresh = [await leaferSheet(0), await leaferSheet(1)] // the note has since gained a stroke and a picture
+  check('print preview: the sheets are the same pictures as a fresh export of the note (same bytes)', previewSame[0] === fresh[0].length && previewSame[1] === fresh[1].length, `${previewSame} vs ${fresh.map((x) => x.length)}`)
   await page.emulateMedia({ media: 'print' })
-  const chrome = await page.evaluate(() => ['.topbar', '.tool-dock', '.sidebar', '#leafer-host', '.zoom-control'].map((q) => { const el = document.querySelector(q); return el ? getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0 && !el.closest('[hidden]') : false }))
+  const chrome = await page.evaluate(() => ['.topbar', '.tool-dock', '.sidebar', '#leafer-host', '.zoom-control', '.engine-pill', '.speed-meter'].map((q) => { const el = document.querySelector(q); return el ? getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0 && !el.closest('[hidden]') : false }))
   check('print: no app chrome is on the printed page (toolbar, dock, sidebar, canvas, zoom)', chrome.every((visible) => visible === false), JSON.stringify(chrome))
   const pdfFile = path.join(work, 'note.pdf')
   fs.writeFileSync(pdfFile, await page.pdf({ format: 'Letter', printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } }))
   const pdfText = fs.readFileSync(pdfFile).toString('latin1')
   const pageCount = (pdfText.match(/\/Type\s*\/Page[^s]/g) || []).length
-  console.log(`INFO  the PDF has ${pageCount} pages for 2 sheets (print CSS unchanged from the Fabric era; the extra page is not investigated)`)
-  check('print: the PDF has a page for each sheet (2 or the known spill page)', pageCount >= 2 && pageCount <= 3, `${pageCount}`)
+  check('print: the PDF has exactly one page per sheet (2), no extra page', pageCount === 2, `${pageCount}`)
   spawnSync('pdftoppm', ['-r', '96', '-png', pdfFile, path.join(work, 'pdf')])
   const pdfPages = fs.readdirSync(work).filter((f) => /^pdf-\d+\.png$/.test(f)).sort()
-  const pdfPng = fs.readFileSync(path.join(work, pdfPages[0]))
-  const fit = await page.evaluate(async ([pdfB64, sheetB64]) => {
+  if (process.env.SAVE_DIR) for (const f of pdfPages) fs.copyFileSync(path.join(work, f), path.join(process.env.SAVE_DIR, f))
+  const fits = []
+  for (const [pageIndex, sheet] of [[0, fresh[0]], [1, fresh[1]]]) {
+  const pdfPng = fs.readFileSync(path.join(work, pdfPages[pageIndex]))
+  fits.push(await page.evaluate(async ([pdfB64, sheetB64]) => {
     const load = async (d) => createImageBitmap(await (await fetch(`data:image/png;base64,${d}`)).blob())
     const [pdf, sheet] = await Promise.all([load(pdfB64), load(sheetB64)])
     const scale = Math.min(pdf.width / sheet.width, pdf.height / sheet.height)
@@ -371,8 +416,9 @@ try {
       else if (x < ox - 2 || x >= ox + w + 2 || y < oy - 2 || y >= oy + h + 2) { outsideTotal += 1; if (got[i] < 250 || got[i + 1] < 250 || got[i + 2] < 250) outside += 1 }
     }
     return { outside, outsideTotal, meanLevel: sum / count / 3, size: [pdf.width, pdf.height] }
-  }, [pdfPng.toString('base64'), sheets[0].leafer.toString('base64')])
-  check('print: PDF page 1 is the sheet on white paper (nothing outside it, inside matches within 6/255 mean after rescaling)', fit.outside === 0 && fit.meanLevel < 6, JSON.stringify(fit))
+  }, [pdfPng.toString('base64'), sheet.toString('base64')]))
+  }
+  check('print: each PDF page is its sheet on white paper (nothing outside it, inside matches within 6/255 mean after rescaling)', fits.every((fit) => fit.outside === 0 && fit.meanLevel < 6), JSON.stringify(fits))
   console.log('INFO  pdf pages rendered', pdfPages.join(','), 'sizes', pdfPages.map((f) => fs.statSync(path.join(work, f)).size).join(','))
   await page.emulateMedia({ media: 'screen' })
   await page.click('#close-print')

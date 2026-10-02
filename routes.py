@@ -267,9 +267,12 @@ def create_app(
                 return JSONResponse({"error": "That picture is larger than 20 MB"}, status_code=413)
         except ValueError:
             pass
-        data = await request.body()
-        if len(data) > MAX_MEDIA_BYTES:
-            return JSONResponse({"error": "That picture is larger than 20 MB"}, status_code=413)
+        received = bytearray()
+        async for chunk in request.stream():  # counted as it arrives: a body without Content-Length is cut off too
+            received.extend(chunk)
+            if len(received) > MAX_MEDIA_BYTES:
+                return JSONResponse({"error": "That picture is larger than 20 MB"}, status_code=413)
+        data = bytes(received)
         extension = sniff_image(data)
         if extension is None:
             return JSONResponse({"error": "That is not a PNG, JPEG, WebP or GIF picture"}, status_code=400)

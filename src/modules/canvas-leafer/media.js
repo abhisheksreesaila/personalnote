@@ -9,6 +9,7 @@ const OFFSET = 28 // each further picture of one drop is placed this far down an
 const UPRIGHT = { rotation: 0, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const CAN_HAVE_ALPHA = new Set(['image/png', 'image/webp', 'image/gif'])
 
+export const MAX_MEGAPIXELS = 100 // a picture bigger than this is refused before it is decoded (it would need hundreds of MB of memory)
 export const pictureFiles = imageFiles
 
 // How a picture is stored. Small pictures in a kept format go in as they came; the rest are shrunk to 1400 on the long side and
@@ -16,6 +17,7 @@ export const pictureFiles = imageFiles
 export function imageStorage({ width, height, bytes, type }) {
   const target = fitImage({ width, height }, IMAGE_MAX_SIDE)
   const resized = target.width !== width || target.height !== height
+  if (width * height > MAX_MEGAPIXELS * 1_000_000) return { keep: false, target, tooBig: true }
   return { keep: !resized && bytes <= IMAGE_MAX_DATA_URL && type !== 'image/gif', target }
 }
 
@@ -37,6 +39,32 @@ export function newImage({ id, z, mediaId, width, height, point, index = 0 }) {
     mediaRef: { kind: 'media', id: mediaId },
     geometry: { x: point.x + index * OFFSET - width / 2, y: point.y + index * OFFSET - height / 2, width, height, scaleX: scale, scaleY: scale, ...UPRIGHT },
   }
+}
+
+// The pixel size from a picture's first bytes (PNG, JPEG, GIF, WebP), or null when it cannot be told.
+export function readImageSize(b) {
+  const u16 = (i) => (b[i] << 8) | b[i + 1]
+  const u32 = (i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0
+  if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50) return { width: u32(16), height: u32(20) }
+  if (b.length > 10 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return { width: b[6] | (b[7] << 8), height: b[8] | (b[9] << 8) }
+  if (b.length > 30 && b[0] === 0x52 && b[8] === 0x57 && b[9] === 0x45) {
+    const kind = String.fromCharCode(b[12], b[13], b[14], b[15])
+    if (kind === 'VP8X') return { width: 1 + (b[24] | (b[25] << 8) | (b[26] << 16)), height: 1 + (b[27] | (b[28] << 8) | (b[29] << 16)) }
+    if (kind === 'VP8 ') return { width: (b[26] | (b[27] << 8)) & 0x3fff, height: (b[28] | (b[29] << 8)) & 0x3fff }
+    if (kind === 'VP8L') { const bits = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24); return { width: 1 + (bits & 0x3fff), height: 1 + ((bits >>> 14) & 0x3fff) } }
+    return null
+  }
+  if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i += 1; continue }
+      const marker = b[i + 1]
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0xff) { i += marker === 0xff ? 1 : 2; continue }
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { width: u16(i + 7), height: u16(i + 5) }
+      i += 2 + u16(i + 2)
+    }
+  }
+  return null
 }
 
 // ---- browser side
@@ -75,6 +103,8 @@ function hasTransparency(context, width, height) {
 // A picture file -> { blob, width, height }: what is uploaded, and its stored size. Decoded and drawn off the main thread where the web
 // view can (createImageBitmap, OffscreenCanvas); the only work on the main thread is a scan for transparent pixels in PNG/WebP/GIF.
 export async function prepareImage(file) {
+  const header = readImageSize(new Uint8Array(await file.slice(0, 1 << 20).arrayBuffer()))
+  if (header && imageStorage({ width: header.width, height: header.height, bytes: file.size, type: file.type }).tooBig) throw new Error(`That picture is too large (over ${MAX_MEGAPIXELS} megapixels)`)
   let bitmap
   try { bitmap = await decode(file) } catch { throw new Error('Could not read that picture') }
   try {

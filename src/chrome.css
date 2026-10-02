@@ -266,6 +266,7 @@
   @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sk-accent) 45%, transparent); } 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--sk-accent) 0%, transparent); } }
 
   .app-shell.mindmap-active .tool-dock { display: flex !important; }
+  .app-shell .is-clear-of-handles { opacity: .25 !important; pointer-events: none !important; }
   .app-shell .workspace.is-object-dragging :is(.page-minimap, .zoom-control) { opacity: .3; pointer-events: none; }
   .app-shell .workspace.is-object-dragging .tool-dock { opacity: .14; pointer-events: none; transform: translateX(-50%) translateY(6px); }
 

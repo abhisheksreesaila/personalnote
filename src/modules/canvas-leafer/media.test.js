@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createHistory } from '../../core/document/history.js'
-import { MEDIA_PLACE_SIDE, imageStorage, newImage, pictureFiles, storedEncoding } from './media.js'
+import { MAX_MEGAPIXELS, MEDIA_PLACE_SIDE, imageStorage, readImageSize, newImage, pictureFiles, storedEncoding } from './media.js'
 
 test('a small picture in a kept format is stored as it came; a big or animated one is re-encoded', () => {
   assert.deepEqual(imageStorage({ width: 800, height: 600, bytes: 90_000, type: 'image/png' }), { keep: true, target: { width: 800, height: 600 } })
@@ -48,4 +48,24 @@ test('adding a picture is one undoable step that undo takes out and redo brings 
   assert.equal(history.doc.objects.length, 0)
   history.redo()
   assert.deepEqual(history.doc.objects[0], image)
+})
+
+const be32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]
+const png = (w, h) => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...be32(w), ...be32(h), 8, 6, 0, 0, 0])
+const jpeg = (w, h) => Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc4, 0, 3, 0, 0xff, 0xc0, 0, 11, 8, h >> 8, h & 255, w >> 8, w & 255, 1, 1, 0x11, 0])
+const gif = (w, h) => Uint8Array.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, w & 255, w >> 8, h & 255, h >> 8, 0, 0])
+const webpX = (w, h) => Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x58, 10, 0, 0, 0, 0, 0, 0, 0, (w - 1) & 255, ((w - 1) >> 8) & 255, (w - 1) >> 16, (h - 1) & 255, ((h - 1) >> 8) & 255, (h - 1) >> 16, 0])
+
+test('the size is read from the file header, before anything is decoded', () => {
+  assert.deepEqual(readImageSize(png(4000, 3000)), { width: 4000, height: 3000 })
+  assert.deepEqual(readImageSize(jpeg(5000, 4000)), { width: 5000, height: 4000 }) // past an unrelated segment
+  assert.deepEqual(readImageSize(gif(320, 200)), { width: 320, height: 200 })
+  assert.deepEqual(readImageSize(webpX(1234, 777)), { width: 1234, height: 777 })
+  assert.equal(readImageSize(Uint8Array.from([1, 2, 3])), null)
+})
+
+test('a picture over 100 megapixels is refused up front', () => {
+  assert.equal(MAX_MEGAPIXELS, 100)
+  assert.equal(imageStorage({ width: 10000, height: 10001, bytes: 1, type: 'image/png' }).tooBig, true)
+  assert.equal(imageStorage({ width: 4000, height: 3000, bytes: 1, type: 'image/png' }).tooBig, undefined)
 })

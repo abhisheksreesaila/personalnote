@@ -996,6 +996,7 @@ function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOf
   const scale = getCanvasScale()
   canvas.setViewportTransform([scale, 0, 0, scale, next.x, next.y])
   leaferCanvas?.setView({ x: next.x, y: next.y, scale })
+  scheduleHandleClearance()
   canvas.requestRenderAll()
   updateNavigationUi(moved || next.x !== previousX)
 }
@@ -1063,6 +1064,7 @@ function setViewTo(view) {
   viewportOffsetY = view.y
   canvas.setViewportTransform([scale, 0, 0, scale, view.x, view.y])
   leaferCanvas?.setView({ x: view.x, y: view.y, scale })
+  scheduleHandleClearance()
   canvas.requestRenderAll()
   updateNavigationUi(true)
 }
@@ -1854,13 +1856,26 @@ async function placeLeaferPictures(files, point) {
       made.push({ mediaId, url: URL.createObjectURL(blob), width, height })
     } catch (error) {
       console.error(error)
-      setSaveState('Could not add that picture', true)
+      setSaveState(error?.message || 'Could not add that picture', true)
     }
   }
-  if (!made.length || noteId !== state.activeNoteId || leaferSwitching) return 0 // the note was left while the pictures were being prepared
+  const dropMade = () => { for (const picture of made) URL.revokeObjectURL(picture.url); return 0 }
+  if (!made.length) return 0
+  // A drag, a stroke, an erase pass or typing in progress when the upload finishes is never interrupted: the pictures wait for it to end.
+  while (gestureBusy()) {
+    if (noteId !== state.activeNoteId || leaferSwitching) return dropMade()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  if (noteId !== state.activeNoteId || leaferSwitching) return dropMade() // the note was left while the pictures were being prepared
   setTool('select')
   return leaferCanvas.addImages(made, point).length
 }
+
+// True while the pointer is held down on the page, a pen or eraser stroke is under way, or words are being typed on the canvas.
+let pointerHeld = false
+for (const type of ['pointerdown']) window.addEventListener(type, () => { pointerHeld = true }, true)
+for (const type of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(type, () => { pointerHeld = false }, true)
+const gestureBusy = () => pointerHeld || Boolean(leaferInk?.active) || Boolean(leaferCanvas?.isEditingText())
 
 async function placeImageFiles(files, point = viewCenterPoint()) {
   const pictures = imageFiles(files)
@@ -2375,7 +2390,37 @@ leaferInk = createInk({
 })
 
 // The bar over the canvas that does with the mouse what the keys do (Back, Forward, Lock, Delete); it shows while something is selected.
-leaferCanvas.onSelection(() => { updateSelectionBar(); syncTypographyControls() })
+leaferCanvas.onSelection(() => { updateSelectionBar(); syncTypographyControls(); scheduleHandleClearance() })
+// A floating control (zoom, pages, dock) that sits right over one of the selection's handles stands aside (faint, no pointer) so the handle can be grabbed.
+let clearanceFrame = 0
+function scheduleHandleClearance() {
+  if (clearanceFrame) return
+  clearanceFrame = requestAnimationFrame(() => {
+    clearanceFrame = 0
+    const controls = [...document.querySelectorAll('.zoom-control, .page-minimap, .tool-dock')]
+    const ids = leaferCanvas?.selection() ?? []
+    const host = leaferHost?.getBoundingClientRect()
+    let handles = []
+    if (ids.length && host) {
+      let left = Infinity; let top = Infinity; let right = -Infinity; let bottom = -Infinity
+      for (const id of ids) {
+        const box = leaferCanvas.screenBox(id)
+        if (!box) continue
+        left = Math.min(left, box.x); top = Math.min(top, box.y); right = Math.max(right, box.x + box.width); bottom = Math.max(bottom, box.y + box.height)
+      }
+      if (left !== Infinity) {
+        const midX = (left + right) / 2; const midY = (top + bottom) / 2
+        handles = [[left, top], [midX, top], [right, top], [left, midY], [right, midY], [left, bottom], [midX, bottom], [right, bottom], [midX, top - 22]].map(([x, y]) => ({ x: host.left + x, y: host.top + y }))
+      }
+    }
+    for (const control of controls) {
+      const rect = control.getBoundingClientRect()
+      const under = rect.width > 0 && handles.some((p) => p.x > rect.left - 10 && p.x < rect.right + 10 && p.y > rect.top - 10 && p.y < rect.bottom + 10)
+      control.classList.toggle('is-clear-of-handles', under)
+    }
+  })
+}
+window.addEventListener('pointerup', () => setTimeout(scheduleHandleClearance, 30), true)
 function updateSelectionBar() {
   const selection = leaferCanvas.selection()
   elements.selectionBar.hidden = !selection.length

@@ -671,9 +671,11 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   // ---- output (F-033): the note as it prints and exports, drawn from the model on a leafer of its own (white paper, no page furniture,
   // no handles), so the screen's view, selection and chrome never reach it. `region` is a rectangle of the page grid, in page pixels.
   async function renderRegion(region, { pixelRatio = 2, type = 'image/png', quality } = {}) {
+    await document.fonts?.ready // text is laid out with the fonts that are loaded now, never a fallback
     const surface = document.createElement('canvas')
     const sheet = new Leafer({ view: surface, width: region.width, height: region.height, pixelRatio, type: 'draw', hittable: false })
     const marks = { text: textNodes.length, measured: measuredText.length, strokes: uniformStrokes.length }
+    const counted = { ...stats }
     const group = new Group({ x: -region.x, y: -region.y, hittable: false })
     try {
       sheet.add(group)
@@ -682,6 +684,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       for (const item of uniformStrokes.splice(marks.strokes)) item.node.strokeWidth = item.width
       textNodes.length = marks.text
       measuredText.length = marks.measured
+      Object.assign(stats, counted) // what the screen drew is what stats() reports, not these copies
       await new Promise((resolve) => { sheet.waitViewCompleted(() => requestAnimationFrame(() => requestAnimationFrame(resolve))) })
       // White paper under whatever is transparent, as the Fabric print sheet had it.
       const paper = document.createElement('canvas')
@@ -704,6 +707,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     load(next, options = {}) {
       if ('resolveMedia' in options) resolveMedia = options.resolveMedia ?? null // a redraw from the document (undo, redo, an erase pass given up) keeps the pictures the note was opened with
       if (overlay.isOpen) overlay.commit() // words being typed are kept
+      if ('resolveMedia' in options) { for (const url of mediaUrls.values()) if (url.startsWith('blob:')) URL.revokeObjectURL(url); mediaUrls.clear() } // a note is opened: the pictures added to the one before are not needed
       lastEdited = null
       doc = next
       editing.clear()
