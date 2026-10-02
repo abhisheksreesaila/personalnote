@@ -215,7 +215,10 @@ const sumShift = (a, b) => (a || b ? { x: (a?.x ?? 0) + (b?.x ?? 0), y: (a?.y ??
 
 // Folds a later op into an earlier one (a drag is many moves, one step): the first `before` and the last `after` survive.
 function combine(first, second) {
-  const byId = new Map(first.changes.map((change) => [change.id, change]))
+  const named = new Set(second.changes.map((change) => change.id))
+  const forward = second.page?.shift
+  // The later op's page shift moved every object it does not name, including the ones the earlier op changed: their `after` is in the new frame.
+  const byId = new Map(first.changes.map((change) => [change.id, forward && (forward.x || forward.y) && change.after && !named.has(change.id) ? { ...change, after: shiftedObject(change.after, forward.x, forward.y) } : change]))
   for (const change of second.changes) {
     const earlier = byId.get(change.id)
     if (!earlier) {

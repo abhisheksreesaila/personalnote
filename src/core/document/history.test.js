@@ -261,3 +261,23 @@ test('undo on a 600-object note stays under 16 ms and a step is small', () => {
   times.sort((a, b) => a - b)
   assert.ok(times[50] < 16, `median undo ${times[50].toFixed(2)} ms`)
 })
+
+test('a group with two page-frame shifts: undo puts every object, including ones the later op never names, back in the old frame', () => {
+  const doc = { schemaVersion: 1, page: { columns: 1, rows: 1 }, extras: {}, objects: [
+    sticky(0, { id: 'A', geometry: geometry(100, 0) }), sticky(1, { id: 'C', geometry: geometry(200, 0) }), sticky(2, { id: 'D', geometry: geometry(300, 0) }),
+  ] }
+  const history = createHistory({ doc })
+  const x = (id) => byId(history.doc, id).geometry.x
+  history.begin('drag')
+  const at = (id, to) => ({ id, before: byId(history.doc, id), after: { ...byId(history.doc, id), geometry: { ...byId(history.doc, id).geometry, x: to } } })
+  history.record({ changes: [at('A', 170)], page: { before: { columns: 1, rows: 1 }, after: { columns: 2, rows: 1 }, shift: { x: 50, y: 0 } } })
+  assert.deepEqual([x('A'), x('C'), x('D')], [170, 250, 350])
+  history.record({ changes: [at('C', 310)], page: { before: { columns: 2, rows: 1 }, after: { columns: 3, rows: 1 }, shift: { x: 50, y: 0 } } })
+  assert.deepEqual([x('A'), x('C'), x('D')], [220, 310, 400])
+  history.record({ changes: [at('D', 405)] })
+  history.end()
+  history.undo()
+  assert.deepEqual([x('A'), x('C'), x('D')], [100, 200, 300])
+  history.redo()
+  assert.deepEqual([x('A'), x('C'), x('D')], [220, 310, 405])
+})
