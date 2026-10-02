@@ -138,13 +138,22 @@ test('a group closed by a merge keeps its label on both steps', () => {
   const history = createHistory({ doc: makeDoc() })
   history.subscribe((event) => { if (event.type === 'undo') labels.push(event.label) })
   history.begin('Drag')
-  history.record(moveOp(history, 'o1', 5))
+  history.record({ changes: moveOp(history, 'o1', 5).changes })
   history.mergeRemote(withText(history.doc, 'o2', 'AGENT'))
-  history.record(moveOp(history, 'o1', 5))
+  history.record({ changes: moveOp(history, 'o1', 5).changes })
   history.end()
   history.undo()
   history.undo()
   assert.deepEqual(labels, ['Drag', 'Drag'])
+})
+
+test('connectors: a step connector the agent changed stays, so its endpoint is not removed under it', () => {
+  const history = createHistory({ doc: connectorDoc() })
+  history.record({ changes: [{ id: 'x', before: null, after: sticky(9, { id: 'x', z: 4 }) }, { id: 'k', before: null, after: connector('k', 'a', 'x', 5) }] })
+  history.mergeRemote({ ...history.doc, objects: history.doc.objects.map((o) => (o.id === 'k' ? { ...o, color: '#ff0000' } : o)) })
+  history.undo()
+  const ids = history.doc.objects.map((o) => o.id)
+  assert.ok(ids.includes('x') && ids.includes('k'), ids.join())
 })
 
 test('the byte cap holds on a 600-object note', () => {

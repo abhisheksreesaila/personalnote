@@ -141,10 +141,11 @@ function applyOp(doc, op, direction, force = false) {
         present.delete(object.id)
       }
     }
-    const inOp = new Set(op.changes.map((change) => change.id))
     for (const object of doc.objects) {
-      if (object?.type !== 'connector' || removed.has(object.id) || inOp.has(object.id)) continue
+      if (object?.type !== 'connector' || removed.has(object.id)) continue
       for (const end of [object.fromId, object.toId]) {
+        // Edge case: a connector that belongs to this very step but whose own removal was skipped (the agent changed it) is still in the
+        // document, so it blocks the removal of the object it points at, exactly like a connector the agent added.
         if (removed.has(end)) { removed.delete(end); changed.splice(changed.indexOf(end), 1); skipped++ }
       }
     }
@@ -255,12 +256,13 @@ export function createHistory({ doc, maxSteps = DEFAULT_MAX_STEPS, maxBytes = DE
     trim()
   }
 
-  function record(op, { coalesce } = {}) {
-    for (const change of op.changes) {
-      if (change.after !== null || change.before === null || change.anchor) continue
+  function record(given, { coalesce } = {}) {
+    // Work on copies: the caller's change objects are never modified (anchors are ours).
+    const op = { ...given, changes: given.changes.map((change) => {
+      if (change.after !== null || change.before === null || change.anchor) return { ...change }
       const at = current.objects.findIndex((object) => object?.id === change.id)
-      change.anchor = { prev: current.objects[at - 1]?.id ?? null, next: current.objects[at + 1]?.id ?? null }
-    }
+      return { ...change, anchor: { prev: current.objects[at - 1]?.id ?? null, next: current.objects[at + 1]?.id ?? null } }
+    }) }
     const applied = applyOp(current, op, 'redo', true)
     current = applied.doc
     if (group) { group.op = group.op ? combine(group.op, op) : combine({ changes: [] }, op); if (op.label && !group.op.label) group.op.label = op.label }
@@ -335,7 +337,7 @@ export function createHistory({ doc, maxSteps = DEFAULT_MAX_STEPS, maxBytes = DE
     mergeRemote(next) {
       // A step never spans a merge: what was recorded before it is closed as its own step, and nothing coalesces across it.
       last = null
-      if (group?.op) { commit(group.op); group.op = null }
+      if (group?.op) { group.op.label ??= group.label; commit(group.op); group.op = null }
       const known = idsOf(current)
       const objects = next.objects.map((object) => { const old = object && known.get(object.id); return old && deepEqual(old, object) ? old : object })
       current = { ...next, objects, page: deepEqual(next.page, current.page) ? current.page : next.page }
