@@ -14,9 +14,14 @@ export function createLeaferCanvas(options) {
   return {
     ...scene,
     // A document model (read from the stored note) -> Leafer nodes. `loadOptions.resolveMedia` shows library pictures.
+    // The arrows are brought in line with the objects they join, as the Fabric path does on every load (a note an older app or an agent
+    // saved with a stale arrow); the document returned is the one on screen.
     showDocument(doc, loadOptions) {
       scene.load(ensureIds(doc), loadOptions)
-      return doc
+      const fixed = scene.followConnectors(doc)
+      if (fixed === doc) return doc
+      scene.load(fixed)
+      return fixed
     },
   }
 }

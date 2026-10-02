@@ -2,10 +2,12 @@
 // paint-time effect. The object's own render is wrapped for the duration of the drag, so its
 // saved angle, position and JSON never change and nothing is added to the document.
 
-const TILT = (2 * Math.PI) / 180
-const SHADOW_BLUR = 26
-const SHADOW_OFFSET = 14
-const SHADOW_ALPHA = 0.3
+export const LIFT_TILT_DEGREES = 2
+export const LIFT_SHADOW = { blur: 26, offsetY: 14, alpha: 0.3 } // the Leafer canvas lifts the same way (canvas-leafer/scene.js)
+const TILT = (LIFT_TILT_DEGREES * Math.PI) / 180
+const SHADOW_BLUR = LIFT_SHADOW.blur
+const SHADOW_OFFSET = LIFT_SHADOW.offsetY
+const SHADOW_ALPHA = LIFT_SHADOW.alpha
 
 export function liftAmount(progress) {
   const t = Math.min(1, Math.max(0, progress))

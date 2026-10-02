@@ -97,14 +97,20 @@ export function endpointsOf(connector) {
   return endpointsFromBox({ left: g.x, top: g.y, width: g.width, height: g.height, reverseX: connector.reverseX ?? false, reverseY: connector.reverseY ?? false })
 }
 
-// The arrow's drawing in its own box frame (origin at the box's top-left): a line to the base of the head, and the head.
-export function arrowPath(connector) {
-  const g = connector.geometry
-  const { start, end } = endpointsFromBox({ left: 0, top: 0, width: g.width, height: g.height, reverseX: connector.reverseX ?? false, reverseY: connector.reverseY ?? false })
+// An arrow from `start` to `end` as one path: a line to the base of the head, and the head (a filled triangle). Same drawing as the Fabric
+// path's drawArrow (modules/editor/connector-object.js).
+export function arrowPathFrom(start, end) {
   const length = Math.hypot(end.x - start.x, end.y - start.y)
   const [tip, wingA, wingB] = arrowHeadPoints(start, end, Math.min(CONNECTOR_HEAD, length * 0.6))
   const tail = { x: (wingA.x + wingB.x) / 2, y: (wingA.y + wingB.y) / 2 }
   return `M ${start.x} ${start.y} L ${tail.x} ${tail.y} M ${tip.x} ${tip.y} L ${wingA.x} ${wingA.y} L ${wingB.x} ${wingB.y} Z`
+}
+
+// The arrow's drawing in its own box frame (origin at the box's top-left).
+export function arrowPath(connector) {
+  const g = connector.geometry
+  const { start, end } = endpointsFromBox({ left: 0, top: 0, width: g.width, height: g.height, reverseX: connector.reverseX ?? false, reverseY: connector.reverseY ?? false })
+  return arrowPathFrom(start, end)
 }
 
 // The topmost connector whose line passes within `tolerance` page pixels of the point, or null. Only the line is hit, never the whole

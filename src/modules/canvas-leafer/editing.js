@@ -3,7 +3,7 @@
 // app (main.js owns the keyboard, so no key fires while typing). The plugin lives in the App's top layer, apart from the note, so
 // a drag repaints only the objects that move. Leafer is imported here and in scene.js and nowhere else.
 import '@leafer-in/editor'
-import { EditorEvent, EditorScaleEvent } from '@leafer-in/editor'
+import { EditorEvent, EditorMoveEvent, EditorRotateEvent, EditorScaleEvent } from '@leafer-in/editor'
 
 const BLUE = '#1c70a8' // Fabric's selectionBorderColor and cornerColor
 
@@ -35,11 +35,14 @@ export const EDITOR_CONFIG = {
   openInner: 'none', // a double click edits the words (F-029 overlay, scene.js), not the editor plugin's inner editor
 }
 
-export function createEditing({ app, onResize, onGestureEnd, onSelect }) {
+export function createEditing({ app, onResize, onGestureEnd, onSelect, onGesture = () => {} }) {
   const editor = app.editor
 
   // While the box is dragged wider the paper and the words follow it; each target decides what that means.
-  editor.on(EditorScaleEvent.SCALE, () => { for (const node of editor.list) onResize(node) })
+  editor.on(EditorScaleEvent.SCALE, () => { for (const node of editor.list) onResize(node); onGesture('scale') })
+  // F-032: every step of a drag, resize or turn tells the scene (connectors follow, pages grow, the dragged object lifts).
+  editor.on(EditorMoveEvent.MOVE, () => onGesture('move'))
+  editor.on(EditorRotateEvent.ROTATE, () => onGesture('rotate'))
   editor.on(EditorEvent.SELECT, () => onSelect(editor.list))
 
   // A gesture ends when the pointer comes up; the editor has finished its last move by then, so look once the event is through.

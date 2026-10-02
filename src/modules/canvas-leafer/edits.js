@@ -3,11 +3,13 @@
 //
 // What later tickets call (F-028 select/move/transform/delete, F-029 text, F-031 ink, ...):
 //   edits.record({ label, changes: [{ id, before, after }], page?, selection? }, { coalesce? })   one undo step
+//     page: { before, after, shift? }: the page grid changed; `shift` is the distance every object moved when pages were added or folded on
+//     the top or left, and `viewShift` (not stored) the part of it the view has not followed yet
 //   edits.begin('Move') ... edits.record(...) per pointer move ... edits.end()                   a drag is one step
 //   edits.deleteObjects(ids)                                                                       one step, connectors included
 //   edits.undo() / edits.redo()                                                                    what Cmd/Ctrl+Z and the buttons call
 //   edits.remote(noteId, doc)                                                                      an agent/sync merge: not undoable
-// `onChange(doc, { kind, changed, page, selection })` runs after every edit, undo and redo with the new document. `selection` is
+// `onChange(doc, { kind, changed, page, pageShift, viewShift, selection })` runs after every edit, undo and redo with the new document. `selection` is
 // the object ids that should be selected afterwards (undo: what the step restored or the selection it began with).
 import { createHistory } from '../../core/document/history.js'
 import { planRemove } from '../../core/document/operations.js'
@@ -16,12 +18,12 @@ export function createLeaferEdits({ onChange = () => {} } = {}) {
   let history = null
   let noteId = null
 
-  const changed = (kind, info = {}) => onChange(history.doc, { kind, changed: [], page: false, selection: [], ...info })
+  const changed = (kind, info = {}) => onChange(history.doc, { kind, changed: [], page: false, pageShift: null, viewShift: null, selection: [], ...info })
   const live = () => (history ? history : null)
 
   function wrap(kind) {
     const result = history?.[kind]() ?? null
-    if (result) changed(kind, { changed: result.changed, page: result.page, selection: result.selection })
+    if (result) changed(kind, { changed: result.changed, page: result.page, pageShift: result.pageShift, viewShift: result.pageShift, selection: result.selection })
     return result
   }
 
@@ -43,8 +45,9 @@ export function createLeaferEdits({ onChange = () => {} } = {}) {
     stats: () => history?.stats() ?? { undoSteps: 0, redoSteps: 0, bytes: 0 },
     record(op, options) {
       if (!live()) return null
-      history.record(op, options)
-      changed('edit', { changed: op.changes.map((change) => change.id), page: Boolean(op.page), selection: op.selection?.after ?? [] })
+      const { viewShift, ...stored } = op
+      history.record(stored, options)
+      changed('edit', { changed: op.changes.map((change) => change.id), page: Boolean(op.page), pageShift: op.page?.shift ?? null, viewShift: viewShift ?? op.page?.shift ?? null, selection: op.selection?.after ?? [] })
       return history.doc
     },
     begin: (label) => history?.begin(label),

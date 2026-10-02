@@ -1,14 +1,22 @@
 // The Leafer adapter (F-027, F-028): draws a document-model note and edits it. Everything about WHERE an object goes comes from the
 // documented model rules (placement.js: the one matrix per object, and its inverse; schema.js: frames, ink frame, group frames); this
 // file only knows how to make each model type look like the Fabric render. Leafer is imported here and in editing.js (the
-// selection and transform layer) and nowhere else. An edit is a document-model operation (operations.js); the nodes follow the model.
+// selection and transform layer) and overlay.js (the ghost page, the connector halo, the connect tool's outlines) and nowhere else. An edit is
+// a document-model operation (operations.js); the nodes follow the model. F-032: every edit goes through pages.js finalizeOp, so the connectors
+// that follow what moved and the pages that grow or fold back are part of the same undo step.
 import { App, Box, Group, Ellipse, Image, Leafer, MatrixHelper, Path, Rect, Text } from 'leafer-ui'
 import { PAGE } from '../../core/document/index.js'
 import { applyChanges, isLocked, planLock, planMove, planRemove, planReorder, planSetGeometry, stacking } from '../../core/document/operations.js'
-import { arrowHeadPoints, endpointsFromBox } from '../editor/connectors.js'
+import { connectorEndpoints } from '../editor/connectors.js'
+import { nextPageGhost } from '../editor/edge-ghost.js'
+import { LIFT_SHADOW, LIFT_TILT_DEGREES } from '../editor/lift.js'
 import { STICKY_PADDING } from '../editor/objects.js'
+import { boundingRect, rectEdges } from './bounds.js'
 import { FOLD_COLOR, FOLD_DASH, FOLD_WIDTH, LABEL_FONT_FAMILY, LABEL_FONT_SIZE, pageChrome } from './chrome.js'
+import { CONNECTOR_DEFAULTS, CONNECTOR_HIT, arrowPath, connectorAt, connectorLayout, followChanges, newConnector, newConnectorId, withLayout } from './connectors.js'
 import { createEditing, EDITOR_CONFIG } from './editing.js'
+import { createOverlays } from './overlay.js'
+import { GHOST_REACH, finalizeOp, growForDrag } from './pages.js'
 import { applyMatrix, geometryFromMatrix, multiplyMatrices, placementMatrix } from './placement.js'
 import { bakedStickyShadow, STICKY_CORNERS } from './sticky-shadow.js'
 import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
@@ -19,9 +27,7 @@ import { fitGeometry, newSticky, newText, nextZ, objectAt, planSetContent, planS
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
 const TEXT_DEFAULTS = { fontFamily: 'Times New Roman', fontSize: 40, fontWeight: 'normal', fontStyle: 'normal', lineHeight: 1.16, textAlign: 'left', color: 'rgb(0,0,0)' }
 const SHAPE_DEFAULT_FILL = 'rgb(0,0,0)'
-const CONNECTOR_HEAD = 15
 const INK_HIT_RADIUS = 10 // a pen line is a few pixels wide; a click this close to it (page pixels) picks it
-const CONNECTOR_DEFAULTS = { lineWidth: 2.6, color: '#20201e' }
 
 const LEGACY_TEXT_PLACEHOLDER = 'Start typing'
 const isPlaceholderText = (value) => { const trimmed = String(value ?? '').trim(); return !trimmed || trimmed === LEGACY_TEXT_PLACEHOLDER }
@@ -77,7 +83,9 @@ const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y
 // F-029: `defaults.text()` is the model style for a new text ({ fontFamily, fontSize, color ... }); `defaults.sticky()` is
 // { fill, ink, style } for a new sticky. `onBegin(label)` / `onEnd()` group edits into one undo step (a new sticky and the words typed
 // into it); `onTextEvent(type)` hears 'start', 'end' and 'escape' of a text edit.
-export function createScene({ host, width, height, onOperation = () => null, onDelete = null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, defaults = {} }) {
+// F-032: `onPages({ columns, rows, shiftX, shiftY })` hears that the page grid grew while an object was being dragged, resized or turned (the
+// host sets its page state and moves the view by the shift so nothing seems to move); an edit's own page change travels in the op instead.
+export function createScene({ host, width, height, onOperation = () => null, onDelete = null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, defaults = {} }) {
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
   const app = new App({ view: host, width, height, pixelRatio: Math.min(2, globalThis.devicePixelRatio || 1), tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
   const leafer = app.tree
@@ -99,8 +107,12 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   const mediaUrls = new Map() // media id -> the URL of a picture added in this session (its bytes are already here), so it needs no fetch
   let doc = null // the document model on screen: edits change it, the nodes follow
   let committing = false // true while an edit made here is being handed to the host: the host need not draw it again
-  const entries = new Map() // object id -> { id, node, built }: every top-level object that has a node
+  const entries = new Map() // object id -> { id, node, built, rect, ... }: every top-level object that has a node
   const entryOfNode = new WeakMap()
+  const linked = new Map() // object id -> the ids of the connectors on it (a drag only touches its own arrows)
+  const live = { active: false, kind: null, rest: null, shift: { x: 0, y: 0 }, grown: false, lifted: [], ghost: '' } // what a drag, resize or turn in progress has done on screen
+  let connectorSelected = null // the id of the selected connector (it is picked by its line, apart from the editor's selection)
+  const sizeOf = (object) => entries.get(object?.id)?.size ?? {}
 
   // ---- page furniture (screen space), stacked: shadow bands, edge, paper, fold lines, labels
   const shadowGroup = new Group({ hittable: false })
@@ -110,6 +122,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   const foldNode = new Path({ hittable: false, stroke: FOLD_COLOR, strokeWidth: FOLD_WIDTH, dashPattern: FOLD_DASH, strokeAlign: 'center', path: 'M 0 0' })
   for (const node of [shadowGroup, edgeNode, paperNode, foldNode, labelGroup]) chrome.add(node)
   const pool = { shadows: [], labels: [] }
+  const overlays = createOverlays({ app, chrome })
 
   function ensure(list, count, make, parent) {
     while (list.length < count) { const node = make(); list.push(node); parent.add(node) }
@@ -129,6 +142,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     }
     ensure(pool.labels, plan.labels.length, () => new Text({ hittable: false, fontFamily: LABEL_FONT_FAMILY, fontSize: LABEL_FONT_SIZE, lineHeight: LABEL_FONT_SIZE, textWrap: 'none' }), labelGroup)
     plan.labels.forEach((label, index) => pool.labels[index].set({ text: label.text, x: label.x, y: label.y, fill: colors.label }))
+    overlays.setView(view)
   }
 
   // ---- objects (page space, in the model's frames)
@@ -156,6 +170,11 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     if (cap) props.strokeCap = cap
     if (join) props.strokeJoin = join
     return props
+  }
+
+  // A connector's node follows its model object: placed at its box, the arrow drawn in the box frame, hidden when the two ends are too close.
+  function connectorProps(object) {
+    return { x: object.geometry.x, y: object.geometry.y, path: arrowPath(object), visible: object.visible !== false }
   }
 
   // Returns { node, size } where size is the box the matrix uses (measured for text without a stored height).
@@ -228,13 +247,9 @@ export function createScene({ host, width, height, onOperation = () => null, onD
         return { node: new Image({ ...base, url, width: g.width, height: g.height }), size: {}, sized: true }
       }
       case 'connector': {
-        const { start, end } = endpointsFromBox({ left: 0, top: 0, width: g.width, height: g.height, reverseX: object.reverseX ?? false, reverseY: object.reverseY ?? false })
-        const length = Math.hypot(end.x - start.x, end.y - start.y)
-        const [tip, wingA, wingB] = arrowHeadPoints(start, end, Math.min(CONNECTOR_HEAD, length * 0.6))
-        const tail = { x: (wingA.x + wingB.x) / 2, y: (wingA.y + wingB.y) / 2 }
         const color = isColor(object.color) ? object.color : CONNECTOR_DEFAULTS.color
-        const path = `M ${start.x} ${start.y} L ${tail.x} ${tail.y} M ${tip.x} ${tip.y} L ${wingA.x} ${wingA.y} L ${wingB.x} ${wingB.y} Z`
-        return { node: new Path({ ...base, hittable: false, path, fill: color, ...strokeProps(color, object.lineWidth ?? CONNECTOR_DEFAULTS.lineWidth, false, 'round', 'round') }), size: {} }
+        const props = connectorProps(object)
+        return { node: new Path({ ...base, hittable: false, ...props, fill: color, ...strokeProps(color, object.lineWidth ?? CONNECTOR_DEFAULTS.lineWidth, false, 'round', 'round') }), size: {} }
       }
       case 'group': {
         const group = new Group({ ...base, hitChildren: false })
@@ -291,12 +306,22 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   // Which nodes can be picked, and how they may be edited. A locked object can be picked (to unlock it) but has no handles and does
   // not move; paths, groups and point text scale as a whole, boxes (text, sticky, shapes, pictures) are resized.
   function register(object, built, box) {
-    const entry = { id: object.id, object, built, node: built.node, box, size: built.size.width !== undefined ? { ...built.size } : { width: object.geometry.width, height: object.geometry.height } }
+    const entry = { id: object.id, object, built, node: built.node, box, size: built.size.width !== undefined ? { ...built.size } : { width: object.geometry.width, height: object.geometry.height }, rect: null }
+    if (object.type === 'connector') link(object)
+    else entry.rect = boundingRect(object, entry.size)
     entries.set(object.id, entry)
     entryOfNode.set(built.node, entry)
     configure(entry)
     return entry
   }
+
+  function link(connector) {
+    for (const end of [connector.fromId, connector.toId]) {
+      if (!linked.has(end)) linked.set(end, new Set())
+      linked.get(end).add(connector.id)
+    }
+  }
+  function unlink(connector) { for (const end of [connector.fromId, connector.toId]) linked.get(end)?.delete(connector.id) }
 
   function configure(entry) {
     const { object, built, node } = entry
@@ -314,6 +339,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
 
   function refreshBox(entry) {
     const g = entry.object.geometry
+    if (entry.rect) entry.rect = boundingRect(entry.object, entry.size)
     if (!entry.box) return
     Object.assign(entry.box, boxOf(placementMatrix(g, entry.size), entry.size.width ?? g.width ?? 0, entry.size.height ?? g.height ?? 0))
   }
@@ -336,7 +362,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
 
   // The selection holds nodes; when nodes are made again or taken away, the same objects are selected again afterwards.
   function keepingSelection(change) {
-    const keep = selectedIds()
+    const keep = editorEntries().map((entry) => entry.id)
     editing.clear()
     try { change() } finally { editing.select(keep.map((id) => entries.get(id)?.node).filter(Boolean)) }
   }
@@ -346,29 +372,180 @@ export function createScene({ host, width, height, onOperation = () => null, onD
 
   const objectsById = (document) => new Map(document.objects.filter((object) => object?.id !== undefined).map((object) => [object.id, object]))
 
-  // Hands an op to the host, takes the document it returns, and points the entries at the new objects.
-  function commit(op, { coalesce, selection } = {}) {
-    if (!op.changes.length) return false
-    const withSelection = selection ? { ...op, selection } : op
-    committing = true
-    try { doc = onOperation(withSelection, { coalesce }) ?? applyChanges(doc, op) } finally { committing = false }
-    const latest = objectsById(doc)
-    for (const change of op.changes) {
-      const entry = entries.get(change.id)
-      if (entry && change.after) entry.object = latest.get(change.id) ?? change.after
+  // Moves every node (and its box and rect) by whole page distances: the page frame's origin moved because pages were added or folded on the
+  // top or left. The host moves the view by the same amount, so nothing seems to move.
+  function shiftNodes(by) {
+    for (const entry of entries.values()) {
+      entry.node.set({ x: entry.node.x + by.x, y: entry.node.y + by.y })
+      if (entry.box) { entry.box.left += by.x; entry.box.top += by.y }
+      for (const rect of [entry.rect, entry.live?.rect]) if (rect) { rect.left += by.x; rect.top += by.y }
     }
+    if (live.rest) { live.rest.left += by.x; live.rest.right += by.x; live.rest.top += by.y; live.rest.bottom += by.y }
+    editing.update()
+  }
+
+  // A connector's node from its model object (or from a trial layout while its ends are being dragged).
+  function syncConnector(entry, object = entry.object) {
+    entry.node.set(connectorProps(object))
+    if (connectorSelected === entry.id) showHalo()
+  }
+
+  // Hands an op to the host, takes the document it returns, and points the entries at the new objects. The op is first made whole
+  // (pages.js finalizeOp): the connectors that follow what moved, the connectors left without an end, and the page growth or fold-back the
+  // edit causes, with every object moved when pages are added on the top or left: all of it one undo step.
+  function commit(op, { coalesce, selection } = {}) {
+    if (!op.changes.length && !op.page && !live.shift.x && !live.shift.y) return false
+    const named = new Set(op.changes.map((change) => change.id))
+    const plan = finalizeOp(doc, op, { sizeOf, grid: live.grown ? { ...pages } : null, preShift: live.shift })
+    const { op: whole, shift } = plan
+    if (!whole.changes.length && !whole.page) return false
+    const viewShift = { x: shift.x - live.shift.x, y: shift.y - live.shift.y } // what the nodes have not moved yet
+    const handed = { ...whole, viewShift }
+    if (selection) handed.selection = selection
+    committing = true
+    try { doc = onOperation(handed, { coalesce }) ?? applyChanges(doc, whole) } finally { committing = false }
+    const latest = objectsById(doc)
+    for (const change of whole.changes) {
+      const entry = entries.get(change.id)
+      if (!entry) continue
+      if (change.after) entry.object = latest.get(change.id) ?? change.after
+      else if (!named.has(change.id)) dropEntry(entry) // a connector left without an end (the edit's own removals are dropped by its caller)
+    }
+    if (viewShift.x || viewShift.y) shiftNodes(viewShift)
+    if (whole.page) pages = { columns: whole.page.after.columns, rows: whole.page.after.rows }
+    for (const change of whole.changes) {
+      const entry = entries.get(change.id)
+      if (!entry || !change.after) continue
+      if (entry.object.type === 'connector') syncConnector(entry)
+      else if (entry.rect) entry.rect = boundingRect(entry.object, entry.size)
+    }
+    placeEditor()
     return true
   }
 
-  const selectedEntries = () => editing.nodes().map((node) => entryOfNode.get(node)).filter(Boolean)
+  const editorEntries = () => editing.nodes().map((node) => entryOfNode.get(node)).filter(Boolean) // the editor's own (never a connector)
+  const selectedEntries = () => {
+    const picked = editorEntries()
+    const arrow = connectorSelected && entries.get(connectorSelected)
+    return picked.length ? picked : arrow ? [arrow] : []
+  }
   const selectedIds = () => selectedEntries().map((entry) => entry.id)
+
+  // ---- a drag, a resize or a turn in progress (F-032): the arrows follow live, pages appear as the object nears an edge, the dragged object
+  // lifts and the page that would be added is previewed. None of it touches the document until the gesture ends (flushGesture).
+
+  // Where a selected node is now, as a rect on the page (the same measure the model rules use).
+  function liveRect(entry) {
+    const { node, object } = entry
+    if (live.kind === 'move') { // a drag is a pure move: the model geometry moved by how far the node has come (the lift's tilt turns about the node's own corner, which stays put)
+      const g = { ...object.geometry, x: object.geometry.x + (node.x - entry.liveBase.x), y: object.geometry.y + (node.y - entry.liveBase.y) }
+      return boundingRect({ ...object, geometry: g }, entry.size)
+    }
+    const size = entry.built.sized ? { width: node.width, height: node.height } : entry.size
+    const g = geometryFromMatrix(node.localTransform, size, object.geometry, { bake: Boolean(entry.built.sized) })
+    return boundingRect({ ...object, geometry: g }, size)
+  }
+
+  function startLift(list) {
+    const scale = view.scale
+    for (const entry of list) {
+      if (isLocked(entry.object)) continue
+      const { node } = entry
+      const item = { entry, rotation: node.rotation, shadow: node.shadow, index: world.children.indexOf(node) }
+      node.rotation = node.rotation + LIFT_TILT_DEGREES
+      node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
+      live.lifted.push(item)
+    }
+    live.lifted.sort((a, b) => a.index - b.index)
+    for (const item of live.lifted) overlays.dragLayer.add(item.entry.node) // out of the note's layer: a drag repaints only what moves
+  }
+
+  function endLift() {
+    for (const item of live.lifted) {
+      const { node } = item.entry
+      node.rotation = item.rotation
+      node.shadow = item.shadow ?? undefined
+      world.addAt(node, Math.min(item.index, world.children.length))
+    }
+    live.lifted = []
+  }
+
+  function beginGesture(kind, list) {
+    live.active = true
+    live.kind = kind
+    const moving = new Set(list.map((entry) => entry.id))
+    let rest = null
+    for (const entry of entries.values()) {
+      if (!entry.rect || moving.has(entry.id)) continue
+      const edges = rectEdges(entry.rect)
+      rest = rest ? { left: Math.min(rest.left, edges.left), top: Math.min(rest.top, edges.top), right: Math.max(rest.right, edges.right), bottom: Math.max(rest.bottom, edges.bottom) } : edges
+    }
+    live.rest = rest
+    for (const entry of list) entry.liveBase = { x: entry.node.x, y: entry.node.y }
+    if (kind === 'move') startLift(list)
+  }
+
+  const unionOf = (a, b) => (a && b ? { left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom) } : a ?? b)
+
+  function onGesture(kind) {
+    const list = editorEntries()
+    if (!list.length) return
+    if (!live.active) beginGesture(kind, list)
+    for (const entry of list) entry.live = { rect: liveRect(entry) }
+    // the arrows on what moves follow it
+    const arrows = new Set()
+    for (const entry of list) for (const id of linked.get(entry.id) ?? []) arrows.add(id)
+    for (const id of arrows) {
+      const arrow = entries.get(id)
+      const from = entries.get(arrow?.object.fromId)
+      const to = entries.get(arrow?.object.toId)
+      if (!arrow || !from?.rect || !to?.rect) continue
+      syncConnector(arrow, withLayout(arrow.object, connectorLayout(from.live?.rect ?? from.rect, to.live?.rect ?? to.rect)))
+    }
+    // pages appear before the object reaches an edge, in every direction
+    let bounds = null
+    for (const entry of list) bounds = unionOf(bounds, rectEdges(entry.live.rect))
+    const grow = growForDrag(pages, unionOf(live.rest, bounds))
+    if (grow.changed) {
+      pages = { columns: grow.columns, rows: grow.rows }
+      if (grow.shiftX || grow.shiftY) {
+        const by = { x: grow.shiftX, y: grow.shiftY }
+        live.shift = { x: live.shift.x + by.x, y: live.shift.y + by.y }
+        bounds = { left: bounds.left + by.x, top: bounds.top + by.y, right: bounds.right + by.x, bottom: bounds.bottom + by.y }
+        shiftNodes(by)
+        for (const entry of list) entry.liveBase = { x: entry.liveBase.x + by.x, y: entry.liveBase.y + by.y }
+      }
+      live.grown = true
+      onPages({ columns: grow.columns, rows: grow.rows, shiftX: grow.shiftX, shiftY: grow.shiftY })
+    }
+    // the page that would be added next, previewed
+    if (kind === 'move') {
+      const ghost = nextPageGhost(bounds, { columns: pages.columns, rows: pages.rows, pageW: PAGE.width, pageH: PAGE.height, reach: GHOST_REACH })
+      const key = JSON.stringify(ghost)
+      if (key !== live.ghost) { live.ghost = key; overlays.showGhost(ghost) }
+    }
+  }
+
+  // Back to rest: the lift is put down, the preview goes, nothing of the gesture stays on the nodes.
+  function endGesture() {
+    endLift()
+    overlays.showGhost(null)
+    for (const entry of entries.values()) { entry.live = null; entry.liveBase = null }
+    live.active = false
+    live.kind = null
+    live.rest = null
+    live.shift = { x: 0, y: 0 }
+    live.grown = false
+    live.ghost = ''
+  }
 
   // The editor has finished a gesture: read where each selected node ended up and commit it as one step.
   function flushGesture() {
+    const ids = selectedIds()
+    endLift() // the tilt comes off before the nodes are read
     const changes = []
     const rebuilds = []
-    const ids = selectedIds()
-    for (const entry of selectedEntries()) {
+    for (const entry of editorEntries()) {
       const { node, object } = entry
       const size = entry.built.sized ? { width: node.width, height: node.height } : entry.size
       const next = geometryFromMatrix(node.localTransform, size, object.geometry, { bake: Boolean(entry.built.sized) })
@@ -381,18 +558,24 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       entry.size = { width: next.width, height: next.height }
       if (entry.built.sized) rebuilds.push(entry) // the size may have changed: shadow, wrapping and sticky corners are made again from the model
     }
-    if (!changes.length) return
-    commit({ label: 'Transform', changes }, { selection: { before: ids, after: ids } })
+    const committed = commit({ label: 'Transform', changes }, { selection: { before: ids, after: ids } })
+    endGesture()
+    if (!committed) return
     for (const entry of rebuilds) refreshBox(entry)
     if (rebuilds.length) keepingSelection(() => { for (const entry of rebuilds) rebuild(entry) })
-    for (const entry of selectedEntries()) refreshBox(entry)
+    for (const entry of editorEntries()) refreshBox(entry)
   }
 
   const editing = createEditing({
     app,
     onResize(node) { entryOfNode.get(node)?.built.relayout?.() },
+    onGesture,
     onGestureEnd: flushGesture,
-    onSelect(nodes) { if (nodes.length) lastEdited = null; const ids = nodes.map((node) => entryOfNode.get(node)?.id).filter(Boolean); for (const listener of selectionListeners) listener(ids) },
+    onSelect(nodes) {
+      if (nodes.length) { lastEdited = null; if (connectorSelected) selectConnector(null, true) }
+      const ids = nodes.map((node) => entryOfNode.get(node)?.id).filter(Boolean)
+      for (const listener of selectionListeners) listener(ids)
+    },
   })
 
   // After a reorder (or an undo of one): put the nodes whose place in the stack changed where the document says.
@@ -404,6 +587,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
 
   function dropEntry(entry) {
     entries.delete(entry.id)
+    if (entry.object.type === 'connector') { unlink(entry.object); if (connectorSelected === entry.id) selectConnector(null) }
     const stroke = uniformStrokes.findIndex((item) => item.node === entry.node)
     if (stroke !== -1) uniformStrokes.splice(stroke, 1)
     const at = boxes.indexOf(entry.box)
@@ -412,6 +596,32 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     if (slot !== -1) measuredText.splice(slot, 1)
     entry.node.remove()
   }
+
+  // ---- connectors (F-032): picked by their line (never by the whole diagonal box), apart from the editor's selection, drawn with a halo while
+  // selected, and deleted with Delete (or with an end). A connector is never moved by hand; it only follows its ends.
+  function selectConnector(id, silent = false) {
+    if (connectorSelected === id) return
+    connectorSelected = id
+    showHalo()
+    if (!silent) for (const listener of selectionListeners) listener(selectedIds())
+  }
+
+  function showHalo() {
+    const entry = connectorSelected && entries.get(connectorSelected)
+    overlays.showHalo(entry ? { path: arrowPath(entry.object), x: entry.object.geometry.x, y: entry.object.geometry.y, lineWidth: entry.object.lineWidth ?? CONNECTOR_DEFAULTS.lineWidth } : null)
+  }
+
+  // A press on a connector's line picks it (and leaves the editor's selection); a press anywhere else lets the editor have it.
+  host.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || event.target === overlay.element || !doc) return
+    const rect = host.getBoundingClientRect()
+    const point = { x: (event.clientX - rect.left - view.x) / view.scale, y: (event.clientY - rect.top - view.y) / view.scale }
+    const arrow = connectorAt(doc.objects, point, CONNECTOR_HIT / view.scale)
+    if (!arrow || !entries.has(arrow.id)) { if (connectorSelected) selectConnector(null); return }
+    event.stopPropagation()
+    editing.clear()
+    selectConnector(arrow.id)
+  }, true)
 
   // ---- text and sticky editing (F-029). The words are typed in a real textarea laid over them (text.js); this is the glue between that
   // overlay, the nodes and the document. A typing session is ONE undo step: it runs inside one history group (onBegin/onEnd), and the
@@ -539,8 +749,10 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     try {
       const entry = edit.entry
       if (entry && entry.object.type === 'text' && !value.trim()) { // an emptied text goes
-        if (onDelete) { committing = true; try { doc = onDelete([entry.id]) ?? doc } finally { committing = false } } else commit(planRemove(doc, { ids: [entry.id] }).op, { selection: { before: [entry.id], after: [] } })
-        dropEntry(entry)
+        const removal = planRemove(doc, { ids: [entry.id] })
+        commit(removal.op, { selection: { before: [entry.id], after: [] } })
+        for (const change of removal.op.changes) { const gone = entries.get(change.id); if (gone) dropEntry(gone) }
+        if (entries.get(entry.id) === entry) dropEntry(entry)
         return
       }
       storeWords(edit, value, { final: true })
@@ -710,9 +922,13 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       if ('resolveMedia' in options) { for (const url of mediaUrls.values()) if (url.startsWith('blob:')) URL.revokeObjectURL(url); mediaUrls.clear() } // a note is opened: the pictures added to the one before are not needed
       lastEdited = null
       doc = next
+      endGesture()
+      connectorSelected = null
+      overlays.showHalo(null)
       editing.clear()
       world.clear()
       entries.clear()
+      linked.clear()
       textNodes.length = 0
       measuredText.length = 0
       uniformStrokes.length = 0
@@ -759,7 +975,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       drawChrome()
     },
     setPages(next) { pages = { ...next }; drawChrome() },
-    setColors(next) { colors = next; drawChrome() },
+    setColors(next) { colors = next; overlays.setColors(next); drawChrome() },
     setView(next) { view = { ...next }; applyView() },
     resize(nextWidth, nextHeight) {
       size = { width: nextWidth, height: nextHeight }
@@ -788,14 +1004,70 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     // ---- selection and edits (F-028)
     onSelection(listener) { selectionListeners.add(listener); return () => selectionListeners.delete(listener) },
     selection: selectedIds,
-    select(ids) { editing.select(ids.map((id) => entries.get(id)?.node).filter(Boolean)) },
-    clearSelection() { editing.clear() },
+    select(ids) {
+      const arrow = ids.find((id) => entries.get(id)?.object.type === 'connector')
+      editing.select(ids.filter((id) => id !== arrow).map((id) => entries.get(id)?.node).filter(Boolean))
+      selectConnector(arrow && !editorEntries().length ? arrow : null)
+    },
+    clearSelection() { editing.clear(); selectConnector(null) },
     selectAll() { editing.select([...entries.values()].filter((entry) => entry.object.type !== 'connector' && !isLocked(entry.object)).map((entry) => entry.node)) },
     isLocked: (id) => isLocked(entries.get(id)?.object),
 
+    // ---- connectors and the connect tool (F-032)
+    // The topmost object under a page point that a connector can join (a pen line only when nothing else is there), or null.
+    connectTargetAt(point, exclude = null) {
+      let ink = null
+      for (const object of stacking(doc).reverse()) {
+        if (object.id === exclude || !object.geometry || object.type === 'connector' || object.type === 'unknown' || object.visible === false) continue
+        const entry = entries.get(object.id)
+        if (!entry) continue
+        const width = object.geometry.width ?? entry.size.width ?? 0
+        const height = object.geometry.height ?? entry.size.height ?? 0
+        const local = toLocal(object.geometry, { width, height }, point)
+        if (!local || local.x < 0 || local.x > width || local.y < 0 || local.y > height) continue
+        if (object.type === 'ink') ink ||= object.id
+        else return object.id
+      }
+      return ink
+    },
+    // The connect tool's preview over the note: { source, hover, pointer } (ids and a page point), or null for none.
+    connectPreview(spec) {
+      const rectOf = (id) => entries.get(id)?.rect
+      if (spec?.source && rectOf(spec.source)) {
+        const from = rectOf(spec.source)
+        const target = spec.hover ? rectOf(spec.hover) : null
+        const goal = target ?? { left: spec.pointer.x, top: spec.pointer.y, width: 0, height: 0 }
+        const ends = connectorEndpoints(from, goal, target ? undefined : 0)
+        overlays.showConnect({ outlines: target ? [from, target] : [from], dots: ends.visible ? (target ? [ends.start, ends.end] : [ends.start]) : [], arrow: ends.visible ? ends : null })
+      } else if (spec?.hover && rectOf(spec.hover)) {
+        const box = rectOf(spec.hover)
+        overlays.showConnect({ outlines: [box], dots: [{ x: box.left + box.width / 2, y: box.top + box.height / 2 }], arrow: null })
+      } else overlays.showConnect(null)
+    },
+    // An arrow from one object to another, as one undo step. Returns its id, or null when there is nothing to show (the same object, the pair is
+    // already joined, or the two are too close for an arrow).
+    createConnector(fromId, toId, color) {
+      const object = newConnector(doc.objects, { fromId, toId, color, z: nextZ(doc), rectOf: (target) => boundingRect(target, sizeOf(target)) })
+      if (!object) return null
+      const ids = editorEntries().map((entry) => entry.id)
+      commit({ label: 'Connect', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: ids, after: ids } })
+      addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+      return object.id
+    },
+    // The document with every connector brought in line with the objects it joins (a note saved by an older app, or an agent that moved an end).
+    followConnectors(next) {
+      const changes = followChanges(next.objects, null, (object) => boundingRect(object, sizeOf(object)))
+      return changes.length ? applyChanges(next, { changes }) : next
+    },
+    connectorAt: (point) => connectorAt(doc?.objects ?? [], point, CONNECTOR_HIT / view.scale)?.id ?? null,
+    selectedConnector: () => connectorSelected,
+    // For checks: what a drag in progress has put on screen.
+    dragState: () => ({ active: live.active, lifted: live.lifted.map((item) => item.entry.id), tilt: live.lifted.map((item) => item.entry.node.rotation - item.rotation), ghost: live.ghost ? JSON.parse(live.ghost) : null, shift: { ...live.shift } }),
+    gridNow: () => ({ ...pages }),
+
     // Arrow keys: move the selection by (dx, dy) page pixels. Locked objects stay. Repeated nudges are one undo step.
     nudge(dx, dy) {
-      const targets = selectedEntries()
+      const targets = editorEntries()
       const ids = targets.map((entry) => entry.id)
       const plan = planMove(doc, { ids, dx, dy })
       if (!plan.op.changes.length) return false
@@ -810,22 +1082,21 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       return true
     },
 
-    // Delete: locked objects stay, connectors of a deleted object go with it.
+    // Delete: locked objects stay, connectors of a deleted object go with it, a page the removal empties folds back; one step.
     deleteSelection() {
       const ids = selectedIds()
       const plan = planRemove(doc, { ids })
       if (!plan.op.changes.length) return false
-      if (onDelete) {
-        committing = true
-        try { doc = onDelete(ids) ?? doc } finally { committing = false }
-      } else commit(plan.op, { selection: { before: ids, after: [] } })
+      const removing = plan.op.changes.map((change) => change.id)
+      commit(plan.op, { selection: { before: ids, after: [] } })
       editing.clear()
-      for (const change of plan.op.changes) { const entry = entries.get(change.id); if (entry) dropEntry(entry) }
+      selectConnector(null)
+      for (const id of removing) { const entry = entries.get(id); if (entry) dropEntry(entry) }
       return true
     },
 
     reorderSelection(to) {
-      const ids = selectedIds()
+      const ids = editorEntries().map((entry) => entry.id)
       const plan = planReorder(doc, { ids, to })
       if (!plan.op.changes.length) return false
       commit(plan.op, { selection: { before: ids, after: ids } })
@@ -835,7 +1106,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     },
 
     lockSelection(locked) {
-      const ids = selectedIds()
+      const ids = editorEntries().map((entry) => entry.id)
       const plan = planLock(doc, { ids, locked })
       if (!plan.op.changes.length) return false
       commit(plan.op, { selection: { before: ids, after: ids } })
@@ -893,7 +1164,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
         app.waitViewCompleted(finish)
       })
     },
-    destroy() { overlay.cancel(); editing.destroy(); app.destroy() },
+    destroy() { overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
   }
   return api
 }

@@ -42,6 +42,8 @@ import { mergeDocuments } from './core/document/merge.js'
 import { createInk } from './modules/canvas-leafer/ink.js'
 import { pictureFiles, prepareImage, uploadPicture } from './modules/canvas-leafer/media.js'
 import { renderNotePicture, renderSheet } from './modules/canvas-leafer/export.js'
+import { createConnectTool } from './modules/canvas-leafer/connect-tool.js'
+import { EDGE_OVERFLOW, EDGE_SHRINK, GHOST_REACH, TRANSFORM_EDGE_MARGIN, shiftedDocument } from './modules/canvas-leafer/pages.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
@@ -67,9 +69,6 @@ const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
 const CANVAS_ZOOM_MIN = 0.25
 const CANVAS_ZOOM_MAX = 4
-const EDGE_OVERFLOW = 6
-const EDGE_SHRINK = 0
-const TRANSFORM_EDGE_MARGIN = 24
 const ERASER_RADIUS = 13
 // desktop.py opens the Chromium app window with engine=chromium (see createSaveTiming).
 const saveTiming = createSaveTiming({ fast: new URLSearchParams(location.search).get('engine') === 'chromium' })
@@ -94,7 +93,6 @@ const QUICK_INK_COLORS = [
   ['Green', '#3a7d5a'],
   ['Blue', '#1c70a8'],
 ]
-const GHOST_REACH = 160
 const PAGE_FOLD_COLOR = 'rgba(31, 27, 22, .13)' // paper is light in every skin
 const STROKE_WIDTHS = {
   pen: [1, 3, 6, 10],
@@ -608,6 +606,7 @@ const useLeafer = true
 let leaferCanvas = null
 let leaferHost = null
 let leaferInk = null // the pen, highlighter and eraser (F-031)
+let leaferConnect = null // the connect tool (F-032)
 // Saving an edited note writes only what changed: the encoder keeps the JSON of every object it has written (core/note-codec.js).
 const leaferEncoder = createDocumentEncoder()
 let leaferBase = null // the document as last loaded or last saved: what an agent's merge is measured against
@@ -1153,20 +1152,22 @@ function zoomCanvasAt(nextZoom, point) {
 
 // Retargets the drawn page tiles at once. `shift` is the world distance every object
 // moved when pages were prepended, so the view is compensated and nothing jumps.
-function resizePaper(shiftX = 0, shiftY = 0) {
+// `settle`: pages folded away, so the view is put back inside the content now (the page growth `keep` would leave it for the next pan to
+// snap), F-009.
+function resizePaper(shiftX = 0, shiftY = 0, settle = false) {
   state.displayScale = getDisplayScale()
   syncCanvasSize()
   const target = pageExtentsTarget()
   const from = shiftExtents(pageExtentsNow, shiftX, shiftY)
-  const changed = from.left !== target.left || from.top !== target.top
-    || from.right !== target.right || from.bottom !== target.bottom
+  const changed = !settle && (from.left !== target.left || from.top !== target.top
+    || from.right !== target.right || from.bottom !== target.bottom)
   pageExtentsNow = target
   const scale = getCanvasScale()
   if (shiftX || shiftY) {
     viewportOffsetX -= shiftX * scale
     viewportOffsetY -= shiftY * scale
   }
-  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, Boolean(shiftX || shiftY || changed))
+  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, !settle && Boolean(shiftX || shiftY || changed))
   leaferCanvas?.setPages(state.pages)
   elements.pageCount.textContent = pageLabel(state.pages.columns, state.pages.rows)
   updateMiniGrid()
@@ -1726,7 +1727,7 @@ function createInkDot(point, tool) {
 const temporaryHand = createTemporaryHand()
 let applyingTemporaryHand = false
 
-const LEAFER_TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'pen', 'highlight', 'eraser'])
+const LEAFER_TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'pen', 'highlight', 'eraser', 'connect'])
 function setTool(tool) {
   if (useLeafer && !LEAFER_TOOLS.has(tool)) tool = 'select' // the tools Leafer has so far (F-028 select and hand, F-029 text and sticky, F-031 pen, highlighter, eraser)
   if (!applyingTemporaryHand) temporaryHand.cancel()
@@ -1735,8 +1736,9 @@ function setTool(tool) {
   canvas.isDrawingMode = !useLeafer && (tool === 'pen' || tool === 'highlight') // Leafer's ink has its own surface (modules/canvas-leafer/ink.js)
   canvas.selection = tool === 'select'
   if (useLeafer && (tool === 'text' || tool === 'sticky')) leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
-  if (useLeafer && (tool === 'pen' || tool === 'highlight' || tool === 'eraser')) leaferCanvas?.clearSelection()
+  if (useLeafer && (tool === 'pen' || tool === 'highlight' || tool === 'eraser' || tool === 'connect')) leaferCanvas?.clearSelection()
   leaferInk?.setTool(tool)
+  leaferConnect?.setTool(tool)
   elements.shell.classList.toggle('leafer-picking', useLeafer && tool === 'select') // Leafer takes the pointer to select and move; the hand gives it to the pan
   canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : tool === 'connect' || tool === 'sticky' || tool === 'shape' ? 'crosshair' : 'default'
   canvas.forEachObject((object) => {
@@ -2108,6 +2110,7 @@ async function saveActiveNote({ unloading = false } = {}) {
     // Leafer shows the note read-only: the empty Fabric canvas must never be saved, so the note's own content (as the server sent
     // it, JSON Canvas) goes back untouched. The Fabric editor saves its working copy converted to JSON Canvas (F-026).
     const editedLeafer = useLeafer && state.activeNoteType === 'canvas' && leaferSource.editedDoc
+    const savedShift = leaferSource.shift
     const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : useLeafer ? leaferSource.content : canvas.toJSON()
     const fields = {
       title,
@@ -2126,7 +2129,7 @@ async function saveActiveNote({ unloading = false } = {}) {
     const result = await api(`/notes/${noteId}`, { method: 'PUT', body: unloading ? body : new Blob([body]), keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
     // What the server now holds is the base for the next merge, unless the note was left or a merge moved the base on while this save was out.
-    if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && mergeCount === mergesBefore) leaferBase = editedLeafer
+    if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && mergeCount === mergesBefore) { leaferBase = editedLeafer; if (savedShift) leaferServerShift = savedShift }
     if (state.activeNoteType === 'canvas') syncedIds = editedLeafer ? new Set(editedLeafer.objects.map((object) => object.id).filter(Boolean)) : canvasObjectIds(savedContent)
     renderNoteList()
     setSaveState('Saved')
@@ -2281,13 +2284,23 @@ async function settleOutgoingNote() {
 
 // Leafer mode undo/redo (F-030): the history lives in modules/canvas-leafer/edits.js; this puts each new document on screen and saves it.
 // The stored form is made when a save asks for it (a held arrow key makes many edits for one save).
+// How far the page frame has moved since the note was last loaded (pages added or folded on the top or left shift every object), and what it
+// was when the server's copy was written: an agent's write is in the server's frame, so a merge moves it into ours first.
+let leaferFrameShift = { x: 0, y: 0 }
+let leaferServerShift = { x: 0, y: 0 }
 function leaferSourceOf(noteId, doc) {
-  return { noteId, editedDoc: doc, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
+  return { noteId, editedDoc: doc, shift: { ...leaferFrameShift }, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
 }
 const leaferEdits = createLeaferEdits({
-  onChange(doc, { page, selection }) {
+  onChange(doc, { page, pageShift, viewShift, selection }) {
     if (leaferSource.noteId !== state.activeNoteId) return
-    if (page) { state.pages = { ...doc.page }; resizePaper() }
+    if (pageShift) leaferFrameShift = { x: leaferFrameShift.x + pageShift.x, y: leaferFrameShift.y + pageShift.y }
+    // Pages added or folded on the top or left moved every object; the view moves by the same amount, so what is on screen stays where it is.
+    if (page || viewShift) {
+      const folded = doc.page.columns < state.pages.columns || doc.page.rows < state.pages.rows
+      state.pages = { ...doc.page }
+      resizePaper(viewShift?.x ?? 0, viewShift?.y ?? 0, folded)
+    }
     // An edit made on the canvas is already on screen (the scene recorded it); any other change (an undo, a redo, an edit recorded
     // from elsewhere) draws the document again, with the objects the step names selected.
     if (!leaferCanvas.isCommitting()) {
@@ -2318,6 +2331,8 @@ async function showLeaferNote(note, { openView = true } = {}) {
   canvas.remove(...canvas.getObjects()) // the Fabric canvas holds nothing in this mode, whatever happened before
   state.pages = { ...decoded.doc.page } // a copy: the document the history holds is never edited through the paper state
   resizePaper()
+  leaferFrameShift = { x: 0, y: 0 } // the document as the server holds it is the frame the page rules count from
+  leaferServerShift = { x: 0, y: 0 }
   const shown = leaferCanvas.showDocument(decoded.doc, { resolveMedia: decoded.resolveMedia })
   if (openView) leaferEdits.open(note.id, shown) // a newly opened note starts a new undo history; an agent's newer content does not (undo never reverts it)
   else leaferEdits.remote(note.id, shown)
@@ -2337,6 +2352,8 @@ function mountLeaferCanvas() {
   leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options), onDelete: (ids) => { leaferEdits.deleteObjects(ids); return leaferEdits.doc },
     onBegin: (label) => leaferEdits.begin(label),
     onEnd: () => leaferEdits.end(),
+    // A drag, a resize or a turn brought an object near an edge: the page grid grows in every direction (the Fabric path's expandPagesDuringTransform).
+    onPages: ({ columns, rows, shiftX, shiftY }) => { state.pages = { ...state.pages, columns, rows }; resizePaper(shiftX, shiftY) },
     onTextEvent: (type) => {
       if (type === 'escape') setTool('select')
     },
@@ -2388,6 +2405,9 @@ leaferInk = createInk({
   setPages(pages) { state.pages = { ...pages }; resizePaper() },
   cursor: elements.eraserCursor,
 })
+
+// The connect tool (F-032): press on an object, drag to another, and an arrow joins them (one undo step).
+leaferConnect = createConnectTool({ host: elements.paper, scene: leaferCanvas, getColor: () => state.color })
 
 // The bar over the canvas that does with the mouse what the keys do (Back, Forward, Lock, Delete); it shows while something is selected.
 leaferCanvas.onSelection(() => { updateSelectionBar(); syncTypographyControls(); scheduleHandleClearance() })
@@ -2447,6 +2467,7 @@ async function selectNote(id) {
   leaferSwitching += 1
   leaferCanvas.clearSelection()
   leaferInk.cancel()
+  leaferConnect.cancel()
   elements.shell.classList.add('leafer-switching')
   try { await selectNoteNow(id) } finally {
     if (!--leaferSwitching) elements.shell.classList.remove('leafer-switching')
@@ -2585,7 +2606,12 @@ async function mergeLeaferNote(note) {
   leaferInk.documentChanged() // an erase pass was planned on the document as it was; it is dropped rather than committed against the merged one (a pen stroke only adds, so it carries on)
   const typing = leaferCanvas.flushText() // words typed so far are in the document now; that text counts as the user's whatever the agent did to it
   const local = leaferEdits.doc
-  const { doc: merged, added } = mergeDocuments({ base: leaferBase ?? local, local, remote: decoded.doc, touched: typing ? [typing] : [] })
+  const frame = { x: leaferFrameShift.x - leaferServerShift.x, y: leaferFrameShift.y - leaferServerShift.y }
+  const moved = Boolean(frame.x || frame.y)
+  const { doc: joined, added } = mergeDocuments({ base: moved ? shiftedDocument(leaferBase ?? local, frame.x, frame.y) : leaferBase ?? local, local, remote: moved ? shiftedDocument(decoded.doc, frame.x, frame.y) : decoded.doc, touched: typing ? [typing] : [] })
+  // The grid the agent grew (it wrote in the server's frame, so its pages are counted from there) and the grid we have are both kept.
+  const grid = moved ? { columns: Math.max(joined.page.columns, decoded.doc.page.columns + frame.x / PAGE_WIDTH), rows: Math.max(joined.page.rows, decoded.doc.page.rows + frame.y / PAGE_HEIGHT) } : null
+  const merged = grid && (grid.columns !== joined.page.columns || grid.rows !== joined.page.rows) ? { ...joined, page: { ...joined.page, ...grid } } : joined
   const summary = state.notes.find((item) => item.id === note.id)
   if (summary) summary.revision = note.revision
   syncedIds = canvasObjectIds(note.content)
@@ -2595,7 +2621,13 @@ async function mergeLeaferNote(note) {
     const next = leaferEdits.doc
     if (next.page && !samePageGrid(next.page, state.pages)) { state.pages = { ...next.page }; resizePaper() }
     leaferCanvas.applyMerged(next, { resolveMedia: decoded.resolveMedia })
-    leaferSource = leaferSourceOf(note.id, next)
+    // An agent that moved an object leaves its arrows where they were: they follow what is on screen now (derived, not an edit).
+    const followed = leaferCanvas.followConnectors(next)
+    if (followed !== next) {
+      leaferEdits.remote(note.id, followed)
+      leaferCanvas.applyMerged(leaferEdits.doc)
+    }
+    leaferSource = leaferSourceOf(note.id, leaferEdits.doc)
   }
   queueSave()
   return added.length
@@ -3577,6 +3609,7 @@ function beginCanvasPinch() {
   state.drawingGesture = null
   canvasPanGesture = null
   leaferInk?.cancel() // a second finger is a pinch: the stroke the first one began is dropped
+  leaferConnect?.cancel()
   canvas.isDrawingMode = false
   canvas.clearContext(canvas.contextTop)
   finishErasing()
@@ -4503,7 +4536,8 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault()
     activeText.exitEditing()
     setTool('select')
-  } else if (event.key === 'Escape' && connectDraft) {
+  } else if (event.key === 'Escape' && (connectDraft || leaferConnect?.active)) {
+    leaferConnect?.cancel()
     cancelConnectDraft()
   } else if (event.key === 'Escape' && !isTyping && state.tool !== 'select') {
     setTool('select')
