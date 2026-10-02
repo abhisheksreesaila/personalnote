@@ -983,6 +983,7 @@ function clampedViewOffset(offsetX, offsetY, keep = false, scale = getCanvasScal
     scale,
     margins: viewMargins(window.innerWidth),
     keep,
+    previous: { x: viewportOffsetX, y: viewportOffsetY },
   })
 }
 
@@ -2129,7 +2130,9 @@ async function saveActiveNote({ unloading = false } = {}) {
     const result = await api(`/notes/${noteId}`, { method: 'PUT', body: unloading ? body : new Blob([body]), keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
     // What the server now holds is the base for the next merge, unless the note was left or a merge moved the base on while this save was out.
-    if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && mergeCount === mergesBefore) { leaferBase = editedLeafer; if (savedShift) leaferServerShift = savedShift }
+    // The server holds what was just saved, in the frame it was saved in, whether or not a merge came meanwhile; the base moves on only when none did.
+    if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && savedShift) leaferServerShift = savedShift
+    if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && mergeCount === mergesBefore) { leaferBase = editedLeafer; if (savedShift) leaferBaseShift = savedShift }
     if (state.activeNoteType === 'canvas') syncedIds = editedLeafer ? new Set(editedLeafer.objects.map((object) => object.id).filter(Boolean)) : canvasObjectIds(savedContent)
     renderNoteList()
     setSaveState('Saved')
@@ -2288,6 +2291,7 @@ async function settleOutgoingNote() {
 // was when the server's copy was written: an agent's write is in the server's frame, so a merge moves it into ours first.
 let leaferFrameShift = { x: 0, y: 0 }
 let leaferServerShift = { x: 0, y: 0 }
+let leaferBaseShift = { x: 0, y: 0 } // the frame leaferBase is written in (a merge's base is what the server held, which was in the server's frame)
 function leaferSourceOf(noteId, doc) {
   return { noteId, editedDoc: doc, shift: { ...leaferFrameShift }, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
 }
@@ -2334,6 +2338,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
   resizePaper()
   leaferFrameShift = { x: 0, y: 0 } // the document as the server holds it is the frame the page rules count from
   leaferServerShift = { x: 0, y: 0 }
+  leaferBaseShift = { x: 0, y: 0 }
   const shown = leaferCanvas.showDocument(decoded.doc, { resolveMedia: decoded.resolveMedia })
   if (openView) leaferEdits.open(note.id, shown) // a newly opened note starts a new undo history; an agent's newer content does not (undo never reverts it)
   else leaferEdits.remote(note.id, shown)
@@ -2611,9 +2616,11 @@ async function mergeLeaferNote(note) {
   leaferInk.documentChanged() // an erase pass was planned on the document as it was; it is dropped rather than committed against the merged one (a pen stroke only adds, so it carries on)
   const typing = leaferCanvas.flushText() // words typed so far are in the document now; that text counts as the user's whatever the agent did to it
   const local = leaferEdits.doc
+  // The agent wrote in the server's page frame and our base is in its own; both are moved into ours before they are compared.
   const frame = { x: leaferFrameShift.x - leaferServerShift.x, y: leaferFrameShift.y - leaferServerShift.y }
+  const baseFrame = { x: leaferFrameShift.x - leaferBaseShift.x, y: leaferFrameShift.y - leaferBaseShift.y }
   const moved = Boolean(frame.x || frame.y)
-  const { doc: joined, added } = mergeDocuments({ base: moved ? shiftedDocument(leaferBase ?? local, frame.x, frame.y) : leaferBase ?? local, local, remote: moved ? shiftedDocument(decoded.doc, frame.x, frame.y) : decoded.doc, touched: typing ? [typing] : [] })
+  const { doc: joined, added } = mergeDocuments({ base: shiftedDocument(leaferBase ?? local, baseFrame.x, baseFrame.y), local, remote: shiftedDocument(decoded.doc, frame.x, frame.y), touched: typing ? [typing] : [] })
   // The grid the agent grew (it wrote in the server's frame, so its pages are counted from there) and the grid we have are both kept.
   const grid = moved ? { columns: Math.max(joined.page.columns, decoded.doc.page.columns + frame.x / PAGE_WIDTH), rows: Math.max(joined.page.rows, decoded.doc.page.rows + frame.y / PAGE_HEIGHT) } : null
   const merged = grid && (grid.columns !== joined.page.columns || grid.rows !== joined.page.rows) ? { ...joined, page: { ...joined.page, ...grid } } : joined
@@ -2621,6 +2628,7 @@ async function mergeLeaferNote(note) {
   if (summary) summary.revision = note.revision
   syncedIds = canvasObjectIds(note.content)
   leaferBase = decoded.doc // what the server holds now; the next save moves it on
+  leaferBaseShift = { ...leaferServerShift }
   if (merged !== local) {
     leaferEdits.remote(note.id, merged) // a merge, not an edit: undo stays safe
     const next = leaferEdits.doc

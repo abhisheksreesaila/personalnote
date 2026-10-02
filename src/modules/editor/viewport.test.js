@@ -13,9 +13,20 @@ import {
 
 const desktop = { viewW: 1400, viewH: 900, margins: viewMargins(1400) }
 
-test('a page narrower than the window is centred and cannot be panned sideways', () => {
-  const view = clampView({ x: -500, y: 92 }, { ...desktop, contentW: 860, contentH: 1080, scale: 1 })
-  assert.equal(view.x, (1400 - 860) / 2)
+test('a page narrower than the window stays between the margins; wherever it sits inside them it is left alone (no re-centring)', () => {
+  const size = { ...desktop, contentW: 860, contentH: 1080, scale: 1 }
+  assert.equal(clampView({ x: 300, y: 104 }, size).x, 300)
+  assert.equal(clampView({ x: 252.5, y: 104 }, size).x, 252.5)
+  assert.equal(clampView({ x: -500, y: 92 }, size).x, 140)
+  assert.equal(clampView({ x: 9000, y: 92 }, size).x, 1400 - 140 - 860)
+})
+
+test('a view that pages added on the top or left left outside the range stays put, may move back toward it, and never further out', () => {
+  const size = { ...desktop, contentW: 1720, contentH: 1080, scale: 0.5, previous: { x: -83, y: 104 } }
+  assert.equal(clampView({ x: -83, y: 104 }, size).x, -83)
+  assert.equal(clampView({ x: -82, y: 104 }, size).x, -82)
+  assert.equal(clampView({ x: -90, y: 104 }, size).x, -83)
+  assert.equal(clampView({ x: 9000, y: 104 }, size).x, 1400 - 140 - 860)
 })
 
 test('a tall grid can be panned from its top margin to its bottom margin and no further', () => {

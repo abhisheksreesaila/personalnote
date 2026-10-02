@@ -7,22 +7,25 @@ export function viewMargins(windowWidth) {
   return { left: 140, right: 140, top: 104, bottom: 180 }
 }
 
-function clampAxis(offset, viewSize, contentSize, before, after, keep) {
+// The offsets at which the content is inside the margins are all valid, and an offset that is valid is never moved: nothing re-centres
+// under the user's hand (F-032). Only an offset outside the range is brought to its nearest end. A grid wider than the window is
+// pannable from its leading margin to its trailing margin; one that fits may sit anywhere between the two margins.
+// `previous` is where the view was a moment ago: when pages were added on the top or left the view followed the content, which can leave it
+// outside the range. It then stays where it is (nothing snaps) and may only move back toward the range, never further out.
+function clampAxis(offset, viewSize, contentSize, before, after, keep, previous) {
   if (keep) return offset
-  if (contentSize + before + after <= viewSize) {
-    return before === after ? (viewSize - contentSize) / 2 : before
-  }
-  return Math.min(before, Math.max(viewSize - after - contentSize, offset))
+  const far = viewSize - after - contentSize
+  let low = Math.min(before, far)
+  let high = Math.max(before, far)
+  if (Number.isFinite(previous)) { low = Math.min(low, previous); high = Math.max(high, previous) }
+  return Math.min(high, Math.max(low, offset))
 }
 
-// Mirrors the scroll range the old page-sized canvas had: centred when the grid
-// fits, otherwise pannable from its leading margin to its trailing margin.
-// `keep` skips the clamp so page growth never moves what is on screen; the next
-// pan or zoom clamps again.
-export function clampView(view, { viewW, viewH, contentW, contentH, scale, margins, keep = false }) {
+// `keep` skips the clamp so page growth never moves what is on screen.
+export function clampView(view, { viewW, viewH, contentW, contentH, scale, margins, keep = false, previous = null }) {
   return {
-    x: clampAxis(view.x, viewW, contentW * scale, margins.left, margins.right, keep),
-    y: clampAxis(view.y, viewH, contentH * scale, margins.top, margins.bottom, keep),
+    x: clampAxis(view.x, viewW, contentW * scale, margins.left, margins.right, keep, previous?.x),
+    y: clampAxis(view.y, viewH, contentH * scale, margins.top, margins.bottom, keep, previous?.y),
   }
 }
 

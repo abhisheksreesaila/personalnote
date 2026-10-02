@@ -247,9 +247,11 @@ try {
     check('the arrows moved with it and still join the two ends', consistent(d2))
     const cAfter = await cornerOf(page, 'C')
     check('after the drop nothing has jumped on screen', Math.abs(cAfter.x - cBefore.x) < 0.01 && Math.abs(cAfter.y - cBefore.y) < 0.01, `${JSON.stringify(cBefore)} -> ${JSON.stringify(cAfter)}`)
-    await page.evaluate(() => window.__personalNote.setCanvasViewportOffset())
-    const cSettled = await cornerOf(page, 'C')
-    console.log(`INFO  after pages were added, the view keeps what is on screen where it is (as on the Fabric path); the next pan or zoom clamps it: C moves ${(cSettled.x - cAfter.x).toFixed(0)}, ${(cSettled.y - cAfter.y).toFixed(0)} px then`)
+    const view0 = await scene(page, 'view')
+    await page.evaluate(([x, y]) => window.__personalNote.setCanvasViewportOffset(x + 1, y), [view0.x, view0.y])
+    const cPanned = await cornerOf(page, 'C')
+    check('after pages were added, panning by 1 px moves the content by 1 px: no snap, nothing re-centres', Math.abs(cPanned.x - cAfter.x - 1) < 0.01 && Math.abs(cPanned.y - cAfter.y) < 0.01, `${JSON.stringify(cAfter)} -> ${JSON.stringify(cPanned)}`)
+    cBefore.x += 1 // (the view may move back toward its range, not further out, so the 1 px stays)
     // saved
     check('the saved note has 2 x 2 pages and the shifted objects', (await waitSave(page, puts.length - 1)) && (await new Promise((resolve) => setTimeout(resolve, 900))) === undefined && puts.at(-1).pageState.columns === 2 && puts.at(-1).pageState.rows === 2 && objectOf(savedDoc(), 'C').geometry.x === 300 + W, JSON.stringify(puts.at(-1)?.pageState))
     // undo: everything moves back, the view follows
@@ -378,7 +380,7 @@ try {
     check('Escape while drawing drops the arrow', (await connectors()).length === countBefore + 1 && (await scene(page, 'overlayState')).draft === false, JSON.stringify(await scene(page, 'overlayState')))
     await tool(page, 'select')
     await page.evaluate(() => window.__personalNote.leaferEdits.undo())
-    check('undo takes the new arrow away', (await connectors()).length === countBefore && !(await scene(page, 'hasNode', made.id)) === true || (await connectors()).length === countBefore)
+    check('undo takes the new arrow away, from the document and from the screen', (await connectors()).length === countBefore && !(await scene(page, 'hasNode', made.id)))
     await page.evaluate(() => window.__personalNote.leaferEdits.redo())
     check('redo brings it back, on screen', (await connectors()).length === countBefore + 1 && await scene(page, 'hasNode', made.id))
     await page.waitForTimeout(900)
@@ -418,7 +420,7 @@ try {
     await page.keyboard.press('Delete')
     await page.waitForTimeout(100)
     after = await doc(page)
-    check('deleting A takes every arrow on it with it, in one step', !after.objects.some((o) => o.id === 'A') && arrowsOfA.length >= 2 && arrowsOfA.every((id) => !after.objects.some((o) => o.id === id)) && (await steps(page)) === stepsBefore + 1 && arrowsOfA.every((id) => !(false)))
+    check('deleting A takes every arrow on it with it, in one step', !after.objects.some((o) => o.id === 'A') && arrowsOfA.length >= 2 && arrowsOfA.every((id) => !after.objects.some((o) => o.id === id)) && (await steps(page)) === stepsBefore + 1)
     check('and they are gone from the screen', (await Promise.all(arrowsOfA.map((id) => scene(page, 'hasNode', id)))).every((has) => !has) && !(await scene(page, 'hasNode', 'A')))
     await page.evaluate(() => window.__personalNote.leaferEdits.undo())
     after = await doc(page)
@@ -532,7 +534,7 @@ try {
     check('after the held save lands, the saved note has the agent\'s object in the same place relative to C as the agent wrote it', Boolean(objectOf(finalSaved, 'AG')) && near(objectOf(finalSaved, 'AG').geometry.x - objectOf(finalSaved, 'C').geometry.x, 120 - objectOf(start, 'C').geometry.x, 1e-6) && near(objectOf(finalSaved, 'AG').geometry.y - objectOf(finalSaved, 'C').geometry.y, 900 - objectOf(start, 'C').geometry.y, 1e-6) && consistent(finalSaved), JSON.stringify([objectOf(finalSaved, 'AG')?.geometry, objectOf(finalSaved, 'C')?.geometry]))
     await page.evaluate(() => window.__personalNote.leaferEdits.undo())
     const undone = await doc(page)
-    check('undoing the user\'s move leaves the agent\'s object and moves it back with the frame', Boolean(objectOf(undone, 'AG')) && objectOf(undone, 'AG').geometry.x === 120 && objectOf(undone, 'AG').geometry.y === 900 && undone.page.rows === start.page.rows + 0 || Boolean(objectOf(undone, 'AG')), JSON.stringify(objectOf(undone, 'AG')?.geometry))
+    check('undoing the user\'s move moves the agent\'s object back with the frame: same place relative to C, and inside the grid', Boolean(objectOf(undone, 'AG')) && near(objectOf(undone, 'AG').geometry.x - objectOf(undone, 'C').geometry.x, 120 - objectOf(start, 'C').geometry.x, 1e-6) && near(objectOf(undone, 'AG').geometry.y - objectOf(undone, 'C').geometry.y, 900 - objectOf(start, 'C').geometry.y, 1e-6) && objectOf(undone, 'AG').geometry.x + 200 <= undone.page.columns * W && objectOf(undone, 'AG').geometry.y + 60 <= undone.page.rows * H && objectOf(undone, 'AG').geometry.x >= 0 && objectOf(undone, 'AG').geometry.y >= 0, JSON.stringify([objectOf(undone, 'AG')?.geometry, undone.page]))
   }
 
   // ---------------------------------------------------------------- a picture placed near an edge grows the page (F-033's pictures go through the same step)
@@ -555,6 +557,32 @@ try {
     check('and one undo puts the picture, the pages and every object back', d5.page.columns === startDoc.page.columns && near(objectOf(d5, 'C').geometry.x, objectOf(startDoc, 'C').geometry.x, 1e-6) && consistent(d5))
   }
 
+
+  // ---------------------------------------------------------------- the server's frame: a held save lands after a merge, and an agent writes again before the follow-up save
+  {
+    const start = await doc(page)
+    release = hold()
+    await select(page, 'A')
+    const sa = await centre(page, 'A')
+    const aBox = objectOf(start, 'A').geometry
+    await drag(page, sa, await screenOf(page, -40 + (aBox.width + 2) / 2, -60 + (aBox.height + 2) / 2)) // pages on the top and left: the frame moves; the save is held
+    await page.waitForTimeout(1200)
+    agentWrite((d) => { objectOf(d, 'C').color = '#aaddff' }) // a first write by the agent (the held save, which lands later, overwrites it on this mock server)
+    await page.waitForTimeout(4500) // merged while the save is out
+    release() // the held save lands: the server now holds the user's document, in the user's frame
+    release = hold() // and the follow-up save is held too
+    await page.waitForTimeout(1500)
+    agentWrite((d) => { const c = objectOf(d, 'C').geometry; d.objects.push({ id: 'AG2', type: 'text', mode: 'box', z: 131, content: 'second write', geometry: { x: c.x + 300, y: c.y, width: 200, height: 60, ...UPRIGHT } }) }) // written in the frame the server holds
+    await page.waitForTimeout(4500)
+    const merged2 = await doc(page)
+    const c2 = objectOf(merged2, 'C').geometry
+    check('the second write lands where the agent meant, next to C (the server\'s frame is the one the first save left it in)', Boolean(objectOf(merged2, 'AG2')) && near(objectOf(merged2, 'AG2').geometry.x - c2.x, 300, 1e-6) && near(objectOf(merged2, 'AG2').geometry.y - c2.y, 0, 1e-6), JSON.stringify([objectOf(merged2, 'AG2')?.geometry, c2]))
+    release()
+    await page.waitForTimeout(2500)
+    const finalDoc = savedDoc()
+    check('the note saved at the end has the second write in place', near(objectOf(finalDoc, 'AG2').geometry.x - objectOf(finalDoc, 'C').geometry.x, 300, 1e-6))
+    while ((await steps(page)) > 0) await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+  }
   check('no page errors', errors.length === 0, errors.join(' | '))
   await context.close()
 
