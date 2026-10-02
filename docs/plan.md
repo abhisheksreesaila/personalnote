@@ -191,3 +191,23 @@ Decision: docs/adr/0001-canvas-engine-leaferjs.md. Captain: "from a feel-wise, L
 - [x] core startup budget check with Leafer in place of Fabric
 - [x] a migration plan as vertical-slice tickets: document model, Leafer adapter, note migration, feature-by-feature cutover, removal of Fabric
 Report: docs/research/f024-leafer.md (migration slices P-01…P-12 there; awaiting captain approval to schedule).
+
+## LeaferJS migration (approved 2026-10-01; detail: docs/research/f024-leafer.md §4)
+Captain: "it should be snappier, faster, savable through a SQLite database, the media should be saved differently so that you can point to it… the editing should feel fast… we'll add plugins as and when." Fabric stays the default until F-035.
+
+## F-025 Engine-independent document model (P-01) [doing]
+- [ ] plain JS document types (text, sticky, shape, ink, image, connector, group), page state, schemaVersion; images reference media by id (prepares F-023)
+- [ ] lossless fromFabric/toFabric round-trip on fixtures covering every object type and real-shaped notes; Python mirror with the same fixtures
+## F-026 Storage switch with originals kept (P-02) [todo]
+Blocked on captain's final yes before it touches real notes.
+## F-027 Leafer read-only render behind a switch (P-03) [todo]
+## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [todo]
+## F-029 Text and stickies editing on Leafer, IME fix (P-05) [todo]
+## F-030 Undo/redo on the document model (P-06) [todo]
+## F-031 Pen, highlighter, eraser on Leafer (P-07) [todo]
+## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [todo]
+## F-033 Images (media library, F-023), export, print on Leafer (P-09) [todo]
+## F-034 Performance pass and agent sync on Leafer (P-10) [todo]
+Includes a speed test in the Mac app before shipping.
+## F-035 Phones and pencil, Leafer becomes default (P-11) [todo]
+## F-036 Remove Fabric (P-12) [todo]
