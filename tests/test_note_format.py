@@ -99,8 +99,11 @@ class StorageTests(Folder):
         self.assertTrue(MEDIA_NAME.match(name))
         ok = client.get(f"/api/media/{name}")
         self.assertEqual((ok.status_code, ok.content), (200, b"\x89PNG\r\n\x1a\n"))
-        for bad in ("../personal-note.db", "x.png", "personal-note.db", f"{'0' * 64}.png"):
+        for bad in ("x.png", "personal-note.db", f"{'0' * 64}.png", f"{name}.bak"):
             self.assertEqual(client.get(f"/api/media/{bad}").status_code, 404, bad)
+        # a path with slashes never reaches this route (it falls through to the app shell when a build exists): never the database
+        for sneaky in ("../personal-note.db", "..%2Fpersonal-note.db", "%2e%2e%2fpersonal-note.db", f"{name}/../../personal-note.db"):
+            self.assertFalse(client.get(f"/api/media/{sneaky}").content.startswith(b"SQLite format 3"), sneaky)
 
     def test_search_indexes_the_projection_and_keeps_finding_what_it_found(self):
         service = NoteService(self.database)

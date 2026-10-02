@@ -69,10 +69,8 @@ test('a picture that cannot be fetched still opens the note, and a note not yet 
   assert.deepStrictEqual(kept.pageState, old.pageState)
 })
 
-test('an empty note and a note another app wrote both load', async () => {
+test('an empty note loads; a canvas the server never canonicalized is refused instead of losing nodes', async () => {
   const empty = await decodeNote({ content: { nodes: [], edges: [], pn: { schemaVersion: 1, page: { columns: 1, rows: 1 } } } })
   assert.deepStrictEqual(empty.content.objects, [])
-  const foreign = await decodeNote({ content: { nodes: [{ id: 'a', type: 'text', text: 'Hi', x: -20, y: -20, width: 100, height: 40 }], edges: [] } })
-  assert.equal(foreign.content.objects[0].text, 'Hi')
-  assert.ok(foreign.content.objects[0].left >= 0)
+  await assert.rejects(decodeNote({ content: { nodes: [{ id: 'a', type: 'text', text: 'Hi', x: 0, y: 0, width: 100, height: 40 }], edges: [] } }), /not written by Personal Note/)
 })

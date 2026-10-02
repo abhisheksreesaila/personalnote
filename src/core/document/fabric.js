@@ -325,6 +325,12 @@ function orderedChildren(objects) {
 export function toFabric(doc, { resolveMedia } = {}) {
   const { ok, errors } = validateDocument(doc, { requireIds: false, strict: false })
   if (!ok) throw new DocumentError(`Not a valid document: ${errors.map((error) => `${error.path}: ${error.message}`).join('; ')}`, errors)
+  return toFabricUnchecked(doc, { resolveMedia })
+}
+
+// toFabric without the structural check, for a document this app just built itself (the browser's note loader). Separate so the
+// validator is not part of the browser bundle when nothing else uses it.
+export function toFabricUnchecked(doc, { resolveMedia } = {}) {
   return { ...clone(doc.extras ?? {}), objects: orderedChildren(doc.objects).map((object) => objectToFabric(object, resolveMedia)) }
 }
 

@@ -1,7 +1,9 @@
 import { DEFAULTS, DEFAULT_PAGE, DocumentError, PAGE, SCHEMA_VERSION } from './schema.js'
 
 // Document model <-> JSON Canvas 1.0 (https://jsoncanvas.org/spec/1.0/), the stored note format (ADR 0002, F-026).
-// Pure functions over plain data; the Python mirror is jsoncanvas.py in document_model.py's neighbour, `json_canvas.py`.
+// Pure functions over plain data; the Python mirror is `json_canvas.py`. This file is the part the browser ships: the writer and
+// the reader. What only tests, Node and other apps' canvases need (SVG pictures, reading a canvas made by another app, the spec
+// validator, the Markdown projection) is in jsoncanvas-extras.js, which also exports the complete `toJsonCanvas`/`fromJsonCanvas`.
 //
 // What goes where
 //   JSON Canvas fields   what any reader (Obsidian) uses: id, x/y/width/height (integers, the nearest rounding of the exact box),
@@ -23,13 +25,10 @@ import { DEFAULTS, DEFAULT_PAGE, DocumentError, PAGE, SCHEMA_VERSION } from './s
 // for SVG nodes instead (the browser's transport form: the server rebuilds the pictures).
 
 export const JSON_CANVAS_PRESETS = Object.freeze({ 1: '#fb464c', 2: '#e9973f', 3: '#e0de71', 4: '#44cf6e', 5: '#53dfdd', 6: '#a882ff' })
-export const FOREIGN_TEXT_STYLE = Object.freeze({ fontFamily: 'Source Serif 4', fontSize: 24, lineHeight: 1.45, padding: 8, color: '#20201e' })
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'])
-const SIDES = ['top', 'right', 'bottom', 'left']
-const HEX6 = /^#[0-9a-fA-F]{6}$/
+export const HEX6 = /^#[0-9a-fA-F]{6}$/
 
-const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
-const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
+export const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
+export const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
 const clone = (value) => structuredClone(value)
 const round = Math.round
 
@@ -63,13 +62,11 @@ function rawBox(raw) {
   return { x: n(r.left, 0), y: n(r.top, 0), width: Math.max(1, n(r.width, 1)), height: Math.max(1, n(r.height, 1)) }
 }
 
-const num = (value) => String(round(value * 1000) / 1000)
-const escapeXml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
 function hexOf(value) {
   return typeof value === 'string' && HEX6.test(value) ? value : undefined
 }
-function presetHex(value) {
+export function presetHex(value) {
   if (typeof value !== 'string') return undefined
   if (HEX6.test(value)) return value.toLowerCase()
   return JSON_CANVAS_PRESETS[value]
@@ -82,56 +79,19 @@ function colorFromNative(nativeColor, storedColor) {
   return typeof storedColor === 'string' && storedColor.toLowerCase() === hex ? storedColor : hex
 }
 
-function dataUrlParts(url) {
-  const match = /^data:([^;,]+)(;base64)?,/i.exec(url)
-  return match ? { mime: match[1].toLowerCase(), base64: Boolean(match[2]) } : null
-}
 export const isDataUrl = (value) => typeof value === 'string' && value.startsWith('data:')
 
-function svgDataUrl(svg) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-}
-
-// ---- SVG pictures for ink and shapes (what Obsidian shows) ------------------------------------------------------------------
-
-function pathData(path) {
-  return path.map((command) => command[0] + command.slice(1).map((value) => ` ${num(value)}`).join('')).join(' ')
-}
-
-export function svgOf(object, box) {
-  const w = box.width
-  const h = box.height
-  const head = (pad, extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${num(-pad)} ${num(-pad)} ${num(w + pad * 2)} ${num(h + pad * 2)}"${extra}>`
-  if (object.type === 'shape') {
-    const sw = isNumber(object.strokeWidth) ? object.strokeWidth : 0
-    const fill = typeof object.fill === 'string' ? object.fill : 'none'
-    const stroke = typeof object.stroke === 'string' ? ` stroke="${escapeXml(object.stroke)}" stroke-width="${num(sw)}"` : ''
-    const body = object.kind === 'circle'
-      ? `<circle cx="${num(w / 2)}" cy="${num(h / 2)}" r="${num(object.radius ?? Math.min(w, h) / 2)}" fill="${escapeXml(fill)}"${stroke}/>`
-      : `<rect x="0" y="0" width="${num(object.geometry?.width ?? w)}" height="${num(object.geometry?.height ?? h)}" rx="${num(object.cornerRadius ?? 0)}" ry="${num(object.cornerRadiusY ?? object.cornerRadius ?? 0)}" fill="${escapeXml(fill)}"${stroke}/>`
-    return `${head(sw / 2)}${body}</svg>`
-  }
-  const color = escapeXml(object.color ?? '#20201e')
-  const opacity = object.alpha !== undefined ? ` opacity="${num(object.alpha)}"` : ''
-  if (object.kind === 'dot') {
-    return `${head(0)}<circle cx="${num(w / 2)}" cy="${num(h / 2)}" r="${num(object.radius ?? Math.min(w, h) / 2)}" fill="${color}"${opacity}/></svg>`
-  }
-  const sw = isNumber(object.width) ? object.width : 2
-  const cap = typeof object.cap === 'string' ? ` stroke-linecap="${escapeXml(object.cap)}"` : ' stroke-linecap="round"'
-  const join = typeof object.join === 'string' ? ` stroke-linejoin="${escapeXml(object.join)}"` : ' stroke-linejoin="round"'
-  return `${head(sw / 2)}<path d="${escapeXml(pathData(object.path ?? []))}" fill="none" stroke="${color}" stroke-width="${num(sw)}"${cap}${join}${opacity}/></svg>`
-}
 
 // ---- document -> JSON Canvas -------------------------------------------------------------------------------------------------
 
-function ordered(objects) {
+export function ordered(objects) {
   return objects.map((object, index) => [object, index]).sort(([a, i], [b, j]) => ((a?.z ?? i) - (b?.z ?? j)) || (i - j)).map(([object]) => object)
 }
 
 function filled(media = {}) {
   return {
     fromId: media.fromId ?? ((id) => (String(id).includes('/') ? id : `media/${id}`)),
-    putText: media.putText ?? ((text, ext) => (ext === 'svg' ? svgDataUrl(text) : text)),
+    putText: media.putText ?? ((text, ext) => (ext === 'svg' ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}` : text)),
     putDataUrl: media.putDataUrl ?? ((url) => url),
   }
 }
@@ -166,7 +126,7 @@ function sideOf(from, to) {
   return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? ['right', 'left'] : ['left', 'right']) : (dy >= 0 ? ['bottom', 'top'] : ['top', 'bottom'])
 }
 
-export function toJsonCanvas(doc, { media, derived = 'file' } = {}) {
+export function writeJsonCanvas(doc, { media, derived = 'file', svg } = {}) {
   const store = filled(media)
   const objects = ordered(doc.objects ?? [])
   const used = new Set(objects.map((object) => object?.id).filter((id) => typeof id === 'string' && id !== ''))
@@ -205,7 +165,7 @@ export function toJsonCanvas(doc, { media, derived = 'file' } = {}) {
         pn.children = object.children.map((child) => externalize(child, store))
       } else { // shape, ink
         node.type = 'file'
-        node.file = derived === 'omit' ? '' : store.putText(svgOf(object, box), 'svg')
+        node.file = derived === 'omit' ? '' : store.putText(svg(object, box), 'svg')
       }
       node.pn = pn
     }
@@ -247,45 +207,22 @@ export function isJsonCanvas(value) {
   return isObject(value) && !Array.isArray(value.objects) && ('nodes' in value || 'edges' in value || 'pn' in value)
 }
 
-const imageExtension = (path) => (isDataUrl(path) ? path.toLowerCase().startsWith('data:image/') : IMAGE_EXTENSIONS.has(String(path).split(/[?#]/)[0].split('.').pop().toLowerCase()))
-
-function mediaRefOf(file) {
+export function mediaRefOf(file) {
   if (isDataUrl(file)) return { kind: 'inline', dataUrl: file }
   return { kind: 'media', id: file.startsWith('media/') ? file.slice('media/'.length) : file }
 }
 
-function geometryOver(geometry, node, expected) {
+export function geometryOver(geometry, node, expected) {
   const same = node.x === expected.x && node.y === expected.y && node.width === expected.width && node.height === expected.height
   if (same) return geometry
   return { ...geometry, x: node.x, y: node.y, width: node.width, height: node.height }
 }
 
-function plainGeometry(node) {
+export function plainGeometry(node) {
   return { x: node.x, y: node.y, width: node.width, height: node.height, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 }
 
-const asText = (object, node) => ({ ...object, geometry: plainGeometry(node) })
-
-function foreignObjects(node) {
-  const geometry = plainGeometry(node)
-  const color = presetHex(node.color)
-  if (node.type === 'text') {
-    const base = { id: node.id, geometry, content: String(node.text ?? ''), style: { ...FOREIGN_TEXT_STYLE }, extras: {} }
-    return [color ? { ...base, type: 'sticky', color } : { ...base, type: 'text', mode: 'box' }]
-  }
-  if (node.type === 'file' && imageExtension(node.file)) return [{ id: node.id, type: 'image', geometry, mediaRef: mediaRefOf(node.file), extras: {} }]
-  if (node.type === 'file' || node.type === 'link') {
-    const content = node.type === 'file' ? `[[${node.file}${node.subpath ?? ''}]]` : `[${node.url}](${node.url})`
-    return [{ id: node.id, type: 'text', mode: 'box', geometry, content, style: { ...FOREIGN_TEXT_STYLE }, extras: {} }]
-  }
-  // A group of another app: a dashed frame with its label at the top left.
-  const frame = { id: node.id, type: 'shape', kind: 'rect', geometry, cornerRadius: 12, cornerRadiusY: 12, fill: 'transparent', stroke: color ?? '#8a8a85', strokeWidth: 2, extras: { strokeDashArray: [8, 6] } }
-  if (typeof node.label !== 'string' || !node.label) return [frame]
-  const label = { id: `${node.id}-label`, type: 'text', mode: 'box', geometry: { ...plainGeometry({ x: node.x + 12, y: node.y + 8, width: Math.max(1, node.width - 24), height: 40 }) }, content: node.label, style: { ...FOREIGN_TEXT_STYLE }, extras: {} }
-  return [frame, label]
-}
-
-function objectFromNode(node) {
+function objectFromNode(node, foreign) {
   const pn = isObject(node.pn) ? node.pn : null
   const kind = pn?.type
   if (pn && kind === 'unknown') {
@@ -295,7 +232,7 @@ function objectFromNode(node) {
     return [object]
   }
   const valid = new Set(['text', 'sticky', 'shape', 'ink', 'image', 'group'])
-  if (!pn || !valid.has(kind)) return foreignObjects(node)
+  if (!pn || !valid.has(kind)) return foreign ? foreign.objects(node) : []
   const object = { ...clone(pn), id: node.id }
   delete object.noId
   delete object.origId
@@ -339,19 +276,7 @@ function connectorFromEdge(edge) {
   return object
 }
 
-// Another app's canvas has no `pn.page` and may use negative coordinates, which a page-based note cannot show: move it onto the pages.
-function foreignFrame(nodes) {
-  if (!nodes.length) return { dx: 0, dy: 0, columns: 1, rows: 1 }
-  const minX = Math.min(...nodes.map((n) => n.x))
-  const minY = Math.min(...nodes.map((n) => n.y))
-  const dx = minX < 0 ? 72 - minX : 0
-  const dy = minY < 0 ? 72 - minY : 0
-  const maxX = Math.max(...nodes.map((n) => n.x + n.width)) + dx
-  const maxY = Math.max(...nodes.map((n) => n.y + n.height)) + dy
-  return { dx, dy, columns: Math.max(1, Math.ceil((maxX + 72) / PAGE.width)), rows: Math.max(1, Math.ceil((maxY + 72) / PAGE.height)) }
-}
-
-export function fromJsonCanvas(canvas) {
+export function readJsonCanvas(canvas, { foreign } = {}) {
   if (!isObject(canvas)) throw new DocumentError('A JSON Canvas must be an object')
   if (canvas.nodes !== undefined && !Array.isArray(canvas.nodes)) throw new DocumentError('nodes must be an array')
   if (canvas.edges !== undefined && !Array.isArray(canvas.edges)) throw new DocumentError('edges must be an array')
@@ -365,13 +290,13 @@ export function fromJsonCanvas(canvas) {
   let page
   if (pnTop && isObject(pnTop.page)) page = clone(pnTop.page)
   else {
-    const found = foreignFrame(nodes)
+    const found = foreign ? foreign.frame(nodes) : { dx: 0, dy: 0, columns: 1, rows: 1 }
     frame = { dx: found.dx, dy: found.dy }
     page = { columns: found.columns, rows: found.rows }
   }
   if (frame.dx || frame.dy) nodes = nodes.map((node) => ({ ...node, x: node.x + frame.dx, y: node.y + frame.dy }))
 
-  const list = nodes.flatMap(objectFromNode)
+  const list = nodes.flatMap((node) => objectFromNode(node, foreign))
   const edgeObjects = edges.map((edge) => ({ z: isObject(edge.pn) && isNumber(edge.pn.z) ? edge.pn.z : Number.POSITIVE_INFINITY, object: connectorFromEdge(edge) }))
   const detached = Array.isArray(pnTop?.detached) ? pnTop.detached.filter(isObject).map((object) => ({ z: isNumber(object.z) ? object.z : Number.POSITIVE_INFINITY, object: (() => { const copy = clone(object); delete copy.z; return copy })() })) : []
   // Edges and detached connectors go back in at their stored stacking position among the nodes, lowest first.
@@ -381,68 +306,3 @@ export function fromJsonCanvas(canvas) {
   return { schemaVersion: SCHEMA_VERSION, page, objects: list, extras: isObject(pnTop?.extras) ? clone(pnTop.extras) : {} }
 }
 
-// ---- spec check ------------------------------------------------------------------------------------------------------------
-
-// Checks a canvas against JSON Canvas 1.0 and lists every problem as { path, message }. `pn` and any other extra property are allowed.
-export function validateJsonCanvas(canvas) {
-  const errors = []
-  const report = (path, message) => errors.push({ path, message })
-  if (!isObject(canvas)) return { ok: false, errors: [{ path: '', message: 'a canvas must be an object' }] }
-  for (const key of ['nodes', 'edges']) if (canvas[key] !== undefined && !Array.isArray(canvas[key])) report(key, 'must be an array')
-  const ids = new Set()
-  const nodeIds = new Set()
-  const colorOk = (value) => typeof value === 'string' && (/^[1-6]$/.test(value) || HEX6.test(value))
-  ;(Array.isArray(canvas.nodes) ? canvas.nodes : []).forEach((node, index) => {
-    const path = `nodes[${index}]`
-    if (!isObject(node)) return report(path, 'must be an object')
-    if (typeof node.id !== 'string' || node.id === '') report(`${path}.id`, 'missing id')
-    else if (ids.has(node.id)) report(`${path}.id`, `duplicate id ${JSON.stringify(node.id)}`)
-    else { ids.add(node.id); nodeIds.add(node.id) }
-    if (!['text', 'file', 'link', 'group'].includes(node.type)) report(`${path}.type`, `unknown node type ${JSON.stringify(node.type)}`)
-    for (const key of ['x', 'y', 'width', 'height']) if (!Number.isInteger(node[key])) report(`${path}.${key}`, 'must be an integer')
-    if (node.color !== undefined && !colorOk(node.color)) report(`${path}.color`, 'must be a hex colour or a preset "1" to "6"')
-    if (node.type === 'text' && typeof node.text !== 'string') report(`${path}.text`, 'text nodes need a text string')
-    if (node.type === 'file') {
-      if (typeof node.file !== 'string' || node.file === '') report(`${path}.file`, 'file nodes need a path')
-      if (node.subpath !== undefined && !(typeof node.subpath === 'string' && node.subpath.startsWith('#'))) report(`${path}.subpath`, 'must start with #')
-    }
-    if (node.type === 'link' && typeof node.url !== 'string') report(`${path}.url`, 'link nodes need a url')
-    if (node.type === 'group') {
-      if (node.label !== undefined && typeof node.label !== 'string') report(`${path}.label`, 'must be a string')
-      if (node.backgroundStyle !== undefined && !['cover', 'ratio', 'repeat'].includes(node.backgroundStyle)) report(`${path}.backgroundStyle`, 'must be cover, ratio or repeat')
-    }
-  })
-  ;(Array.isArray(canvas.edges) ? canvas.edges : []).forEach((edge, index) => {
-    const path = `edges[${index}]`
-    if (!isObject(edge)) return report(path, 'must be an object')
-    if (typeof edge.id !== 'string' || edge.id === '') report(`${path}.id`, 'missing id')
-    else if (ids.has(edge.id)) report(`${path}.id`, `duplicate id ${JSON.stringify(edge.id)}`)
-    else ids.add(edge.id)
-    for (const key of ['fromNode', 'toNode']) {
-      if (typeof edge[key] !== 'string') report(`${path}.${key}`, 'missing')
-      else if (!nodeIds.has(edge[key])) report(`${path}.${key}`, `refers to unknown node ${JSON.stringify(edge[key])}`)
-    }
-    for (const key of ['fromSide', 'toSide']) if (edge[key] !== undefined && !SIDES.includes(edge[key])) report(`${path}.${key}`, 'must be top, right, bottom or left')
-    for (const key of ['fromEnd', 'toEnd']) if (edge[key] !== undefined && !['none', 'arrow'].includes(edge[key])) report(`${path}.${key}`, 'must be none or arrow')
-    if (edge.color !== undefined && !colorOk(edge.color)) report(`${path}.color`, 'must be a hex colour or a preset "1" to "6"')
-    if (edge.label !== undefined && typeof edge.label !== 'string') report(`${path}.label`, 'must be a string')
-  })
-  return { ok: errors.length === 0, errors }
-}
-
-// ---- Markdown projection ---------------------------------------------------------------------------------------------------
-
-const textOf = (object) => {
-  if (object.type === 'unknown') return typeof object.raw?.text === 'string' ? object.raw.text : null
-  if (object.type === 'text' || object.type === 'sticky') return typeof object.content === 'string' ? object.content : null
-  return typeof object.extras?.text === 'string' ? object.extras.text : null
-}
-
-// Text blocks in reading order (box top edge, then left edge), as the agent CLI, search and the Markdown export read a note.
-export function plainTextBlocks(doc) {
-  const position = (object) => (object.type === 'unknown' ? [Number(object.raw?.top) || 0, Number(object.raw?.left) || 0] : [object.geometry?.y ?? 0, object.geometry?.x ?? 0])
-  return ordered(doc.objects ?? []).filter(isObject).map((object, index) => ({ object, index, at: position(object) }))
-    .sort((a, b) => (a.at[0] - b.at[0]) || (a.at[1] - b.at[1]) || (a.index - b.index))
-    .map(({ object }) => textOf(object)).filter((text) => text !== null && text.trim()).map((text) => text.trim())
-}
-export const plainText = (doc) => plainTextBlocks(doc).join('\n\n')

@@ -3,7 +3,10 @@
 //   load: JSON Canvas -> document model -> Fabric JSON (pictures fetched from /api/media and handed to Fabric as data URLs)
 //   save: Fabric JSON -> document model -> JSON Canvas (a picture that came from the media library is sent as its path, not again)
 // A note the server could not convert yet (contentFormat 'fabric') loads as it is, and its next save converts it.
-import { fromFabric, fromJsonCanvas, isJsonCanvas, toFabric, toJsonCanvas } from './document/index.js'
+// Named files, not the index: the browser ships the reader and writer, not the SVG pictures, foreign-canvas reading, validator or
+// projection (jsoncanvas-extras.js), which only the server side and the tests need.
+import { fromFabric, toFabricUnchecked } from './document/fabric.js'
+import { isJsonCanvas, readJsonCanvas, writeJsonCanvas } from './document/jsoncanvas.js'
 
 const dataUrlByName = new Map() // media file name -> data URL, so a note's pictures are fetched once
 const pathByDataUrl = new Map() // data URL -> 'media/<name>', so an unchanged picture is saved as a reference
@@ -33,7 +36,10 @@ function mediaNames(objects, out = new Set()) {
 export async function decodeNote(note, { fetchMedia = defaultFetchMedia } = {}) {
   const content = note.content || { objects: [] }
   if (!isJsonCanvas(content)) return { content, pageState: note.pageState || { columns: 1, rows: 1 } }
-  const doc = fromJsonCanvas(content)
+  // The server canonicalizes every canvas it stores, so every node carries `pn`. One that does not (a file edited by hand behind
+  // the server's back) is refused here rather than silently dropped by the lean reader.
+  if ((content.nodes || []).some((node) => !node?.pn) || (content.edges || []).some((edge) => !edge?.pn)) throw new Error('This note was not written by Personal Note; import it instead')
+  const doc = readJsonCanvas(content)
   await Promise.all([...mediaNames(doc.objects)].filter((name) => !dataUrlByName.has(name)).map(async (name) => {
     try {
       const url = await fetchMedia(name)
@@ -43,13 +49,13 @@ export async function decodeNote(note, { fetchMedia = defaultFetchMedia } = {}) 
       console.error(error)
     }
   }))
-  return { content: toFabric(doc, { resolveMedia: (ref) => dataUrlByName.get(ref.id) ?? PLACEHOLDER }), pageState: doc.page }
+  return { content: toFabricUnchecked(doc, { resolveMedia: (ref) => dataUrlByName.get(ref.id) ?? PLACEHOLDER }), pageState: doc.page }
 }
 
 // Fabric JSON + page state -> JSON Canvas for the server. SVG pictures of ink and shapes are left out (the server derives them).
 export function encodeNote(fabricContent, pageState) {
   const doc = fromFabric(fabricContent, pageState)
-  return toJsonCanvas(doc, { derived: 'omit', media: { putDataUrl: (url) => pathByDataUrl.get(url) ?? url } })
+  return writeJsonCanvas(doc, { derived: 'omit', media: { putDataUrl: (url) => pathByDataUrl.get(url) ?? url } })
 }
 
 // Test support.
