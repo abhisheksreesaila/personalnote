@@ -37,6 +37,14 @@ export function agentFlagFor(agents, activeNoteId) {
   return { agent: chosen.agent, action: chosen.action, label: `${name} · ${chosen.action}` }
 }
 
+// The text or sticky the flag points at, from the model's objects: writes point at the last (appended) block in reading order, reads at the first.
+export function pickFlagBlock(action, objects) {
+  const texts = objects
+    .filter((object) => (object?.type === 'text' || object?.type === 'sticky') && typeof object.content === 'string' && object.content.trim() && object.geometry)
+    .sort((a, b) => (a.geometry.y ?? 0) - (b.geometry.y ?? 0) || (a.geometry.x ?? 0) - (b.geometry.x ?? 0))
+  return action === 'writing' ? texts.at(-1) : texts[0]
+}
+
 export function createChangePoller({
   fetchChanges,
   onUpdate,

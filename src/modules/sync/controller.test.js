@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { agentFlagFor } from './changes.js'
+import { agentFlagFor, pickFlagBlock } from './changes.js'
 import { createAgentSyncController } from './controller.js'
 
 function setup({ active = { id: 1, resourceId: 'res_a', revision: 3, noteType: 'canvas' }, unsaved = false, remote = { id: 1, revision: 4 }, added = 1 } = {}) {
@@ -69,4 +69,12 @@ test('the cursor flag only shows for an agent on the open note and clears with p
   const { calls, controller } = setup()
   controller.clearPresence()
   assert.deepEqual(calls, [['presence', null], ['flag', null]])
+})
+
+test('the flag points at the appended block for writes and the first block for reads', () => {
+  const at = (content, x, y, type = 'text') => ({ type, content, geometry: { x, y } })
+  const objects = [at('middle', 10, 200), at('last', 10, 400, 'sticky'), at('first', 10, 100), at('  ', 0, 900), { type: 'shape', geometry: { x: 0, y: 1000 } }, { type: 'text', content: 'no box' }]
+  assert.equal(pickFlagBlock('writing', objects).content, 'last')
+  assert.equal(pickFlagBlock('reading', objects).content, 'first')
+  assert.equal(pickFlagBlock('reading', []), undefined)
 })

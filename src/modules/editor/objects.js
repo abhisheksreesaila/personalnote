@@ -1,4 +1,4 @@
-// Pure helpers for the dock's Sticky note and Image tools. No DOM here so the rules (palette, defaults, image sizing) are easy to test.
+// Pure helpers for the dock's Sticky note, Shape and Image tools. No DOM here so the rules (palette, defaults, image sizing) are easy to test.
 
 export const IMAGE_MAX_SIDE = 1400
 export const IMAGE_MAX_DATA_URL = 300 * 1024
@@ -7,6 +7,8 @@ export const STICKY_FONT = 'Caveat'
 export const STICKY_WIDTH = 240
 export const STICKY_PADDING = 22
 export const STICKY_MIN_HEIGHT = 200
+export const SHAPE_SIZE = { width: 280, height: 180 }
+export const SHAPE_RADIUS = 28
 const FALLBACK_COLORS = ['#ffd60a', '#30d158', '#64b5ff', '#bf5af2', '#ff6b3d']
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 

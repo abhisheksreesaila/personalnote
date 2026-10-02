@@ -24,7 +24,7 @@ import { createTileLod } from './tiles.js'
 import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
 import { newImage } from './media.js'
 import { createTextOverlay } from './text.js'
-import { fitGeometry, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal } from './text-ops.js'
 import { prettifySelection } from '../editor/prettify.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
@@ -141,7 +141,9 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const edgeNode = new Rect({ hittable: false })
   const paperNode = new Rect({ hittable: false })
   const foldNode = new Path({ hittable: false, stroke: FOLD_COLOR, strokeWidth: FOLD_WIDTH, dashPattern: FOLD_DASH, strokeAlign: 'center', path: 'M 0 0' })
-  for (const node of [shadowGroup, edgeNode, paperNode, foldNode, labelGroup]) chrome.add(node)
+  const outlineNode = new Rect({ hittable: false, visible: false, fill: undefined })
+  for (const node of [shadowGroup, edgeNode, paperNode, foldNode, labelGroup, outlineNode]) chrome.add(node)
+  let listening = false
   const pool = { shadows: [], labels: [] }
   const overlays = createOverlays({ app, chrome })
 
@@ -151,7 +153,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   }
 
   function drawChrome() {
-    const plan = pageChrome({ view, viewW: size.width, viewH: size.height, columns: pages.columns, rows: pages.rows, pageW: PAGE.width, pageH: PAGE.height, colors })
+    const plan = pageChrome({ view, viewW: size.width, viewH: size.height, columns: pages.columns, rows: pages.rows, pageW: PAGE.width, pageH: PAGE.height, colors, listening })
     ensure(pool.shadows, plan.shadows.length, () => new Rect({ hittable: false }), shadowGroup)
     plan.shadows.forEach((band, index) => pool.shadows[index].set({ x: band.x, y: band.y, width: band.width, height: band.height, fill: band.fill, opacity: band.alpha }))
     if (plan.edge) {
@@ -161,6 +163,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     } else {
       edgeNode.visible = paperNode.visible = foldNode.visible = false
     }
+    if (plan.outline) outlineNode.set({ visible: true, x: plan.outline.x, y: plan.outline.y, width: plan.outline.width, height: plan.outline.height, stroke: plan.outline.stroke, strokeWidth: plan.outline.strokeWidth, strokeAlign: 'center' })
+    else outlineNode.visible = false
     ensure(pool.labels, plan.labels.length, () => new Text({ hittable: false, fontFamily: LABEL_FONT_FAMILY, fontSize: LABEL_FONT_SIZE, lineHeight: LABEL_FONT_SIZE, textWrap: 'none' }), labelGroup)
     plan.labels.forEach((label, index) => pool.labels[index].set({ text: label.text, x: label.x, y: label.y, fill: colors.label }))
     overlays.setView(view, { x: view.x + live.shift.x * view.scale, y: view.y + live.shift.y * view.scale, scale: view.scale })
@@ -857,6 +861,19 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       if (options.width) object = { ...object, mode: 'box', geometry: { ...object.geometry, width: options.width } } // a text box that wraps at this width
       return startTextEdit(object, { select: options.select ?? true })
     },
+    // A new shape centred on a page point: made at once and selected, one undo step.
+    createShape(point, { fill } = {}) {
+      const object = newShape({ id: newId(), z: nextZ(doc), point, fill: fill ?? defaults.shapeFill?.() ?? '#ffd60a' })
+      if (overlay.isOpen) overlay.commit()
+      onBegin('Add shape')
+      try {
+        commit({ label: 'Add shape', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: [], after: [object.id] } })
+        addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+        const entry = entries.get(object.id)
+        if (entry) editing.select([entry.node])
+        return Boolean(entry)
+      } finally { onEnd() }
+    },
     // A new sticky centred on a page point: made at once, selected, with its first words in the same undo step.
     createSticky(point) {
       const { fill, ink, style } = defaults.sticky?.() ?? { fill: '#ffd60a', ink: '#292202', style: {} }
@@ -915,6 +932,15 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     // The text and stickies the style controls act on.
     selectedText: () => styleTargets().map((entry) => ({ id: entry.id, type: entry.object.type, style: entry.object.style ?? {}, color: entry.object.color })),
+    // The colour of the selected shapes. One step.
+    setShapeFill(fill) {
+      const ids = selectedIds()
+      const plan = planSetShapeFill(doc, { ids, fill })
+      if (!plan.op.changes.length) return false
+      commit(plan.op, { coalesce: 'shape-fill', selection: { before: ids, after: ids } })
+      keepingSelection(() => { for (const change of plan.op.changes) { const entry = entries.get(change.id); if (entry) { refreshBox(entry); rebuild(entry) } } })
+      return true
+    },
     // Font, size, colour of those (`style`), or the sticky paper (`paper`: { fill, ink }). One step (a slider drag is one).
     setTextStyle({ style, paper }) {
       const targets = styleTargets()
@@ -1110,6 +1136,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // out, every box measured). Called once the note is on screen and the machine is idle, so the click does not.
     warmLayout() { try { leafer.layouter?.layout?.() } catch { /* the first interaction does it instead */ } },
     setPages(next) { pages = { ...next }; drawChrome() },
+    // Voice dictation is on: the pages are outlined in the accent colour.
+    setListening(on) { listening = Boolean(on); drawChrome() },
     setColors(next) { colors = next; overlays.setColors(next); drawChrome() },
     setView(next) { view = { ...next }; applyView() },
     resize(nextWidth, nextHeight) {
@@ -1235,6 +1263,19 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       editing.clear()
       selectConnector(null)
       for (const id of removing) { const entry = entries.get(id); if (entry) dropEntry(entry) }
+      return true
+    },
+
+    // Clear all: every object goes, locked ones too, and the page grid folds back to one page; one undo step.
+    clearAll() {
+      if (overlay.isOpen) overlay.commit()
+      const ids = selectedIds()
+      const changes = doc.objects.filter((object) => object && object.id !== undefined).map((object) => ({ id: object.id, before: object, after: null }))
+      if (!changes.length) return false
+      commit({ label: 'Clear note', changes }, { selection: { before: ids, after: [] } })
+      editing.clear()
+      selectConnector(null)
+      for (const change of changes) { const entry = entries.get(change.id); if (entry) dropEntry(entry) }
       return true
     },
 

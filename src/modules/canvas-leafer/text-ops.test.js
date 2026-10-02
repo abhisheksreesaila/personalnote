@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { applyChanges } from '../../core/document/operations.js'
 import { applyMatrix, placementMatrix } from './placement.js'
-import { fitGeometry, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newShape, planSetShapeFill, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
 
 const box = { x: 100, y: 50, width: 240, height: 200, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const doc = () => ({
@@ -105,4 +105,20 @@ test('Prettify tidies every unlocked text and sticky in one op, with the geometr
   assert.equal(plan.op.changes[0].after.geometry.height, 99)
   const tidy = applyChanges(d, plan.op)
   assert.equal(planPrettify(tidy, { fit: (object) => object.geometry }).op.changes.length, 0)
+})
+
+test('a new shape is a rounded rectangle in the chosen fill, with no outline, centred on the click', () => {
+  const shape = newShape({ id: 'sh', z: 5, point: { x: 400, y: 300 }, fill: '#30d158' })
+  assert.deepEqual([shape.type, shape.kind, shape.z, shape.fill, shape.fillKey, shape.strokeWidth], ['shape', 'rect', 5, '#30d158', 'c2', 0])
+  assert.deepEqual([shape.geometry.x, shape.geometry.y, shape.geometry.width, shape.geometry.height], [260, 210, 280, 180])
+  assert.ok(shape.cornerRadius > 0 && shape.cornerRadius === shape.cornerRadiusY)
+  assert.equal(newShape({ id: 'x', z: 0, point: { x: 0, y: 0 }, fill: '#123456' }).fillKey, undefined)
+})
+
+test('choosing an object colour recolours the selected shapes, and only those that are not locked', () => {
+  const d = { ...doc(), objects: [...doc().objects, newShape({ id: 'a', z: 3, point: { x: 0, y: 0 }, fill: '#ffd60a' }), { ...newShape({ id: 'b', z: 4, point: { x: 0, y: 0 }, fill: '#ffd60a' }), locked: true }] }
+  const { op } = planSetShapeFill(d, { ids: ['a', 'b', 's'], fill: '#bf5af2' })
+  assert.deepEqual(op.changes.map((change) => change.id), ['a'])
+  assert.deepEqual([op.changes[0].after.fill, op.changes[0].after.fillKey], ['#bf5af2', 'c4'])
+  assert.equal(planSetShapeFill(d, { ids: ['a'], fill: '#ffd60a' }).op.changes.length, 0)
 })

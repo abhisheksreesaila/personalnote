@@ -36,3 +36,10 @@ test('an empty grid draws nothing', () => {
   const plan = pageChrome({ ...base, view: { x: 0, y: 0, scale: 1 }, columns: 0, rows: 0 })
   assert.equal(plan.paper, null)
 })
+
+test('while dictation is on the pages are outlined in the accent colour, 3 px outside the edge; otherwise there is no outline', () => {
+  const base = { view: { x: 100, y: 50, scale: 0.5 }, viewW: 1000, viewH: 800, columns: 1, rows: 1, pageW: 860, pageH: 1080, colors: { ...colors, accent: '#4D839C' } }
+  assert.equal(pageChrome(base).outline, null)
+  const { outline } = pageChrome({ ...base, listening: true })
+  assert.deepEqual([outline.x, outline.y, outline.width, outline.height, outline.stroke], [97, 47, 436, 546, '#4D839C'])
+})

@@ -2,7 +2,7 @@
 // scene.js and text.js call these; an edit is an `op` of { id, before, after } changes for the undo history (core/document/history.js).
 import { paletteKeyFor } from '../../core/document/palette.js'
 import { isLocked } from '../../core/document/operations.js'
-import { STICKY_MIN_HEIGHT, STICKY_PADDING, STICKY_WIDTH } from '../editor/objects.js'
+import { SHAPE_RADIUS, SHAPE_SIZE, STICKY_MIN_HEIGHT, STICKY_PADDING, STICKY_WIDTH } from '../editor/objects.js'
 import { applyMatrix, placementMatrix } from './placement.js'
 import { prettifyText } from '../editor/prettify.js'
 
@@ -25,6 +25,15 @@ export function newSticky({ id, z, point, fill, ink, style }) {
   const object = { id, type: 'sticky', z, content: '', color: fill, style: { ...style, color: ink }, geometry: { x: point.x - width / 2, y: point.y - height / 2, width, height, ...UPRIGHT } }
   const key = paletteKeyFor(fill)
   if (key) object.colorKey = key
+  return object
+}
+
+// A shape made by a click: a rounded rectangle in the chosen fill, no outline, centred on the click.
+export function newShape({ id, z, point, fill }) {
+  const { width, height } = SHAPE_SIZE
+  const object = { id, type: 'shape', kind: 'rect', z, fill, cornerRadius: SHAPE_RADIUS, cornerRadiusY: SHAPE_RADIUS, strokeWidth: 0, geometry: { x: point.x - width / 2, y: point.y - height / 2, width, height, ...UPRIGHT } }
+  const key = paletteKeyFor(fill)
+  if (key) object.fillKey = key
   return object
 }
 
@@ -58,6 +67,21 @@ export function planSetStyle(doc, { ids, style, paper }) {
     if (after !== object) changes.push({ id, before: object, after })
   }
   return result('Text style', changes)
+}
+
+// The fill of the shapes among `ids` (the object colour chosen while shapes are selected). Locked ones stay as they are.
+export function planSetShapeFill(doc, { ids, fill }) {
+  const changes = []
+  for (const id of ids) {
+    const object = byId(doc, id)
+    if (object?.type !== 'shape' || isLocked(object) || object.fill === fill) continue
+    const after = { ...object, fill }
+    const key = paletteKeyFor(fill)
+    if (key) after.fillKey = key
+    else delete after.fillKey
+    changes.push({ id, before: object, after })
+  }
+  return result('Shape color', changes)
 }
 
 // Prettify (the same mechanical tidy as the former Fabric engine: prettifyText on the whole of each text) for every text and sticky that is not

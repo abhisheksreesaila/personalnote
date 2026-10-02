@@ -514,8 +514,8 @@
   .app-shell.leafer-picking .input-surface { pointer-events: none; }
   .app-shell.leafer-picking #leafer-host { pointer-events: auto; }
   .app-shell .tool-dock { opacity: 1; }
-  .app-shell .tool-dock .dock-canvas > :not(.dock-tools):not(.ink-swatches), .app-shell .tool-dock .tool-button:not([data-tool="select"]):not([data-tool="hand"]):not([data-tool="text"]):not([data-tool="sticky"]):not([data-tool="pen"]):not([data-tool="highlight"]):not([data-tool="eraser"]):not([data-tool="connect"]) { opacity: .35; }
-  .app-shell .tool-dock [data-tool="select"], .app-shell .tool-dock [data-tool="hand"], .app-shell .tool-dock [data-tool="text"], .app-shell .tool-dock [data-tool="sticky"] { pointer-events: auto; }
+  .app-shell .tool-dock .dock-canvas > :not(.dock-tools):not(.ink-swatches), .app-shell .tool-dock .tool-button:not([data-tool="select"]):not([data-tool="hand"]):not([data-tool="text"]):not([data-tool="sticky"]):not([data-tool="pen"]):not([data-tool="highlight"]):not([data-tool="eraser"]):not([data-tool="connect"]):not([data-tool="shape"]) { opacity: .35; }
+  .app-shell .tool-dock [data-tool="select"], .app-shell .tool-dock [data-tool="hand"], .app-shell .tool-dock [data-tool="text"], .app-shell .tool-dock [data-tool="sticky"], .app-shell .tool-dock [data-tool="shape"] { pointer-events: auto; }
   /* F-029: text and stickies work on Leafer, so the Text and Sticky tools and the colour swatches (text colour, sticky colour) are live. */
   .app-shell .tool-dock .ink-swatches { pointer-events: auto; opacity: 1; }
   .leafer-text-editor { z-index: 5; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; } /* (the host is not selectable; the words being typed are) */

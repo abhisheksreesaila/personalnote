@@ -13,13 +13,17 @@ export const SHADOW_STEPS = 32
 const LABEL_LIMIT = 400
 
 // view = { x, y, scale }: where the page frame's origin is on screen, and the zoom.
-export function pageChrome({ view, viewW, viewH, columns, rows, pageW, pageH, colors }) {
+export const OUTLINE_WIDTH = 2
+export const OUTLINE_GAP = 3
+
+// `listening`: voice dictation is on, so the pages get an accent outline (3 px outside the edge) while it is.
+export function pageChrome({ view, viewW, viewH, columns, rows, pageW, pageH, colors, listening = false }) {
   const s = view.scale
   const left = view.x
   const top = view.y
   const width = columns * pageW * s
   const height = rows * pageH * s
-  if (!(width > 0) || !(height > 0)) return { shadows: [], edge: null, paper: null, folds: [], labels: [] }
+  if (!(width > 0) || !(height > 0)) return { shadows: [], edge: null, paper: null, folds: [], labels: [], outline: null }
 
   const shadows = []
   for (const layer of colors.shadows ?? []) {
@@ -54,5 +58,6 @@ export function pageChrome({ view, viewW, viewH, columns, rows, pageW, pageH, co
       }
     }
   }
-  return { shadows, edge, paper, folds, labels }
+  const outline = listening ? { x: left - OUTLINE_GAP, y: top - OUTLINE_GAP, width: width + OUTLINE_GAP * 2, height: height + OUTLINE_GAP * 2, stroke: colors.accent, strokeWidth: OUTLINE_WIDTH } : null
+  return { shadows, edge, paper, folds, labels, outline }
 }

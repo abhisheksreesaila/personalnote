@@ -12,8 +12,10 @@ import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/v
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
 import { createMobileHoldController } from './modules/voice/mobile-hold-controller.js'
-import { pageBoundedTextLayout } from './modules/voice/text-layout.js'
+import { pageBoundedTextLayout, voiceInsertPoint } from './modules/voice/text-layout.js'
+import { contentBounds } from './modules/canvas-leafer/bounds.js'
 import { mountAgentSync } from './modules/sync/index.js'
+import { pickFlagBlock } from './modules/sync/changes.js'
 import { dockIcon } from './modules/editor/dock-icons.js'
 import { imageFiles, objectPalette, stickyDefaults } from './modules/editor/objects.js'
 import { readPreferences, writePreferences } from './preferences.js'
@@ -651,11 +653,11 @@ function scheduleInkOptionsClose(delay = 750) {
 
 function updateInkOptions() {
   elements.inkOptionsDot.style.setProperty('--active-ink', state.color)
-  const placing = state.tool === 'sticky'
+  const placing = state.tool === 'sticky' || state.tool === 'shape'
   elements.inkPalette.hidden = placing
   elements.objectPalette.hidden = !placing
   if (placing) {
-    elements.inkColorLabel.textContent = 'Note color'
+    elements.inkColorLabel.textContent = state.tool === 'sticky' ? 'Note color' : 'Shape color'
     elements.objectPalette.innerHTML = currentObjectPalette().map(({ fill }, index) => `
       <button class="palette-swatch object-swatch ${index === state.objectColor ? 'active' : ''}" data-object-color="${index}" style="--swatch:${fill}" aria-label="Color ${index + 1}"></button>
     `).join('')
@@ -877,6 +879,8 @@ function setSaveState(status, isError = false) {
 }
 
 let viewportOffsetX = 0
+const layoutListeners = [] // told when the view or the note's content moved (the agent flag follows it)
+const layoutChanged = () => layoutListeners.forEach((listener) => listener())
 let viewportOffsetY = 0
 let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
 let pageColors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', accent: '#2f6fe0', accentInk: '#ffffff', shadows: [] }
@@ -965,6 +969,7 @@ function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOf
   const scale = getCanvasScale()
   leaferCanvas?.setView({ x: next.x, y: next.y, scale })
   scheduleHandleClearance()
+  layoutChanged()
   updateNavigationUi(moved || next.x !== previousX)
 }
 
@@ -1031,6 +1036,7 @@ function setViewTo(view) {
   viewportOffsetY = view.y
   leaferCanvas?.setView({ x: view.x, y: view.y, scale })
   scheduleHandleClearance()
+  layoutChanged()
   updateNavigationUi(true)
 }
 
@@ -1143,14 +1149,14 @@ function resizePaper(shiftX = 0, shiftY = 0, settle = false) {
 const temporaryHand = createTemporaryHand()
 let applyingTemporaryHand = false
 
-const toolCursor = () => (state.tool === 'hand' ? 'grab' : state.tool === 'text' ? 'text' : state.tool === 'eraser' ? 'none' : state.tool === 'connect' || state.tool === 'sticky' ? 'crosshair' : 'default')
-const TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'pen', 'highlight', 'eraser', 'connect']) // a tool the dock offers that is not built yet (shape) is select
+const toolCursor = () => (state.tool === 'hand' ? 'grab' : state.tool === 'text' ? 'text' : state.tool === 'eraser' ? 'none' : state.tool === 'connect' || state.tool === 'sticky' || state.tool === 'shape' ? 'crosshair' : 'default')
+const TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'shape', 'pen', 'highlight', 'eraser', 'connect'])
 function setTool(tool) {
   if (!TOOLS.has(tool)) tool = 'select'
   if (!applyingTemporaryHand) temporaryHand.cancel()
   state.tool = tool
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
-  if (tool === 'text' || tool === 'sticky') leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
+  if (tool === 'text' || tool === 'sticky' || tool === 'shape') leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
   if (tool === 'pen' || tool === 'highlight' || tool === 'eraser' || tool === 'connect') leaferCanvas?.clearSelection()
   leaferInk?.setTool(tool)
   leaferConnect?.setTool(tool)
@@ -1165,6 +1171,12 @@ function setTool(tool) {
   elements.mobileConnect.setAttribute('aria-pressed', String(tool === 'connect'))
   updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
+}
+
+// A shape: a rounded rectangle in the chosen object colour, selected, one undo step.
+function placeShape(point) {
+  setTool('select')
+  leaferCanvas.createShape(point, { fill: currentObjectPalette()[state.objectColor].fill })
 }
 
 // A sticky note. (A mouse press opens the overlay on the next tick: the press must finish first, or it takes the focus back. A tap's click is the end already.)
@@ -1412,6 +1424,7 @@ const leaferEdits = createLeaferEdits({
     }
     leaferSource = leaferSourceOf(leaferSource.noteId, doc)
     queueSave()
+    layoutChanged()
   },
 })
 // Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, Ctrl+Y, the dock buttons and the desktop menu all arrive here. (A mind map has undo of its own.)
@@ -2097,19 +2110,19 @@ function setVoiceListening(listening, message = 'Listening') {
   elements.mobileSpeak.classList.toggle('active', listening)
   elements.mobileSpeak.setAttribute('aria-pressed', String(listening))
   elements.mobileSpeak.setAttribute('aria-label', listening ? 'Release to finish speaking' : 'Hold to speak')
+  leaferCanvas?.setListening(listening)
   elements.voiceCaption.hidden = !listening
   elements.voiceStatus.textContent = message
 }
 
-// Where a new dictation text box goes when nothing is being edited. (Dictation begins at a fixed place on the first page; the box is
-// then laid out within the page.)
-const VOICE_INSERT_POINT = { x: 96, y: 96 }
 
 // The words go into the text being edited through the overlay (the selected text, the open one, or a new text box).
 // The "target" is only what the dictation session reads: the words in the editor now.
+// Where a new dictation box goes when nothing is being edited: under the note's content.
+const currentVoiceInsertPoint = () => voiceInsertPoint(contentBounds(leaferEdits.doc.objects, (object) => leaferCanvas.sizeOf(object) ?? {}), { columns: state.pages.columns, pageWidth: PAGE_WIDTH })
 let leaferVoiceShown = '' // the words last put in the editor
 function createVoiceTextBox() {
-  const layout = pageBoundedTextLayout(VOICE_INSERT_POINT, { pageWidth: PAGE_WIDTH })
+  const layout = pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH })
   const { fresh } = leaferCanvas.beginDictation({ x: layout.x, y: layout.y }, { width: layout.width })
   leaferVoiceShown = leaferCanvas.dictationText() ?? ''
   return { __voiceDictationBox: fresh, get text() { return leaferCanvas.dictationText() ?? '' } }
@@ -2485,7 +2498,7 @@ async function undoClear() {
   if (pending.mindmap) {
     await mountActiveMindMap(pending.mindmap)
     queueSave()
-  }
+  } else if (pending.canvas) stepHistory(-1) // the clear is the last step: no other edit has been made since (an edit ends the Undo)
 }
 
 async function clearActiveNote() {
@@ -2497,7 +2510,12 @@ async function clearActiveNote() {
     queueSave()
     pendingClearUndo = { noteId: state.activeNoteId, mindmap: previous }
     showToast('Note cleared', 'Undo', undoClear)
+    return
   }
+  if (!leaferCanvas.clearAll()) return
+  setTool('text')
+  pendingClearUndo = { noteId: state.activeNoteId, canvas: true }
+  showToast('Note cleared', 'Undo', undoClear)
 }
 
 // A touch that starts in the gutter around the pages scrolls the view with one
@@ -2691,6 +2709,7 @@ onCanvasInput('mousedown', (event) => { if (event.button === 1) event.preventDef
 inputSurface.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 || event.pointerType !== 'mouse') return
   if (state.tool === 'sticky') placeSticky(leaferCanvas.pageAt(event.clientX, event.clientY))
+  else if (state.tool === 'shape') placeShape(leaferCanvas.pageAt(event.clientX, event.clientY))
   else if (state.tool === 'text') {
     const at = leaferCanvas.pageAt(event.clientX, event.clientY)
     setTimeout(() => { if (!leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false }) }, 0)
@@ -2708,6 +2727,7 @@ window.addEventListener('pointerup', (event) => {
   if (performance.now() - start.time > 600 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) return
   const at = leaferCanvas.pageAt(event.clientX, event.clientY)
   if (state.tool === 'sticky') placeSticky(at, { now: true })
+  else if (state.tool === 'shape') placeShape(at)
   else if (state.tool === 'text' && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
 }, true)
 
@@ -2736,6 +2756,7 @@ elements.objectPalette.addEventListener('click', (event) => {
   state.objectColor = Number(swatch.dataset.objectColor)
   const color = currentObjectPalette()[state.objectColor]
   leaferCanvas.setTextStyle({ paper: { fill: color.fill, ink: color.ink } })
+  leaferCanvas.setShapeFill(color.fill)
   updateInkOptions()
   scheduleInkOptionsClose()
 })
@@ -3463,9 +3484,19 @@ async function initialize() {
       },
       // Also true while words are being typed in the editor.
       hasUnsavedEdits: () => unsavedEdits || saveInFlight || Boolean(leaferCanvas?.isEditingText()),
-      // The flag over the block an agent is writing has no page position on the Leafer canvas yet, so it stays hidden (the presence chip shows).
-      locateFlagBlock: () => null,
+      // Where the flag over the block an agent is writing sits: that text's top-left corner on screen, or null when it is off screen.
+      locateFlagBlock: (action) => {
+        const block = pickFlagBlock(action, leaferEdits.doc?.objects ?? [])
+        if (!block) return null
+        const box = leaferHost.getBoundingClientRect()
+        const { x, y, scale } = leaferCanvas.view()
+        const point = { x: box.left + x + block.geometry.x * scale, y: box.top + y + block.geometry.y * scale }
+        const area = elements.workspace.getBoundingClientRect()
+        const inside = point.x >= area.left && point.x <= area.right && point.y >= area.top && point.y <= area.bottom
+        return inside ? point : null
+      },
       onLayout: (callback) => {
+        layoutListeners.push(callback)
         elements.workspace.addEventListener('scroll', callback, { passive: true })
         window.addEventListener('resize', callback)
       },
@@ -3529,5 +3560,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by the scripts/ checks; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { voiceBoxPoint: () => pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH }), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize().then(async () => { await speedTestStatus; if (speedTestInstance && new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way

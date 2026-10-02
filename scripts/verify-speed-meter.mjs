@@ -104,6 +104,7 @@ const rafOver = async (page, ms) => { const a = await page.evaluate(() => window
   await page.click('[data-tool="text"]')
   const c = await toClient(page, 200, 200)
   await page.mouse.click(c.x, c.y)
+  await page.waitForFunction(() => document.activeElement?.classList?.contains('leafer-text-editor'), null, { timeout: 5000 })
   await page.keyboard.type('hi')
   await page.keyboard.press('Control+Shift+F')
   await page.waitForTimeout(200)
