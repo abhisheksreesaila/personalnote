@@ -47,13 +47,17 @@ try {
   const hostShot = () => page.screenshot({ clip: { x: 300, y: 90, width: 460, height: 540 } }) // the sheet only: no status text or toasts
   const jsonCanvas = () => page.evaluate(() => JSON.stringify(window.__personalNote.encodeDocument(window.__personalNote.leaferEdits.doc)))
   const drawn = () => page.evaluate(() => { const s = window.__personalNote.leaferCanvas().stats(); return s.drawn + s.skipped + s.unknown })
-  // a pixel counts as different beyond anti-aliasing noise: the selection layer repaints a few edge pixels by 1-4 levels (F-028)
   const pixelDiff = (one, two) => page.evaluate(async ([a, b]) => {
     const read = async (b64) => { const img = new Image(); img.src = `data:image/png;base64,${b64}`; await img.decode(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return x.getImageData(0, 0, c.width, c.height) }
     const [one, two] = [await read(a), await read(b)]
     let count = 0, minX = 1e9, minY = 1e9, maxX = -1, maxY = -1
     for (let i = 0; i < one.data.length; i += 4) {
-      if (Math.abs(one.data[i] - two.data[i]) > 8 || Math.abs(one.data[i + 1] - two.data[i + 1]) > 8 || Math.abs(one.data[i + 2] - two.data[i + 2]) > 8) { count++; const px = (i / 4) % one.width, py = Math.floor(i / 4 / one.width); minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py) }
+      const px = (i / 4) % one.width, py = Math.floor(i / 4 / one.width)
+      const level = Math.max(Math.abs(one.data[i] - two.data[i]), Math.abs(one.data[i + 1] - two.data[i + 1]), Math.abs(one.data[i + 2] - two.data[i + 2]))
+      // Exact, except one measured noise strip: when undo selects the restored object (F-028), the edge of the purple sticky and its connector
+      // (x 448-454, y 41-224 in this clip) come out 1-4 levels off; a plain redraw of the document is exact.
+      const noise = px >= 446 && px <= 456 && py >= 39 && py <= 226 && level <= 4
+      if (level > 0 && !noise) { count++; minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py) }
     }
     return { count, box: [minX, minY, maxX, maxY] }
   }, [one.toString('base64'), two.toString('base64')])
