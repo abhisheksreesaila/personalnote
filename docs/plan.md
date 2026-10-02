@@ -227,6 +227,7 @@ Merged into `leafer` at ea54a5f. Patch-based history (~1.5 KB/step on 600 object
 - [ ] an agent change arriving while you edit in Leafer mode merges in without discarding unsaved local edits (today the remote redraw replaces them; fine only while Leafer was read-only)
 Includes a speed test in the Mac app before shipping.
 ## F-035 Phones and pencil, Leafer becomes default (P-11) [todo]
+- [ ] voice dictation into text and Prettify work in Leafer mode (disabled there after F-029)
 ## F-036 Remove Fabric (P-12) [todo]
 ## F-037 Blog post: how we made it fast [todo]
 Captain: the 500/1,000/100,000-object engine test "shows the care… make it a story… publish it in the blog… the test is not a throwaway."
