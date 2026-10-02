@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sqlite3
 import tempfile
 import time
@@ -369,9 +370,20 @@ class NoteService:
             finally:
                 copy.close()
             try:
-                os.link(temporary, target)
-            except FileExistsError:
-                pass
+                try:
+                    os.link(temporary, target)
+                except FileExistsError:
+                    pass
+                except OSError:
+                    # No hard links on this file system (exFAT, some network drives): an exclusive-create copy is just as no-clobber.
+                    try:
+                        with open(temporary, "rb") as source_file, open(target, "xb") as destination:
+                            shutil.copyfileobj(source_file, destination)
+                    except FileExistsError:
+                        pass
+                    except BaseException:
+                        target.unlink(missing_ok=True)  # never leave a half-written copy that later starts would trust
+                        raise
             finally:
                 os.unlink(temporary)
             return target

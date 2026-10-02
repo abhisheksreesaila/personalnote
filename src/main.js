@@ -2196,9 +2196,13 @@ async function settleOutgoingNote() {
 }
 
 // Leafer mode: note JSON -> document model -> Leafer nodes. The view and page grid are set the way the Fabric path sets them.
+let leaferShowSequence = 0
+// Returns false when a later selection or refresh superseded this one while the note was being converted: nothing is drawn then.
 async function showLeaferNote(note, { openView = true } = {}) {
   // Leafer reads Fabric JSON for now: the stored JSON Canvas is converted for it, and the note's own content is kept to save back.
+  const showing = ++leaferShowSequence
   const decoded = await decodeNote(note)
+  if (showing !== leaferShowSequence || note.id !== state.activeNoteId) return false
   leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.pageState }
   canvas.remove(...canvas.getObjects()) // the Fabric canvas holds nothing in this mode, whatever happened before
   state.pages = decoded.pageState
@@ -2207,6 +2211,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
   if (openView) openCanvasView()
   leaferCanvas.setColors(pageColors)
   leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
+  return true
 }
 
 function mountLeaferCanvas() {
@@ -2258,8 +2263,7 @@ async function selectNote(id) {
       state.history = []
       state.historyIndex = -1
     } else if (useLeafer) {
-      await showLeaferNote(note)
-      if (sequence !== selectSequence) return
+      if (!(await showLeaferNote(note)) || sequence !== selectSequence) return
       state.history = []
       state.historyIndex = -1
       syncedIds = canvasObjectIds(note.content)
@@ -2311,7 +2315,7 @@ async function applyRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
   if (useLeafer) {
     elements.title.value = note.title
-    await showLeaferNote(note, { openView: false })
+    if (!(await showLeaferNote(note, { openView: false }))) return
     syncedIds = canvasObjectIds(note.content)
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
@@ -2324,6 +2328,8 @@ async function applyRemoteNote(note) {
   try {
     elements.title.value = note.title
     const decoded = await decodeNote(note)
+    // The user moved to another note while the pictures loaded: a remote note must never land in that note's canvas.
+    if (note.id !== state.activeNoteId) return
     state.pages = decoded.pageState
     resizePaper()
     await canvas.loadFromJSON(decoded.content)
@@ -2340,7 +2346,7 @@ async function applyRemoteNote(note) {
     setSaveState('Saved')
     renderNoteList()
   } finally {
-    state.loading = false
+    if (note.id === state.activeNoteId) state.loading = false // another selection owns the flag now
     if (reconciled) queueSave()
   }
 }
@@ -2351,7 +2357,7 @@ async function mergeRemoteNote(note) {
   if (useLeafer) {
     // Only the title can be unsaved here: draw the agent's newer content and save the title on top of the new revision.
     const added = [...canvasObjectIds(note.content)].filter((id) => !syncedIds.has(id)).length
-    await showLeaferNote(note, { openView: false })
+    if (!(await showLeaferNote(note, { openView: false }))) return 0
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) summary.revision = note.revision
     syncedIds = canvasObjectIds(note.content)

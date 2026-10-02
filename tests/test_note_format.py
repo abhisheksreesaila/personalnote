@@ -234,6 +234,24 @@ class ConversionTests(Folder):
         self.assertNotIn("content_format", [r[1] for r in old.execute("PRAGMA table_info(notes)")])
         self.assertEqual(sorted(p.name for p in self.folder.glob("*.tmp")) + sorted(p.name for p in self.folder.glob("*.partial")), [])
 
+    def test_without_hard_links_the_copy_is_made_without_clobbering(self):
+        from unittest import mock
+
+        backup = self.folder / "personal-note.db.fabric-backup"
+        with mock.patch("os.link", side_effect=OSError("no hard links here")):
+            NoteService(self.database)
+        old = sqlite3.connect(backup)
+        self.addCleanup(old.close)
+        self.assertEqual(old.execute("SELECT count(*) FROM notes").fetchone()[0], len(self.NOTES))
+        self.assertNotIn("content_format", [r[1] for r in old.execute("PRAGMA table_info(notes)")])
+        self.assertEqual(list(self.folder.glob("*.tmp")), [])
+        # and an existing copy still wins when links are unavailable
+        backup.write_bytes(b"older copy")
+        sqlite3.connect(self.database).execute("UPDATE notes SET content_format = 'fabric' WHERE id = 1").connection.commit()
+        service = NoteService(self.database)
+        self.assertEqual(backup.read_bytes(), b"older copy")
+        del service
+
     def test_a_fresh_database_makes_no_backup_copy(self):
         NoteService(self.folder / "fresh.db").create_note({"title": "x"})
         NoteService(self.folder / "fresh.db")
