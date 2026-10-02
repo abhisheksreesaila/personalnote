@@ -222,6 +222,8 @@ Merged into `leafer` at ea54a5f. Patch-based history (~1.5 KB/step on 600 object
 ## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [todo]
 ## F-033 Images (media library, F-023), export, print on Leafer (P-09) [todo]
 ## F-034 Performance pass and agent sync on Leafer (P-10) [todo]
+- [ ] pen at dpr 2: pointer-to-frame p95 ~40 ms with 33-83 ms frames after pointer-down/mid-stroke in headless; confirm on the Mac and fix if real
+- [ ] an agent change arriving mid-erase or mid-stroke can't commit against a doc it wasn't planned on (test)
 - [ ] undo/redo redraws only changed objects instead of reloading the scene (now ~21 ms median on 616 objects vs 9 ms before F-028)
 - [ ] Leafer first draw vs redraw differs by 12 px at a sticky edge (Leafer-internal); recheck after upgrades
 - [ ] an agent change arriving while you edit in Leafer mode merges in without discarding unsaved local edits (today the remote redraw replaces them; fine only while Leafer was read-only)
