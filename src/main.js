@@ -40,6 +40,8 @@ import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
 import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
 import { mergeDocuments } from './core/document/merge.js'
 import { createInk } from './modules/canvas-leafer/ink.js'
+import { pictureFiles, prepareImage, uploadPicture } from './modules/canvas-leafer/media.js'
+import { renderNotePicture, renderSheet } from './modules/canvas-leafer/export.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
@@ -158,6 +160,7 @@ document.querySelector('#app').innerHTML = `
             <button class="icon-button glass-button share-button" id="share-button" title="Share or export" aria-label="Share or export" aria-haspopup="menu" aria-expanded="false"><i data-lucide="share"></i></button>
             <div class="share-menu" id="share-menu" role="menu" aria-label="Share or export" hidden>
               <button role="menuitem" id="share-print"><i data-lucide="printer"></i><span>Print preview</span><kbd id="print-kbd">Ctrl P</kbd></button>
+              <button role="menuitem" id="share-png"><i data-lucide="image-down"></i><span>Note as picture (PNG)</span></button>
               <button role="menuitem" id="share-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
               <button role="menuitem" id="share-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
               <button role="menuitem" id="share-vault"><i data-lucide="folder-down"></i><span>Obsidian vault</span></button>
@@ -1839,9 +1842,30 @@ async function preparedImageSource(file) {
   return scratch.toDataURL(encoding.type, encoding.quality)
 }
 
+// Leafer mode (F-033): each picture is shrunk off the main thread, stored once in the media library, and placed as a reference to it.
+async function placeLeaferPictures(files, point) {
+  const pictures = pictureFiles(files)
+  const noteId = state.activeNoteId
+  const made = []
+  for (const file of pictures) {
+    try {
+      const { blob, width, height } = await prepareImage(file)
+      const mediaId = await uploadPicture(blob)
+      made.push({ mediaId, url: URL.createObjectURL(blob), width, height })
+    } catch (error) {
+      console.error(error)
+      setSaveState('Could not add that picture', true)
+    }
+  }
+  if (!made.length || noteId !== state.activeNoteId || leaferSwitching) return 0 // the note was left while the pictures were being prepared
+  setTool('select')
+  return leaferCanvas.addImages(made, point).length
+}
+
 async function placeImageFiles(files, point = viewCenterPoint()) {
   const pictures = imageFiles(files)
-  if (useLeafer || !pictures.length || state.activeNoteType !== 'canvas') return 0
+  if (!pictures.length || state.activeNoteType !== 'canvas') return 0
+  if (useLeafer) return placeLeaferPictures(pictures, point)
   let placed = 0
   for (const file of pictures) {
     try {
@@ -2867,7 +2891,16 @@ function applyTypography(property, value) {
   syncTypographyControls()
 }
 
+// Print sheets in Leafer mode are drawn from the document model on a leafer of their own (white paper, no page furniture), as blob URLs.
+let printSheetUrls = []
+async function renderLeaferPrintSheet(column, row) {
+  const url = URL.createObjectURL(await renderSheet(leaferCanvas, { column, row }))
+  printSheetUrls.push(url)
+  return url
+}
+
 async function renderPrintSheet(column, row) {
+  if (useLeafer) return renderLeaferPrintSheet(column, row)
   const element = document.createElement('canvas')
   const printCanvas = new StaticCanvas(element, {
     width: PAGE_WIDTH,
@@ -2912,12 +2945,29 @@ async function renderPrintPreview(sequence) {
   }
 }
 
+// The whole note as one PNG (the Leafer render, white paper, no page furniture).
+async function downloadNotePicture() {
+  if (state.activeNoteType !== 'canvas') return
+  leaferCanvas.finishTextEdit()
+  try {
+    const blob = await renderNotePicture(leaferCanvas, state.pages)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${(elements.title.value.trim() || 'note').replace(/[\\/:*?"<>|]+/g, '-')}.png`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    console.error(error)
+    showToast('Could not make the picture')
+  }
+}
+
 async function openPrintPreview() {
   if (state.activeNoteType !== 'canvas') return
-  if (useLeafer) { // the print sheets are rendered from Fabric objects; they return with F-033
-    showToast('Print returns soon')
-    return
-  }
+  leaferCanvas?.finishTextEdit() // words still being typed are on the sheets
   const sequence = ++printRenderSequence
   setSidebarOpen(false)
   setPropertiesOpen(false)
@@ -2946,6 +2996,8 @@ function closePrintPreview() {
   elements.printPreview.setAttribute('aria-hidden', 'true')
   elements.printPreview.hidden = true
   elements.printSheetList.innerHTML = ''
+  for (const url of printSheetUrls) URL.revokeObjectURL(url)
+  printSheetUrls = []
   elements.shell.inert = false
   document.body.classList.remove('print-preview-open')
   elements.shareButton.focus()
@@ -3848,7 +3900,15 @@ elements.workspace.addEventListener('drop', (event) => {
   elements.workspace.classList.remove('is-drop-target')
   if (state.activeNoteType !== 'canvas' || !hasFiles(event)) return
   event.preventDefault()
-  placeImageFiles(event.dataTransfer.files, canvas.getScenePoint(event))
+  placeImageFiles(event.dataTransfer.files, useLeafer ? leaferCanvas.pageAt(event.clientX, event.clientY) : canvas.getScenePoint(event))
+})
+// A picture on the clipboard (a screenshot, a copied image) is pasted where the view is centred; words keep pasting into whatever is typed in.
+document.addEventListener('paste', (event) => {
+  if (state.activeNoteType !== 'canvas' || event.target.closest?.('input, textarea, select, [contenteditable]')) return
+  const files = pictureFiles(event.clipboardData?.files)
+  if (!files.length) return
+  event.preventDefault()
+  void placeImageFiles(files)
 })
 elements.inkOptionsTrigger.addEventListener('click', toggleInkOptions)
 document.querySelector('#close-ink-options').addEventListener('click', closeInkOptions)
@@ -3996,6 +4056,7 @@ elements.shareMenu.addEventListener('click', (event) => {
   if (!item || item.disabled) return
   setShareMenuOpen(false)
   if (item.id === 'share-print') openPrintPreview()
+  else if (item.id === 'share-png') void downloadNotePicture()
   else if (item.id === 'share-backup') void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
   else if (item.id === 'share-markdown') void downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip')
   else if (item.id === 'share-vault') void downloadWorkspaceExport('/export/vault', 'personal-note-obsidian-vault.zip')

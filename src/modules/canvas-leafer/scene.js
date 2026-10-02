@@ -2,7 +2,7 @@
 // documented model rules (placement.js: the one matrix per object, and its inverse; schema.js: frames, ink frame, group frames); this
 // file only knows how to make each model type look like the Fabric render. Leafer is imported here and in editing.js (the
 // selection and transform layer) and nowhere else. An edit is a document-model operation (operations.js); the nodes follow the model.
-import { App, Box, Group, Ellipse, Image, MatrixHelper, Path, Rect, Text } from 'leafer-ui'
+import { App, Box, Group, Ellipse, Image, Leafer, MatrixHelper, Path, Rect, Text } from 'leafer-ui'
 import { PAGE } from '../../core/document/index.js'
 import { applyChanges, isLocked, planLock, planMove, planRemove, planReorder, planSetGeometry, stacking } from '../../core/document/operations.js'
 import { arrowHeadPoints, endpointsFromBox } from '../editor/connectors.js'
@@ -12,6 +12,7 @@ import { createEditing, EDITOR_CONFIG } from './editing.js'
 import { applyMatrix, geometryFromMatrix, multiplyMatrices, placementMatrix } from './placement.js'
 import { bakedStickyShadow, STICKY_CORNERS } from './sticky-shadow.js'
 import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
+import { newImage } from './media.js'
 import { createTextOverlay } from './text.js'
 import { fitGeometry, newSticky, newText, nextZ, objectAt, planSetContent, planSetStyle, toLocal } from './text-ops.js'
 
@@ -95,6 +96,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   const measuredText = []
   const uniformStrokes = [] // strokeScaleFixed keeps a stroke a constant number of SCREEN pixels; Fabric's uniform stroke still follows the zoom
   let resolveMedia = null
+  const mediaUrls = new Map() // media id -> the URL of a picture added in this session (its bytes are already here), so it needs no fetch
   let doc = null // the document model on screen: edits change it, the nodes follow
   let committing = false // true while an edit made here is being handed to the host: the host need not draw it again
   const entries = new Map() // object id -> { id, node, built }: every top-level object that has a node
@@ -220,7 +222,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       }
       case 'image': {
         const ref = object.mediaRef
-        const url = ref?.kind === 'inline' ? ref.dataUrl : resolveMedia?.(ref)
+        const url = ref?.kind === 'inline' ? ref.dataUrl : mediaUrls.get(ref?.id) ?? resolveMedia?.(ref)
         if (typeof url !== 'string') return null
         stats.images += 1
         return { node: new Image({ ...base, url, width: g.width, height: g.height }), size: {}, sized: true }
@@ -639,9 +641,65 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     textApi.createText(point)
   })
 
+  // ---- pictures (F-033). media.js prepares and uploads them; each is one model object that references the media library file.
+  const pictureApi = {
+    // `pictures`: [{ mediaId, url, width, height }] (the stored size of each), placed around a page point as one undo step; the last is selected.
+    addImages(pictures, point) {
+      if (!pictures.length) return []
+      if (overlay.isOpen) overlay.commit()
+      onBegin('Add picture')
+      const ids = []
+      try {
+        pictures.forEach((picture, index) => {
+          mediaUrls.set(picture.mediaId, picture.url)
+          const object = newImage({ id: newId(), z: nextZ(doc), mediaId: picture.mediaId, width: picture.width, height: picture.height, point, index })
+          commit({ label: 'Add picture', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: [], after: [object.id] } })
+          addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+          if (entries.has(object.id)) ids.push(object.id)
+        })
+      } finally { onEnd() }
+      if (ids.length) editing.select([entries.get(ids.at(-1)).node])
+      return ids
+    },
+    // A point in client (window) pixels -> the page point under it.
+    pageAt(clientX, clientY) {
+      const rect = host.getBoundingClientRect()
+      return { x: (clientX - rect.left - view.x) / view.scale, y: (clientY - rect.top - view.y) / view.scale }
+    },
+  }
+
+  // ---- output (F-033): the note as it prints and exports, drawn from the model on a leafer of its own (white paper, no page furniture,
+  // no handles), so the screen's view, selection and chrome never reach it. `region` is a rectangle of the page grid, in page pixels.
+  async function renderRegion(region, { pixelRatio = 2, type = 'image/png', quality } = {}) {
+    const surface = document.createElement('canvas')
+    const sheet = new Leafer({ view: surface, width: region.width, height: region.height, pixelRatio, type: 'draw', hittable: false })
+    const marks = { text: textNodes.length, measured: measuredText.length, strokes: uniformStrokes.length }
+    const group = new Group({ x: -region.x, y: -region.y, hittable: false })
+    try {
+      sheet.add(group)
+      for (const object of stacking(doc)) addObject(group, object, null)
+      // The bookkeeping addObject keeps for the live view is not for these nodes; a uniform stroke is its own width at scale 1.
+      for (const item of uniformStrokes.splice(marks.strokes)) item.node.strokeWidth = item.width
+      textNodes.length = marks.text
+      measuredText.length = marks.measured
+      await new Promise((resolve) => { sheet.waitViewCompleted(() => requestAnimationFrame(() => requestAnimationFrame(resolve))) })
+      // White paper under whatever is transparent, as the Fabric print sheet had it.
+      const paper = document.createElement('canvas')
+      paper.width = surface.width
+      paper.height = surface.height
+      const context = paper.getContext('2d')
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, paper.width, paper.height)
+      context.drawImage(surface, 0, 0)
+      return await new Promise((resolve, reject) => paper.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not draw the page'))), type, quality))
+    } finally { sheet.destroy() }
+  }
+
   const api = {
     leafer,
     ...textApi,
+    ...pictureApi,
+    renderRegion,
     // Draws a note. `next` is a document model (fromFabric output); `options.resolveMedia` turns a media-library picture into a URL.
     load(next, options = {}) {
       if ('resolveMedia' in options) resolveMedia = options.resolveMedia ?? null // a redraw from the document (undo, redo, an erase pass given up) keeps the pictures the note was opened with
