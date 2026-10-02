@@ -188,8 +188,15 @@ function applyOp(doc, op, direction, force = false) {
   if (added.length && objects.some((object, position) => position > 0 && !((objects[position - 1]?.z ?? 0) < (object?.z ?? 0)))) {
     objects = objects.map((object, position) => (object && object.z !== position ? { ...object, z: position } : object))
   }
-  return { doc: { ...doc, objects, page }, changed, page: pageChanged, skipped }
+  const shift = op.page?.shift
+  const signed = (value) => (value ? (direction === 'undo' ? -value : value) : 0)
+  const pageShift = shift && (shift.x || shift.y) ? { x: signed(shift.x), y: signed(shift.y) } : null
+  return { doc: { ...doc, objects, page }, changed, page: pageChanged, skipped, pageShift }
 }
+
+// A page change may carry `shift: { x, y }`, the distance every object moved because pages were added or folded on the top or left (the
+// page frame's origin moved); the view follows it, and undo and redo report it (negated for undo) as `pageShift`.
+const sumShift = (a, b) => (a || b ? { x: (a?.x ?? 0) + (b?.x ?? 0), y: (a?.y ?? 0) + (b?.y ?? 0) } : undefined)
 
 // Folds a later op into an earlier one (a drag is many moves, one step): the first `before` and the last `after` survive.
 function combine(first, second) {
@@ -201,8 +208,8 @@ function combine(first, second) {
   }
   const changes = [...byId.values()].filter((change) => !(change.before === null && change.after === null) && change.before !== change.after && !(change.before && change.after && deepEqual(change.before, change.after)))
   const merged = { label: first.label ?? second.label, changes }
-  const page = first.page && second.page ? { before: first.page.before, after: second.page.after } : first.page || second.page
-  if (page && !deepEqual(page.before, page.after)) merged.page = page
+  const page = first.page && second.page ? { before: first.page.before, after: second.page.after, shift: sumShift(first.page.shift, second.page.shift) } : first.page || second.page
+  if (page && (!deepEqual(page.before, page.after) || page.shift?.x || page.shift?.y)) merged.page = page
   const selection = first.selection || second.selection
     ? { before: first.selection?.before ?? second.selection?.before, after: second.selection?.after ?? first.selection?.after }
     : null
@@ -313,7 +320,7 @@ export function createHistory({ doc, maxSteps = DEFAULT_MAX_STEPS, maxBytes = DE
       const wanted = entry.selection?.[direction === 'undo' ? 'before' : 'after']
       const present = idsOf(current)
       const selection = (wanted ?? applied.changed).filter((id) => present.has(id))
-      const result = { doc: current, label: entry.label, changed: applied.changed, page: applied.page, selection, skipped: applied.skipped }
+      const result = { doc: current, label: entry.label, changed: applied.changed, page: applied.page, selection, skipped: applied.skipped, pageShift: applied.pageShift }
       emit({ type: direction, ...result })
       return result
     }

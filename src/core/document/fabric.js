@@ -106,7 +106,7 @@ const NO_STROKE_BY_DEFAULT = new Set(['Group', 'Image', 'Connector'])
 const strokeWidthOfRaw = (raw, type) => (isNumber(raw.strokeWidth) ? raw.strokeWidth : NO_STROKE_BY_DEFAULT.has(type) ? 0 : 1)
 
 // The model's own stroke width (it lives under a different name per type), with Fabric's default when the note had none.
-function strokeWidthOfModel(object) {
+export function strokeWidthOfModel(object) {
   const stored = object.type === 'shape' ? object.strokeWidth : object.type === 'ink' && object.kind === 'stroke' ? object.width : object.extras?.strokeWidth
   return isNumber(stored) ? stored : ['group', 'image', 'connector'].includes(object.type) ? 0 : 1
 }
