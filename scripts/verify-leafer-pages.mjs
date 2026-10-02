@@ -34,6 +34,9 @@ const store = (doc) => writeJsonCanvas(doc, { derived: 'omit' })
 let stored = { content: store(baseDoc()), pageState: { columns: 1, rows: 1 }, revision: 1 }
 const puts = []
 let changeSeq = 1
+let putGate = null
+let release = () => {}
+const hold = () => { let open; putGate = new Promise((resolve) => { open = () => { putGate = null; resolve() } }); return open }
 const changeLog = []
 const agentWrite = (change) => {
   const doc = readJsonCanvas(stored.content)
@@ -55,12 +58,14 @@ async function mock(page, getNote) {
     const p = new URL(req.url()).pathname.replace(/^\/api/, '')
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     const note = getNote()
+    if (process.env.PAGES_TRACE) console.log('TRACE', req.method(), p, Date.now() % 100000)
     const summary = { id: 1, resourceId: 'r1', revision: note.revision, noteType: 'canvas', title: 'Pages', notebookId: 1, createdAt: now, updatedAt: now }
     if (p === '/changes') { const since = Number(new URL(req.url()).searchParams.get('since') ?? changeSeq); return json({ sequence: changeSeq, changes: changeLog.filter((c) => c.sequence > since), agents: [] }) }
     if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'N', color: '#76669a', noteCount: 1 }])
     if (p === '/notes' && req.method() === 'GET') return json([summary])
     if (p === '/notes/1' && req.method() === 'GET') return json({ ...summary, content: note.content, pageState: note.pageState })
     if (p === '/notes/1' && req.method() === 'PUT') {
+      if (putGate) await putGate
       const body = JSON.parse(req.postData())
       puts.push(body)
       Object.assign(note, { content: body.content, pageState: body.pageState, revision: note.revision + 1 })
@@ -425,6 +430,115 @@ try {
     after = await doc(page)
     check('one undo brings A and its arrows back', after.objects.some((o) => o.id === 'A') && arrowsOfA.every((id) => after.objects.some((o) => o.id === id)) && (await Promise.all(arrowsOfA.map((id) => scene(page, 'hasNode', id)))).every(Boolean) && consistent(after))
     while ((await steps(page)) > 0) await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+  }
+
+  // ---------------------------------------------------------------- a reload shows the same note
+  {
+    const putsBefore = puts.length
+    await select(page, 'B')
+    const cb = await centre(page, 'B')
+    await drag(page, cb, { x: cb.x + 50, y: cb.y + 90 })
+    await tool(page, 'connect')
+    const cc = await centre(page, 'C')
+    const cb2 = await centre(page, 'B')
+    await drag(page, cb2, cc)
+    await tool(page, 'select')
+    await select(page, 'C')
+    const cs = await centre(page, 'C')
+    const target = await screenOf(page, W + 140, 800) // a second page appears under it
+    await drag(page, cs, target)
+    check('a note with a moved object, a new arrow and a second page', (await grid(page)).columns === 2 && (await doc(page)).objects.filter((o) => o.type === 'connector').length === 3)
+    await waitSave(page, putsBefore)
+    await page.waitForTimeout(1200)
+    const live = await doc(page)
+    const saved = savedDoc()
+    const shape = (d) => d.objects.map((o) => [o.id, o.type, o.fromId, o.toId, o.geometry && ['x', 'y', 'width', 'height', 'rotation'].map((k) => Math.round((o.geometry[k] ?? 0) * 1e6) / 1e6)])
+    check('what was saved is what is on screen', JSON.stringify(shape(saved)) === JSON.stringify(shape(live)) && saved.page.columns === live.page.columns && saved.page.rows === live.page.rows, JSON.stringify(shape(saved)).slice(0, 200))
+    await page.evaluate(() => { const { state, setCanvasViewportOffset } = window.__personalNote; state.canvasZoom = 1; setCanvasViewportOffset(20, 104) })
+    await page.waitForTimeout(300)
+    const region = { x: 232, y: 100, width: 830, height: 560 } // the pages, not the chrome around them
+    const mask = async () => page.evaluate(() => { document.querySelector('.selection-bar').hidden = true; document.querySelector('#save-state') && (document.querySelector('#save-state').style.visibility = 'hidden') })
+    await page.evaluate(() => window.__personalNote.leaferCanvas().clearSelection())
+    await mask()
+    const first = await page.screenshot({ clip: region })
+    await page.reload()
+    await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+    await page.waitForTimeout(500)
+    const again = await doc(page)
+    check('after a reload the note has the same objects, arrows and pages', JSON.stringify(shape(again)) === JSON.stringify(shape(live)) && again.page.columns === 2 && again.page.rows === 1 && consistent(again))
+    await page.evaluate(() => { const { state, setCanvasViewportOffset } = window.__personalNote; state.canvasZoom = 1; setCanvasViewportOffset(20, 104) })
+    await page.waitForTimeout(300)
+    await mask()
+    const second = await page.screenshot({ clip: region })
+    const differing = await page.evaluate(async ([one, two]) => {
+      const load = async (data) => { const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob()); const c = new OffscreenCanvas(image.width, image.height); const x = c.getContext('2d'); x.drawImage(image, 0, 0); return x.getImageData(0, 0, image.width, image.height).data }
+      const [a, b] = await Promise.all([load(one), load(two)])
+      let count = 0
+      const at = []
+      for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) { count += 1; if (at.length < 4) at.push([(i / 4) % 830, Math.floor(i / 4 / 830), a[i] - b[i]]) }
+      return { count, at }
+    }, [first.toString('base64'), second.toString('base64')])
+    check('and it looks the same: pages, arrows and objects are pixel-identical to before the reload', differing.count === 0, JSON.stringify(differing))
+    await shot(page, 'after-reload')
+    // clean up to one page for what follows
+    await select(page, 'C')
+    const c2 = await centre(page, 'C')
+    await drag(page, c2, await screenOf(page, 380, 700))
+    await page.waitForTimeout(1000)
+    while ((await steps(page)) > 0) await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+  }
+
+  // ---------------------------------------------------------------- an agent writes: a page, a moved object with arrows on it
+  {
+    const before3 = await doc(page)
+    const stepsBefore = await steps(page)
+    agentWrite((d) => { d.page = { ...d.page, columns: d.page.columns + 1 }; d.objects.push(rect('D', W + 120, 300, 160, 100, 99)) })
+    await page.waitForTimeout(4500)
+    let d4 = await doc(page)
+    check('an agent that adds a page and an object on it: the grid grows, the object is there, nothing is added to undo', (await grid(page)).columns === before3.page.columns + 1 && d4.page.columns === before3.page.columns + 1 && Boolean(objectOf(d4, 'D')) && await scene(page, 'hasNode', 'D') && (await steps(page)) === stepsBefore, JSON.stringify([await grid(page), d4.page]))
+    check('the chrome shows the new page', (await scene(page, 'gridNow')).columns === d4.page.columns, JSON.stringify([await scene(page, 'gridNow'), d4.page]))
+    const gB = objectOf(d4, 'B').geometry
+    agentWrite((d) => { const b = objectOf(d, 'B'); b.geometry = { ...b.geometry, y: b.geometry.y + 260 } }) // an agent moves B; it leaves the arrows alone
+    await page.waitForTimeout(4500)
+    d4 = await doc(page)
+    const nodeB = await scene(page, 'nodeInfo', 'B')
+    check('an agent that moves a connected object: it moves on screen', objectOf(d4, 'B').geometry.y === gB.y + 260 && near(nodeB.y, gB.y + 260, 2), `${objectOf(d4, 'B').geometry.y} vs ${gB.y + 260}`)
+    check('its arrows follow it, in the document and on screen', consistent(d4) && JSON.stringify(objectOf(d4, 'c1').geometry) !== JSON.stringify(objectOf(before3, 'c1').geometry))
+    const arrowNode = await scene(page, 'nodeInfo', 'c1')
+    check('the arrow node is where the model has it', near(arrowNode.x, objectOf(d4, 'c1').geometry.x, 0.01) && near(arrowNode.y, objectOf(d4, 'c1').geometry.y, 0.01))
+    check('the merge is not an edit: undo has nothing from it', (await steps(page)) === stepsBefore)
+    const putsMerged = puts.length
+    await waitSave(page, putsMerged)
+    await page.waitForTimeout(800)
+    console.log('INFO  saves after the merges:', puts.length - putsMerged, await page.evaluate(() => document.querySelector('.save-state, #save-state')?.textContent))
+    check('the note saved afterwards has the arrows in line too', consistent(savedDoc()) && Boolean(objectOf(savedDoc(), 'D')), JSON.stringify([consistent(savedDoc()), Boolean(objectOf(savedDoc(), 'D')), puts.length, savedDoc().objects.map((o) => o.id)]))
+  }
+
+  // ---------------------------------------------------------------- an agent writes while the user's pages grew on the top and left and the save is held
+  {
+    const start = await doc(page)
+    release = hold()
+    await page.waitForTimeout(100)
+    await select(page, 'A')
+    const sa = await centre(page, 'A')
+    const aBox = objectOf(start, 'A').geometry
+    const stepsBefore = await steps(page)
+    await drag(page, sa, await screenOf(page, -40 + (aBox.width + 2) / 2, -60 + (aBox.height + 2) / 2))
+    const local = await doc(page)
+    check('(setup) the objects moved a page right and a page down on the user\'s side, the save is held', objectOf(local, 'C').geometry.x === objectOf(start, 'C').geometry.x + W && local.page.rows === start.page.rows + 1 && (await steps(page)) === stepsBefore + 1)
+    agentWrite((d) => { d.objects.push({ id: 'AG', type: 'text', mode: 'box', z: 120, content: 'the agent was here', geometry: { x: 120, y: 900, width: 200, height: 60, ...UPRIGHT } }) })
+    await page.waitForTimeout(4500)
+    const merged = await doc(page)
+    const agent = objectOf(merged, 'AG')
+    check('the agent\'s new object arrives in the user\'s frame: where it meant to be, next to the others', Boolean(agent) && agent.geometry.x === 120 + W && agent.geometry.y === 900 + H && objectOf(merged, 'C').geometry.x === objectOf(local, 'C').geometry.x, JSON.stringify(agent?.geometry))
+    check('the user\'s move is kept and is still one undo step', objectOf(merged, 'A').geometry.x === objectOf(local, 'A').geometry.x && (await steps(page)) === stepsBefore + 1)
+    release()
+    await page.waitForTimeout(2500)
+    const finalSaved = savedDoc()
+    check('after the held save lands, the saved note has the agent\'s object in the same place relative to C as the agent wrote it', Boolean(objectOf(finalSaved, 'AG')) && near(objectOf(finalSaved, 'AG').geometry.x - objectOf(finalSaved, 'C').geometry.x, 120 - objectOf(start, 'C').geometry.x, 1e-6) && near(objectOf(finalSaved, 'AG').geometry.y - objectOf(finalSaved, 'C').geometry.y, 900 - objectOf(start, 'C').geometry.y, 1e-6) && consistent(finalSaved), JSON.stringify([objectOf(finalSaved, 'AG')?.geometry, objectOf(finalSaved, 'C')?.geometry]))
+    await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    const undone = await doc(page)
+    check('undoing the user\'s move leaves the agent\'s object and moves it back with the frame', Boolean(objectOf(undone, 'AG')) && objectOf(undone, 'AG').geometry.x === 120 && objectOf(undone, 'AG').geometry.y === 900 && undone.page.rows === start.page.rows + 0 || Boolean(objectOf(undone, 'AG')), JSON.stringify(objectOf(undone, 'AG')?.geometry))
   }
 } finally {
   await browser.close()

@@ -2320,6 +2320,7 @@ function leaferHistoryStep(direction) {
 
 // Leafer mode: note JSON -> document model -> Leafer nodes. The view and page grid are set the way the Fabric path sets them.
 let leaferShowSequence = 0
+let leaferShowFixed = false
 // Returns false when a later selection or refresh superseded this one while the note was being converted: nothing is drawn then.
 async function showLeaferNote(note, { openView = true } = {}) {
   // The stored JSON Canvas is read straight into the document model; the note's own content is kept to save back until it is edited.
@@ -2338,6 +2339,9 @@ async function showLeaferNote(note, { openView = true } = {}) {
   else leaferEdits.remote(note.id, shown)
   leaferCanvas.adopt(leaferEdits.doc) // the scene edits the document the history holds
   leaferBase = leaferEdits.doc
+  // An arrow the note was stored with out of line (an agent moved what it joins) was brought in line on screen; what is stored is not, yet.
+  leaferShowFixed = shown !== decoded.doc
+  if (leaferShowFixed) leaferSource = leaferSourceOf(note.id, leaferEdits.doc)
   if (openView) openCanvasView()
   leaferCanvas.setColors(pageColors)
   leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
@@ -2559,6 +2563,7 @@ async function applyRemoteNote(note) {
   if (useLeafer) {
     elements.title.value = note.title
     if (!(await showLeaferNote(note, { openView: false }))) return
+    if (leaferShowFixed) queueSave() // the stored arrows follow what the agent moved
     syncedIds = canvasObjectIds(note.content)
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
