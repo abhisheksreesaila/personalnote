@@ -28,7 +28,7 @@
     "textBackgroundColor": "",
     "direction": "ltr",
     "textDecorationThickness": 66.667,
-    "semanticId": "res_25c9375ed6934d65acaf5397c25e7623",
+    "semanticId": "res_4001bc684f8e47f4a5aca66aedc8ea12",
     "type": "IText",
     "version": "7.4.0",
     "originX": "center",
@@ -80,7 +80,7 @@
     "textBackgroundColor": "",
     "direction": "ltr",
     "textDecorationThickness": 66.667,
-    "semanticId": "res_8425085ee8224c00928481e8befcafdf",
+    "semanticId": "res_208295c3439b4cd7b8bce430fb06b7a5",
     "type": "IText",
     "version": "7.4.0",
     "originX": "center",
@@ -134,7 +134,7 @@
     "textDecorationThickness": 66.667,
     "minWidth": 20,
     "splitByGrapheme": false,
-    "semanticId": "res_41460f21ac9542feb24e4254f69975d1",
+    "semanticId": "res_b1b3908ffdda4e9f82f91a4ff2cbdaea",
     "type": "Sticky",
     "version": "7.4.0",
     "originX": "center",
@@ -171,7 +171,7 @@
    {
     "rx": 28,
     "ry": 28,
-    "semanticId": "res_bdf5bd93f5b04d2abc56ca514e2fb9db",
+    "semanticId": "res_33057e07eaf84db88272c368bc4772a3",
     "type": "Rect",
     "version": "7.4.0",
     "originX": "center",
@@ -225,7 +225,7 @@
     "textDecorationThickness": 66.667,
     "minWidth": 20,
     "splitByGrapheme": false,
-    "semanticId": "res_a69708e9cd55431092f57b006dc2ff8a",
+    "semanticId": "res_b1584313adfd4b08a4cc34b64a8d607a",
     "type": "Sticky",
     "version": "7.4.0",
     "originX": "center",
@@ -260,7 +260,7 @@
     "stickyColor": "#bf5af2"
    },
    {
-    "semanticId": "res_5e2d7b56d34b43e08708283fd89d96d1",
+    "semanticId": "res_34e0d2e275ea4b7282bfd564e37ed498",
     "type": "Connector",
     "version": "7.4.0",
     "originX": "center",
@@ -292,15 +292,15 @@
     "globalCompositeOperation": "source-over",
     "skewX": 0,
     "skewY": 0,
-    "fromId": "res_41460f21ac9542feb24e4254f69975d1",
-    "toId": "res_bdf5bd93f5b04d2abc56ca514e2fb9db",
+    "fromId": "res_b1b3908ffdda4e9f82f91a4ff2cbdaea",
+    "toId": "res_33057e07eaf84db88272c368bc4772a3",
     "reverseX": false,
     "reverseY": false,
     "lineWidth": 2.6,
     "color": "#20201e"
    },
    {
-    "semanticId": "res_a2605e76cf0c407daf9f217bdb13aeb9",
+    "semanticId": "res_5cd5576f90da4d558ce23063f72ea08f",
     "type": "Connector",
     "version": "7.4.0",
     "originX": "center",
@@ -332,8 +332,8 @@
     "globalCompositeOperation": "source-over",
     "skewX": 0,
     "skewY": 0,
-    "fromId": "res_bdf5bd93f5b04d2abc56ca514e2fb9db",
-    "toId": "res_a69708e9cd55431092f57b006dc2ff8a",
+    "fromId": "res_33057e07eaf84db88272c368bc4772a3",
+    "toId": "res_b1584313adfd4b08a4cc34b64a8d607a",
     "reverseX": true,
     "reverseY": true,
     "lineWidth": 2.6,
@@ -342,6 +342,7 @@
    {
     "cropX": 0,
     "cropY": 0,
+    "semanticId": "res_24370a4343814af9aba0a1cf359fde13",
     "type": "Image",
     "version": "7.4.0",
     "originX": "center",
@@ -375,8 +376,7 @@
     "skewY": 0,
     "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAABUElEQVR4AezTwQ3CMBBEUStFcITioCya4whNgOTzigBa2cv3R0oOFrE987Tb/Xh++nA72Jo/dAMCo3lbE1hgeAPweE6wwPAG4PGc4NWBD7drq/z86LPMZ04wnFpggeENwOM5wQLDG4DHc4IFhjcAj+cErwUMT7tgPCcYji6wwPAG4PGcYIHhDcDjOcECwxuAx3OCOzD3JTDXticTuNfAfe0CP06XVvnh0uQk2wXOOcZdZjUg8KzmB50r8KCiZx0j8KzmB50r8KCiZx3zHnjWrTw3rQGB06qsuZHANV3SbiVwWpU1NxK4pkvarQROq7LmRgLXdEm7lcBpVdbcSODIBbQmMAgziiJw1ApoTWAQZhRF4KgV0JrAIMwoisBRK6A1gUGYURSBo1ZAa18Bg3IvE0VgOLXAAsMbgMdzggWGNwCP5wQLDG8AHs8J/gD4n//yAgAA//8R+MzSAAAABklEQVQDALQ+mcAxYInaAAAAAElFTkSuQmCC",
     "crossOrigin": null,
-    "filters": [],
-    "semanticId": "res_3a40dd73879f4135848fe5393df43531"
+    "filters": []
    },
    {
     "type": "Textbox",
@@ -391,7 +391,7 @@
     "lineHeight": 1.45,
     "padding": 8,
     "text": "Agent follow-up below the drawing",
-    "semanticId": "res_200a454f2ca4449eb86b55e552e7c9d0"
+    "semanticId": "res_b743f14a7cfd468e8deb4fa9fae1b5f7"
    }
   ]
  }

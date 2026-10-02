@@ -57,7 +57,8 @@ const toClient = (page, x, y) => page.evaluate(([px, py]) => {
 }, [x, y])
 const click = async (page, x, y) => { const c = await toClient(page, x, y); await page.mouse.click(c.x, c.y); await page.waitForTimeout(300) }
 const tool = (page, name) => page.evaluate((t) => window.__personalNote.setTool(t), name)
-const capture = (page) => page.evaluate(() => JSON.parse(JSON.stringify({ content: window.__personalNote.canvas.toJSON(), pageState: window.__personalNote.state.pages })))
+// snapshot() is what autosave sends: it gives every object its semanticId first, then canvas.toJSON().
+const capture = (page) => page.evaluate(() => { const { content, pages } = JSON.parse(window.__personalNote.snapshot()); return { content, pageState: pages } })
 async function stroke(page, points) {
   const first = await toClient(page, points[0][0], points[0][1])
   await page.mouse.move(first.x, first.y)
