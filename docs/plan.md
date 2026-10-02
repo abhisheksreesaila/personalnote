@@ -82,6 +82,7 @@ Needs: F-002
 - [ ] JS bundle is near its 230 KiB budget: trim or split before adding features
 - [ ] landing button hover uses the new softer blue (#2459B8), not #0059D6
 - [ ] startup error: check notify-send exit status; avoid stacking zenity then kdialog
+- [ ] today's app (Fabric): an agent's rewrite or deletion arriving while you have unsaved edits is overwritten by the local version (mergeRemoteAppends keeps local, appends only new). Use the three-way merge F-029 adds for Leafer.
 - [ ] media/ files no note references are cleaned up (every ink/shape save writes new SVGs)
 - [ ] saving doesn't parse every other note to reserve block ids (ids table or revision-keyed cache)
 
