@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>canvas stress</title>
+<style>
+  html,body{margin:0;height:100%;background:#eee}
+  #workspace{position:fixed;inset:0;overflow:auto}
+  #paper{position:relative;background:#fff;
+    background-image:linear-gradient(to right,#ccd 1px,transparent 1px),linear-gradient(to bottom,#ccd 1px,transparent 1px);
+    background-size:var(--pw) var(--ph)}
+</style>
+<script src="fabric.min.js"></script>
+</head><body>
+<div id="workspace"><div id="paper"><canvas id="c"></canvas></div></div>
+<script src="bench.js"></script>
+</body></html>

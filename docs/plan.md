@@ -82,6 +82,10 @@ Needs: F-002
 - [ ] JS bundle is near its 230 KiB budget: trim or split before adding features
 - [ ] landing button hover uses the new softer blue (#2459B8), not #0059D6
 - [ ] startup error: check notify-send exit status; avoid stacking zenity then kdialog
+- [ ] verify-leafer-text's base-after-switch check can't reach its guard (switch waits for the save); drive the unload-save path instead
+- [ ] today's app (Fabric): an agent's rewrite or deletion arriving while you have unsaved edits is overwritten by the local version (mergeRemoteAppends keeps local, appends only new). Use the three-way merge F-029 adds for Leafer.
+- [ ] media/ files no note references are cleaned up (every ink/shape save writes new SVGs)
+- [ ] saving doesn't parse every other note to reserve block ids (ids table or revision-keyed cache)
 
 ## F-010 Save pending edits on close [done]
 - [x] edits made just before a reload or close are saved (flush on pagehide / hidden, keepalive under 64 KiB)
@@ -199,21 +203,56 @@ Captain: "it should be snappier, faster, savable through a SQLite database, the 
 - [x] plain JS document types (text, sticky, shape, ink, image, connector, group), page state, schemaVersion; images reference media by id (prepares F-023)
 - [x] lossless fromFabric/toFabric round-trip on fixtures covering every object type and real-shaped notes; Python mirror with the same fixtures
 Decided: reading order for plain text is by box top edge; F-026 moves note_text/CLI read to the same rule.
-## F-026 Notes stored as JSON Canvas (Obsidian) + Markdown (P-02) [doing]
+## F-026 Notes stored as JSON Canvas (Obsidian) + Markdown (P-02) [done]
 Decision: docs/adr/0002-note-format-json-canvas.md. Captain: "let's use that Obsidian format… get the feature parity… and we'll do the same thing for the plugins."
-- [ ] the document model serializes to and from JSON Canvas 1.0 with `pn` extensions, render-equivalent round trip; the files open in Obsidian (text, images, arrows, ink/shape SVGs visible)
-- [ ] SQLite stores the JSON Canvas per note; search, the agent CLI read/append and Markdown export use the Markdown projection (reading order by top edge)
-- [ ] existing notes convert once; the old database file is kept aside untouched
-- [ ] backup/import and an Obsidian vault export/import round-trip
-## F-027 Leafer renders notes (P-03) [review]
+- [x] the document model serializes to and from JSON Canvas 1.0 with `pn` extensions, render-equivalent round trip; the files pass the JSON Canvas spec check (opening in Obsidian itself not yet tried) (text, images, arrows, ink/shape SVGs visible)
+- [x] SQLite stores the JSON Canvas per note; search, the agent CLI read/append and Markdown export use the Markdown projection (reading order by top edge)
+- [x] existing notes convert once; the old database file is kept aside untouched
+- [x] backup/import and an Obsidian vault export/import round-trip
+Merged into `leafer` at ea09499. Mind maps still stored as before (follow-up per ADR 0002); vault import is CLI/API only.
+## F-027 Leafer renders notes (P-03) [done]
 Direction change: no dual engine; Leafer work accumulates on the `leafer` integration branch until parity, then replaces Fabric on main (F-035/F-036). Main stays usable meanwhile.
-## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [todo]
-## F-029 Text and stickies editing on Leafer, IME fix (P-05) [todo]
-## F-030 Undo/redo on the document model (P-06) [todo]
-## F-031 Pen, highlighter, eraser on Leafer (P-07) [todo]
-## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [todo]
-## F-033 Images (media library, F-023), export, print on Leafer (P-09) [todo]
-## F-034 Performance pass and agent sync on Leafer (P-10) [todo]
+Merged into `leafer` at d6683b1.
+- [ ] follow-up: parity script matches both directions and catches a missing thin stroke at dpr 1 (limit ~15-20% or a corrected comment)
+- [ ] follow-up: a headless test that uniform strokes double in width at view scale 2; check Leafer strokeScaleFixed on non-uniform x/y scale
+## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [done]
+Merged into `leafer` at e43fffc. Select/move/resize/turn/nudge/delete/z-order/lock, routed through undo. Save after an edit no longer freezes (per-object encode cache, Blob body): max frame 16.8 ms on 645 objects. Connectors following a moved object is F-032.
+## F-029 Text and stickies editing on Leafer, IME fix (P-05) [done]
+Merged into `leafer` at 39992fc. Textarea overlay (native IME), words saved as you type (one undo step per session; a mid-session agent merge splits it in two, accepted). Three-way agent merge (src/core/document/merge.js): agent rewrites/deletions/appends and the user's typing all survive. Prettify and voice-into-text disabled on Leafer until F-035.
+## F-030 Undo/redo on the document model (P-06) [done]
+Merged into `leafer` at ea54a5f. Patch-based history (~1.5 KB/step on 600 objects, undo ~9 ms in app); undo never reverts or corrupts an agent's write (three-way per field, steps never span a merge).
+## F-031 Pen, highlighter, eraser on Leafer (P-07) [done]
+Merged into `leafer` at 79aa1c2. Live stroke on its own layer; one stroke or erase pass = one undo step; eraser takes ink only and leaves locked strokes (differs from Fabric, captain may overrule); an agent merge cancels an erase pass in progress. Up/left page growth and fold-back are F-032.
+## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [done]
+Merged into `leafer` at dbc8cbc. Instant growth on all four sides and fold-back, in the edit's undo step; page shift is a frame op so undo after an agent merge stays on the grid; connectors follow live and saved; lift and ghost. View never snaps; it jumps (instantly) only when no page is in view.
+## F-033 Images (media library, F-023), export, print on Leafer (P-09) [done]
+Merged into `leafer` at 14ea4a1. Pictures stored as content-addressed media (POST /api/media, streamed 20 MB cap, no SVG); export/print rendered offscreen by Leafer and pixel-matched to Fabric; print keeps app chrome out (fixed a blank extra PDF page). Zoom control and minimap step aside from selection handles. F-023 non-image file cards still to build.
+## F-034 Performance pass and agent sync on Leafer (P-10) [review]
+Merged into `leafer` at c5f1305. Undo redraws only changes; zoomed-out page bitmaps, DPR cap 2, baked shadows; save/sync hardening; speed test runs as a separate instance (View > Speed test…, `npm run speedtest`). Numbers in docs/story/engine-race/leafer-optimizations.md. Waiting on the captain's Mac run.
+- [ ] leaving a note doesn't re-send its unchanged content (an extra write per switch; can show a false "Could not save" after an agent edits a note you only viewed)
+- [ ] history combine(): a later op's page shift must also shift earlier ops' `after` for objects it doesn't name (two prepends in one step; unit test from F-032 review)
+- [ ] merge arriving before our PUT response updates leaferServerShift uses the old server frame (narrow race)
+- [ ] pen at dpr 2: pointer-to-frame p95 ~40 ms with 33-83 ms frames after pointer-down/mid-stroke in headless; confirm on the Mac and fix if real
+- [x] an agent change arriving mid-erase or mid-stroke can't commit against a doc it wasn't planned on (F-031)
+- [ ] undo/redo redraws only changed objects instead of reloading the scene (now ~21 ms median on 616 objects vs 9 ms before F-028)
+- [ ] Leafer first draw vs redraw differs by 12 px at a sticky edge (Leafer-internal); recheck after upgrades
+- [x] an agent change arriving while you edit in Leafer mode merges in without discarding unsaved local edits (F-029 three-way merge)
+- [ ] research optimizations from F-024: baked sticky shadows, per-page bitmaps below 60% zoom with vectors detached, cull off-screen pages, DPR capped at 2; before/after numbers kept for the blog (F-037)
 Includes a speed test in the Mac app before shipping.
-## F-035 Phones and pencil, Leafer becomes default (P-11) [todo]
+## F-035 Phones and pencil, Leafer becomes default (P-11) [doing]
+- [x] finger and phone select/move/resize, pinch/pan, keyboard-aware text editor, Pencil draws while fingers pan (finger drawing back after 10 s or on tapping Draw)
+- [x] voice dictation into text and Prettify work in Leafer mode (Prettify skips locked texts)
+Merged into `leafer` at f40cc31, except the default flip.
+- [ ] the default flip to Leafer, after the captain's Mac speed test (F-034)
+- [ ] check the Pencil palm behaviour and on-screen keyboard on a real iPad/iPhone
 ## F-036 Remove Fabric (P-12) [todo]
+## F-037 Blog post: how we made it fast [todo]
+Captain: the 500/1,000/100,000-object engine test "shows the care… make it a story… publish it in the blog… the test is not a throwaway."
+- [ ] the engine race (docs/story/engine-race/) stays runnable and is kept up to date as Leafer lands
+- [ ] before/after numbers from the real app on Fabric vs Leafer (same notes, same machine, Mac and Linux)
+- [ ] a published post telling the story: Fabric limits, the race, why Leafer, the open note format, with the interactive race embedded
+## F-038 WebGPU rendering: research for later [todo]
+Captain: "explore the idea of using WebGPU… if Leafer JS supports something, to consider in the future." Not before Leafer parity (F-036).
+- [ ] what Leafer offers or plans for WebGPU/WebGL, and what else could use it (e.g. bitmap tiles, ink, minimap)
+- [ ] WebGPU availability in our windows: Chromium app window (Linux) and WKWebView (Mac)
+- [ ] the engine race gains a WebGPU lane if a candidate exists, with numbers vs today's Leafer
