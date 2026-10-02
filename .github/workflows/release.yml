@@ -1,6 +1,7 @@
 name: Release
 
 # Push a tag like v1.0.0 to build the macOS app, the Linux bundle and the two voice engines (Linux x86_64 CPU,
+# A tag with a hyphen (v0.4.0-preview.1) is published as a pre-release and is not marked latest.
 # macOS arm64 Metal) and attach them to a GitHub Release. The app's "Download voice" button fetches the engine
 # for its OS from the same release; the speech model itself comes from Hugging Face, never from here.
 # "Run workflow" (workflow_dispatch) builds the same files as downloadable run artifacts, with no release.
@@ -152,3 +153,5 @@ jobs:
           files: assets/*
           body_path: release-extra.md
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }} # a tag like v0.4.0-preview.1 is a preview, never the latest release
+          make_latest: ${{ !contains(github.ref_name, '-') }}
