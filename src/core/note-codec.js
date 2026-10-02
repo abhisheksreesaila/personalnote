@@ -10,7 +10,7 @@ import { isJsonCanvas, readJsonCanvas, writeJsonCanvas } from './document/jsonca
 
 const dataUrlByName = new Map() // media file name -> data URL, so a note's pictures are fetched once
 const pathByDataUrl = new Map() // data URL -> 'media/<name>', so an unchanged picture is saved as a reference
-const PLACEHOLDER = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22 width%3D%22120%22 height%3D%2280%22%3E%3Crect width%3D%22120%22 height%3D%2280%22 fill%3D%22%23ddd%22%2F%3E%3C%2Fsvg%3E'
+const PLACEHOLDER = (name) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><!-- ${name} --><rect width="120" height="80" fill="#ddd"/></svg>`)}`
 
 async function defaultFetchMedia(name) {
   const response = await fetch(`/api/media/${name}`)
@@ -49,7 +49,16 @@ export async function decodeNote(note, { fetchMedia = defaultFetchMedia } = {}) 
       console.error(error)
     }
   }))
-  return { content: toFabricUnchecked(doc, { resolveMedia: (ref) => dataUrlByName.get(ref.id) ?? PLACEHOLDER }), pageState: doc.page }
+  // A picture that could not be fetched shows a placeholder unique to it, which remembers the original reference, so a save
+  // (opening a note can trigger one) writes `media/<name>` back instead of the placeholder. Not cached: the next open retries.
+  const resolveMedia = (ref) => {
+    const url = dataUrlByName.get(ref.id)
+    if (url) return url
+    const placeholder = PLACEHOLDER(ref.id)
+    pathByDataUrl.set(placeholder, `media/${ref.id}`)
+    return placeholder
+  }
+  return { content: toFabricUnchecked(doc, { resolveMedia }), pageState: doc.page }
 }
 
 // Fabric JSON + page state -> JSON Canvas for the server. SVG pictures of ink and shapes are left out (the server derives them).

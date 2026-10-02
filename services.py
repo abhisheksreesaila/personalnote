@@ -1,7 +1,9 @@
 import json
 import logging
+import os
 import re
 import sqlite3
+import tempfile
 import time
 import uuid
 from contextlib import contextmanager
@@ -358,14 +360,20 @@ class NoteService:
             columns = {row[1] for row in source.execute("PRAGMA table_info(notes)")}
             if not columns or "content_format" in columns:
                 return None
-            partial = target.with_name(target.name + ".partial")
-            partial.unlink(missing_ok=True)
-            copy = sqlite3.connect(partial)
+            # A temp file of its own (two processes may start at once), linked into place so an existing copy is never replaced.
+            handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=target.name + ".", suffix=".tmp")
+            os.close(handle)
+            copy = sqlite3.connect(temporary)
             try:
                 source.backup(copy)
             finally:
                 copy.close()
-            partial.replace(target)
+            try:
+                os.link(temporary, target)
+            except FileExistsError:
+                pass
+            finally:
+                os.unlink(temporary)
             return target
         finally:
             source.close()

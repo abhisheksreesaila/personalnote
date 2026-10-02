@@ -260,10 +260,15 @@ def create_app(
     @app.get("/api/media/{name}")
     def get_media(name: str):
         # Content-addressed files only: a name that is not `<sha256>.<ext>` never reaches the file system.
-        path = service.media.file(name) if MEDIA_NAME.match(name) else None
+        path = service.media.file(name) if MEDIA_NAME.fullmatch(name) else None
         if path is None or not path.is_file():
             return JSONResponse({"error": "Not found"}, status_code=404)
-        return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"})
+        return FileResponse(path, headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+            # An SVG opened directly must not run script or load anything.
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        })
 
     @app.get("/api/export/vault")
     def export_vault():

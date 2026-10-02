@@ -53,7 +53,7 @@ class MediaStore:
         return f"media/{media_id}"
 
     def file(self, media_id: str) -> Path | None:
-        return self.root / media_id if MEDIA_NAME.match(str(media_id)) else None
+        return self.root / media_id if MEDIA_NAME.fullmatch(str(media_id)) else None
 
     def read(self, media_id: str) -> bytes | None:
         path = self.file(media_id)

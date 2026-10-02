@@ -99,6 +99,8 @@ class StorageTests(Folder):
         self.assertTrue(MEDIA_NAME.match(name))
         ok = client.get(f"/api/media/{name}")
         self.assertEqual((ok.status_code, ok.content), (200, b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(ok.headers["content-security-policy"], "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+        self.assertEqual(client.get(f"/api/media/{name}%0A").status_code, 404, "a trailing newline is not a name")
         for bad in ("x.png", "personal-note.db", f"{'0' * 64}.png", f"{name}.bak"):
             self.assertEqual(client.get(f"/api/media/{bad}").status_code, 404, bad)
         # a path with slashes never reaches this route (it falls through to the app shell when a build exists): never the database
@@ -178,7 +180,16 @@ class ConversionTests(Folder):
             # what the editor will load: render-equivalent to what was saved
             before = dm.from_fabric(fixture["content"], fixture["pageState"])
             after = jc.from_json_canvas(loaded["content"])
-            self.assertEqual(len(after["objects"]), len(before["objects"]), title)
+            # the whole document, not a count. Ids are compared for the first note only: the fixtures reuse each other's ids and the
+            # later notes get fresh ones (repaired before conversion). Pictures now point at the media library
+            def comparable(doc, ids):
+                keep = lambda o: {k: v for k, v in o.items() if k != "mediaRef" and (ids or k not in ("id", "fromId", "toId"))}
+                return {**doc, "objects": [keep(o) for o in doc["objects"]]}
+
+            if title not in ("Ids", "Odd"):  # their raw objects and ids are legitimately rewritten by the id repair that runs first
+                self.assertEqual(comparable(after, title == "Text"), comparable(before, title == "Text"), title)
+            else:
+                self.assertEqual(len(after["objects"]), len(before["objects"]), title)
 
     def test_converting_again_changes_nothing(self):
         NoteService(self.database)
@@ -198,6 +209,30 @@ class ConversionTests(Folder):
         backup.write_bytes(b"older copy")
         NoteService(self.database)
         self.assertEqual(backup.read_bytes(), b"older copy")
+
+    def test_services_starting_at_once_leave_one_good_copy_and_no_temp_files(self):
+        import threading
+
+        errors = []
+
+        def start():
+            try:
+                NoteService(self.database)
+            except Exception as error:  # noqa: BLE001 - reported below
+                errors.append(error)
+
+        threads = [threading.Thread(target=start) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [])
+        backup = self.folder / "personal-note.db.fabric-backup"
+        old = sqlite3.connect(backup)
+        self.addCleanup(old.close)
+        self.assertEqual(old.execute("SELECT count(*) FROM notes").fetchone()[0], len(self.NOTES))
+        self.assertNotIn("content_format", [r[1] for r in old.execute("PRAGMA table_info(notes)")])
+        self.assertEqual(sorted(p.name for p in self.folder.glob("*.tmp")) + sorted(p.name for p in self.folder.glob("*.partial")), [])
 
     def test_a_fresh_database_makes_no_backup_copy(self):
         NoteService(self.folder / "fresh.db").create_note({"title": "x"})
@@ -390,6 +425,20 @@ class VaultTests(Folder):
         self.assertEqual(result["notesImported"], 1)
         with self.assertRaises(vault.PortabilityVaultError):
             vault.import_vault_files(service, {"readme.txt": b"nothing to import"})
+
+    def test_export_names_the_notes_it_could_not_write(self):
+        service = self.make_service()
+        broken = service.create_note({"title": "Broken one"})
+        connection = sqlite3.connect(self.database)
+        connection.execute("UPDATE notes SET content = ? WHERE id = ?", ('{"nodes": "x"}', broken["id"]))
+        connection.commit()
+        connection.close()
+        files, skipped = vault.export_vault(service)
+        self.assertEqual(skipped, ["Broken one"])
+        self.assertFalse(any("Broken" in path for path in files))
+        with zipfile.ZipFile(io.BytesIO(vault.export_vault_archive(service))) as archive:
+            self.assertIn("Broken one", archive.read("NOT-EXPORTED.txt").decode())
+        self.assertEqual(vault.export_vault_directory(service, self.folder / "v2")["skipped"], ["Broken one"])
 
     def test_directory_export_refuses_to_overwrite(self):
         service = self.make_service()

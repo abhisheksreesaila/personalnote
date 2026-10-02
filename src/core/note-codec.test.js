@@ -60,6 +60,13 @@ test('a picture that cannot be fetched still opens the note, and a note not yet 
   try {
     const loaded = await decodeNote({ content: canvas }, { fetchMedia: async () => { throw new Error('gone') } })
     assert.match(loaded.content.objects[0].src, /^data:image\//)
+    // opening can trigger a save: the original reference must go back, never the placeholder
+    const saved = encodeNote(loaded.content, loaded.pageState)
+    assert.equal(saved.nodes[0].file, `media/${'b'.repeat(64)}.png`)
+    // two different missing pictures keep their own references
+    const two = toJsonCanvas(fromFabric({ objects: ['c', 'd'].map((c, i) => ({ type: 'Image', src: PNG + c, left: 10 + i * 50, top: 10, width: 10, height: 10, semanticId: `res_${c}` })) }, { columns: 1, rows: 1 }), { media: { putDataUrl: (url) => `media/${url.slice(-1).repeat(64)}.png` } })
+    const both = await decodeNote({ content: two }, { fetchMedia: async () => { throw new Error('gone') } })
+    assert.deepEqual(encodeNote(both.content, both.pageState).nodes.map((n) => n.file), [`media/${'c'.repeat(64)}.png`, `media/${'d'.repeat(64)}.png`])
   } finally {
     console.error = originalError
   }

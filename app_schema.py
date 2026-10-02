@@ -79,9 +79,14 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
     if "content_format" not in note_columns:
         # How `content` is encoded: 'json-canvas' (JSON Canvas 1.0 + pn), 'fabric' (before F-026, until converted) or 'mindmap'.
         # Every row that exists when the column appears is old, so the default is 'fabric'.
-        connection.execute(
-            "ALTER TABLE notes ADD COLUMN content_format TEXT NOT NULL DEFAULT 'fabric'"
-        )
+        try:
+            connection.execute(
+                "ALTER TABLE notes ADD COLUMN content_format TEXT NOT NULL DEFAULT 'fabric'"
+            )
+        except sqlite3.OperationalError as error:
+            # Another process starting at the same moment added it first.
+            if "duplicate column" not in str(error):
+                raise
     connection.execute(
         "UPDATE notes SET content_format = 'mindmap' WHERE note_type = 'mindmap' AND content_format = 'fabric'"
     )

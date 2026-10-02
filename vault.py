@@ -81,7 +81,13 @@ def _unique(path: str, used: set[str]) -> str:
 
 def export_vault_files(service) -> dict[str, bytes]:
     """The vault as {relative path: bytes}."""
+    return export_vault(service)[0]
+
+
+def export_vault(service) -> tuple[dict[str, bytes], list[str]]:
+    """The vault as ({relative path: bytes}, titles of notes that could not be written)."""
     files: dict[str, bytes] = {}
+    skipped: list[str] = []
     used: set[str] = set()
     for note in service.export_rows():
         folder = vault_name(note["notebookName"], "Notebook")
@@ -94,27 +100,32 @@ def export_vault_files(service) -> dict[str, bytes]:
         try:
             document = service.document_of(note["content"], note["contentFormat"], note["pageState"])
         except InvalidNoteContentError:
+            skipped.append(note["title"])
             continue
         canvas = to_json_canvas(document, media=_VaultMedia(service.media, files))
         if not validate_json_canvas(canvas)["ok"]:  # never write a file Obsidian could refuse
+            skipped.append(note["title"])
             continue
         path = _unique(f"{folder}/{title}.canvas", used)
         files[path] = json.dumps(canvas, ensure_ascii=False, indent="\t").encode("utf-8")
-    return files
+    return files, skipped
 
 
 def export_vault_archive(service) -> bytes:
     buffer = io.BytesIO()
+    files, skipped = export_vault(service)
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path, data in export_vault_files(service).items():
+        for path, data in files.items():
             archive.writestr(path, data)
+        if skipped:
+            archive.writestr("NOT-EXPORTED.txt", "These notes could not be exported:\n" + "\n".join(f"- {title}" for title in skipped) + "\n")
     return buffer.getvalue()
 
 
 def export_vault_directory(service, destination: Path | str) -> dict:
     """Write the vault into a folder. Existing files are never overwritten: the export stops before writing if one would be."""
     root = Path(destination)
-    files = export_vault_files(service)
+    files, skipped = export_vault(service)
     clashes = [path for path in files if (root / path).exists()]
     if clashes:
         raise PortabilityVaultError(f"Refusing to overwrite {len(clashes)} existing file(s), for example {clashes[0]}; export into an empty folder")
@@ -123,7 +134,7 @@ def export_vault_directory(service, destination: Path | str) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
     canvases = sum(1 for path in files if path.endswith(".canvas"))
-    return {"ok": True, "path": str(root), "canvasFiles": canvases, "attachments": sum(1 for path in files if path.startswith(f"{ATTACHMENTS}/"))}
+    return {"ok": True, "path": str(root), "canvasFiles": canvases, "attachments": sum(1 for path in files if path.startswith(f"{ATTACHMENTS}/")), "skipped": skipped}
 
 
 # ---- import -----------------------------------------------------------------------------------------------------------------
