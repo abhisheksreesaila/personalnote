@@ -34,6 +34,7 @@ import {
   connectorsLeftDangling,
 } from './modules/editor/connectors.js'
 import { readPreferences, writePreferences } from './preferences.js'
+import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
@@ -583,6 +584,12 @@ function savePreferences() {
 
 loadPreferences()
 
+// ADR 0001: Leafer is the canvas. F-027 draws the open note read-only from the document model; the Fabric canvas below stays empty
+// and transparent on top of it only because it still hosts the pan, zoom and touch gestures until the editing tickets port them
+// (F-028 onward) and F-036 removes Fabric. With no editing yet, this branch never saves a canvas note.
+const useLeafer = true
+let leaferCanvas = null
+
 const canvas = new Canvas('note-canvas', {
   width: elements.workspace.clientWidth || PAGE_WIDTH,
   height: elements.workspace.clientHeight || PAGE_HEIGHT,
@@ -613,6 +620,7 @@ function loadCanvasFonts() {
 }
 
 function refreshCanvasTextMetrics() {
+  leaferCanvas?.refreshText()
   cache.clearFontCache()
   canvas.getObjects().forEach((object) => {
     if (!isEditableText(object)) return
@@ -920,6 +928,7 @@ function refreshPageColors() {
     shadows: parseBoxShadow(read('--sk-shadow', 'none')).map(resolveShadowLayer),
   }
   Connector.haloColor = pageColors.accent
+  leaferCanvas?.setColors(pageColors)
 }
 
 // The Fabric canvas is always exactly as large as the workspace. Page growth
@@ -929,6 +938,7 @@ function syncCanvasSize() {
   const height = Math.max(1, elements.workspace.clientHeight)
   if (canvas.getWidth() === width && canvas.getHeight() === height) return false
   canvas.setDimensions({ width, height })
+  leaferCanvas?.resize(width, height)
   return true
 }
 
@@ -957,6 +967,7 @@ function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOf
   viewportOffsetY = next.y
   const scale = getCanvasScale()
   canvas.setViewportTransform([scale, 0, 0, scale, next.x, next.y])
+  leaferCanvas?.setView({ x: next.x, y: next.y, scale })
   canvas.requestRenderAll()
   updateNavigationUi(moved || next.x !== previousX)
 }
@@ -1023,6 +1034,7 @@ function setViewTo(view) {
   viewportOffsetX = view.x
   viewportOffsetY = view.y
   canvas.setViewportTransform([scale, 0, 0, scale, view.x, view.y])
+  leaferCanvas?.setView({ x: view.x, y: view.y, scale })
   canvas.requestRenderAll()
   updateNavigationUi(true)
 }
@@ -1084,7 +1096,7 @@ function openCanvasView() {
   })
   const firstPage = fitView({ viewW, viewH, contentW: PAGE_WIDTH, contentH: PAGE_HEIGHT, margins, min, max })
   const actual = { scale: max, x: (viewW - PAGE_WIDTH * max) / 2, y: margins.top }
-  const boxes = canvas.getObjects().filter((object) => !isConnector(object)).map((object) => object.getBoundingRect())
+  const boxes = leaferCanvas ? leaferCanvas.boxes() : canvas.getObjects().filter((object) => !isConnector(object)).map((object) => object.getBoundingRect())
   const view = chooseOpeningView([whole, firstPage, actual], viewW, viewH, boxes, OPEN_OBJECT_LIMIT, { width: target.right, height: target.bottom })
   state.canvasZoom = view.scale / state.displayScale
   setCanvasViewportOffset(view.x, view.y)
@@ -1125,6 +1137,7 @@ function resizePaper(shiftX = 0, shiftY = 0) {
     viewportOffsetY -= shiftY * scale
   }
   setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, Boolean(shiftX || shiftY || changed))
+  leaferCanvas?.setPages(state.pages)
   elements.pageCount.textContent = pageLabel(state.pages.columns, state.pages.rows)
   updateMiniGrid()
   updateScrollIndicators(false)
@@ -1683,6 +1696,7 @@ const temporaryHand = createTemporaryHand()
 let applyingTemporaryHand = false
 
 function setTool(tool) {
+  if (useLeafer) tool = 'hand' // read-only: the hand is the only tool
   if (!applyingTemporaryHand) temporaryHand.cancel()
   state.tool = tool
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
@@ -1789,7 +1803,7 @@ async function preparedImageSource(file) {
 
 async function placeImageFiles(files, point = viewCenterPoint()) {
   const pictures = imageFiles(files)
-  if (!pictures.length || state.activeNoteType !== 'canvas') return 0
+  if (useLeafer || !pictures.length || state.activeNoteType !== 'canvas') return 0
   let placed = 0
   for (const file of pictures) {
     try {
@@ -1993,7 +2007,7 @@ function ensureCanvasObjectIds() {
 }
 
 async function saveActiveNote({ unloading = false } = {}) {
-  if (!state.activeNoteId || state.loading) return
+  if (useLeafer || !state.activeNoteId || state.loading) return
   if (saveInFlight && !unloading) {
     saveQueued = true
     return
@@ -2043,7 +2057,7 @@ async function saveActiveNote({ unloading = false } = {}) {
 }
 
 function queueSave() {
-  if (state.loading) return
+  if (useLeafer || state.loading) return
   unsavedEdits = true
   // Any edit after Clear all ends its Undo, so Ctrl/Cmd+Z goes back to ordinary undo.
   if (pendingClearUndo) hideToast()
@@ -2167,6 +2181,31 @@ async function settleOutgoingNote() {
   return landed
 }
 
+// Leafer mode: note JSON -> document model -> Leafer nodes. The view and page grid are set the way the Fabric path sets them.
+function showLeaferNote(note) {
+  state.pages = note.pageState || { columns: 1, rows: 1 }
+  resizePaper()
+  leaferCanvas.showNote(note.content, state.pages)
+  openCanvasView()
+  leaferCanvas.setColors(pageColors)
+  leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
+}
+
+function mountLeaferCanvas() {
+  const host = document.createElement('div')
+  host.id = 'leafer-host'
+  elements.paper.prepend(host)
+  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight() })
+  elements.shell.classList.add('engine-leafer')
+  elements.title.readOnly = true
+  const pill = document.createElement('div')
+  pill.className = 'engine-pill'
+  pill.setAttribute('role', 'status')
+  pill.textContent = 'Read-only preview'
+  document.body.append(pill)
+}
+mountLeaferCanvas()
+
 let selectSequence = 0
 async function selectNote(id) {
   if (id === state.activeNoteId) return
@@ -2201,6 +2240,11 @@ async function selectNote(id) {
       await mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
       state.history = []
       state.historyIndex = -1
+    } else if (useLeafer) {
+      showLeaferNote(note)
+      state.history = []
+      state.historyIndex = -1
+      setTool('hand')
     } else {
       state.pages = note.pageState || { columns: 1, rows: 1 }
       resizePaper()
@@ -2244,6 +2288,15 @@ async function refreshWorkspaceLists() {
 
 async function applyRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
+  if (useLeafer) {
+    elements.title.value = note.title
+    showLeaferNote(note)
+    const summary = state.notes.find((item) => item.id === note.id)
+    if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
+    setSaveState('Saved')
+    renderNoteList()
+    return
+  }
   state.loading = true
   let reconciled = false
   try {
@@ -2271,7 +2324,7 @@ async function applyRemoteNote(note) {
 
 // Unsaved local edits win: add only the objects an agent appended, then save on top of the newer revision.
 async function mergeRemoteNote(note) {
-  if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
+  if (useLeafer || note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
   const remoteObjects = note.content?.objects || []
   const added = mergeRemoteAppends({ syncedIds, localObjects: canvas.getObjects(), remoteObjects })
   const enlivened = added.length ? await util.enlivenObjects(added) : []
@@ -2749,6 +2802,7 @@ function removeEmptyVoiceTextBox() {
 }
 
 function updateVoiceTextBox(text, { record = false, create = true } = {}) {
+  if (useLeafer) return
   if (!dictationSession.target || !canvas.getObjects().includes(dictationSession.target)) {
     if (!create) return
     dictationSession.target = createVoiceTextBox()
@@ -3131,7 +3185,7 @@ async function clearActiveNote() {
     showToast('Note cleared', 'Undo', undoClear)
     return
   }
-  if (!canvas.getObjects().length) return
+  if (useLeafer || !canvas.getObjects().length) return
   flushPendingHistory({ cancel: () => clearTimeout(historyTimer), commit: commitHistorySnapshot })
   canvas.discardActiveObject()
   canvas.clear()
@@ -3269,7 +3323,7 @@ canvas.upperCanvasEl.addEventListener('pointercancel', (event) => {
   }
 }, { capture: true })
 
-canvas.on('before:render', ({ ctx }) => drawPageTiles(ctx))
+canvas.on('before:render', ({ ctx }) => { if (!useLeafer) drawPageTiles(ctx) })
 // renderOnAddRemove is off so bulk loads do not repaint per object; one batched
 // repaint per frame covers every add and remove.
 ;['object:added', 'object:removed'].forEach((eventName) => {
@@ -4181,8 +4235,8 @@ async function initialize() {
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
       },
       // Also true while typing is not yet in history or a text object is being edited.
-      hasUnsavedEdits: () => unsavedEdits || saveInFlight || canvas.getObjects().some((object) => object.isEditing)
-        || (state.activeNoteType === 'canvas' && snapshot() !== state.history[state.historyIndex]),
+      hasUnsavedEdits: () => !useLeafer && (unsavedEdits || saveInFlight || canvas.getObjects().some((object) => object.isEditing)
+        || (state.activeNoteType === 'canvas' && snapshot() !== state.history[state.historyIndex])),
       locateFlagBlock: (action) => {
         const block = pickFlagBlock(action, canvas.getObjects())
         if (!block) return null
@@ -4243,5 +4297,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, useLeafer, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()
