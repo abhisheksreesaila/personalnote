@@ -662,6 +662,33 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       const latest = objectsById(doc)
       for (const entry of entries.values()) entry.object = latest.get(entry.id) ?? entry.object
     },
+    // An agent's changes merged into the document (core/document/merge.js): only the objects that differ are drawn again, the
+    // selection stays, and a text being typed keeps its editor (its new model is used when the session ends).
+    applyMerged(next, options = {}) {
+      if (options.resolveMedia) resolveMedia = options.resolveMedia
+      const before = objectsById(doc)
+      const after = objectsById(next)
+      doc = next
+      const editingId = textEdit?.id
+      keepingSelection(() => {
+        for (const entry of [...entries.values()]) {
+          const object = after.get(entry.id)
+          if (object === entry.object) continue
+          if (!object) {
+            if (entry.id === editingId) { clearTimeout(draftTimer); textEdit = null; overlay.cancel(); onEnd(); onTextEvent('end') } // the agent deleted the text being typed
+            dropEntry(entry)
+            continue
+          }
+          entry.object = object
+          if (entry.id === editingId) { textEdit.object = object; textEdit.size = { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }; continue }
+          rebuild(entry)
+        }
+        for (const object of stacking(doc)) if (object?.id !== undefined && !before.has(object.id) && !entries.has(object.id)) addObject(world, object, boxes)
+      })
+      placeEditor()
+      pages = { columns: doc.page?.columns ?? pages.columns, rows: doc.page?.rows ?? pages.rows }
+      drawChrome()
+    },
     setPages(next) { pages = { ...next }; drawChrome() },
     setColors(next) { colors = next; drawChrome() },
     setView(next) { view = { ...next }; applyView() },

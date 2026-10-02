@@ -34,10 +34,13 @@ const puts2 = []
 let enforceRevision = false // a stale save is refused, as the real server does
 let changeSeq = 1
 const changeLog = []
-const agentWrite = () => { // an agent appends a text block to the note (the server canonicalizes it, so it carries `pn`)
+// An agent writes the note: `rewrite` [{ id, content }], `remove` [ids], `append` [{ id, content }]. The server canonicalizes what it stores.
+const agentWrite = ({ rewrite = [], remove = [], append = [] }) => {
   const doc = readJsonCanvas(stored.content)
   const g = { x: 600, y: 940, width: 200, height: 60, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
-  doc.objects.push({ id: 'agent_node_1', type: 'text', mode: 'box', z: doc.objects.length + 50, content: 'agent was here', geometry: g })
+  for (const { id, content } of rewrite) doc.objects.find((o) => o.id === id).content = content
+  doc.objects = doc.objects.filter((o) => !remove.includes(o.id))
+  for (const { id, content } of append) doc.objects.push({ id, type: 'text', mode: 'box', z: doc.objects.length + 50, content, geometry: { ...g } })
   stored.content = writeJsonCanvas(doc, { derived: 'omit' })
   stored.revision += 1
   changeSeq += 1
@@ -415,28 +418,49 @@ try {
     await page.waitForTimeout(900)
   }
 
-  // ---- an agent writes while words are typed: the words survive, the agent's block arrives after
+  // ---- an agent rewrites, deletes and appends while words are typed: everything survives; a close right after keeps the words
   {
+    await page.evaluate(() => { window.__saveStates = []; new MutationObserver(() => window.__saveStates.push(document.querySelector('#save-state').dataset.state)).observe(document.querySelector('#save-state'), { attributes: true, childList: true }) })
     enforceRevision = true
     await scene(page, 'clearSelection')
+    const boxId = initial.objects.find((o) => o.type === 'text' && o.mode === 'box' && o.content.startsWith('A text box')).id
+    const doomed = (await live(page)).objects.find((o) => o.type === 'text' && o.content === 'made by double click').id
     await scene(page, 'editText', N1)
     await page.waitForSelector('.leafer-text-editor')
     await page.keyboard.press('Control+End')
     await page.keyboard.type(' [typing]')
-    agentWrite()
-    await page.waitForTimeout(5500) // the changes feed polls every 2 s; the refused draft save also asks for a merge
-    check('the editor is untouched by the agent write', (await editorOpen(page)) && (await editorValue(page)).endsWith(' [typing]'), String(await editorValue(page)))
-    check('the agent block is held back while typing', !objectOf(await live(page), 'agent_node_1'))
+    agentWrite({ rewrite: [{ id: boxId, content: 'REWRITTEN BY AGENT' }], remove: [doomed], append: [{ id: 'agent_node_1', content: 'agent was here' }] })
+    await page.waitForTimeout(4500)
+    const mid = await live(page)
+    check('the editor stays open on the typed text through the merge', (await editorOpen(page)) && (await editorValue(page)).endsWith(' [typing]'), String(await editorValue(page)))
+    check('an agent rewrite of another object arrives at once', objectOf(mid, boxId)?.content === 'REWRITTEN BY AGENT', objectOf(mid, boxId)?.content)
+    check('an agent deletion arrives and is not brought back', !objectOf(mid, doomed))
+    check('an agent append arrives', objectOf(mid, 'agent_node_1')?.content === 'agent was here')
+    check('the typed words are kept beside them', objectOf(mid, N1)?.content.endsWith(' [typing]'), objectOf(mid, N1)?.content)
+    check('the drawn rewrite is on screen', (await scene(page, 'textInfo', boxId)).rows.join(' ').startsWith('REWRITTEN'), JSON.stringify(await scene(page, 'textInfo', boxId)))
+    check('the words typed since the agent wrote are already saved, with the agent\'s changes, while the editor is open', objectOf(savedDoc(), N1)?.content.endsWith(' [typing]') && objectOf(savedDoc(), boxId)?.content === 'REWRITTEN BY AGENT' && !objectOf(savedDoc(), doomed) && Boolean(objectOf(savedDoc(), 'agent_node_1')), JSON.stringify(objectOf(savedDoc(), N1)?.content))
     await page.keyboard.type(' more')
     await page.keyboard.press('Escape')
-    let arrived = false
-    for (let i = 0; i < 60 && !arrived; i += 1) { await page.waitForTimeout(150); arrived = Boolean(objectOf(await live(page), 'agent_node_1')) }
     await page.waitForTimeout(1500)
-    const after = await live(page)
-    check('the typed words survive the merge', objectOf(after, N1)?.content.endsWith(' [typing] more'), objectOf(after, N1)?.content)
-    check('the agent block arrives once the session has ended', arrived && objectOf(after, 'agent_node_1')?.content === 'agent was here')
-    check('the save that follows has both the words and the agent block', objectOf(savedDoc(), N1)?.content.endsWith(' [typing] more') && Boolean(objectOf(savedDoc(), 'agent_node_1')), JSON.stringify(savedDoc().objects.map((o) => o.id)))
+    const done = await live(page)
+    check('after the session the words, the rewrite, the deletion and the append are all in place and saved', objectOf(done, N1)?.content.endsWith(' [typing] more') && objectOf(savedDoc(), N1)?.content.endsWith(' [typing] more') && objectOf(savedDoc(), boxId)?.content === 'REWRITTEN BY AGENT' && !objectOf(savedDoc(), doomed))
+    // the window closes right after an agent write
+    await scene(page, 'editText', N1)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.press('Control+End')
+    await page.keyboard.type(' CLOSE')
+    agentWrite({ append: [{ id: 'agent_node_2', content: 'second write' }] })
+    await page.waitForTimeout(4500)
+    await page.keyboard.type(' LAST')
+    const putsBefore = puts.length
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
+    await waitForSave(page, putsBefore)
+    const closed = savedDoc()
+    check('a close right after an agent write keeps every typed word and the agent\'s block', objectOf(closed, N1)?.content.endsWith(' CLOSE LAST') && Boolean(objectOf(closed, 'agent_node_2')), objectOf(closed, N1)?.content)
+    const states = await page.evaluate(() => window.__saveStates)
+    check('a refused stale save is never shown as an error', !states.includes('Could not save'), JSON.stringify([...new Set(states)]))
     enforceRevision = false
+    await page.waitForTimeout(600)
   }
 
   // ---- the overlay lines up with the drawn text, at three zooms, upright and turned
@@ -633,7 +657,7 @@ try {
     check('and puts nothing into the note chosen', puts2.length === 0 && (await live(page)).objects.length === 0, JSON.stringify([puts2.length, (await live(page)).objects.length]))
   }
   await page.screenshot({ path: `${SHOTS}/final.png` })
-  const realErrors = errors.filter((e) => !/409|revision|Could not save|Failed to fetch/.test(e))
+  const realErrors = errors.filter((e) => !/status of 409|revision conflict/.test(e)) // the refused stale saves of the mock server, logged by the browser and the app
   check('no page errors', realErrors.length === 0, realErrors.join(' | '))
   void stillSteps
   void TURNED_T

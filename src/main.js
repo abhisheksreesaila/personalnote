@@ -38,6 +38,7 @@ import {
 import { readPreferences, writePreferences } from './preferences.js'
 import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
 import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
+import { mergeDocuments } from './core/document/merge.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
@@ -604,6 +605,7 @@ let leaferCanvas = null
 let leaferHost = null
 // Saving an edited note writes only what changed: the encoder keeps the JSON of every object it has written (core/note-codec.js).
 const leaferEncoder = createDocumentEncoder()
+let leaferBase = null // the document as last loaded or last saved: what an agent's merge is measured against
 let leaferSource = { noteId: null, content: { objects: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
 
 const canvas = new Canvas('note-canvas', {
@@ -2078,6 +2080,7 @@ async function saveActiveNote({ unloading = false } = {}) {
     // body goes as a Blob: handing a note of megabytes to fetch as a string copies it on the main thread and stalls a drag for ~100 ms.
     const result = await api(`/notes/${noteId}`, { method: 'PUT', body: unloading ? body : new Blob([body]), keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
+    if (editedLeafer) leaferBase = editedLeafer
     if (state.activeNoteType === 'canvas') syncedIds = editedLeafer ? new Set(editedLeafer.objects.map((object) => object.id).filter(Boolean)) : canvasObjectIds(savedContent)
     renderNoteList()
     setSaveState('Saved')
@@ -2085,9 +2088,12 @@ async function saveActiveNote({ unloading = false } = {}) {
     console.error(error)
     // A refused save is dropped, not retried: it would be refused again and block switching notes.
     unsavedEdits = !error.refused
-    setSaveState('Could not save', true)
-    // An agent may have written first: keep the user's edits and merge its text in.
-    if (/revision/i.test(error.message)) agentSync?.syncActiveNote().catch(console.error)
+    if (/revision/i.test(error.message)) {
+      // An agent wrote first: this is not a failure. Merge its changes into the edits and save again on its revision.
+      setSaveState('Saving')
+      const mark = mergeCount
+      agentSync?.syncActiveNote().catch(console.error).finally(() => { if (mergeCount === mark) setSaveState('Could not save', true) })
+    } else setSaveState('Could not save', true)
   } finally {
     if (!parallelUnload) saveInFlight = false
     if (saveQueued && !parallelUnload) {
@@ -2269,6 +2275,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
   if (openView) leaferEdits.open(note.id, shown) // a newly opened note starts a new undo history; an agent's newer content does not (undo never reverts it)
   else leaferEdits.remote(note.id, shown)
   leaferCanvas.adopt(leaferEdits.doc) // the scene edits the document the history holds
+  leaferBase = leaferEdits.doc
   if (openView) openCanvasView()
   leaferCanvas.setColors(pageColors)
   leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
@@ -2285,8 +2292,6 @@ function mountLeaferCanvas() {
     onEnd: () => leaferEdits.end(),
     onTextEvent: (type) => {
       if (type === 'escape') setTool('select')
-      // An agent wrote while words were being typed: its note was held back; it is merged in now that the words are in the document.
-      if (type === 'end' && remoteWhileTyping) setTimeout(() => agentSync?.syncActiveNote().catch(console.error), 0)
     },
     // What a new text and a new sticky look like: the Fabric path's defaults (addText, stickyDefaults), in the model's words.
     defaults: {
@@ -2470,45 +2475,34 @@ async function applyRemoteNote(note) {
 }
 
 // Unsaved local edits win: add only the objects an agent appended, then save on top of the newer revision.
-let remoteWhileTyping = false
-// Leafer: the same rule for the document model. The local document stays as it is (its typed words included); objects the agent
-// appended are added on top; then the note is saved on the agent's revision.
-async function mergeLeaferAppends(note) {
+let mergeCount = 0
+// Leafer: a three-way merge against the note as last loaded or saved (core/document/merge.js). What the agent changed, rewrote,
+// deleted or appended arrives; what the user changed (words being typed included) stays; the editor stays open on its text. The
+// note is then saved on the agent's revision.
+async function mergeLeaferNote(note) {
   const decoded = await decodeNoteDocument(note)
   if (note.id !== state.activeNoteId) return 0
+  mergeCount += 1
   const local = leaferEdits.doc
-  const known = new Set([...syncedIds, ...local.objects.map((object) => object.id)])
-  let top = local.objects.reduce((most, object, index) => Math.max(most, (object.z ?? index) + 1), 0)
-  const appended = decoded.doc.objects.filter((object) => object.id && !known.has(object.id)).map((object) => ({ ...object, z: top++ }))
+  const { doc: merged, added } = mergeDocuments({ base: leaferBase ?? local, local, remote: decoded.doc })
   const summary = state.notes.find((item) => item.id === note.id)
   if (summary) summary.revision = note.revision
   syncedIds = canvasObjectIds(note.content)
-  if (appended.length) {
-    const merged = { ...local, objects: [...local.objects, ...appended] }
-    const shown = leaferCanvas.showDocument(merged, { resolveMedia: decoded.resolveMedia })
-    leaferEdits.remote(note.id, shown)
-    leaferCanvas.adopt(leaferEdits.doc)
-    leaferSource = leaferSourceOf(note.id, leaferEdits.doc)
+  leaferBase = decoded.doc // what the server holds now; the next save moves it on
+  if (merged !== local) {
+    leaferEdits.remote(note.id, merged) // a merge, not an edit: undo stays safe
+    const next = leaferEdits.doc
+    if (next.page && !samePageGrid(next.page, state.pages)) { state.pages = { ...next.page }; resizePaper() }
+    leaferCanvas.applyMerged(next, { resolveMedia: decoded.resolveMedia })
+    leaferSource = leaferSourceOf(note.id, next)
   }
   queueSave()
-  return appended.length
+  return added.length
 }
+const samePageGrid = (a, b) => a.columns === b.columns && a.rows === b.rows
 async function mergeRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
-  if (useLeafer) {
-    // Words are being typed: the agent's note waits (drawing it now would replace the document under the typing). It is merged in
-    // when the session ends, in onTextEvent below.
-    if (leaferCanvas.isEditingText()) { remoteWhileTyping = true; return 0 }
-    if (remoteWhileTyping) { remoteWhileTyping = false; return mergeLeaferAppends(note) }
-    // Only the title can be unsaved here: draw the agent's newer content and save the title on top of the new revision.
-    const added = [...canvasObjectIds(note.content)].filter((id) => !syncedIds.has(id)).length
-    if (!(await showLeaferNote(note, { openView: false }))) return 0
-    const summary = state.notes.find((item) => item.id === note.id)
-    if (summary) summary.revision = note.revision
-    syncedIds = canvasObjectIds(note.content)
-    queueSave()
-    return added
-  }
+  if (useLeafer) return mergeLeaferNote(note)
   // Merge by node id: the remote note's nodes become Fabric objects carrying the same ids (semanticId).
   const remote = await decodeNote(note)
   const remoteObjects = remote.content?.objects || []
