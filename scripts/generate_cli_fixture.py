@@ -32,7 +32,14 @@ def write(name: str, description: str, note: dict, source: str) -> None:
     print(f"wrote {name} ({len(note['content']['objects'])} objects)")
 
 
+def seed_ids() -> None:
+    """Resource ids are random uuids; a counter makes the fixtures reproducible."""
+    counter = iter(range(1, 10_000))
+    NoteService.new_resource_id = staticmethod(lambda: f"res_{next(counter):032x}")
+
+
 def main() -> None:
+    seed_ids()
     with tempfile.TemporaryDirectory() as directory:
         service = NoteService(Path(directory) / "fixture.db")
         notebook_id = service.list_notebooks()[0]["id"]

@@ -2,17 +2,16 @@
 //
 // App fixtures come from the real app: a headless Chromium drives it with real gestures (Vite on a random port, in-memory
 // mocked /api, nothing touches a real database) and the note is read back with the app's own canvas.toJSON(), exactly what
-// autosave would send. The seeded F-002 benchmark note and a few deliberately awkward notes (duplicate or missing ids, shapes
-// the app never creates, a group) are added next to them. The CLI-appended note comes from scripts/generate_cli_fixture.py.
+// autosave would send. Deliberately awkward notes (duplicate or missing ids, shapes the app never creates, every kind of
+// transform, nested groups) are built with Fabric's classes in Node. The CLI-appended notes come from scripts/generate_cli_fixture.py.
+// The seeded F-002 benchmark note is not stored: tests build it from scripts/benchmark-note.mjs. Output is reproducible.
 //
 //   node scripts/generate-document-fixtures.mjs
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { generateNote, COLUMNS, ROWS } from './benchmark-note.mjs'
 
 const outDir = fileURLToPath(new URL('../tests/fixtures/documents/', import.meta.url))
 fs.mkdirSync(outDir, { recursive: true })
@@ -34,7 +33,12 @@ async function open(width = 1440, height = 900) {
   const context = await browser.newContext({ viewport: { width, height } })
   const page = await context.newPage()
   page.on('pageerror', (error) => console.error('page error:', error.message))
-  await page.addInitScript(() => localStorage.setItem('personal-note:skin', 'crayon'))
+  // Ids are random in the app; a counter makes the fixtures reproducible.
+  await page.addInitScript(() => {
+    localStorage.setItem('personal-note:skin', 'crayon')
+    let counter = 0
+    crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`
+  })
   await page.route('**/api/**', async (route) => {
     const route_ = new URL(route.request().url()).pathname.replace(/^\/api/, '')
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
@@ -112,9 +116,7 @@ const wave = (x, y, count = 14, dx = 18) => Array.from({ length: count }, (_, i)
     const x = el.getContext('2d'); x.fillStyle = '#e91e63'; x.fillRect(0, 0, 120, 60); x.fillStyle = '#fff'; x.fillRect(8, 8, 40, 20)
     return el.toDataURL('image/png').split(',')[1]
   })
-  const pngPath = path.join(os.tmpdir(), 'f025-fixture.png')
-  fs.writeFileSync(pngPath, Buffer.from(png, 'base64'))
-  await page.setInputFiles('#image-file', pngPath)
+  await page.setInputFiles('#image-file', { name: 'fixture.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') })
   await page.waitForFunction(() => window.__personalNote.canvas.getObjects().some((o) => o.type === 'image'), null, { timeout: 5000 })
   const objects = await capture(page)
   write('app-objects', 'Text, two stickies (two palette colours), a rounded shape, two connectors (both diagonals) and a data-URL picture.', objects.content, objects.pageState, 'real app, headless')
@@ -147,51 +149,72 @@ const wave = (x, y, count = 14, dx = 18) => Array.from({ length: count }, (_, i)
   if (connector) connector.fromId = o0.semanticId
   write('edge-ids', 'The all-tools note with a duplicated semanticId, a missing one, an empty one, and a connector pointing at the duplicate.', damaged, all.pageState, 'derived from app-all-tools')
 
-  // Objects the app never makes, written by Fabric itself, plus a group and junk entries.
-  // A throwaway module inside the project lets Vite resolve the bare `fabric` import for us.
-  const lab = fileURLToPath(new URL('../src/__fabric-lab.js', import.meta.url))
-  fs.writeFileSync(lab, "export * from 'fabric'\n")
-  try { await page.evaluate(async () => { window.__fabricLab = await import('/src/__fabric-lab.js') }) } finally { fs.rmSync(lab, { force: true }) }
-  const odd = await page.evaluate(() => {
-    const f = window.__fabricLab
-    const rect = new f.Rect({ left: 40, top: 40, width: 80, height: 50, fill: '#abcdef', rx: 4, ry: 4, angle: 15 })
-    const label = new f.Textbox('inside a group', { left: 60, top: 100, width: 140, fontSize: 18 })
-    const group = new f.Group([rect, label], { left: 700, top: 120 })
-    group.semanticId = 'res_group_1'
-    const triangle = new f.Triangle({ left: 300, top: 900, width: 90, height: 80, fill: '#ffcc00' })
-    triangle.semanticId = 'res_triangle_1'
-    const ellipse = new f.Ellipse({ left: 400, top: 900, rx: 60, ry: 30, fill: '#00ccaa' })
-    ellipse.semanticId = 'res_ellipse_1'
-    const dot = new f.Circle({ left: 520, top: 900, radius: 30, fill: '#33336655', stroke: '#222222', strokeWidth: 3 })
-    dot.semanticId = 'res_circle_1'
-    const line = new f.Line([10, 10, 200, 90], { stroke: '#cc0000' })
-    line.semanticId = 'res_line_1'
-    const custom = new f.Rect({ left: 5, top: 5, width: 10, height: 10 })
-    custom.semanticId = 'res_custom_1'
-    const json = [group, triangle, ellipse, dot, line, custom].map((o) => o.toObject(['semanticId']))
-    json[5].futureField = { kept: true, nested: [1, 2, 3] }
-    return json
-  })
-  // Ink dots (a tap with no stroke) are Circles built by main.js createInkDot; built here the same way.
-  const dots = await page.evaluate(() => {
-    const f = window.__fabricLab
-    const make = (tool, x, y, width, fill, id) => {
-      const dot = new f.Circle({ left: x - width / 2, top: y - width / 2, radius: width / 2, fill, selectable: false, evented: false })
-      dot.isInk = true
-      dot.inkTool = tool
-      dot.semanticId = id
-      return dot.toObject(['inkTool', 'isInk', 'semanticId'])
-    }
-    return [make('pen', 120, 140, 3, '#20201e', 'res_dot_pen'), make('highlight', 220, 140, 20, '#20201e55', 'res_dot_highlight'), make('pen', 320, 140, 6, '#d0021b', 'res_dot_red')]
-  })
-  write('ink-dots', 'Pen and highlighter dots (Circle with isInk), the way createInkDot saves them.', { version: '7.4.0', objects: dots }, { columns: 1, rows: 1 }, 'main.js createInkDot constructor arguments, Fabric toObject')
-  const legacyPath = { type: 'Path', version: '7.4.0', semanticId: 'res_legacy_path', left: 80, top: 80, originX: 'left', originY: 'top', fill: null, stroke: '#223', strokeWidth: 2.5, path: [['M', 80, 80], ['L', 140, 120]] }
-  const oddContent = { version: '7.4.0', objects: [...odd, legacyPath, 'junk', null, 42, { text: 'object without a type', left: 1, top: 2 }] }
-  write('edge-unknown', 'Shapes the app never creates (group, triangle, ellipse, plain circle, line), a Path that is not ink, an object with an unknown field, and non-object junk.', oddContent, { columns: 1, rows: 1 }, 'Fabric classes in a headless browser, plus hand-added junk')
   await context.close()
 }
 
-write('benchmark-600', 'The seeded F-002 benchmark note: 300 text, 240 ink, 60 shapes, 50 connectors over 12 pages.', generateNote(), { columns: COLUMNS, rows: ROWS }, 'scripts/benchmark-note.mjs')
+// Everything below is built with Fabric's own classes in Node (no browser): objects the app never makes, ink dots made the way
+// main.js createInkDot makes them, and objects with every kind of transform.
+const fabric = await import('fabric')
+const withId = (object, id) => { object.semanticId = id; return object }
+const json = (object) => object.toObject(['inkTool', 'isInk', 'semanticId'])
+
+const dot = (tool, x, y, width, fill, id) => {
+  const circle = new fabric.Circle({ left: x - width / 2, top: y - width / 2, radius: width / 2, fill, selectable: false, evented: false })
+  circle.isInk = true
+  circle.inkTool = tool
+  return json(withId(circle, id))
+}
+write('ink-dots', 'Pen and highlighter dots (Circle with isInk), the way createInkDot saves them.', { version: '7.4.0', objects: [dot('pen', 120, 140, 3, '#20201e', 'res_dot_pen'), dot('highlight', 220, 140, 20, '#20201e55', 'res_dot_highlight'), dot('pen', 320, 140, 6, '#d0021b', 'res_dot_red')] }, { columns: 1, rows: 1 }, 'main.js createInkDot constructor arguments, Fabric toObject')
+
+const group = withId(new fabric.Group([new fabric.Rect({ left: 40, top: 40, width: 80, height: 50, fill: '#abcdef', rx: 4, ry: 4, angle: 15 }), new fabric.Triangle({ left: 100, top: 20, width: 30, height: 30 })], { left: 700, top: 120 }), 'res_group_1')
+const groupJson = json(group)
+// Fabric's Textbox needs a DOM to measure; its saved shape is copied from a real note instead.
+const appText = JSON.parse(fs.readFileSync(path.join(outDir, 'app-text.json'), 'utf8')).content.objects[0]
+delete appText.semanticId
+groupJson.objects.push({ ...appText, text: 'inside a group', left: 0, top: 30 })
+const custom = json(withId(new fabric.Rect({ left: 5, top: 5, width: 10, height: 10 }), 'res_custom_1'))
+custom.futureField = { kept: true, nested: [1, 2, 3] }
+const legacyPath = { type: 'Path', version: '7.4.0', semanticId: 'res_legacy_path', left: 80, top: 80, originX: 'left', originY: 'top', fill: null, stroke: '#223', strokeWidth: 2.5, path: [['M', 80, 80], ['L', 140, 120]] }
+write('edge-unknown', 'Shapes the app never creates (group, triangle, ellipse, plain circle, line), a Path that is not ink, an object with an unknown field, and non-object junk.', {
+  version: '7.4.0',
+  objects: [
+    groupJson,
+    json(withId(new fabric.Triangle({ left: 300, top: 900, width: 90, height: 80, fill: '#ffcc00' }), 'res_triangle_1')),
+    json(withId(new fabric.Ellipse({ left: 400, top: 900, rx: 60, ry: 30, fill: '#00ccaa' }), 'res_ellipse_1')),
+    json(withId(new fabric.Circle({ left: 520, top: 900, radius: 30, fill: '#33336655', stroke: '#222222', strokeWidth: 3 }), 'res_circle_1')),
+    json(withId(new fabric.Line([10, 10, 200, 90], { stroke: '#cc0000' }), 'res_line_1')),
+    custom, legacyPath, 'junk', null, 42, { text: 'object without a type', left: 1, top: 2 },
+  ],
+}, { columns: 1, rows: 1 }, 'Fabric classes in Node, plus hand-added junk')
+
+// Transforms: every origin, rotation, scale, flip, skew and stroke setting Fabric offers, alone and inside nested groups.
+const transform = (object, props, id) => withId(object.set(props), id)
+const pathOf = (x, y) => [['M', x, y], ['Q', x + 30, y + 80, x + 70, y + 10], ['Q', x + 100, y - 50, x + 130, y + 40]]
+const moved = [
+  transform(new fabric.Rect({ left: 100, top: 100, width: 120, height: 70, fill: '#ffd60a', strokeWidth: 0, rx: 12, ry: 12 }), { angle: 30 }, 'res_rot'),
+  transform(new fabric.Rect({ left: 300, top: 100, width: 120, height: 70, fill: '#30d158', stroke: '#111111', strokeWidth: 6 }), { scaleX: 1.8, scaleY: 0.6, originX: 'left', originY: 'top' }, 'res_scale_left_top'),
+  transform(new fabric.Rect({ left: 600, top: 100, width: 120, height: 70, fill: '#64b5ff', stroke: '#111111', strokeWidth: 6, strokeUniform: true }), { scaleX: 2.2, angle: -20, originX: 'right', originY: 'bottom' }, 'res_uniform'),
+  transform(new fabric.Rect({ left: 100, top: 400, width: 120, height: 70, fill: '#bf5af2', strokeWidth: 0 }), { flipX: true, flipY: true, angle: 200 }, 'res_flip'),
+  transform(new fabric.Rect({ left: 300, top: 400, width: 120, height: 70, fill: '#ff6b3d', strokeWidth: 0 }), { skewX: 25, skewY: -10, angle: 40 }, 'res_skew'),
+  transform(new fabric.Circle({ left: 600, top: 400, radius: 30, fill: '#33336655' }), { angle: 90, scaleX: 2, opacity: 0.5, visible: true }, 'res_circle_scaled'),
+  transform(new fabric.Rect({ left: 100, top: 700, width: 90, height: 60, fill: '#ffffff', strokeWidth: 0, shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 12, offsetX: 3, offsetY: 6 }) }), { opacity: 0.8 }, 'res_shadow'),
+]
+const ink = (x, y, props, id) => {
+  const stroke = new fabric.Path(pathOf(x, y), { fill: null, stroke: '#20201e', strokeWidth: 3, strokeLineCap: 'round', strokeLineJoin: 'round' })
+  stroke.isInk = true
+  stroke.inkTool = 'pen'
+  stroke.inkPoints = [{ x, y }, { x: x + 70, y: y + 10 }, { x: x + 130, y: y + 40 }]
+  return withId(stroke.set(props), id)
+}
+const inner = withId(new fabric.Group([
+  transform(new fabric.Rect({ left: -30, top: -20, width: 60, height: 40, fill: '#ffd60a', strokeWidth: 0 }), { angle: 10 }, 'res_inner_rect'),
+  ink(0, 0, { scaleX: 0.8, angle: 15 }, 'res_inner_ink'),
+], { left: 900, top: 700, angle: 25, scaleX: 1.2, originX: 'left', originY: 'top' }), 'res_inner')
+const outer = withId(new fabric.Group([inner, new fabric.Rect({ left: 40, top: 30, width: 50, height: 50, fill: '#30d158', strokeWidth: 0 })], { left: 500, top: 800, angle: -15, skewX: 10, flipX: true }), 'res_outer')
+write('edge-transforms', 'Objects with every origin, rotation, scale, flip, skew and stroke setting, ink moved off its drawn position, a shadow, and a group nested in a group.', {
+  version: '7.4.0',
+  objects: [...moved, ink(120, 900, { angle: 35, scaleX: 1.4, flipY: true }, 'res_ink_rot'), ink(400, 900, { originX: 'left', originY: 'top', left: 800, top: 300 }, 'res_ink_moved'), outer].map(json),
+}, { columns: 2, rows: 2 }, 'Fabric classes in Node')
 
 await browser.close()
 await server.close()

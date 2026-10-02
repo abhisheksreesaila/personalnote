@@ -56,12 +56,23 @@ function checkObject(object, path, report) {
   if (object.geometry !== undefined) {
     if (!isObject(object.geometry)) report(`${path}.geometry`, 'must be an object')
     else {
-      for (const key of ['x', 'y', 'width', 'height', 'rotation', 'scaleX', 'scaleY']) {
+      for (const key of ['x', 'y', 'width', 'height', 'rotation', 'scaleX', 'scaleY', 'skewX', 'skewY']) {
         if (object.geometry[key] !== undefined && !isNumber(object.geometry[key])) report(`${path}.geometry.${key}`, 'must be a finite number')
       }
-      for (const key of ['originX', 'originY']) {
-        if (object.geometry[key] !== undefined && !isText(object.geometry[key])) report(`${path}.geometry.${key}`, 'must be a string')
+      for (const key of ['flipX', 'flipY']) {
+        if (object.geometry[key] !== undefined && typeof object.geometry[key] !== 'boolean') report(`${path}.geometry.${key}`, 'must be true or false')
       }
+    }
+  }
+  for (const key of ['visible', 'strokeUniform']) {
+    if (object[key] !== undefined && typeof object[key] !== 'boolean') report(`${path}.${key}`, 'must be true or false')
+  }
+  if (object.shadow !== undefined) {
+    const shadow = object.shadow
+    if (!isObject(shadow)) report(`${path}.shadow`, 'must be an object')
+    else {
+      if (!isText(shadow.color)) report(`${path}.shadow.color`, 'must be a string')
+      for (const key of ['blur', 'x', 'y']) if (!isNumber(shadow[key])) report(`${path}.shadow.${key}`, 'must be a finite number')
     }
   }
   if (object.extras !== undefined && !isObject(object.extras)) report(`${path}.extras`, 'must be an object')

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { COLUMNS, ROWS, generateNote } from '../../../scripts/benchmark-note.mjs'
+import { fabricPoints, modelPoints, withoutPlacement } from './oracle.js'
 import {
   DocumentError,
   OBJECT_TYPES,
@@ -15,31 +17,136 @@ import {
 } from './index.js'
 
 const FIXTURE_DIR = fileURLToPath(new URL('../../../tests/fixtures/documents/', import.meta.url))
-const fixtures = fs.readdirSync(FIXTURE_DIR).filter((name) => name.endsWith('.json')).sort()
-  .map((name) => JSON.parse(fs.readFileSync(`${FIXTURE_DIR}${name}`, 'utf8')))
+// The seeded F-002 benchmark note is built here, not stored: it is 2.4 MB of generated numbers.
+const fixtures = [
+  ...fs.readdirSync(FIXTURE_DIR).filter((name) => name.endsWith('.json')).sort().map((name) => JSON.parse(fs.readFileSync(`${FIXTURE_DIR}${name}`, 'utf8'))),
+  { name: 'benchmark-600', content: generateNote(), pageState: { columns: COLUMNS, rows: ROWS } },
+]
 const fixture = (name) => fixtures.find((entry) => entry.name === name)
 const modelOf = (name) => { const { content, pageState } = fixture(name); return fromFabric(content, pageState) }
 const byType = (doc, type) => doc.objects.filter((object) => object.type === type)
 
 test('the fixture set covers every kind of note the app and its agents produce', () => {
   const names = fixtures.map((entry) => entry.name)
-  for (const expected of ['app-text', 'app-objects', 'app-all-tools', 'ink-dots', 'edge-ids', 'edge-unknown', 'benchmark-600', 'cli-created', 'cli-appended']) {
+  for (const expected of ['app-text', 'app-objects', 'app-all-tools', 'ink-dots', 'edge-ids', 'edge-unknown', 'edge-transforms', 'benchmark-600', 'cli-created', 'cli-appended']) {
     assert.ok(names.includes(expected), `missing fixture ${expected}`)
   }
 })
 
+// Exact equality is kept for everything that is not placement; placement is checked by where the points land, with Fabric's own matrices.
+function assertRenderEquivalent(before, after, label) {
+  assert.deepStrictEqual(withoutPlacement(after), withoutPlacement(before), `${label}: non-placement properties`)
+  const a = fabricPoints(before.objects)
+  const b = fabricPoints(after.objects)
+  assert.equal(b.length, a.length, `${label}: number of placed points`)
+  for (let i = 0; i < a.length; i += 1) assert.ok(Math.abs(a[i] - b[i]) <= 1e-6, `${label}: point ${i}: ${a[i]} vs ${b[i]}`)
+}
+
 for (const entry of fixtures) {
-  test(`${entry.name}: toFabric(fromFabric(x)) deep-equals x, and the page state comes back`, () => {
+  test(`${entry.name}: toFabric(fromFabric(x)) is render-equivalent to x, and the page state comes back`, () => {
     const doc = fromFabric(entry.content, entry.pageState)
-    assert.deepStrictEqual(toFabric(doc), entry.content)
+    assertRenderEquivalent(entry.content, toFabric(doc), entry.name)
     assert.deepStrictEqual(pageStateOf(doc), entry.pageState)
+  })
+
+  test(`${entry.name}: the model alone puts every box corner and ink point where Fabric does`, () => {
+    const doc = fromFabric(entry.content, entry.pageState)
+    const expected = fabricPoints(entry.content.objects)
+    const actual = modelPoints(doc.objects)
+    assert.equal(actual.length, expected.length)
+    for (let i = 0; i < expected.length; i += 1) assert.ok(Math.abs(actual[i] - expected[i]) <= 1e-6, `point ${i}: ${actual[i]} vs ${expected[i]}`)
   })
 
   test(`${entry.name}: the round trip survives being written to JSON and read back`, () => {
     const doc = JSON.parse(JSON.stringify(fromFabric(entry.content, entry.pageState)))
-    assert.deepStrictEqual(toFabric(doc), entry.content)
+    assertRenderEquivalent(entry.content, toFabric(doc), entry.name)
+  })
+
+  test(`${entry.name}: converting twice changes nothing more (the Fabric form is a fixed point)`, () => {
+    const once = toFabric(fromFabric(entry.content, entry.pageState))
+    const twice = toFabric(fromFabric(once, entry.pageState))
+    assertRenderEquivalent(once, twice, entry.name)
   })
 }
+
+// Objects with every kind of transform, in every origin, nested in groups: the cases fixtures made by the app never reach.
+const placements = [
+  { angle: 30 }, { angle: -90, originX: 'left', originY: 'top' }, { scaleX: 1.5, scaleY: 0.7, originX: 'right', originY: 'bottom' },
+  { flipX: true, angle: 12 }, { flipY: true, scaleX: 2 }, { skewX: 20, skewY: -10, angle: 45 }, { strokeWidth: 6, strokeUniform: true, scaleX: 2.5, angle: 20 },
+  { strokeWidth: 6, scaleX: 2.5, scaleY: 0.5, originX: 'center', originY: 'top' }, { angle: 180, flipX: true, flipY: true, skewX: -15 },
+]
+function mutationNote() {
+  const base = (type, extra, index) => ({ type, left: 200 + index * 37, top: 150 + index * 23, width: 120, height: 70, semanticId: `res_${type}_${index}`, ...extra })
+  const path = [['M', 400, 300], ['Q', 430, 380, 470, 310], ['Q', 500, 250, 520, 330]]
+  const kinds = [
+    (index, extra) => base('Rect', { rx: 8, ry: 8, fill: '#abcdef', stroke: '#112233', ...extra }, index),
+    (index, extra) => base('Textbox', { text: `text ${index}`, fontSize: 20, ...extra }, index),
+    (index, extra) => base('Sticky', { text: `sticky ${index}`, stickyColor: '#ffd60a', ...extra }, index),
+    (index, extra) => base('Circle', { radius: 35, width: 70, height: 70, isInk: index % 2 === 0, fill: '#33336655', ...extra }, index),
+    (index, extra) => base('Image', { src: 'data:image/png;base64,AAAA', ...extra }, index),
+    (index, extra) => base('Path', { path, isInk: true, stroke: '#20201e', strokeWidth: 3, inkPoints: [{ x: 400, y: 300 }, { x: 470, y: 310 }], ...extra, width: 120, height: 70 }, index),
+  ]
+  const objects = []
+  placements.forEach((extra, i) => kinds.forEach((make, k) => objects.push(make(i * kinds.length + k, extra))))
+  const inner = { type: 'Group', semanticId: 'res_inner', left: 30, top: -20, width: 200, height: 120, angle: 25, scaleX: 1.2, objects: [make(kinds[0], 0, { angle: 10, left: -50, top: -20 }), make(kinds[5], 1, { scaleX: 0.8, left: 40, top: 10 })] }
+  const outer = { type: 'Group', semanticId: 'res_outer', left: 700, top: 500, width: 400, height: 300, angle: -15, skewX: 10, flipX: true, originX: 'left', originY: 'top', objects: [inner, make(kinds[1], 2, { left: 100, top: 90 })] }
+  objects.push(outer)
+  return { version: '7.4.0', objects }
+  function make(factory, index, extra) { return factory(index, extra) }
+}
+
+test('rotation, scale, flips, skew, stroke, every origin and nested groups all land in the same place after the round trip', () => {
+  const content = mutationNote()
+  const doc = fromFabric(content, { columns: 3, rows: 3 })
+  assertRenderEquivalent(content, toFabric(doc), 'mutation set')
+  const expected = fabricPoints(content.objects)
+  const actual = modelPoints(doc.objects)
+  assert.ok(expected.length > 300)
+  assert.equal(actual.length, expected.length)
+  actual.forEach((value, i) => assert.ok(Math.abs(value - expected[i]) <= 1e-6, `point ${i}: ${value} vs ${expected[i]}`))
+  assert.equal(doc.objects.filter((object) => object.type === 'unknown').length, 0)
+})
+
+test('geometry is origin-free, with typed rotation, scale, flip and skew', () => {
+  const doc = fromFabric({ objects: [
+    { type: 'Rect', left: 100, top: 50, width: 40, height: 20, originX: 'center', originY: 'center', strokeWidth: 0, angle: 30, scaleX: 2, flipX: true, skewY: 5, semanticId: 'a' },
+    { type: 'Rect', left: 100, top: 50, width: 40, height: 20, originX: 'left', originY: 'top', strokeWidth: 0, semanticId: 'b' },
+  ] })
+  const [centered, corner] = doc.objects.map((object) => object.geometry)
+  assert.deepEqual([centered.x, centered.y, centered.width, centered.height], [80, 40, 40, 20])
+  assert.deepEqual([centered.rotation, centered.scaleX, centered.scaleY, centered.flipX, centered.flipY, centered.skewX, centered.skewY], [30, 2, 1, true, false, 0, 5])
+  assert.deepEqual([corner.x, corner.y], [100, 50])
+  assert.equal('originX' in centered, false)
+})
+
+test('opacity, visibility, strokeUniform and a simple shadow are typed fields', () => {
+  const content = { objects: [{ type: 'Rect', semanticId: 'a', opacity: 0.5, visible: false, strokeUniform: true, shadow: { color: 'rgba(0,0,0,.3)', blur: 8, offsetX: 2, offsetY: 4, affectStroke: false, nonScaling: false } }] }
+  const [rect] = fromFabric(content).objects
+  assert.equal(rect.opacity, 0.5)
+  assert.equal(rect.visible, false)
+  assert.equal(rect.strokeUniform, true)
+  assert.deepEqual(rect.shadow, { color: 'rgba(0,0,0,.3)', blur: 8, x: 2, y: 4, extras: { affectStroke: false, nonScaling: false } })
+  const out = toFabric(fromFabric(content)).objects[0]
+  assert.deepEqual(out.shadow, content.objects[0].shadow)
+  assert.equal(out.visible, false)
+  assert.equal(out.strokeUniform, true)
+})
+
+test('ink points and path are relative to the box top-left, whatever Fabric did to the path since', () => {
+  const content = { objects: [{ type: 'Path', isInk: true, semanticId: 'a', left: 500, top: 400, originX: 'center', originY: 'center', strokeWidth: 3, stroke: '#000', path: [['M', 100, 100], ['L', 160, 130]], inkPoints: [{ x: 100, y: 100 }, { x: 160, y: 130 }] }] }
+  const [ink] = fromFabric(content).objects
+  assert.deepEqual(ink.path, [['M', 0, 0], ['L', 60, 30]])
+  assert.deepEqual(ink.points, [{ x: 0, y: 0 }, { x: 60, y: 30 }])
+  assert.deepEqual([ink.geometry.width, ink.geometry.height], [60, 30])
+  assert.deepEqual([ink.geometry.x, ink.geometry.y], [470, 385])
+})
+
+test('an object whose placement is malformed is kept verbatim as unknown', () => {
+  const content = { objects: [{ type: 'Textbox', text: 'x', top: '300', left: 5 }, { type: 'Rect', angle: 'turn' }, { type: 'Path', isInk: true, path: [['A', 1, 1, 0, 0, 0, 5, 5]] }] }
+  const doc = fromFabric(content)
+  assert.deepEqual(doc.objects.map((object) => object.type), ['unknown', 'unknown', 'unknown'])
+  assert.deepStrictEqual(toFabric(doc), content)
+})
 
 test('between them the fixtures use every document object type', () => {
   const seen = new Set()
@@ -89,7 +196,10 @@ test('text, stickies and shapes carry their content, geometry and palette colour
   assert.equal(first.mode, 'point')
   assert.equal(first.content, 'Meeting notes: ship the export')
   assert.equal(typeof first.id, 'string')
-  assert.equal(first.geometry.x, fixture('app-objects').content.objects[0].left)
+  const original = fixture('app-objects').content.objects[0]
+  assert.equal(original.originX, 'center')
+  assert.equal(first.geometry.x, original.left - original.width / 2)
+  assert.equal(first.geometry.y, original.top - original.height / 2)
 
   const stickies = byType(doc, 'sticky')
   assert.equal(stickies.length, 2)
@@ -188,7 +298,7 @@ test('a colour that is not hex-with-alpha is kept as it is, so nothing is rewrit
   for (const stroke of ['#20201E55', 'rgba(1,2,3,0.5)', 'red', '#223', '#2020aa']) {
     const content = { objects: [{ type: 'Path', isInk: true, path: [['M', 0, 0]], stroke, strokeWidth: 2, semanticId: 'a' }] }
     const doc = fromFabric(content)
-    assert.deepStrictEqual(toFabric(doc), content, stroke)
+    assert.deepStrictEqual(withoutPlacement(toFabric(doc)), withoutPlacement(content), stroke)
   }
 })
 
@@ -202,8 +312,10 @@ test('text written by the agent CLI is a Textbox and keeps its sparse shape', ()
   assert.equal(texts[0].style.padding, 8)
   assert.equal('fabricKeys' in texts[0], false)
   // The CLI never wrote strokeWidth, scale or origin; the model must not invent them.
-  assert.equal(texts[0].geometry.scaleX, undefined)
-  assert.equal(texts[0].geometry.originX, 'left')
+  // The CLI never wrote a height (the engine measures it) or an origin other than top-left; the model does not invent a height.
+  assert.equal(texts[0].geometry.height, undefined)
+  assert.equal(texts[0].geometry.scaleX, 1)
+  assert.equal(texts[0].geometry.x, 72.5)
 })
 
 test('the benchmark note keeps every object, in the same stacking order', () => {
@@ -227,7 +339,7 @@ test('stacking order follows z, not array position', () => {
 
 test('duplicate, missing and empty ids survive the round trip and are reported by validation', () => {
   const doc = modelOf('edge-ids')
-  assert.deepStrictEqual(toFabric(doc), fixture('edge-ids').content)
+  assertRenderEquivalent(fixture('edge-ids').content, toFabric(doc), 'edge-ids')
   const { ok, errors } = validateDocument(doc)
   assert.equal(ok, false)
   const text = errors.map((error) => `${error.path}: ${error.message}`).join('\n')
@@ -256,8 +368,8 @@ test('an unknown field on a known object is preserved next to the typed fields',
 test('a Fabric group becomes a group of model objects', () => {
   const [group] = byType(modelOf('edge-unknown'), 'group')
   assert.equal(group.id, 'res_group_1')
-  assert.deepEqual(group.children.map((child) => child.type), ['shape', 'text'])
-  assert.equal(group.children[1].content, 'inside a group')
+  assert.deepEqual(group.children.map((child) => child.type), ['shape', 'unknown', 'text'])
+  assert.equal(group.children[2].content, 'inside a group')
 })
 
 test('a plain Circle is a shape, not ink', () => {
@@ -332,4 +444,13 @@ test('validation rejects a document with the wrong schema version, and a non-doc
 
 test('toFabric refuses an invalid document with a clear error', () => {
   assert.throws(() => toFabric({ schemaVersion: 1, page: { columns: 1, rows: 1 }, objects: [{ type: 'sparkle', z: 0 }] }), DocumentError)
+})
+
+test('the placement check really notices a moved, rotated or rescaled object', () => {
+  const content = fixture('app-all-tools').content
+  for (const change of [(g) => { g.x += 0.01 }, (g) => { g.rotation += 1 }, (g) => { g.scaleY *= 1.001 }, (g) => { g.flipX = !g.flipX }]) {
+    const doc = fromFabric(content, { columns: 1, rows: 1 })
+    change(doc.objects[3].geometry)
+    assert.throws(() => assertRenderEquivalent(content, toFabric(doc), 'changed'))
+  }
 })

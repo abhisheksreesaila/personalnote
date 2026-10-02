@@ -1,22 +1,33 @@
+import { centerFromOrigin, isSimplePath, originFromCenter, pathBounds, shiftPath, transformedDimensions } from './geometry.js'
 import { paletteKeyFor } from './palette.js'
 import { DEFAULTS, DEFAULT_PAGE, DocumentError, SCHEMA_VERSION } from './schema.js'
 import { validateDocument } from './validate.js'
 
-// Fabric JSON <-> document model. Pure functions over plain data; nothing here imports Fabric.
+// Fabric JSON <-> document model. Pure functions over plain data; nothing here imports Fabric. This file and geometry.js own
+// every Fabric convention (origins, stroke-inclusive boxes, path offsets, group-centred child coordinates), so the model and
+// the engines that read it never see them.
 //
 // Fabric JSON is what the app saves today: canvas.toJSON() ({ version, objects: [...] }), plus the page state kept beside it.
-// fromFabric moves every property it understands into a typed model field and leaves the rest in `extras`, so
-// toFabric(fromFabric(x)) is deep-equal to x. The only things that are not carried over one-to-one:
-//   - `arrowheads`, `colorKey` and `fillKey` are derived on the way in and ignored on the way out (Fabric stores none of them);
-//   - a content object without an `objects` array comes back with an empty one;
-//   - an ink colour is only split into colour + alpha when it is `#rrggbb` followed by two lowercase hex digits (what the
-//     highlighter writes); any other spelling stays whole in `color`, so it is never rewritten.
+// fromFabric moves every property it understands into a typed model field and leaves the rest in `extras`.
+//
+// toFabric(fromFabric(x)) is RENDER-EQUIVALENT to x, and equal to x key for key except for these deliberate, geometric changes:
+//   - Placement is rewritten in Fabric's centre convention: originX/originY come back as 'center' and left/top as the box
+//     centre (an object whose width or height is not stored, such as an agent-written Textbox, keeps origin 'left'/'top').
+//     Angle, scale, flip and skew come back as stored, with Fabric's defaults filled in for the ones that were absent.
+//   - Ink paths and inkPoints are re-based on the object's box, so their numbers change by a translation (and by ~1e-13 of
+//     rounding). A path's width and height come back as Fabric would compute them from the path, not as the 4-decimal rounded
+//     values in the saved JSON.
+//   - Group children's left/top are re-derived from their model position (rounding only).
+// Everything else is exactly equal. Besides that, `arrowheads`, `colorKey` and `fillKey` are derived on the way in and ignored
+// on the way out; a content object without an `objects` array comes back with an empty one; and an ink colour is only split
+// into colour + alpha when it is `#rrggbb` followed by two lowercase hex digits (what the highlighter writes), any other
+// spelling staying whole.
 
 const has = (object, key) => Object.hasOwn(object, key)
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
+const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
 const clone = (value) => structuredClone(value)
 
-const GEOMETRY = [['left', 'x'], ['top', 'y'], ['width', 'width'], ['height', 'height'], ['angle', 'rotation'], ['scaleX', 'scaleX'], ['scaleY', 'scaleY'], ['originX', 'originX'], ['originY', 'originY']]
 const TEXT_STYLE = [['fontFamily', 'fontFamily'], ['fontSize', 'fontSize'], ['fontWeight', 'fontWeight'], ['fontStyle', 'fontStyle'], ['lineHeight', 'lineHeight'], ['textAlign', 'textAlign'], ['underline', 'underline'], ['overline', 'overline'], ['linethrough', 'linethrough'], ['charSpacing', 'charSpacing'], ['padding', 'padding'], ['fill', 'color']]
 
 // Fabric key -> model key, per type. Dotted model keys are nested ('style.color').
@@ -67,13 +78,22 @@ function joinColor(color, alpha) {
   return alpha === undefined || typeof color !== 'string' ? color : `${color}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`
 }
 
+// Only objects whose placement fields are all well-formed are modelled; anything odd stays verbatim as `unknown`.
+const NUMERIC_PLACEMENT = ['left', 'top', 'width', 'height', 'angle', 'scaleX', 'scaleY', 'skewX', 'skewY', 'strokeWidth']
+function hasCleanPlacement(raw) {
+  return NUMERIC_PLACEMENT.every((key) => !has(raw, key) || isNumber(raw[key]))
+    && ['flipX', 'flipY', 'strokeUniform', 'visible'].every((key) => !has(raw, key) || typeof raw[key] === 'boolean')
+    && ['originX', 'originY'].every((key) => !has(raw, key) || ['left', 'center', 'right', 'top', 'bottom'].includes(raw[key]))
+}
+
 function classify(raw) {
+  if (!hasCleanPlacement(raw)) return null
   switch (raw.type) {
     case 'IText': case 'Textbox': return typeof raw.text === 'string' ? 'text' : null
     case 'Sticky': return typeof raw.text === 'string' ? 'sticky' : null
     case 'Rect': return 'rect'
     case 'Circle': return raw.isInk === true ? 'dot' : 'circle'
-    case 'Path': return raw.isInk === true ? 'stroke' : null
+    case 'Path': return raw.isInk === true && isSimplePath(raw.path) ? 'stroke' : null
     case 'Image': return typeof raw.src === 'string' ? 'image' : null
     case 'Connector': return 'connector'
     case 'Group': return Array.isArray(raw.objects) ? 'group' : null
@@ -81,7 +101,86 @@ function classify(raw) {
   }
 }
 
-function objectFromFabric(raw, index) {
+const strokeWidthOfRaw = (raw) => (isNumber(raw.strokeWidth) ? raw.strokeWidth : raw.type === 'Connector' ? 0 : 1)
+
+// The model's own stroke width (it lives under a different name per type), with Fabric's default when the note had none.
+function strokeWidthOfModel(object) {
+  const stored = object.type === 'shape' ? object.strokeWidth : object.type === 'ink' && object.kind === 'stroke' ? object.width : object.extras?.strokeWidth
+  return isNumber(stored) ? stored : object.type === 'connector' ? 0 : 1
+}
+
+const FLAT = { dx: 0, dy: 0 }
+
+// Fabric placement -> neutral geometry: the box's top-left in the parent frame, size, and rotation/scale/flip/skew about the
+// box centre. `frame` shifts a group child from Fabric's group-centred coordinates to the group's top-left.
+function geometryFromFabric(rest, frame, size) {
+  const number = (key, fallback) => (has(rest, key) ? rest[key] : fallback)
+  const geometry = {
+    rotation: number('angle', 0), scaleX: number('scaleX', 1), scaleY: number('scaleY', 1),
+    flipX: number('flipX', false), flipY: number('flipY', false), skewX: number('skewX', 0), skewY: number('skewY', 0),
+  }
+  const width = size ? size.width : has(rest, 'width') ? rest.width : undefined
+  const height = size ? size.height : has(rest, 'height') ? rest.height : undefined
+  const dimensions = transformedDimensions({
+    width: width ?? 0, height: height ?? 0, strokeWidth: strokeWidthOfRaw(rest), strokeUniform: rest.strokeUniform === true,
+    scaleX: geometry.scaleX, scaleY: geometry.scaleY, skewX: geometry.skewX, skewY: geometry.skewY,
+  })
+  const center = centerFromOrigin({
+    left: number('left', 0), top: number('top', 0), originX: number('originX', 'center'), originY: number('originY', 'center'),
+    angle: geometry.rotation, dimensions,
+  })
+  for (const key of ['left', 'top', 'width', 'height', 'angle', 'scaleX', 'scaleY', 'flipX', 'flipY', 'skewX', 'skewY', 'originX', 'originY']) delete rest[key]
+  const ordered = { x: center.x - (width ?? 0) / 2 + frame.dx, y: center.y - (height ?? 0) / 2 + frame.dy }
+  if (width !== undefined) ordered.width = width
+  if (height !== undefined) ordered.height = height
+  return Object.assign(ordered, geometry)
+}
+
+function geometryToFabric(object, frame, out) {
+  const geometry = object.geometry ?? {}
+  const rotation = geometry.rotation ?? 0
+  const scaleX = geometry.scaleX ?? 1
+  const scaleY = geometry.scaleY ?? 1
+  const skewX = geometry.skewX ?? 0
+  const skewY = geometry.skewY ?? 0
+  const { width, height } = geometry
+  const center = { x: (geometry.x ?? 0) + (width ?? 0) / 2 - frame.dx, y: (geometry.y ?? 0) + (height ?? 0) / 2 - frame.dy }
+  out.angle = rotation
+  out.scaleX = scaleX
+  out.scaleY = scaleY
+  out.flipX = geometry.flipX ?? false
+  out.flipY = geometry.flipY ?? false
+  out.skewX = skewX
+  out.skewY = skewY
+  if (width !== undefined) out.width = width
+  if (height !== undefined) out.height = height
+  if (width !== undefined && height !== undefined) {
+    out.originX = 'center'
+    out.originY = 'center'
+    out.left = center.x
+    out.top = center.y
+  } else {
+    // A size the engine measures itself (an agent-written Textbox has no height): place by the top-left, as it was written.
+    const dimensions = transformedDimensions({ width: width ?? 0, height: height ?? 0, strokeWidth: strokeWidthOfModel(object), strokeUniform: object.strokeUniform === true, scaleX, scaleY, skewX, skewY })
+    const point = originFromCenter({ ...center, originX: 'left', originY: 'top', angle: rotation, dimensions })
+    out.originX = 'left'
+    out.originY = 'top'
+    out.left = point.x
+    out.top = point.y
+  }
+}
+
+function shadowFromFabric(rest) {
+  const shadow = rest.shadow
+  if (!isObject(shadow) || typeof shadow.color !== 'string' || !isNumber(shadow.blur) || !isNumber(shadow.offsetX) || !isNumber(shadow.offsetY)) return undefined
+  const { color, blur, offsetX, offsetY, ...others } = shadow
+  delete rest.shadow
+  const model = { color, blur, x: offsetX, y: offsetY }
+  if (Object.keys(others).length) model.extras = others
+  return model
+}
+
+function objectFromFabric(raw, index, frame = FLAT) {
   const kind = isObject(raw) ? classify(raw) : null
   if (!kind) {
     const unknown = { type: 'unknown', z: index, raw: clone(raw) }
@@ -93,10 +192,11 @@ function objectFromFabric(raw, index) {
   delete rest.type
   if (typeof rest.semanticId === 'string') { object.id = rest.semanticId; delete rest.semanticId }
 
-  const geometry = {}
-  take(rest, geometry, GEOMETRY)
-  if (Object.keys(geometry).length) object.geometry = geometry
-  take(rest, object, [['opacity', 'opacity']])
+  const bounds = kind === 'stroke' ? pathBounds(rest.path) : null
+  object.geometry = geometryFromFabric(rest, frame, bounds)
+  take(rest, object, [['opacity', 'opacity'], ['visible', 'visible'], ['strokeUniform', 'strokeUniform']])
+  const shadow = shadowFromFabric(rest)
+  if (shadow) object.shadow = shadow
 
   if (kind === 'text') {
     object.mode = raw.type === 'IText' ? 'point' : 'box'
@@ -117,7 +217,8 @@ function objectFromFabric(raw, index) {
     object.mediaRef = { kind: 'inline', dataUrl: rest.src }
     delete rest.src
   } else if (kind === 'group') {
-    object.children = rest.objects.map((child, childIndex) => objectFromFabric(child, childIndex))
+    const childFrame = { dx: (object.geometry.width ?? 0) / 2, dy: (object.geometry.height ?? 0) / 2 }
+    object.children = rest.objects.map((child, childIndex) => objectFromFabric(child, childIndex, childFrame))
     delete rest.objects
   } else {
     object.kind = kind
@@ -131,8 +232,14 @@ function objectFromFabric(raw, index) {
       delete rest[colorKey]
     }
     if (kind === 'stroke') {
-      if (Array.isArray(rest.inkPoints)) { object.points = rest.inkPoints; delete rest.inkPoints }
-      if (Array.isArray(rest.path)) { object.path = rest.path; delete rest.path }
+      // Path and points are stored relative to the box's top-left corner, so they do not depend on Fabric's pathOffset.
+      object.path = shiftPath(rest.path, -bounds.left, -bounds.top)
+      delete rest.path
+      const points = rest.inkPoints
+      if (Array.isArray(points) && points.every((point) => isObject(point) && isNumber(point.x) && isNumber(point.y))) {
+        object.points = points.map((point) => ({ ...point, x: point.x - bounds.left, y: point.y - bounds.top }))
+        delete rest.inkPoints
+      }
     }
   }
   object.extras = rest
@@ -149,13 +256,16 @@ export function fromFabric(content, pageState) {
   return { schemaVersion: SCHEMA_VERSION, page, objects, extras }
 }
 
-function objectToFabric(object, resolveMedia) {
+function objectToFabric(object, resolveMedia, frame = FLAT) {
   if (object.type === 'unknown') return clone(object.raw)
   const out = clone(object.extras ?? {})
   const source = object
   if (object.id !== undefined) out.semanticId = object.id
-  for (const [fabricKey, key] of GEOMETRY) if (object.geometry && object.geometry[key] !== undefined) out[fabricKey] = object.geometry[key]
+  geometryToFabric(object, frame, out)
   if (object.opacity !== undefined) out.opacity = object.opacity
+  if (object.visible !== undefined) out.visible = object.visible
+  if (object.strokeUniform !== undefined) out.strokeUniform = object.strokeUniform
+  if (object.shadow !== undefined) out.shadow = { color: object.shadow.color, blur: object.shadow.blur, offsetX: object.shadow.x, offsetY: object.shadow.y, ...object.shadow.extras }
 
   switch (object.type) {
     case 'text':
@@ -185,18 +295,21 @@ function objectToFabric(object, resolveMedia) {
       }
       break
     }
-    case 'group':
+    case 'group': {
       out.type = FABRIC_TYPE.group
-      out.objects = orderedChildren(object.children).map((child) => objectToFabric(child, resolveMedia))
+      const childFrame = { dx: (object.geometry?.width ?? 0) / 2, dy: (object.geometry?.height ?? 0) / 2 }
+      out.objects = orderedChildren(object.children).map((child) => objectToFabric(child, resolveMedia, childFrame))
       break
+    }
     default: { // ink
       out.type = FABRIC_TYPE[object.kind]
       out.isInk = true
       put(source, out, FIELDS[object.kind])
       const colorKey = object.kind === 'dot' ? 'fill' : 'stroke'
       if (object.color !== undefined) out[colorKey] = joinColor(object.color, object.alpha)
-      if (object.points !== undefined) out.inkPoints = object.points
-      if (object.path !== undefined) out.path = object.path
+      const { x = 0, y = 0 } = object.geometry ?? {}
+      if (object.path !== undefined) out.path = shiftPath(object.path, x, y)
+      if (object.points !== undefined) out.inkPoints = object.points.map((point) => ({ ...point, x: point.x + x, y: point.y + y }))
     }
   }
   return structuredClone(out)
