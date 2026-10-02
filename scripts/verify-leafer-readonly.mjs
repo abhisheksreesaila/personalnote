@@ -73,6 +73,11 @@ try {
   await page.fill('#note-title', 'Renamed again')
   await page.waitForTimeout(1500)
   check('a save whose content belongs to another note is refused', puts.length === 0, JSON.stringify(puts.map((p) => [p.id, Object.keys(p.body)])))
+  await page.evaluate(() => document.querySelector('[data-note-id="2"]')?.click())
+  await page.waitForTimeout(2500)
+  check('after a refused save, switching notes still works', await page.evaluate(() => window.__personalNote.state.activeNoteId) === 2)
+  await page.evaluate(() => document.querySelector('[data-note-id="1"]')?.click())
+  await page.waitForTimeout(2000)
   puts.length = 0
 
   // 3. a new note: no Fabric object, typing saves no text

@@ -80,6 +80,7 @@ export function createScene({ host, width, height }) {
   let stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
   const textNodes = []
   const measuredText = []
+  const uniformStrokes = [] // strokeScaleFixed keeps a stroke a constant number of SCREEN pixels; Fabric's uniform stroke still follows the zoom
   let resolveMedia = null
 
   // ---- page furniture (screen space), stacked: shadow bands, edge, paper, fold lines, labels
@@ -227,6 +228,10 @@ export function createScene({ host, width, height }) {
     const matrix = placementMatrix(g, built.size)
     place(built.node, matrix)
     parent.add(built.node)
+    if (object.strokeUniform && built.node.stroke && built.node.strokeScaleFixed) {
+      uniformStrokes.push({ node: built.node, width: built.node.strokeWidth })
+      built.node.strokeWidth = built.node.strokeWidth * view.scale
+    }
     let box = null
     if (boxList && object.type !== 'connector') {
       box = boxOf(matrix, built.size.width ?? g.width ?? 0, built.size.height ?? g.height ?? 0)
@@ -238,6 +243,7 @@ export function createScene({ host, width, height }) {
 
   function applyView() {
     world.set({ x: view.x, y: view.y, scaleX: view.scale, scaleY: view.scale })
+    for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale
     drawChrome()
   }
 
@@ -249,6 +255,7 @@ export function createScene({ host, width, height }) {
       world.clear()
       textNodes.length = 0
       measuredText.length = 0
+      uniformStrokes.length = 0
       boxes = []
       stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
       const ordered = [...doc.objects].map((object, index) => [object, index]).sort(([a, i], [b, j]) => ((a.z ?? i) - (b.z ?? j)) || (i - j)).map(([object]) => object)

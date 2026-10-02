@@ -2028,7 +2028,7 @@ async function saveActiveNote({ unloading = false } = {}) {
   const noteId = state.activeNoteId
   const note = state.notes.find((item) => item.id === noteId)
   try {
-    if (useLeafer && state.activeNoteType === 'canvas' && leaferSource.noteId !== noteId) throw new Error('the content on hand belongs to another note')
+    if (useLeafer && state.activeNoteType === 'canvas' && leaferSource.noteId !== noteId) throw Object.assign(new Error('the content on hand belongs to another note'), { refused: true })
     if (state.activeNoteType === 'canvas') ensureCanvasObjectIds()
     const title = elements.title.value.trim() || 'Untitled note'
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
@@ -2050,7 +2050,8 @@ async function saveActiveNote({ unloading = false } = {}) {
     setSaveState('Saved')
   } catch (error) {
     console.error(error)
-    unsavedEdits = true
+    // A refused save is dropped, not retried: it would be refused again and block switching notes.
+    unsavedEdits = !error.refused
     setSaveState('Could not save', true)
     // An agent may have written first: keep the user's edits and merge its text in.
     if (/revision/i.test(error.message)) agentSync?.syncActiveNote().catch(console.error)

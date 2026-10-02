@@ -10,7 +10,7 @@
 // misplaced object under the noise:
 //   differing%   share of pixels whose largest channel differs by more than 40/255 (glyph edges, shadow banding)
 //   within1px%   the same share when the Leafer picture may sit up to a pixel off in x and y (best of nine offsets)
-//   blockMax     the worst 24x24-pixel block's mean absolute difference (0-255): catches a moved, missing or recoloured object
+//   blockMax     the share of pixels in the worst 12x12 block that differ by more than 40/255 and have no close colour within a pixel (%): a missing sticky or thin stroke fills a block
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -139,7 +139,21 @@ async function compare(comparePage, a, b) {
         const dr = Math.abs(one.data[i] - two.data[i])
         const dg = Math.abs(one.data[i + 1] - two.data[i + 1])
         const db = Math.abs(one.data[i + 2] - two.data[i + 2])
-        blocks[Math.floor(y / BLOCK) * blocksX + Math.floor(x / BLOCK)] += (dr + dg + db) / 3 / (BLOCK * BLOCK)
+        // For the block score a pixel only counts when nothing within one pixel of it in the other picture is close in colour, so a
+        // text glyph one pixel off scores nothing while a missing sticky or stroke still does.
+        if (Math.max(dr, dg, db) > 40) {
+          let matched = false
+          for (let oy = -1; oy <= 1 && !matched; oy += 1) {
+            for (let ox = -1; ox <= 1 && !matched; ox += 1) {
+              const nx = x + ox
+              const ny = y + oy
+              if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+              const j = (ny * width + nx) * 4
+              if (Math.max(Math.abs(one.data[i] - two.data[j]), Math.abs(one.data[i + 1] - two.data[j + 1]), Math.abs(one.data[i + 2] - two.data[j + 2])) <= 40) matched = true
+            }
+          }
+          if (!matched) blocks[Math.floor(y / BLOCK) * blocksX + Math.floor(x / BLOCK)] += 100 / (BLOCK * BLOCK)
+        }
         if (Math.max(dr, dg, db) > 40) {
           differing += 1
           out.data[i] = 255; out.data[i + 1] = 0; out.data[i + 2] = 60; out.data[i + 3] = 255
@@ -173,11 +187,9 @@ async function compare(comparePage, a, b) {
 }
 
 // ---- pass/fail thresholds (written down, not eyeballed)
-// Calibrated on this machine (Chromium, no Geist Mono installed). Text is the noise floor: glyph anti-aliasing, and Fabric re-measuring
-// a text block's width on load (which moves it by up to a pixel), give clean text notes about 0.5% differing pixels and a worst
-// 12x12 block near 60/255 (up to ~95 where a thin rotated edge lands differently at 2x). A missing or wrongly coloured object lights
-// blocks near 200, and placement is gated exactly by the object-box check (drawn boxes vs the oracle, 0.05 px), not by pixels.
-const LIMITS = { differingPct: 3.0, blockMax: 100, objectBoxPx: 0.05 }
+// Calibrated on this machine: glyph anti-aliasing and Fabric re-measuring text widths on load give clean notes a small share of differing
+// pixels per block; a missing sticky or stroke fills a block. Placement is gated exactly by the object-box check (0.05 px), not by pixels.
+const LIMITS = { differingPct: 3.0, blockMax: 45, objectBoxPx: 0.05 }
 // Notes the Fabric app rewrites when it opens them (it grows and shifts the page grid) cannot be compared pixel for pixel using the
 // stored note: those rows also show the stored-note numbers for information, and the gate is on the same note after Fabric's rewrite.
 
@@ -313,7 +325,7 @@ try {
 }
 console.table(rows)
 for (const note of notes) console.log(`note: ${note}`)
-console.log(`limits: differing% <= ${LIMITS.differingPct}, blockMax (12x12 blocks) <= ${LIMITS.blockMax}, drawn box vs oracle <= ${LIMITS.objectBoxPx}px, object counts exact`)
+console.log(`limits: differing% <= ${LIMITS.differingPct}, blockMax (share of differing pixels in the worst 12x12 block, %) <= ${LIMITS.blockMax}, drawn box vs oracle <= ${LIMITS.objectBoxPx}px, object counts exact`)
 console.log(`screenshots and diffs: ${outDir}`)
 if (failures.length) {
   console.error(`\nFAIL: ${failures.length} problem(s)\n  ${failures.join('\n  ')}`)
