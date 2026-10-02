@@ -7,6 +7,7 @@ import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/de
 import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
+import { decodeNote, encodeNote } from './core/note-codec.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
@@ -155,6 +156,7 @@ document.querySelector('#app').innerHTML = `
               <button role="menuitem" id="share-print"><i data-lucide="printer"></i><span>Print preview</span><kbd id="print-kbd">Ctrl P</kbd></button>
               <button role="menuitem" id="share-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
               <button role="menuitem" id="share-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
+              <button role="menuitem" id="share-vault"><i data-lucide="folder-down"></i><span>Obsidian vault</span></button>
             </div>
           </div>
           <button class="icon-button glass-button" id="clear-note" title="Clear all" aria-label="Clear all"><i data-lucide="eraser"></i></button>
@@ -2003,6 +2005,8 @@ let syncedIds = new Set()
 let agentSync = null
 
 function canvasObjectIds(document) {
+  // JSON Canvas (what the server sends and Leafer mode keeps) or Fabric JSON (the editor's working copy).
+  if (document && !Array.isArray(document.objects)) return new Set([...(document.nodes || []), ...(document.edges || [])].map((entry) => entry?.id).filter(Boolean))
   return new Set((document?.objects || []).map((object) => object?.semanticId).filter(Boolean))
 }
 
@@ -2032,11 +2036,12 @@ async function saveActiveNote({ unloading = false } = {}) {
     if (state.activeNoteType === 'canvas') ensureCanvasObjectIds()
     const title = elements.title.value.trim() || 'Untitled note'
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
-    // Leafer shows the note read-only: the empty Fabric canvas must never be saved, so the note's own content goes back untouched.
+    // Leafer shows the note read-only: the empty Fabric canvas must never be saved, so the note's own content (as the server sent
+    // it, JSON Canvas) goes back untouched. The Fabric editor saves its working copy converted to JSON Canvas (F-026).
     const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : useLeafer ? leaferSource.content : canvas.toJSON()
     const body = JSON.stringify({
       title,
-      content: savedContent,
+      content: state.activeNoteType === 'canvas' && !useLeafer ? encodeNote(savedContent, state.pages) : savedContent,
       pageState: useLeafer && state.activeNoteType === 'canvas' ? leaferSource.pageState : state.pages,
       notebookId: note?.notebookId,
       revision: note?.revision,
@@ -2191,12 +2196,14 @@ async function settleOutgoingNote() {
 }
 
 // Leafer mode: note JSON -> document model -> Leafer nodes. The view and page grid are set the way the Fabric path sets them.
-function showLeaferNote(note, { openView = true } = {}) {
-  leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: note.pageState || { columns: 1, rows: 1 } }
+async function showLeaferNote(note, { openView = true } = {}) {
+  // Leafer reads Fabric JSON for now: the stored JSON Canvas is converted for it, and the note's own content is kept to save back.
+  const decoded = await decodeNote(note)
+  leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.pageState }
   canvas.remove(...canvas.getObjects()) // the Fabric canvas holds nothing in this mode, whatever happened before
-  state.pages = note.pageState || { columns: 1, rows: 1 }
+  state.pages = decoded.pageState
   resizePaper()
-  leaferCanvas.showNote(note.content, state.pages)
+  leaferCanvas.showNote(decoded.content, state.pages)
   if (openView) openCanvasView()
   leaferCanvas.setColors(pageColors)
   leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
@@ -2251,24 +2258,27 @@ async function selectNote(id) {
       state.history = []
       state.historyIndex = -1
     } else if (useLeafer) {
-      showLeaferNote(note)
+      await showLeaferNote(note)
+      if (sequence !== selectSequence) return
       state.history = []
       state.historyIndex = -1
       syncedIds = canvasObjectIds(note.content)
       setTool('hand')
     } else {
-      state.pages = note.pageState || { columns: 1, rows: 1 }
+      const decoded = await decodeNote(note)
+      if (sequence !== selectSequence) return
+      state.pages = decoded.pageState
       resizePaper()
       openCanvasView()
-      await canvas.loadFromJSON(note.content || { objects: [] })
-      saveTiming.noteLoaded(note.content)
+      await canvas.loadFromJSON(decoded.content)
+      saveTiming.noteLoaded(decoded.content)
       bindCanvasTextObjects()
       normalizedNote = normalizeNotebookFonts()
       normalizedNote = rebuildConnectors() || normalizedNote
       normalizedNote = reconcilePages(true) || normalizedNote
       state.history = [snapshot()]
       state.historyIndex = 0
-      syncedIds = canvasObjectIds(note.content)
+      syncedIds = canvasObjectIds(decoded.content)
       setTool('text')
     }
     setSaveState('Saved')
@@ -2301,7 +2311,7 @@ async function applyRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
   if (useLeafer) {
     elements.title.value = note.title
-    showLeaferNote(note, { openView: false })
+    await showLeaferNote(note, { openView: false })
     syncedIds = canvasObjectIds(note.content)
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
@@ -2313,16 +2323,17 @@ async function applyRemoteNote(note) {
   let reconciled = false
   try {
     elements.title.value = note.title
-    state.pages = note.pageState || { columns: 1, rows: 1 }
+    const decoded = await decodeNote(note)
+    state.pages = decoded.pageState
     resizePaper()
-    await canvas.loadFromJSON(note.content || { objects: [] })
-    saveTiming.noteLoaded(note.content)
+    await canvas.loadFromJSON(decoded.content)
+    saveTiming.noteLoaded(decoded.content)
     bindCanvasTextObjects()
     rebuildConnectors()
     setTool(state.tool)
     state.history = [snapshot()]
     state.historyIndex = 0
-    syncedIds = canvasObjectIds(note.content)
+    syncedIds = canvasObjectIds(decoded.content)
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
     reconciled = reconcilePages(true)
@@ -2339,22 +2350,24 @@ async function mergeRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
   if (useLeafer) {
     // Only the title can be unsaved here: draw the agent's newer content and save the title on top of the new revision.
-    const added = (note.content?.objects || []).filter((object) => object?.semanticId && !syncedIds.has(object.semanticId)).length
-    showLeaferNote(note, { openView: false })
+    const added = [...canvasObjectIds(note.content)].filter((id) => !syncedIds.has(id)).length
+    await showLeaferNote(note, { openView: false })
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) summary.revision = note.revision
     syncedIds = canvasObjectIds(note.content)
     queueSave()
     return added
   }
-  const remoteObjects = note.content?.objects || []
+  // Merge by node id: the remote note's nodes become Fabric objects carrying the same ids (semanticId).
+  const remote = await decodeNote(note)
+  const remoteObjects = remote.content?.objects || []
   const added = mergeRemoteAppends({ syncedIds, localObjects: canvas.getObjects(), remoteObjects })
   const enlivened = added.length ? await util.enlivenObjects(added) : []
   if (note.id !== state.activeNoteId) return 0
   const summary = state.notes.find((item) => item.id === note.id)
   if (summary) summary.revision = note.revision
-  syncedIds = new Set([...syncedIds, ...canvasObjectIds(note.content)])
-  const remotePages = note.pageState || {}
+  syncedIds = new Set([...syncedIds, ...canvasObjectIds(remote.content)])
+  const remotePages = remote.pageState || {}
   const columns = Math.max(state.pages.columns, remotePages.columns || 1)
   const rows = Math.max(state.pages.rows, remotePages.rows || 1)
   if (columns !== state.pages.columns || rows !== state.pages.rows) {
@@ -3788,6 +3801,7 @@ elements.shareMenu.addEventListener('click', (event) => {
   if (item.id === 'share-print') openPrintPreview()
   else if (item.id === 'share-backup') void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
   else if (item.id === 'share-markdown') void downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip')
+  else if (item.id === 'share-vault') void downloadWorkspaceExport('/export/vault', 'personal-note-obsidian-vault.zip')
 })
 elements.shareMenu.addEventListener('keydown', (event) => {
   if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return

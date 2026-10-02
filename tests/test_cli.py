@@ -82,6 +82,21 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(text, "Line one\n\nLine two\n")
 
+    def test_vault_export_and_import_round_trip_through_the_cli(self):
+        note = self.create_note(title="Vault note", text="Exported through the vault")
+        target = self.database_path.parent / "vault"
+        code, summary = self.run_cli("export", "vault", "--output", str(target))
+        self.assertEqual((code, summary["canvasFiles"]), (0, 1))
+        canvas = next(target.rglob("*.canvas"))
+        self.assertEqual(json.loads(canvas.read_text())["nodes"][0]["text"], "Exported through the vault")
+        code, again = self.run_cli_raw("export", "vault", "--output", str(target))
+        self.assertEqual((code, json.loads(again)["ok"]), (2, False))  # never overwrites
+        code, imported = self.run_cli("import-vault", str(target))
+        self.assertEqual((code, imported["notesImported"]), (0, 1))
+        code, found = self.run_cli("search", "vault")
+        self.assertEqual(len(found), 2)
+        self.assertIn(note["id"], [item["id"] for item in found])
+
     def test_read_of_a_mind_map_is_an_outline(self):
         code, note = self.run_cli("notes", "create", "--title", "Map", "--type", "mindmap")
         self.assertEqual(code, 0)

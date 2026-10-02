@@ -18,7 +18,7 @@
     "desktop:mac-app": "sh scripts/build-mac-app.sh",
     "desktop:linux-bundle": "sh scripts/build-linux-bundle.sh",
     "test:cli": "node scripts/run-python.mjs -m unittest tests.test_cli -v",
-    "test:ui": "node --test src/*.test.js src/core/document/*.test.js src/modules/editor/*.test.js src/modules/canvas-leafer/*.test.js src/modules/voice/*.test.js src/modules/sync/*.test.js src/modules/library/*.test.js src/modules/desktop/*.test.js src/mindmap/*.test.js",
+    "test:ui": "node --test src/*.test.js src/core/*.test.js src/core/document/*.test.js src/modules/editor/*.test.js src/modules/canvas-leafer/*.test.js src/modules/voice/*.test.js src/modules/sync/*.test.js src/modules/library/*.test.js src/modules/desktop/*.test.js src/mindmap/*.test.js",
     "voice:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-voice.ps1",
     "voice:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-voice.ps1",
     "build": "vite build",
