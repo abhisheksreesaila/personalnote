@@ -26,7 +26,7 @@ export function storedEncoding({ hasAlpha }) {
 }
 
 // A new picture of stored size width x height, centred on `point`, at most 520 on the long side and never enlarged. Same geometry the
-// Fabric path wrote (natural size, scaled), so the note opens the same in both. `index` offsets the 2nd, 3rd ... picture of one drop.
+// Fabric path wrote (natural size, scaled about the box's centre, so x and y are the corner of the UNSCALED box), so the note opens the same in both. `index` offsets the 2nd, 3rd ... picture of one drop.
 export function newImage({ id, z, mediaId, width, height, point, index = 0 }) {
   const shown = fitImage({ width, height }, MEDIA_PLACE_SIDE)
   const scale = shown.width / width
@@ -35,7 +35,7 @@ export function newImage({ id, z, mediaId, width, height, point, index = 0 }) {
     type: 'image',
     z,
     mediaRef: { kind: 'media', id: mediaId },
-    geometry: { x: point.x + index * OFFSET - shown.width / 2, y: point.y + index * OFFSET - shown.height / 2, width, height, scaleX: scale, scaleY: scale, ...UPRIGHT },
+    geometry: { x: point.x + index * OFFSET - width / 2, y: point.y + index * OFFSET - height / 2, width, height, scaleX: scale, scaleY: scale, ...UPRIGHT },
   }
 }
 

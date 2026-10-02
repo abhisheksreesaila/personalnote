@@ -131,6 +131,8 @@ try {
 
   const screenOf = (px, py) => pn(page, ([x, y]) => { const view = window.__personalNote.leaferCanvas().view(); const rect = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: rect.left + view.x + x * view.scale, y: rect.top + view.y + y * view.scale } }, [px, py])
 
+  // where the drop point is on the page, as drawn: the middle of the picture's on-screen box
+  const centreOnScreen = async (id, want = { x: 430, y: 540 }) => { const c = await pn(page, (key) => window.__personalNote.leaferCanvas().pageCorners(key), id); const x = (c[0].x + c[2].x) / 2; const y = (c[0].y + c[2].y) / 2; return { x, y, near: Math.abs(x - want.x) < 2 && Math.abs(y - want.y) < 2 } }
   // ---------------------------------------------------------------- drop: a 12-megapixel photo, with the frame budget measured
   const photo = await makePicture(page, { name: 'photo.jpg', kind: 'photo', width: 4000, height: 3000, type: 'image/jpeg' })
   const at = await screenOf(430, 540)
@@ -149,7 +151,7 @@ try {
   check('drop: it is a media-library reference, not a data URL', first?.mediaRef?.kind === 'media' && /^[0-9a-f]{64}\.jpg$/.test(first.mediaRef.id), JSON.stringify(first?.mediaRef).slice(0, 80))
   const shownW = first.geometry.width * first.geometry.scaleX
   const shownH = first.geometry.height * first.geometry.scaleY
-  check('drop: stored at 1400 px on the long side, shown at most 520 wide, centred on the drop point', first.geometry.width === 1400 && first.geometry.height === 1050 && Math.abs(Math.max(shownW, shownH) - 520) < 0.5 && Math.abs(first.geometry.x + shownW / 2 - 430) < 2 && Math.abs(first.geometry.y + shownH / 2 - 540) < 2, JSON.stringify(first.geometry))
+  check('drop: stored at 1400 px on the long side, shown at most 520 wide, centred on the drop point', first.geometry.width === 1400 && first.geometry.height === 1050 && Math.abs(Math.max(shownW, shownH) - 520) < 0.5 && Math.abs(first.geometry.x + first.geometry.width / 2 - 430) < 2 && Math.abs(first.geometry.y + first.geometry.height / 2 - 540) < 2 && (await centreOnScreen(first.id)).near, JSON.stringify(first.geometry))
   check('drop: the note is saved', await waitSave(before))
   check('drop: no save carries picture bytes (no data URL anywhere in what was sent)', puts.every((body) => !body.includes('data:image')), `${puts.length} saves`)
   const stored = await (await api(`/notes/${noteId}`)).json()
@@ -248,6 +250,87 @@ try {
   await waitFor(async () => Math.abs((await geometryOf(picked.id)).x - g0.x) < 0.5)
   const gBack = await geometryOf(picked.id)
   check('move and resize undo one step each, back to where the picture was placed', Math.abs(gBack.x - g0.x) < 0.5 && Math.abs(gBack.width * gBack.scaleX - g0.width * g0.scaleX) < 0.5, JSON.stringify(gBack))
+
+
+  // ---------------------------------------------------------------- export and print against the Fabric render of the same note
+  const fixture = JSON.parse(fs.readFileSync(new URL('../tests/fixtures/documents/app-all-tools.json', import.meta.url), 'utf8'))
+  const note2 = await (await api('/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Export', notebookId: notebooks[0].id }) })).json()
+  const put2 = await api(`/notes/${note2.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Export', notebookId: notebooks[0].id, revision: note2.revision, content: fixture.content, pageState: { columns: 2, rows: 1 } }) })
+  check('export note: the all-tools fixture is stored on a 2 x 1 grid', put2.ok)
+  await pn(page, (id) => window.__personalNote.refreshWorkspaceLists().then(() => window.__personalNote.selectNote(id)), note2.id)
+  await page.waitForFunction((id) => window.__personalNote.state.activeNoteId === id, note2.id, { timeout: 30000 })
+  await settle(page)
+  const small = await makePicture(page, { name: 'second.png', kind: 'cutout', width: 500, height: 300, type: 'image/png' })
+  const mid = await makePicture(page, { name: 'mid.jpg', kind: 'photo', width: 1200, height: 900, type: 'image/jpeg' })
+  await dropFiles(page, [small], await screenOf(1300, 540))
+  await waitFor(async () => (await images(page)).length === 2)
+  await dropFiles(page, [mid], await screenOf(560, 760))
+  await waitFor(async () => (await images(page)).length === 3)
+  await settle(page)
+  const objects2 = await images(page)
+  const imageBoxes = objects2.map((o) => { const w = o.geometry.width * o.geometry.scaleX; const h = o.geometry.height * o.geometry.scaleY; return { x: o.geometry.x + o.geometry.width / 2 - w / 2, y: o.geometry.y + o.geometry.height / 2 - h / 2, w, h } })
+  console.log('INFO  boxes', JSON.stringify(imageBoxes.map((b) => [b.x, b.y, b.w, b.h].map(Math.round))))
+  check('export note: it holds three pictures (one from the fixture, two just dropped), all media references', objects2.length === 3 && objects2.every((o) => o.mediaRef.kind === 'media'))
+
+  const leaferSheet = (column) => page.evaluate(async (c) => {
+    const blob = await window.__personalNote.leaferCanvas().renderRegion({ x: c * 860, y: 0, width: 860, height: 1080 }, { pixelRatio: 2 })
+    const bytes = new Uint8Array(await blob.arrayBuffer()); let text = ''
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    return btoa(text)
+  }, column).then((b64) => Buffer.from(b64, 'base64'))
+  const fabricSheet = (column) => page.evaluate(async (c) => {
+    const { toFabricUnchecked } = await import('/src/core/document/fabric.js')
+    const document_ = window.__personalNote.leaferEdits.doc
+    const urls = new Map()
+    const collect = async (list) => { for (const o of list) { if (o.type === 'image' && o.mediaRef.kind === 'media') { const blob = await (await fetch(`/api/media/${o.mediaRef.id}`)).blob(); urls.set(o.mediaRef.id, await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(blob) })) } } }
+    await collect(document_.objects)
+    const json = toFabricUnchecked(document_, { resolveMedia: (ref) => urls.get(ref.id) })
+    return (await window.__personalNote.renderFabricPrintSheet(c, 0, json)).split(',')[1]
+  }, column).then((b64) => Buffer.from(b64, 'base64'))
+
+  const sheets = []
+  for (const column of [0, 1]) {
+    const leafer = await leaferSheet(column)
+    const fabric = await fabricSheet(column)
+    sheets.push({ leafer, fabric })
+    if (process.env.SAVE_DIR) { fs.mkdirSync(process.env.SAVE_DIR, { recursive: true }); fs.writeFileSync(path.join(process.env.SAVE_DIR, `leafer-${column}.png`), leafer); fs.writeFileSync(path.join(process.env.SAVE_DIR, `fabric-${column}.png`), fabric) }
+    const whole = await diff(page, fabric, leafer)
+    const regions = []
+    for (const box of imageBoxes) {
+      const x0 = Math.round((box.x - column * 860) * 2) + 6; const y0 = Math.round(box.y * 2) + 6
+      const x1 = Math.round((box.x + box.w - column * 860) * 2) - 6; const y1 = Math.round((box.y + box.h) * 2) - 6
+      if (x1 > x0 + 10 && y1 > y0 + 10 && x0 >= 0 && x1 <= 1720 && y1 <= 2160) regions.push({ box, ...(await diff(page, fabric, leafer, [x0, y0, x1, y1])) })
+    }
+    console.log(`INFO  sheet ${column + 1} vs Fabric: ${whole.size?.join('x')} ${whole.over40Pct?.toFixed(3)}% of pixels differ by > 40/255, mean level ${whole.meanLevel?.toFixed(3)}; picture interiors: ${regions.map((r) => `${r.over40Pct.toFixed(2)}%/${r.meanLevel.toFixed(2)}`).join(', ') || 'none inside the sheet'}`)
+    check(`export: print sheet ${column + 1} is ${1720}x${2160} like the Fabric sheet and matches it (<= 3% of pixels differ by more than 40/255: glyph edges)`, whole.size?.[0] === 1720 && whole.size?.[1] === 2160 && whole.over40Pct <= 3, JSON.stringify(whole))
+    check(`export: sheet ${column + 1} pictures match the Fabric pictures (interior mean level <= 4/255)`, regions.every((r) => r.meanLevel <= 4 && r.over40Pct <= 1), JSON.stringify(regions))
+    // no screen-only chrome: the strips along the sheet's edges (where page furniture such as fold lines, shadows and edges would be) are white
+    const edge = await page.evaluate(async (b64) => {
+      const bmp = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob()); const c = new OffscreenCanvas(bmp.width, bmp.height); const g = c.getContext('2d'); g.drawImage(bmp, 0, 0)
+      const d = g.getImageData(0, 0, bmp.width, bmp.height).data; let off = 0; let total = 0
+      for (let y = 0; y < bmp.height; y += 1) for (let x = 0; x < bmp.width; x += 1) { if (x > 3 && x < bmp.width - 4 && y > 3 && y < bmp.height - 4) continue; const i = (y * bmp.width + x) * 4; total += 1; if (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250) off += 1 }
+      return { off, total }
+    }, leafer.toString('base64'))
+    check(`export: sheet ${column + 1} has no page furniture along its edges (paper colour, shadow, fold line, labels)`, edge.off / edge.total < 0.002, JSON.stringify(edge))
+  }
+
+  // the note as one picture, from the Share menu: the same pixels as the two sheets side by side
+  await page.click('#share-button')
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#share-png')])
+  const pictureFile = path.join(work, 'note.png')
+  await download.saveAs(pictureFile)
+  const notePng = fs.readFileSync(pictureFile)
+  const stitched = await page.evaluate(async ([noteB64, a, b]) => {
+    const load = async (data) => createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob())
+    const [whole, one, two] = await Promise.all([load(noteB64), load(a), load(b)])
+    const c = new OffscreenCanvas(whole.width, whole.height); const g = c.getContext('2d'); g.drawImage(one, 0, 0); g.drawImage(two, one.width, 0)
+    const ref = g.getImageData(0, 0, whole.width, whole.height).data
+    const d = new OffscreenCanvas(whole.width, whole.height); const x = d.getContext('2d'); x.drawImage(whole, 0, 0)
+    const got = x.getImageData(0, 0, whole.width, whole.height).data
+    let different = 0; for (let i = 0; i < ref.length; i += 4) if (Math.abs(ref[i] - got[i]) + Math.abs(ref[i + 1] - got[i + 1]) + Math.abs(ref[i + 2] - got[i + 2]) > 6) different += 1
+    return { width: whole.width, height: whole.height, different, pixels: ref.length / 4 }
+  }, [notePng.toString('base64'), sheets[0].leafer.toString('base64'), sheets[1].leafer.toString('base64')])
+  check('export: "Note as picture" downloads one PNG, 2 x 1 pages at twice size, pixel-equal to the two print sheets side by side', stitched.width === 3440 && stitched.height === 2160 && stitched.different / stitched.pixels < 0.0005 && download.suggestedFilename() === 'Export.png', JSON.stringify(stitched))
 
   console.log(`INFO  errors: ${errors.length ? errors.join(' | ') : 'none'}`)
   check('no page errors', errors.length === 0, errors.join(' | '))

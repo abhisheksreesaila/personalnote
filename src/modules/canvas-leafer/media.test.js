@@ -31,9 +31,8 @@ test('a new picture is placed like the Fabric path: at most 520 on the long side
   const scale = MEDIA_PLACE_SIDE / 1400
   assert.equal(a.geometry.width, 1400)
   assert.ok(Math.abs(a.geometry.scaleX - scale) < 1e-9 && a.geometry.scaleX === a.geometry.scaleY)
-  const shownW = 1400 * a.geometry.scaleX
-  const shownH = 1050 * a.geometry.scaleY
-  assert.ok(Math.abs(a.geometry.x + shownW / 2 - 430) < 1e-6 && Math.abs(a.geometry.y + shownH / 2 - 540) < 1e-6)
+  // the box turns and scales about its centre (schema.js), so the centre of the unscaled box is the drop point
+  assert.ok(Math.abs(a.geometry.x + 1400 / 2 - 430) < 1e-6 && Math.abs(a.geometry.y + 1050 / 2 - 540) < 1e-6)
   const b = newImage({ id: 'i2', z: 5, mediaId: 'h.png', width: 1400, height: 1050, point: { x: 430, y: 540 }, index: 1 })
   assert.ok(Math.abs(b.geometry.x - a.geometry.x - 28) < 1e-6 && Math.abs(b.geometry.y - a.geometry.y - 28) < 1e-6)
   const small = newImage({ id: 'i3', z: 6, mediaId: 'h.png', width: 100, height: 50, point: { x: 100, y: 100 }, index: 0 })
