@@ -228,6 +228,7 @@ Merged into `leafer` at dbc8cbc. Instant growth on all four sides and fold-back,
 ## F-033 Images (media library, F-023), export, print on Leafer (P-09) [done]
 Merged into `leafer` at 14ea4a1. Pictures stored as content-addressed media (POST /api/media, streamed 20 MB cap, no SVG); export/print rendered offscreen by Leafer and pixel-matched to Fabric; print keeps app chrome out (fixed a blank extra PDF page). Zoom control and minimap step aside from selection handles. F-023 non-image file cards still to build.
 ## F-034 Performance pass and agent sync on Leafer (P-10) [doing]
+- [ ] leaving a note doesn't re-send its unchanged content (an extra write per switch; can show a false "Could not save" after an agent edits a note you only viewed)
 - [ ] history combine(): a later op's page shift must also shift earlier ops' `after` for objects it doesn't name (two prepends in one step; unit test from F-032 review)
 - [ ] merge arriving before our PUT response updates leaferServerShift uses the old server frame (narrow race)
 - [ ] pen at dpr 2: pointer-to-frame p95 ~40 ms with 33-83 ms frames after pointer-down/mid-stroke in headless; confirm on the Mac and fix if real
@@ -238,8 +239,11 @@ Merged into `leafer` at 14ea4a1. Pictures stored as content-addressed media (POS
 - [ ] research optimizations from F-024: baked sticky shadows, per-page bitmaps below 60% zoom with vectors detached, cull off-screen pages, DPR capped at 2; before/after numbers kept for the blog (F-037)
 Includes a speed test in the Mac app before shipping.
 ## F-035 Phones and pencil, Leafer becomes default (P-11) [doing]
-- [ ] on a phone-emulated context a mouse drag of an object doesn't reach the editor's move events
-- [ ] voice dictation into text and Prettify work in Leafer mode (disabled there after F-029)
+- [x] finger and phone select/move/resize, pinch/pan, keyboard-aware text editor, Pencil draws while fingers pan (finger drawing back after 10 s or on tapping Draw)
+- [x] voice dictation into text and Prettify work in Leafer mode (Prettify skips locked texts)
+Merged into `leafer` at f40cc31, except the default flip.
+- [ ] the default flip to Leafer, after the captain's Mac speed test (F-034)
+- [ ] check the Pencil palm behaviour and on-screen keyboard on a real iPad/iPhone
 ## F-036 Remove Fabric (P-12) [todo]
 ## F-037 Blog post: how we made it fast [todo]
 Captain: the 500/1,000/100,000-object engine test "shows the care… make it a story… publish it in the blog… the test is not a throwaway."
