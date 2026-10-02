@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
-import { generateStressNote } from './benchmark-stress-note.mjs'
+import { generateStressNote } from '../src/modules/speedtest/stress-note.js'
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => { const [key, ...value] = arg.replace(/^--/, '').split('='); return [key, value.length ? value.join('=') : 'true'] }))
 const dprs = args.dpr ? [Number(args.dpr)] : [1, 2]
@@ -141,21 +141,35 @@ async function runNote(browser, note, dpr) {
   const run = (name) => !only || only.has(name)
   const cdp = await context.newCDPSession(page)
 
-  if (run('pan')) rows.push(await frames(page, 'pan at the opening view', () => wheelPan(page)))
+  const zoomedOut = () => page.evaluate(() => {
+    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+    state.canvasZoom = 0.3 / state.displayScale // 30%: below the 60% the page bitmaps are for
+    setCanvasViewportOffset(24, 24)
+    return getCanvasScale()
+  })
+  const at100 = () => page.evaluate(() => {
+    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+    state.canvasZoom = 1
+    setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104)
+  })
+  if (run('pan') || run('zoom')) {
+    await zoomedOut()
+    await page.waitForTimeout(600)
+    if (flags?.pageBitmaps !== 'off') { await wheelPan(page); await page.waitForTimeout(3500) }
+  }
+  if (run('pan')) rows.push(await frames(page, 'pan, zoomed out to 30%', () => wheelPan(page)))
   if (run('zoom')) {
+    await zoomedOut()
+    await page.waitForTimeout(300)
     await page.mouse.move(700, 450)
-    rows.push(await frames(page, 'zoom (ctrl+wheel)', async () => {
+    rows.push(await frames(page, 'zoom (ctrl+wheel) from 30%', async () => {
       await page.keyboard.down('Control')
       for (let i = 0; i < 120; i += 1) { await page.mouse.wheel(0, i < 60 ? -12 : 12); await nextFrame(page) }
       await page.keyboard.up('Control')
     }))
     await page.waitForTimeout(500)
   }
-  await page.evaluate(() => {
-    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
-    state.canvasZoom = 1
-    setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104)
-  })
+  await at100()
   await page.waitForTimeout(600)
   if (run('pan')) rows.push(await frames(page, 'pan at 100%', () => wheelPan(page)))
 

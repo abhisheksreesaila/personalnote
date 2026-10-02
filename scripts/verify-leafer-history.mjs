@@ -149,10 +149,13 @@ try {
     for (const object of adds) edits.record({ changes: [{ id: object.id, before: null, after: object }] })
     edits.end()
     const times = []
-    for (let n = 0; n < 6; n++) { const t0 = performance.now(); edits.undo(); times.push(performance.now() - t0); const t1 = performance.now(); edits.redo(); times.push(performance.now() - t1) }
-    return { objects: edits.doc.objects.length, median: times.sort((a, b) => a - b)[times.length >> 1], max: Math.max(...times) }
+    const undos = []
+    const redos = []
+    for (let n = 0; n < 6; n++) { const t0 = performance.now(); edits.undo(); const u = performance.now() - t0; undos.push(u); times.push(u); const t1 = performance.now(); edits.redo(); const r = performance.now() - t1; redos.push(r); times.push(r) }
+    const med = (list) => [...list].sort((a, b) => a - b)[list.length >> 1]
+    return { objects: edits.doc.objects.length, median: med(times), max: Math.max(...times), undo: med(undos), redo: med(redos) }
   })
-  console.log(`INFO  600 added objects: ${timing.objects} in the note; undo/redo including re-drawing Leafer: median ${timing.median.toFixed(1)} ms, max ${timing.max.toFixed(1)} ms`)
+  console.log(`INFO  600 added objects: ${timing.objects} in the note; undo/redo including re-drawing Leafer: median ${timing.median.toFixed(1)} ms, max ${timing.max.toFixed(1)} ms (undo takes 600 nodes away: ${timing.undo.toFixed(1)} ms; redo makes 600: ${timing.redo.toFixed(1)} ms)`)
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
   await browser.close()

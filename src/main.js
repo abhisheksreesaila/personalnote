@@ -611,6 +611,23 @@ let leaferInk = null // the pen, highlighter and eraser (F-031)
 let leaferConnect = null // the connect tool (F-032)
 // Saving an edited note writes only what changed: the encoder keeps the JSON of every object it has written (core/note-codec.js).
 const leaferEncoder = createDocumentEncoder()
+// The first save of a note that was just opened would write the JSON of every object (150 ms on 5,000, a stall right after the first edit):
+// it is done ahead, in idle slices of a few milliseconds, and every later save writes only what changed. The scene's layout is done ahead
+// the same way (the first click would pay 80 ms for it).
+let encoderWarmToken = 0
+function warmLeaferEncoder() {
+  const mine = ++encoderWarmToken
+  let layoutWarmed = false
+  const later = (run) => (typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback(run, { timeout: 1500 }) : setTimeout(run, 40))
+  const slice = () => {
+    if (mine !== encoderWarmToken || !leaferEdits.doc) return
+    if (!layoutWarmed) { layoutWarmed = true; leaferCanvas?.warmLayout(); return later(slice) }
+    let done = true
+    try { done = leaferEncoder.warm(leaferEdits.doc, 5) } catch (error) { console.warn('encoder warm-up stopped', error); return }
+    if (!done) later(slice)
+  }
+  later(slice)
+}
 let leaferBase = null // the document as last loaded or last saved: what an agent's merge is measured against
 let leaferSource = { noteId: null, content: { objects: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
 
@@ -2315,7 +2332,7 @@ function leaferSourceOf(noteId, doc) {
 }
 const leaferEdits = createLeaferEdits({
   sizeOf: (object) => leaferCanvas?.sizeOf(object) ?? {},
-  onChange(doc, { kind, page, pageShift, viewShift, selection }) {
+  onChange(doc, { kind, changed, page, pageShift, viewShift, selection }) {
     if (leaferSource.noteId !== state.activeNoteId) return
     if (pageShift) leaferFrameShift = { x: leaferFrameShift.x + pageShift.x, y: leaferFrameShift.y + pageShift.y }
     // Pages added or folded on the top or left moved every object; the view moves by the same amount, so what is on screen stays where it is.
@@ -2327,7 +2344,9 @@ const leaferEdits = createLeaferEdits({
     // An edit made on the canvas is already on screen (the scene recorded it); any other change (an undo, a redo, an edit recorded
     // from elsewhere) draws the document again, with the objects the step names selected.
     if (!leaferCanvas.isCommitting()) {
-      leaferCanvas.load(doc)
+      // An undo or a redo draws again only the objects the step names; a step that moved the page frame, and any other change, draws the note again.
+      if ((kind === 'undo' || kind === 'redo') && !pageShift) leaferCanvas.applyChanged(doc, changed)
+      else leaferCanvas.load(doc)
       leaferCanvas.select(selection)
     }
     leaferSource = leaferSourceOf(leaferSource.noteId, doc)
@@ -2363,6 +2382,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
   else leaferEdits.remote(note.id, shown)
   leaferCanvas.adopt(leaferEdits.doc) // the scene edits the document the history holds
   leaferBase = leaferEdits.doc
+  warmLeaferEncoder()
   // An arrow the note was stored with out of line (an agent moved what it joins) was brought in line on screen; what is stored is not, yet.
   leaferShowFixed = shown !== decoded.doc
   if (leaferShowFixed && !openView) leaferSource = leaferSourceOf(note.id, leaferEdits.doc) // (a note just opened keeps its stored content until it is edited)

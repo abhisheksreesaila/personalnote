@@ -18,7 +18,9 @@ import { createEditing, EDITOR_CONFIG } from './editing.js'
 import { createOverlays } from './overlay.js'
 import { GHOST_REACH, finalizeOp, growForDrag } from './pages.js'
 import { applyMatrix, geometryFromMatrix, multiplyMatrices, placementMatrix } from './placement.js'
-import { bakedStickyShadow, STICKY_CORNERS } from './sticky-shadow.js'
+import { bakedStickyShadow, STICKY_CORNERS, liveStickyShadow } from './sticky-shadow.js'
+import { pixelRatioFor, readPerf } from './perf.js'
+import { createTileLod } from './tiles.js'
 import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
 import { newImage } from './media.js'
 import { createTextOverlay } from './text.js'
@@ -87,18 +89,21 @@ const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y
 // host sets its page state and moves the view by the shift so nothing seems to move); an edit's own page change travels in the op instead.
 export function createScene({ host, width, height, onOperation = () => null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, defaults = {} }) {
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
-  const app = new App({ view: host, width, height, pixelRatio: Math.min(2, globalThis.devicePixelRatio || 1), tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
+  const perf = readPerf()
+  const app = new App({ view: host, width, height, pixelRatio: pixelRatioFor(globalThis.devicePixelRatio, perf), tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
   const leafer = app.tree
   const chrome = new Group({ hittable: false })
   const world = new Group()
   leafer.add(chrome)
   leafer.add(world)
+  // Page bitmaps for a view that is moving while zoomed out (tiles.js); `pages` and `size` are declared just below.
+  const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio: pixelRatioFor(globalThis.devicePixelRatio, perf), getPages: () => pages, getSize: () => size })
 
   let view = { x: 0, y: 0, scale: 1 }
   let size = { width, height }
   let pages = { columns: 1, rows: 1 }
   let colors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', shadows: [] }
-  let boxes = []
+  let boxes = new Set() // the placement boxes of the note's own objects (a set: taking one away is not a search)
   let stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
   const textNodes = []
   const measuredText = []
@@ -208,10 +213,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         const w = g.width ?? 240
         const h = g.height ?? 200
         const holder = new Box({ ...base, width: w, height: h, hitFill: 'all', hitChildren: false })
-        const shadow = bakedStickyShadow(w, h)
-        const shadowImage = new Image({ url: shadow.url, x: -shadow.margin, y: -shadow.margin, width: shadow.width, height: shadow.height, hittable: false })
-        const paper = new Rect({ width: w, height: h, fill: isColor(object.color) ? object.color : '#ffd60a', cornerRadius: STICKY_CORNERS, hittable: false })
-        holder.add(shadowImage)
+        const shadow = perf.bakedShadow ? bakedStickyShadow(w, h) : { margin: 0, width: w, height: h }
+        const shadowImage = perf.bakedShadow ? new Image({ url: shadow.url, x: -shadow.margin, y: -shadow.margin, width: shadow.width, height: shadow.height, hittable: false }) : null
+        const paper = new Rect({ width: w, height: h, fill: isColor(object.color) ? object.color : '#ffd60a', cornerRadius: STICKY_CORNERS, hittable: false, ...(perf.bakedShadow ? {} : { shadow: liveStickyShadow() }) })
+        if (shadowImage) holder.add(shadowImage)
         holder.add(paper)
         const text = new Text(textProps(object, { width: w - STICKY_PADDING * 2, padding: STICKY_PADDING }))
         textNodes.push(text)
@@ -220,7 +225,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         const relayout = () => {
           paper.set({ width: holder.width, height: holder.height })
           text.width = holder.width - STICKY_PADDING * 2
-          shadowImage.set({ width: holder.width + shadow.margin * 2, height: holder.height + shadow.margin * 2 })
+          shadowImage?.set({ width: holder.width + shadow.margin * 2, height: holder.height + shadow.margin * 2 })
         }
         return { node: holder, text, size: { width: w, height: h }, sized: true, relayout }
       }
@@ -290,7 +295,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     let box = null
     if (boxList && object.type !== 'connector') {
       box = boxOf(matrix, built.size.width ?? g.width ?? 0, built.size.height ?? g.height ?? 0)
-      boxList.push(box)
+      boxList.add(box)
     }
     // Text laid out by the engine (no stored size) is placed from what was measured, so it is placed again when fonts change.
     if (built.measured) measuredText.push({ object, built, box })
@@ -298,8 +303,9 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   }
 
   function applyView() {
+    const bitmaps = lod.view(view) // the vectors are taken off the stage while the bitmaps show a pan or zoom
     world.set({ x: view.x + live.shift.x * view.scale, y: view.y + live.shift.y * view.scale, scaleX: view.scale, scaleY: view.scale })
-    for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale
+    if (!bitmaps) for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale
     drawChrome()
     placeEditor()
   }
@@ -357,8 +363,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     const stroke = uniformStrokes.findIndex((item) => item.node === old)
     if (stroke !== -1) uniformStrokes.splice(stroke, 1)
     entries.delete(entry.id)
-    const at = boxes.indexOf(entry.box)
-    if (at !== -1) boxes.splice(at, 1)
+    boxes.delete(entry.box)
     addObject(world, object, boxes, index)
     old.remove()
   }
@@ -378,6 +383,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // Moves every node (and its box and rect) by whole page distances: the page frame's origin moved because pages were added or folded on the
   // top or left. The host moves the view by the same amount, so nothing seems to move.
   function shiftNodes(by) {
+    lod.invalidate()
     for (const entry of entries.values()) {
       entry.node.set({ x: entry.node.x + by.x, y: entry.node.y + by.y })
       if (entry.box) { entry.box.left += by.x; entry.box.top += by.y }
@@ -397,6 +403,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // edit causes, with every object moved when pages are added on the top or left: all of it one undo step.
   function commit(op, { coalesce, selection } = {}) {
     if (!op.changes.length && !op.page) return false
+    lod.invalidate()
     const named = new Set(op.changes.map((change) => change.id))
     const { op: whole, shift } = finalizeOp(doc, op, { sizeOf })
     if (!whole.changes.length && !whole.page) return false
@@ -473,7 +480,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const { node } = item.entry
       if (item.lifted) {
         node.rotation = node.rotation + LIFT_TILT_DEGREES
-        node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
+        if (globalThis.__noLiftShadow !== true) node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
       }
       overlays.dragLayer.add(node)
     }
@@ -618,8 +625,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     if (entry.object.type === 'connector') { unlink(entry.object); if (connectorSelected === entry.id) selectConnector(null) }
     const stroke = uniformStrokes.findIndex((item) => item.node === entry.node)
     if (stroke !== -1) uniformStrokes.splice(stroke, 1)
-    const at = boxes.indexOf(entry.box)
-    if (at !== -1) boxes.splice(at, 1)
+    boxes.delete(entry.box)
     const slot = measuredText.findIndex((item) => item.object === entry.object)
     if (slot !== -1) measuredText.splice(slot, 1)
     entry.node.remove()
@@ -640,6 +646,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   }
 
   // A press on a connector's line picks it (and leaves the editor's selection); a press anywhere else lets the editor have it.
+  host.addEventListener('pointerdown', () => lod.exit(), true) // a touch of the note puts the vectors back before anything is picked
   host.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || event.target === overlay.element || !doc) return
     const rect = host.getBoundingClientRect()
@@ -915,7 +922,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     const rect = host.getBoundingClientRect()
     const point = { x: (clientX - rect.left - view.x) / view.scale, y: (clientY - rect.top - view.y) / view.scale }
     if (textApi.editText(point)) return
-    if (boxes.some((box) => point.x >= box.left && point.x <= box.left + box.width && point.y >= box.top && point.y <= box.top + box.height)) return
+    for (const box of boxes) if (point.x >= box.left && point.x <= box.left + box.width && point.y >= box.top && point.y <= box.top + box.height) return
     textApi.createText(point)
   }
   let downType = 'mouse'
@@ -1004,6 +1011,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       if (overlay.isOpen) overlay.commit() // words being typed are kept
       if ('resolveMedia' in options) { for (const url of mediaUrls.values()) if (url.startsWith('blob:')) URL.revokeObjectURL(url); mediaUrls.clear() } // a note is opened: the pictures added to the one before are not needed
       lastEdited = null
+      lod.reset()
       doc = next
       endGesture()
       connectorSelected = null
@@ -1015,7 +1023,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       textNodes.length = 0
       measuredText.length = 0
       uniformStrokes.length = 0
-      boxes = []
+      boxes = new Set()
       stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
       for (const object of stacking(doc)) addObject(world, object, boxes)
       pages = { columns: doc.page?.columns ?? 1, rows: doc.page?.rows ?? 1 }
@@ -1034,6 +1042,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // selection stays, and a text being typed keeps its editor (its new model is used when the session ends).
     applyMerged(next, options = {}) {
       if (options.resolveMedia) resolveMedia = options.resolveMedia
+      lod.invalidate()
       const before = objectsById(doc)
       const after = objectsById(next)
       doc = next
@@ -1057,6 +1066,36 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       pages = { columns: doc.page?.columns ?? pages.columns, rows: doc.page?.rows ?? pages.rows }
       drawChrome()
     },
+    // An undo or a redo (F-034): the document changed in the objects the step names and nowhere else, so only those are drawn again (the
+    // note's 600 or 5,000 other nodes are not touched). The page frame did not move (a step that moves it draws the whole note again).
+    applyChanged(next, ids) {
+      lod.invalidate()
+      const after = objectsById(next)
+      doc = next
+      const editingId = textEdit?.id
+      keepingSelection(() => {
+        const fresh = []
+        for (const id of ids) {
+          const entry = entries.get(id)
+          const object = after.get(id)
+          if (!entry) { if (object) fresh.push(object); continue }
+          if (object === entry.object) continue
+          if (!object) { if (id !== editingId) dropEntry(entry); continue }
+          entry.object = object
+          if (id === editingId) { textEdit.object = object; textEdit.size = { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }; continue }
+          rebuild(entry)
+        }
+        for (const object of fresh) addObject(world, object, boxes)
+        syncStacking(ids)
+        for (const entry of entries.values()) entry.object = after.get(entry.id) ?? entry.object // (stacking values may have been renumbered without the object being named)
+      })
+      placeEditor()
+      pages = { columns: doc.page?.columns ?? pages.columns, rows: doc.page?.rows ?? pages.rows }
+      drawChrome()
+    },
+    // Leafer (draw mode) lays the tree out when something first needs it: the first click on a note of 5,000 objects paid 80 ms (every text laid
+    // out, every box measured). Called once the note is on screen and the machine is idle, so the click does not.
+    warmLayout() { try { leafer.layouter?.layout?.() } catch { /* the first interaction does it instead */ } },
     setPages(next) { pages = { ...next }; drawChrome() },
     setColors(next) { colors = next; overlays.setColors(next); drawChrome() },
     setView(next) { view = { ...next }; applyView() },
@@ -1068,6 +1107,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // Text layout is cached per element and text without a stored size was measured with whatever font was loaded then. Call after
     // web fonts finish loading: layout is redone, such text is measured and placed again, and its placement box follows.
     refreshText() {
+      lod.invalidate()
       textNodes.forEach((node) => node.forceUpdate?.())
       for (const item of measuredText) {
         const g = item.object.geometry
@@ -1081,7 +1121,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         if (item.box) Object.assign(item.box, boxOf(matrix, size.width, size.height))
       }
     },
-    boxes: () => boxes,
+    boxes: () => [...boxes],
     stats: () => ({ ...stats, drawn: entries.size }),
 
     // ---- selection and edits (F-028)
@@ -1211,6 +1251,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     view: () => ({ ...view }),
     // Draws model objects (a new stroke, the pieces of a split one) as nodes at their place in the stack.
     inkAdd(objects) {
+      lod.invalidate()
       for (const object of objects) {
         const z = object.z ?? 0
         let at = world.children.length
@@ -1220,7 +1261,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         addObject(world, object, boxes, at)
       }
     },
-    inkRemove(ids) { for (const id of ids) { const entry = entries.get(id); if (entry) dropEntry(entry) } },
+    inkRemove(ids) { lod.invalidate(); for (const id of ids) { const entry = entries.get(id); if (entry) dropEntry(entry) } },
     // Hands the op to the host as one undo step. The nodes are already on screen (inkAdd / inkRemove).
     inkCommit: (op) => commit(op),
     // Paints now what changed (so the live stroke can go the moment its final version is on screen).
@@ -1278,7 +1319,11 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         app.waitViewCompleted(finish)
       })
     },
-    destroy() { overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
+    // Page bitmaps (checks and the benchmark): what they are doing, build them all now, treat this machine as slow.
+    lodState: () => lod.stats(),
+    lodBuildAll: () => lod.buildAll(),
+    lodForceSlow: () => lod.forceSlow(),
+    destroy() { lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
   }
   return api
 }

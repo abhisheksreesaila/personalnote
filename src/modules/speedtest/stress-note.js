@@ -1,7 +1,7 @@
-// The stress note (F-034): a seeded, JSON Canvas note with stickies (the F-002 benchmark note has none), a mix like a real busy desk
+// The stress note (F-034), for the benchmark script and for the speed test inside the app: a seeded, JSON Canvas note with stickies (the F-002 benchmark note has none), a mix like a real busy desk
 // (37% text, 21% stickies, 16% shapes, 26% pen lines, plus arrows between neighbouring shapes), spread over a grid of pages.
 // `generateStressDocument(5400)` is the 5,000+ object note the performance numbers use. Seeded, so every run builds the same note.
-import { writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
+import { writeJsonCanvas } from '../../core/document/jsoncanvas.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080

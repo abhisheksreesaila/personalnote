@@ -69,3 +69,18 @@ test('after a delete (a gap in z), a move still writes only the moved object and
   const written = encoder.stats().written - before
   assert.ok(written <= 1 + touching, `${written} written for one move after a delete (${touching} connectors touch it)`)
 })
+
+test('warming writes the objects ahead in idle slices, so the first save of a just-opened note writes nothing', () => {
+  forgetMedia()
+  const doc = idsAdded(fromFabric(generateNote(), { columns: COLUMNS, rows: ROWS }))
+  const encoder = createDocumentEncoder()
+  let clock = 0
+  const slice = () => encoder.warm(doc, 3, () => (clock += 1)) // every look at the clock costs 1 ms: three objects per slice
+  let slices = 0
+  while (!slice()) slices += 1
+  assert.ok(slices > 100, `${slices} slices for ${doc.objects.length} objects`)
+  const warmed = encoder.stats().written
+  assert.equal(encoder.encode(doc), plain(doc))
+  assert.equal(encoder.stats().written, warmed, 'the save wrote nothing more')
+  assert.equal(encoder.warm(doc), true, 'warming a warm note is done at once')
+})

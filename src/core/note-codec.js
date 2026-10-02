@@ -99,42 +99,78 @@ export function createDocumentEncoder() {
     return JSON.stringify(writeJsonCanvas(doc, options))
   }
 
+  // The kept JSON of one object's node (written now when it is not kept yet), and of one connector's edge.
+  function nodeOf(doc, object) {
+    let json = nodes.get(object)
+    if (json === undefined) {
+      written += 1
+      json = JSON.stringify(writeJsonCanvas({ ...doc, objects: [object] }, options).nodes[0])
+      nodes.set(object, json)
+    }
+    return json
+  }
+
+  function edgeOf(doc, object, from, to, at) {
+    let entry = edges.get(object)
+    if (!entry || entry.from !== from || entry.to !== to || entry.rank !== at) {
+      written += 1
+      const edge = writeJsonCanvas({ ...doc, objects: [{ ...from, z: 0 }, { ...to, z: 1 }, { ...object, z: 2 }].filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index) }, options).edges[0]
+      edge.pn.z = at
+      entry = { from, to, rank: at, json: JSON.stringify(edge) }
+      edges.set(object, entry)
+    }
+    return entry.json
+  }
+
+  // The objects by id, or null for a document the encoder cannot vouch for (an object without a unique id).
+  function byIdOf(list) {
+    const byId = new Map()
+    for (const object of list) {
+      if (!object || typeof object.id !== 'string' || object.id === '' || byId.has(object.id)) return null
+      byId.set(object.id, object)
+    }
+    return byId
+  }
+
+  const joinable = (byId, object) => {
+    const from = byId.get(object.fromId)
+    const to = byId.get(object.toId)
+    return from && to && from.type !== 'connector' && to.type !== 'connector' ? { from, to } : null
+  }
+
   return {
     stats: () => ({ written }),
+    // Writes the JSON of the objects not kept yet, for at most `budgetMs`, so the first save of a note that was just opened (it would write
+    // every object: 150 ms on 5,000) finds them ready. Meant for idle time; returns true when nothing is left to write.
+    warm(doc, budgetMs = 6, clock = () => performance.now()) {
+      const deadline = clock() + budgetMs
+      const list = stacking(doc)
+      const byId = byIdOf(list)
+      if (!byId) return true
+      for (let at = 0; at < list.length; at += 1) {
+        const object = list[at]
+        const before = written
+        if (object.type === 'connector') {
+          const ends = joinable(byId, object)
+          if (ends) edgeOf(doc, object, ends.from, ends.to, at)
+        } else nodeOf(doc, object)
+        if (written !== before && clock() > deadline) return false // only an object that had to be written counts against the slice
+      }
+      return true
+    },
     encode(doc) {
       const list = stacking(doc)
-      const byId = new Map()
-      for (const object of list) {
-        if (!object || typeof object.id !== 'string' || object.id === '' || byId.has(object.id)) return fallback(compactStacking(doc))
-        byId.set(object.id, object)
-      }
-      const rank = new Map(list.map((object, index) => [object.id, index]))
+      const byId = byIdOf(list)
+      if (!byId) return fallback(compactStacking(doc))
       const nodeJson = []
       const edgeJson = []
-      for (const object of list) {
+      for (let at = 0; at < list.length; at += 1) {
+        const object = list[at]
         if (object.type === 'connector') {
-          const from = byId.get(object.fromId)
-          const to = byId.get(object.toId)
-          if (!from || !to || from.type === 'connector' || to.type === 'connector') return fallback(compactStacking(doc))
-          const at = rank.get(object.id)
-          let entry = edges.get(object)
-          if (!entry || entry.from !== from || entry.to !== to || entry.rank !== at) {
-            written += 1
-            const edge = writeJsonCanvas({ ...doc, objects: [{ ...from, z: 0 }, { ...to, z: 1 }, { ...object, z: 2 }].filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index) }, options).edges[0]
-            edge.pn.z = at
-            entry = { from, to, rank: at, json: JSON.stringify(edge) }
-            edges.set(object, entry)
-          }
-          edgeJson.push(entry.json)
-        } else {
-          let json = nodes.get(object)
-          if (json === undefined) {
-            written += 1
-            json = JSON.stringify(writeJsonCanvas({ ...doc, objects: [object] }, options).nodes[0])
-            nodes.set(object, json)
-          }
-          nodeJson.push(json)
-        }
+          const ends = joinable(byId, object)
+          if (!ends) return fallback(compactStacking(doc))
+          edgeJson.push(edgeOf(doc, object, ends.from, ends.to, at))
+        } else nodeJson.push(nodeOf(doc, object))
       }
       const pn = { schemaVersion: SCHEMA_VERSION, page: doc.page ?? DEFAULT_PAGE, grid: { width: PAGE.width, height: PAGE.height } }
       if (doc.extras && Object.keys(doc.extras).length) pn.extras = doc.extras
