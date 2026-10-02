@@ -17,10 +17,13 @@ import path from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
+import { fromFabric } from '../src/core/document/index.js'
+import { placedPoints } from '../src/core/document/placement.js'
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => { const [key, value = 'true'] = arg.replace(/^--/, '').split('='); return [key, value] }))
 const outDir = args.out || path.join(os.tmpdir(), 'leafer-parity')
-const dpr = Number(args.dpr || 1)
+const dprs = (args.dpr || '1,2').split(',').map(Number)
+let dpr = 1 // set by the loop below
 if (!args.reference) { console.error('--reference=<checkout of the Fabric-only app> is required'); process.exit(2) }
 fs.mkdirSync(outDir, { recursive: true })
 
@@ -102,9 +105,10 @@ async function renderOnce(browser, baseUrl, fixture, skin, engine) {
   }
   // What the Fabric app holds once it has opened the note (it grows and shifts the page grid on open, as it always has): the Leafer
   // side is given this, so both draw the same note.
+  const leaferInfo = engine === 'leafer' ? await page.evaluate(() => ({ stats: window.__personalNote.leaferCanvas().stats(), boxes: window.__personalNote.leaferCanvas().boxes().map((b) => ({ ...b })) })) : null
   const normalized = engine === 'fabric' ? await page.evaluate(() => ({ content: window.__personalNote.canvas.toJSON(), pageState: { ...window.__personalNote.state.pages } })) : null
   await context.close()
-  return { shots, problems, opening, normalized }
+  return { shots, problems, opening, normalized, leaferInfo }
 }
 
 // Compares two PNGs in the browser (no image library needed).
@@ -126,7 +130,7 @@ async function compare(comparePage, a, b) {
     const { width, height } = one
     const out = new ImageData(width, height)
     let differing = 0
-    const BLOCK = 24
+    const BLOCK = 12
     const blocksX = Math.ceil(width / BLOCK)
     const blocks = new Float64Array(blocksX * Math.ceil(height / BLOCK))
     for (let y = 0; y < height; y += 1) {
@@ -168,44 +172,138 @@ async function compare(comparePage, a, b) {
   }, [a.toString('base64'), b.toString('base64')])
 }
 
+// ---- pass/fail thresholds (written down, not eyeballed)
+// Calibrated on this machine (Chromium, no Geist Mono installed). Text is the noise floor: glyph anti-aliasing, and Fabric re-measuring
+// a text block's width on load (which moves it by up to a pixel), give clean text notes about 0.5% differing pixels and a worst
+// 12x12 block near 60/255 (up to ~95 where a thin rotated edge lands differently at 2x). A missing or wrongly coloured object lights
+// blocks near 200, and placement is gated exactly by the object-box check (drawn boxes vs the oracle, 0.05 px), not by pixels.
+const LIMITS = { differingPct: 3.0, blockMax: 100, objectBoxPx: 0.05 }
+// Notes the Fabric app rewrites when it opens them (it grows and shifts the page grid) cannot be compared pixel for pixel using the
+// stored note: those rows also show the stored-note numbers for information, and the gate is on the same note after Fabric's rewrite.
+
+function expectedFor(stored) {
+  const doc = fromFabric(stored.content, stored.pageState)
+  const placeholder = (o) => o.type === 'text' && (!String(o.content ?? '').trim() || String(o.content).trim() === 'Start typing')
+  const ordered = [...doc.objects].sort((a, b) => a.z - b.z)
+  const boxes = []
+  let skipped = 0
+  let unknown = 0
+  for (const object of ordered) {
+    if (object.type === 'unknown') { unknown += 1; continue }
+    if (placeholder(object)) { skipped += 1; continue }
+    if (object.type === 'connector') continue
+    const g = object.geometry
+    if (g.width === undefined || g.height === undefined) { boxes.push(null); continue } // the engine measures these
+    const pts = placedPoints([object]).slice(0, 8)
+    const xs = [pts[0], pts[2], pts[4], pts[6]]
+    const ys = [pts[1], pts[3], pts[5], pts[7]]
+    boxes.push({ left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) })
+  }
+  return { total: doc.objects.length, skipped, unknown, boxes }
+}
+
+function objectChecks(stored, info) {
+  const expected = expectedFor(stored)
+  const problems = []
+  const { drawn, skipped, unknown } = info.stats
+  if (drawn + skipped + unknown !== expected.total) problems.push(`objects: ${drawn} drawn + ${skipped} skipped + ${unknown} unknown != ${expected.total} stored`)
+  if (skipped !== expected.skipped) problems.push(`skipped ${skipped}, expected ${expected.skipped}`)
+  if (unknown !== expected.unknown) problems.push(`unknown ${unknown}, expected ${expected.unknown}`)
+  if (info.boxes.length !== expected.boxes.length) problems.push(`boxes ${info.boxes.length}, expected ${expected.boxes.length}`)
+  let worst = 0
+  expected.boxes.forEach((box, i) => {
+    if (!box || !info.boxes[i]) return
+    for (const key of ['left', 'top', 'width', 'height']) worst = Math.max(worst, Math.abs(box[key] - info.boxes[i][key]))
+  })
+  if (worst > LIMITS.objectBoxPx) problems.push(`a drawn box is ${worst.toFixed(3)} px from the oracle (limit ${LIMITS.objectBoxPx})`)
+  return { problems, checked: expected.boxes.filter(Boolean).length, worst }
+}
+
+// What Fabric did to the note on open: pages grown and objects shifted.
+function reconciliation(stored, fabric) {
+  const pagesBefore = `${stored.pageState?.columns ?? 1}x${stored.pageState?.rows ?? 1}`
+  const pagesAfter = `${fabric.normalized.pageState.columns}x${fabric.normalized.pageState.rows}`
+  const before = fromFabric(stored.content, stored.pageState).objects
+  const after = fromFabric(fabric.normalized.content, fabric.normalized.pageState).objects
+  const moved = {}
+  let worst = 0
+  if (before.length === after.length) {
+    before.forEach((object, i) => {
+      const other = after[i]
+      if (!object.geometry || !other.geometry || object.type !== other.type) return
+      const d = Math.max(Math.abs(object.geometry.x - other.geometry.x), Math.abs(object.geometry.y - other.geometry.y))
+      if (d > 0.5) { moved[object.type] = (moved[object.type] ?? 0) + 1; worst = Math.max(worst, d) }
+    })
+  }
+  const movedText = Object.entries(moved).map(([type, n]) => `${n} ${type}`).join(', ')
+  const changed = pagesBefore !== pagesAfter || before.length !== after.length || Boolean(movedText)
+  return { changed, text: changed ? `pages ${pagesBefore} -> ${pagesAfter}, ${before.length} -> ${after.length} objects, moved on open: ${movedText || 'none'}${worst ? ` (up to ${Math.round(worst)} px)` : ''}` : '' }
+}
+
 const server = await createServer({ server: { port: 4521, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' })
 await server.listen()
 const leaferUrl = server.resolvedUrls.local[0]
 const referenceServer = await createServer({ root: path.resolve(args.reference), cacheDir: path.join(os.tmpdir(), 'leafer-parity-vite-cache'), server: { port: 4522, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' })
 await referenceServer.listen()
 const referenceUrl = referenceServer.resolvedUrls.local[0]
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 const rows = []
+const failures = []
+const notes = []
 try {
   const comparePage = await (await browser.newContext()).newPage()
-  for (const name of names) {
-    for (const skin of skins) {
-      // Headless Chromium now and then paints a blank canvas after losing its GPU process; a pair whose worst block is wildly
-      // off is drawn again (up to three times) before it is believed. `tries` in the table shows when that happened.
-      let attempt = 0
-      let results
-      let fabric
-      let leafer
-      do {
-        attempt += 1
-        fabric = await render(browser, referenceUrl, fixtures[name], skin, 'fabric')
-        leafer = await render(browser, leaferUrl, { name, ...fabric.normalized }, skin, 'leafer')
-        results = []
-        for (const view of views) results.push(await compare(comparePage, fabric.shots[view], leafer.shots[view]))
-      } while (attempt < 3 && results.some((result) => result.error || result.blockMax > 150))
-      for (const problem of [...fabric.problems, ...leafer.problems]) console.error(`${name}/${skin}: ${problem}`)
-      views.forEach((view, index) => {
-        const result = results[index]
-        const base = `${name}-${skin}-${view}`
-        fs.writeFileSync(path.join(outDir, `${base}-fabric.png`), fabric.shots[view])
-        fs.writeFileSync(path.join(outDir, `${base}-leafer.png`), leafer.shots[view])
-        if (result.error) { rows.push({ fixture: name, skin, view, error: result.error }); return }
-        fs.writeFileSync(path.join(outDir, `${base}-diff.png`), Buffer.from(result.diffPng, 'base64'))
-        rows.push({
-          fixture: name, skin, view, 'differing%': +result.differingPct.toFixed(3), 'within1px%': +result.within1pxPct.toFixed(3), blockMax: +result.blockMax.toFixed(2),
-          openZoom: view === 'open' ? `${fabric.opening.zoom.toFixed(3)} / ${leafer.opening.zoom.toFixed(3)}` : '', tries: attempt,
+  for (const dprValue of dprs) {
+    dpr = dprValue
+    for (const name of names) {
+      const stored = { name, ...fixtures[name] }
+      for (const skin of skins) {
+        // Headless Chromium now and then paints a blank canvas after losing its GPU process; a pair whose worst block is wildly
+        // off is drawn again (up to three times) before it is believed. `tries` shows when that happened.
+        let attempt = 0
+        let fabric
+        let leafer
+        let leaferNormalized = null
+        let recon
+        let results
+        let normalizedResults
+        do {
+          attempt += 1
+          fabric = await render(browser, referenceUrl, fixtures[name], skin, 'fabric')
+          recon = reconciliation(stored, fabric)
+          leafer = await render(browser, leaferUrl, stored, skin, 'leafer') // the STORED note
+          results = []
+          for (const view of views) results.push(await compare(comparePage, fabric.shots[view], leafer.shots[view]))
+          normalizedResults = null
+          leaferNormalized = null
+          if (recon.changed) {
+            leaferNormalized = await render(browser, leaferUrl, { name, ...fabric.normalized }, skin, 'leafer')
+            normalizedResults = []
+            for (const view of views) normalizedResults.push(await compare(comparePage, fabric.shots[view], leaferNormalized.shots[view]))
+          }
+        } while (attempt < 3 && (normalizedResults ?? results).some((result) => result.error || result.differingPct > 25))
+        for (const problem of [...fabric.problems, ...leafer.problems]) console.error(`${name}/${skin}: ${problem}`)
+        const objects = objectChecks(stored, leafer.leaferInfo)
+        if (objects.problems.length) failures.push(`dpr ${dpr} ${name}/${skin}: ${objects.problems.join('; ')}`)
+        if (recon.changed && skin === skins[0] && dpr === dprs[0]) notes.push(`${name}: Fabric rewrites this note on open (${recon.text}); Leafer draws it as stored, and the pixel gate uses the rewritten note`)
+        views.forEach((view, index) => {
+          const base = `dpr${dpr}-${name}-${skin}-${view}`
+          const gated = normalizedResults ? normalizedResults[index] : results[index]
+          const gatedShot = normalizedResults ? leaferNormalized.shots[view] : leafer.shots[view]
+          fs.writeFileSync(path.join(outDir, `${base}-fabric.png`), fabric.shots[view])
+          fs.writeFileSync(path.join(outDir, `${base}-leafer.png`), gatedShot)
+          if (gated.error) { failures.push(`dpr ${dpr} ${name}/${skin}/${view}: ${gated.error}`); rows.push({ dpr, fixture: name, skin, view, error: gated.error }); return }
+          fs.writeFileSync(path.join(outDir, `${base}-diff.png`), Buffer.from(gated.diffPng, 'base64'))
+          const bad = gated.differingPct > LIMITS.differingPct || gated.blockMax > LIMITS.blockMax
+          if (bad) failures.push(`dpr ${dpr} ${name}/${skin}/${view}: differing ${gated.differingPct.toFixed(2)}% (limit ${LIMITS.differingPct}), blockMax ${gated.blockMax.toFixed(1)} (limit ${LIMITS.blockMax})`)
+          const asStored = normalizedResults ? results[index] : null
+          rows.push({
+            dpr, fixture: name, skin, view, 'differing%': +gated.differingPct.toFixed(3), blockMax: +gated.blockMax.toFixed(1),
+            'stored note': asStored && !asStored.error ? `${asStored.differingPct.toFixed(1)}% / ${asStored.blockMax.toFixed(0)}` : 'same',
+            objects: `${objects.checked} boxes <= ${objects.worst.toFixed(3)}px`, openZoom: view === 'open' ? `${fabric.opening.zoom.toFixed(3)} / ${leafer.opening.zoom.toFixed(3)}` : '',
+            tries: attempt, result: bad ? 'FAIL' : 'ok',
+          })
         })
-      })
+      }
     }
   }
 } finally {
@@ -214,4 +312,10 @@ try {
   await referenceServer.close()
 }
 console.table(rows)
+for (const note of notes) console.log(`note: ${note}`)
+console.log(`limits: differing% <= ${LIMITS.differingPct}, blockMax (12x12 blocks) <= ${LIMITS.blockMax}, drawn box vs oracle <= ${LIMITS.objectBoxPx}px, object counts exact`)
 console.log(`screenshots and diffs: ${outDir}`)
+if (failures.length) {
+  console.error(`\nFAIL: ${failures.length} problem(s)\n  ${failures.join('\n  ')}`)
+  process.exitCode = 1
+} else console.log('\nPASS')

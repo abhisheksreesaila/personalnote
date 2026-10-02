@@ -1,7 +1,5 @@
 // Entry for the Leafer canvas (F-027): a stored note -> document model -> Leafer nodes. main.js imports it statically; Leafer is the
 // canvas (ADR 0001), so there is no flag and no separate chunk.
-imports this only when the engine switch is on, so Leafer and the document
-// model it reads land in their own chunk and the default Fabric path pays nothing at startup.
 import { fromFabric } from '../../core/document/index.js'
 import { createScene } from './scene.js'
 
