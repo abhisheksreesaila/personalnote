@@ -2086,6 +2086,8 @@ function drawConnectOverlay(ctx) {
 
 let saveTimer
 let saveInFlight = false
+let saveSettled = Promise.resolve() // resolves when the save in flight has been answered (or has failed)
+let saveDone = () => {}
 let saveQueued = false
 // Agent sync: edits not yet saved, and the object ids the server last agreed on.
 let unsavedEdits = false
@@ -2114,7 +2116,7 @@ async function saveActiveNote({ unloading = false } = {}) {
   // revision. Never guess ahead: if the in-flight save lands first this one conflicts and overwrites nothing.
   const parallelUnload = saveInFlight && unloading
   if (parallelUnload) saveQueued = false
-  else saveInFlight = true
+  else { saveInFlight = true; saveSettled = new Promise((resolve) => { saveDone = resolve }) }
   unsavedEdits = false
   setSaveState('Saving')
   const noteId = state.activeNoteId
@@ -2163,7 +2165,7 @@ async function saveActiveNote({ unloading = false } = {}) {
       agentSync?.syncActiveNote().catch(console.error).finally(() => { if (mergeCount === mark) setSaveState('Could not save', true) })
     } else setSaveState('Could not save', true)
   } finally {
-    if (!parallelUnload) saveInFlight = false
+    if (!parallelUnload) { saveInFlight = false; saveDone() }
     if (saveQueued && !parallelUnload) {
       const unloadingNext = saveQueued === 'unloading'
       saveQueued = false
@@ -2645,7 +2647,12 @@ let mergeCount = 0
 // note is then saved on the agent's revision.
 async function mergeLeaferNote(note) {
   const decoded = await decodeNoteDocument(note)
+  // A save in flight has not told us yet which frame the server's copy is in (the server applies it before it answers), so a merge
+  // waits for the answer; what was fetched meanwhile is the user's own save, or older, and there is nothing in it to merge.
+  while (saveInFlight) await saveSettled
   if (note.id !== state.activeNoteId) return 0
+  const known = state.notes.find((item) => item.id === note.id)
+  if (known && note.revision <= known.revision) return 0
   mergeCount += 1
   leaferInk.documentChanged() // an erase pass was planned on the document as it was; it is dropped rather than committed against the merged one (a pen stroke only adds, so it carries on)
   const typing = leaferCanvas.flushText() // words typed so far are in the document now; that text counts as the user's whatever the agent did to it
