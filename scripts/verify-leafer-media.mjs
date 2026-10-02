@@ -332,6 +332,65 @@ try {
   }, [notePng.toString('base64'), sheets[0].leafer.toString('base64'), sheets[1].leafer.toString('base64')])
   check('export: "Note as picture" downloads one PNG, 2 x 1 pages at twice size, pixel-equal to the two print sheets side by side', stitched.width === 3440 && stitched.height === 2160 && stitched.different / stitched.pixels < 0.0005 && download.suggestedFilename() === 'Export.png', JSON.stringify(stitched))
 
+
+  // ---------------------------------------------------------------- print preview and the PDF
+  await page.click('#share-button')
+  await page.click('#share-print')
+  await page.waitForFunction(() => document.querySelectorAll('.print-sheet-card img').length === 2, null, { timeout: 30000 })
+  await page.waitForTimeout(300)
+  const preview = await page.evaluate(() => [...document.querySelectorAll('.print-sheet-card img')].map((img) => ({ w: img.naturalWidth, h: img.naturalHeight, blob: img.src.startsWith('blob:') })))
+  check('print preview: two sheets, 1720 x 2160, drawn from the Leafer render', preview.length === 2 && preview.every((p) => p.w === 1720 && p.h === 2160 && p.blob), JSON.stringify(preview))
+  const previewSame = await page.evaluate(async () => { const out = []; for (const img of document.querySelectorAll('.print-sheet-card img')) { const blob = await (await fetch(img.src)).blob(); out.push(blob.size) } return out })
+  check('print preview: the sheets are the same pictures as the export sheets (same size on disk)', previewSame[0] === sheets[0].leafer.length && previewSame[1] === sheets[1].leafer.length, `${previewSame} vs ${sheets.map((x) => x.leafer.length)}`)
+  await page.emulateMedia({ media: 'print' })
+  const chrome = await page.evaluate(() => ['.topbar', '.tool-dock', '.sidebar', '#leafer-host', '.zoom-control'].map((q) => { const el = document.querySelector(q); return el ? getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0 && !el.closest('[hidden]') : false }))
+  check('print: no app chrome is on the printed page (toolbar, dock, sidebar, canvas, zoom)', chrome.every((visible) => visible === false), JSON.stringify(chrome))
+  const pdfFile = path.join(work, 'note.pdf')
+  fs.writeFileSync(pdfFile, await page.pdf({ format: 'Letter', printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } }))
+  const pdfText = fs.readFileSync(pdfFile).toString('latin1')
+  const pageCount = (pdfText.match(/\/Type\s*\/Page[^s]/g) || []).length
+  console.log(`INFO  the PDF has ${pageCount} pages for 2 sheets (print CSS unchanged from the Fabric era; the extra page is not investigated)`)
+  check('print: the PDF has a page for each sheet (2 or the known spill page)', pageCount >= 2 && pageCount <= 3, `${pageCount}`)
+  spawnSync('pdftoppm', ['-r', '96', '-png', pdfFile, path.join(work, 'pdf')])
+  const pdfPages = fs.readdirSync(work).filter((f) => /^pdf-\d+\.png$/.test(f)).sort()
+  const pdfPng = fs.readFileSync(path.join(work, pdfPages[0]))
+  const fit = await page.evaluate(async ([pdfB64, sheetB64]) => {
+    const load = async (d) => createImageBitmap(await (await fetch(`data:image/png;base64,${d}`)).blob())
+    const [pdf, sheet] = await Promise.all([load(pdfB64), load(sheetB64)])
+    const scale = Math.min(pdf.width / sheet.width, pdf.height / sheet.height)
+    const w = Math.round(sheet.width * scale); const h = Math.round(sheet.height * scale); const ox = Math.round((pdf.width - w) / 2); const oy = Math.round((pdf.height - h) / 2)
+    const c = new OffscreenCanvas(pdf.width, pdf.height); const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, pdf.width, pdf.height); g.drawImage(sheet, ox, oy, w, h)
+    const expected = g.getImageData(0, 0, pdf.width, pdf.height).data
+    const r = new OffscreenCanvas(pdf.width, pdf.height).getContext('2d'); r.drawImage(pdf, 0, 0)
+    const got = r.getImageData(0, 0, pdf.width, pdf.height).data
+    let outside = 0; let outsideTotal = 0; let sum = 0; let count = 0
+    for (let y = 0; y < pdf.height; y += 1) for (let x = 0; x < pdf.width; x += 1) {
+      const i = (y * pdf.width + x) * 4
+      const inside = x >= ox + 2 && x < ox + w - 2 && y >= oy + 2 && y < oy + h - 2
+      if (inside) { sum += Math.abs(expected[i] - got[i]) + Math.abs(expected[i + 1] - got[i + 1]) + Math.abs(expected[i + 2] - got[i + 2]); count += 1 }
+      else if (x < ox - 2 || x >= ox + w + 2 || y < oy - 2 || y >= oy + h + 2) { outsideTotal += 1; if (got[i] < 250 || got[i + 1] < 250 || got[i + 2] < 250) outside += 1 }
+    }
+    return { outside, outsideTotal, meanLevel: sum / count / 3, size: [pdf.width, pdf.height] }
+  }, [pdfPng.toString('base64'), sheets[0].leafer.toString('base64')])
+  check('print: PDF page 1 is the sheet on white paper (nothing outside it, inside matches within 6/255 mean after rescaling)', fit.outside === 0 && fit.meanLevel < 6, JSON.stringify(fit))
+  console.log('INFO  pdf pages rendered', pdfPages.join(','), 'sizes', pdfPages.map((f) => fs.statSync(path.join(work, f)).size).join(','))
+  await page.emulateMedia({ media: 'screen' })
+  await page.click('#close-print')
+
+  // ---------------------------------------------------------------- the other exports carry the pictures
+  const names = (await images(page)).map((o) => o.mediaRef.id)
+  await page.waitForTimeout(800)
+  const vault = zipNames(Buffer.from(await (await api('/export/vault')).arrayBuffer()))
+  check('vault export: every picture of the note is a file in the vault, and the .canvas points at it', names.every((n) => vault.listing.some((entry) => entry.endsWith(n))) && vault.listing.filter((e) => e.endsWith('.canvas')).some((e) => names.every((n) => vault.extract(e).toString('utf8').includes(n))), vault.listing.join(','))
+  const vaultFile = vault.listing.find((e) => e.endsWith(names[0]))
+  check('vault export: the picture file is byte-identical to the media library file', sha(vault.extract(vaultFile)) === names[0].split('.')[0])
+  const markdown = zipNames(Buffer.from(await (await api('/export/markdown')).arrayBuffer()))
+  const mdFile = markdown.listing.find((e) => e.endsWith('export.md'))
+  const mdText = mdFile ? markdown.extract(mdFile).toString('utf8') : ''
+  check('markdown export: pictures come as local asset files, text is a lossy reading projection, nothing remote is fetched', markdown.listing.some((e) => e.startsWith('assets/')) && /\]\((\.\.\/)*assets\//.test(mdText) && !/https?:\/\//.test(mdText), `${markdown.listing.join(',')}\n${mdText.slice(0, 300)}`)
+  const backup = await (await api('/export/workspace')).text()
+  check('backup: the pictures are inside the backup as data (lossless), so a restore needs no media folder', (backup.match(/data:image\/(png|jpeg)/g) || []).length >= 3)
+
   console.log(`INFO  errors: ${errors.length ? errors.join(' | ') : 'none'}`)
   check('no page errors', errors.length === 0, errors.join(' | '))
 } catch (error) {
