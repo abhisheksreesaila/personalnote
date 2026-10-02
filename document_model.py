@@ -737,8 +737,16 @@ def plain_text_blocks(doc: dict) -> list[str]:
     made in the app, the top-left corner for agent-written ones. This sorts by the box's top-left on every object, so a tall
     sticky and a short text block that were centred on the same line now read top-edge first. The blocks are the same set.
     """
-    ordered = sorted((obj for obj in _ordered(doc.get("objects", [])) if isinstance(obj, dict)), key=_position)
-    return [text.strip() for text in (_text_of(obj) for obj in ordered) if text and text.strip()]
+    return [text.strip() for text in (_text_of(obj) for obj in reading_order(doc)) if text and text.strip()]
+
+
+def reading_order(doc: dict) -> list[dict]:
+    """The objects of a document top edge first, then left edge (ties keep stacking order)."""
+    return sorted((obj for obj in _ordered(doc.get("objects", [])) if isinstance(obj, dict)), key=_position)
+
+
+def object_text(obj: Any) -> str | None:
+    return _text_of(obj)
 
 
 def plain_text(doc: dict) -> str:

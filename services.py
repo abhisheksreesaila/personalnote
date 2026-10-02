@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -7,7 +8,17 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from app_schema import initialize_schema
+from document_model import DocumentError, empty_document, from_fabric, plain_text
+from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
+from media_store import MediaStore, data_url_of
 
+logger = logging.getLogger(__name__)
+
+# How a note's `content` column is encoded.
+FORMAT_CANVAS = "json-canvas"  # JSON Canvas 1.0 + pn extensions (ADR 0002)
+FORMAT_FABRIC = "fabric"  # Fabric JSON: notes saved before F-026 until they are converted
+FORMAT_MINDMAP = "mindmap"  # normalized mind-map JSON
+FABRIC_BACKUP_SUFFIX = ".fabric-backup"
 
 DEFAULT_CONTENT = {"objects": []}
 DEFAULT_PAGE_STATE = {"columns": 1, "rows": 1}
@@ -72,12 +83,24 @@ class AppendTextError(ValueError):
     """Text to append is blank or too long."""
 
 
+class InvalidNoteContentError(ValueError):
+    """A canvas note's content is not a document this version can read."""
+
+
+def empty_canvas_text() -> str:
+    return json.dumps(to_json_canvas(empty_document()), separators=(",", ":"))
+
+
 class NoteService:
-    def __init__(self, database_path: Path | str):
+    def __init__(self, database_path: Path | str, media_dir: Path | str | None = None):
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        # Content-addressed picture and SVG files (`media/<sha256>.<ext>` in notes); beside the database unless told otherwise.
+        self.media = MediaStore(media_dir if media_dir is not None else self.database_path.parent / "media")
         with self.connection() as connection:
             self.default_notebook_id = initialize_schema(connection)
+            self.ensure_block_ids(connection)
+            self.convert_legacy_notes(connection)
             self.ensure_block_ids(connection)
             self.ensure_derived_indexes(connection)
 
@@ -113,10 +136,17 @@ class NoteService:
             "title": note["title"],
             "notebookId": note["notebook_id"],
             "content": cls.parse_json(note["content"], DEFAULT_CONTENT),
+            "contentFormat": cls.format_of(note),
             "pageState": cls.parse_json(note["page_state"], DEFAULT_PAGE_STATE),
             "createdAt": note["created_at"],
             "updatedAt": note["updated_at"],
         }
+
+    @staticmethod
+    def format_of(note) -> str:
+        if note["note_type"] == "mindmap":
+            return FORMAT_MINDMAP
+        return FORMAT_FABRIC if note["content_format"] == FORMAT_FABRIC else FORMAT_CANVAS
 
     @staticmethod
     def new_resource_id() -> str:
@@ -198,34 +228,173 @@ class NoteService:
                             item[key] = id_map[item[key]]
         return document, changed
 
+    # ---- canvas documents: JSON Canvas storage (F-026) -------------------------------------------------------------------
+
+    @staticmethod
+    def stored_ids(content, content_format: str) -> list[str]:
+        """The block ids a stored canvas holds: node and edge ids, or Fabric semanticIds for a note not yet converted."""
+        if not isinstance(content, dict):
+            return []
+        if content_format == FORMAT_FABRIC:
+            return [i["semanticId"] for i in content.get("objects", []) if isinstance(i, dict) and isinstance(i.get("semanticId"), str)]
+        entries = [*(content.get("nodes") or []), *(content.get("edges") or [])]
+        return [i["id"] for i in entries if isinstance(i, dict) and isinstance(i.get("id"), str)]
+
     @classmethod
-    def ensure_block_ids(cls, connection: sqlite3.Connection) -> None:
+    def repair_ids(cls, doc: dict, reserved_ids: set[str] | None = None) -> bool:
+        """Give every top-level object a unique, non-empty id that no other note uses; connectors follow an id that changed."""
+        seen = set(reserved_ids or ())
+        in_document: set[str] = set()
+        id_map: dict[str, str] = {}
+        changed = False
+        for obj in doc.get("objects", []):
+            if not isinstance(obj, dict) or (obj.get("type") == "unknown" and not isinstance(obj.get("raw"), dict)):
+                continue
+            object_id = obj.get("id")
+            if not isinstance(object_id, str) or not object_id or object_id in seen:
+                new_id = cls.new_resource_id()
+                if isinstance(object_id, str) and object_id and object_id not in in_document:
+                    id_map[object_id] = new_id
+                object_id = new_id
+                obj["id"] = object_id
+                changed = True
+            seen.add(object_id)
+            in_document.add(object_id)
+        if id_map:
+            for obj in doc.get("objects", []):
+                if isinstance(obj, dict) and obj.get("type") == "connector":
+                    for key in ("fromId", "toId"):
+                        if obj.get(key) in id_map:
+                            obj[key] = id_map[obj[key]]
+        return changed
+
+    @staticmethod
+    def normalize_page(doc: dict) -> None:
+        page = doc.get("page") if isinstance(doc.get("page"), dict) else {}
+        for key in ("columns", "rows"):
+            value = page.get(key)
+            page[key] = value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 else 1
+        doc["page"] = page
+
+    @classmethod
+    def document_of(cls, content, content_format: str | None = None, page_state=None) -> dict:
+        """The document model of stored or incoming canvas content in either format. Raises InvalidNoteContentError."""
+        try:
+            if content_format == FORMAT_CANVAS or (content_format is None and is_json_canvas(content)):
+                return from_json_canvas(content)
+            return from_fabric(content if isinstance(content, dict) else dict(DEFAULT_CONTENT), page_state if isinstance(page_state, dict) else None)
+        except DocumentError as error:
+            raise InvalidNoteContentError(str(error)) from error
+
+    def canvas_text_of(self, doc: dict) -> str:
+        """The stored form of a document: JSON Canvas text, with pictures and SVGs written to the media store."""
+        return json.dumps(to_json_canvas(doc, media=self.media), separators=(",", ":"), ensure_ascii=False)
+
+    def prepare_canvas(self, content, page_state, reserved_ids: set[str] | None):
+        """Incoming canvas content (JSON Canvas or old Fabric JSON) -> (document, stored text, page state, search body)."""
+        document = self.document_of(content, None, page_state)
+        self.repair_ids(document, reserved_ids)
+        self.normalize_page(document)
+        return document, self.canvas_text_of(document), document["page"], plain_text(document)
+
+    def convert_legacy_notes(self, connection: sqlite3.Connection) -> None:
+        """Once per old note: Fabric JSON -> JSON Canvas. The database is copied aside first, never over an existing copy.
+
+        Each note converts in its own transaction and is checked by reading the stored text back; a note that fails stays in
+        Fabric format (it still opens, the next save converts it) and the failure is logged. Revisions and the change feed are
+        untouched: the note says the same thing. Safe to run again.
+        """
+        rows = connection.execute(
+            "SELECT id, content, page_state, title FROM notes WHERE note_type = 'canvas' AND content_format = ? ORDER BY id",
+            (FORMAT_FABRIC,),
+        ).fetchall()
+        if not rows:
+            return
+        self.keep_fabric_backup(connection)
+        for row in rows:
+            try:
+                content = json.loads(row["content"])
+                page_state = self.parse_json(row["page_state"], DEFAULT_PAGE_STATE)
+                document = from_fabric(content, page_state if isinstance(page_state, dict) else None)
+                self.normalize_page(document)
+                text = self.canvas_text_of(document)
+                if not self.same_after_storage(document, json.loads(text)):
+                    raise DocumentError("the stored note does not read back the same")
+                connection.execute(
+                    "UPDATE notes SET content = ?, content_format = ?, page_state = ? WHERE id = ? AND content_format = ?",
+                    (text, FORMAT_CANVAS, json.dumps(document["page"], separators=(",", ":")), row["id"], FORMAT_FABRIC),
+                )
+                connection.execute("DELETE FROM note_search WHERE note_id = ?", (row["id"],))
+                connection.execute(
+                    "INSERT INTO note_search (note_id, title, body) VALUES (?, ?, ?)", (row["id"], row["title"], plain_text(document))
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                logger.exception("event=note.convert outcome=failed note_id=%s; the note stays in its old format", row["id"])
+
+    @staticmethod
+    def same_after_storage(document: dict, stored_canvas: dict) -> bool:
+        """The stored canvas reads back as the same document (pictures now point at the media store, which is the intended change)."""
+        back = from_json_canvas(stored_canvas)
+
+        def strip(doc: dict) -> dict:
+            return {**doc, "objects": [{**o, "mediaRef": None} if o.get("type") == "image" else o for o in doc["objects"]]}
+
+        return json.dumps(strip(back), sort_keys=True) == json.dumps(strip(document), sort_keys=True)
+
+    def keep_fabric_backup(self, connection: sqlite3.Connection) -> Path:
+        """Copy the database beside itself as `<name>.fabric-backup` before the first conversion; an existing copy is never replaced."""
+        target = self.database_path.with_name(self.database_path.name + FABRIC_BACKUP_SUFFIX)
+        if target.exists():
+            return target
+        partial = target.with_name(target.name + ".partial")
+        partial.unlink(missing_ok=True)
+        copy = sqlite3.connect(partial)
+        try:
+            connection.commit()
+            connection.backup(copy)
+        finally:
+            copy.close()
+        partial.replace(target)
+        return target
+
+    def ensure_block_ids(self, connection: sqlite3.Connection) -> None:
+        """Block ids are unique across the workspace; repair any that are missing, empty or shared (imports, copies)."""
         seen: set[str] = set()
         notes = connection.execute(
-            "SELECT id, resource_id, revision, note_type, content FROM notes ORDER BY id"
+            "SELECT id, resource_id, revision, note_type, content, content_format, page_state, title FROM notes ORDER BY id"
         ).fetchall()
         for note in notes:
             if note["note_type"] != "canvas":
                 continue
-            document = cls.parse_json(note["content"], DEFAULT_CONTENT)
-            document, changed = cls.normalize_canvas_document(document, seen)
-            seen.update(
-                item["semanticId"]
-                for item in document["objects"]
-                if isinstance(item, dict) and isinstance(item.get("semanticId"), str)
-            )
-            if not changed:
-                continue
+            if note["content_format"] == FORMAT_FABRIC:
+                document = self.parse_json(note["content"], DEFAULT_CONTENT)
+                document, changed = self.normalize_canvas_document(document, seen)
+                seen.update(self.stored_ids(document, FORMAT_FABRIC))
+                if not changed:
+                    continue
+                text = json.dumps(document, separators=(",", ":"))
+            else:
+                content = self.parse_json(note["content"], None)
+                ids = self.stored_ids(content, FORMAT_CANVAS)
+                if len(set(ids)) == len(ids) and not seen.intersection(ids):
+                    seen.update(ids)
+                    continue
+                try:
+                    doc = self.document_of(content, FORMAT_CANVAS)
+                except InvalidNoteContentError:
+                    logger.exception("event=note.ids outcome=skipped note_id=%s", note["id"])
+                    continue
+                self.repair_ids(doc, seen)
+                seen.update(o["id"] for o in doc["objects"] if isinstance(o, dict) and isinstance(o.get("id"), str))
+                text = self.canvas_text_of(doc)
             revision = note["revision"] + 1
             connection.execute(
-                """
-                UPDATE notes
-                SET content = ?, revision = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (json.dumps(document, separators=(",", ":")), revision, note["id"]),
+                "UPDATE notes SET content = ?, revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (text, revision, note["id"]),
             )
-            cls.record_change(connection, "note", note["resource_id"], revision, "updated")
+            self.record_change(connection, "note", note["resource_id"], revision, "updated")
         connection.commit()
 
     @classmethod
@@ -236,24 +405,22 @@ class NoteService:
     ) -> set[str]:
         reserved: set[str] = set()
         rows = connection.execute(
-            "SELECT content FROM notes WHERE id != ? AND note_type = 'canvas'",
+            "SELECT content, content_format FROM notes WHERE id != ? AND note_type = 'canvas'",
             (exclude_note_id,),
         ).fetchall()
         for row in rows:
-            document = cls.parse_json(row["content"], DEFAULT_CONTENT)
-            for item in document.get("objects", []):
-                if isinstance(item, dict) and isinstance(item.get("semanticId"), str):
-                    reserved.add(item["semanticId"])
+            reserved.update(cls.stored_ids(cls.parse_json(row["content"], None), row["content_format"]))
         return reserved
 
     @classmethod
-    def canvas_text(cls, content: str) -> str:
-        document = cls.parse_json(content, DEFAULT_CONTENT)
-        return " ".join(
-            item["text"]
-            for item in document.get("objects", [])
-            if isinstance(item, dict) and isinstance(item.get("text"), str)
-        )
+    def canvas_text(cls, content: str, content_format: str = FORMAT_FABRIC, page_state: str | None = None) -> str:
+        """The text search indexes for a canvas: its text blocks in reading order (top edge first), blank-line separated."""
+        parsed = cls.parse_json(content, None)
+        try:
+            document = cls.document_of(parsed, FORMAT_CANVAS if content_format == FORMAT_CANVAS else FORMAT_FABRIC, cls.parse_json(page_state, None))
+        except InvalidNoteContentError:
+            return ""
+        return plain_text(document)
 
     @classmethod
     def mindmap_text(cls, content: str) -> str:
@@ -265,8 +432,8 @@ class NoteService:
         )
 
     @classmethod
-    def note_text(cls, note_type: str, content: str) -> str:
-        return cls.mindmap_text(content) if note_type == "mindmap" else cls.canvas_text(content)
+    def note_text(cls, note_type: str, content: str, content_format: str = FORMAT_FABRIC, page_state: str | None = None) -> str:
+        return cls.mindmap_text(content) if note_type == "mindmap" else cls.canvas_text(content, content_format, page_state)
 
     @staticmethod
     def normalize_mindmap_document(document: dict) -> dict:
@@ -292,8 +459,13 @@ class NoteService:
         title: str,
         content: str,
         note_type: str = "canvas",
+        content_format: str = FORMAT_FABRIC,
+        page_state: str | None = None,
+        body: str | None = None,
     ) -> None:
-        body = cls.note_text(note_type, content)
+        """Index a note. `body` is the Markdown-projection text when the caller already has the document."""
+        if body is None:
+            body = cls.note_text(note_type, content, content_format, page_state)
         connection.execute("DELETE FROM note_search WHERE note_id = ?", (note_id,))
         connection.execute(
             "INSERT INTO note_search (note_id, title, body) VALUES (?, ?, ?)",
@@ -304,7 +476,7 @@ class NoteService:
     def rebuild_derived_indexes(cls, connection: sqlite3.Connection) -> None:
         connection.execute("DELETE FROM note_search")
         notes = connection.execute(
-            "SELECT id, title, note_type, content FROM notes"
+            "SELECT id, title, note_type, content, content_format, page_state FROM notes"
         ).fetchall()
         for note in notes:
             cls.index_note(
@@ -313,6 +485,8 @@ class NoteService:
                 note["title"],
                 note["content"],
                 note["note_type"],
+                note["content_format"],
+                note["page_state"],
             )
         connection.commit()
 
@@ -481,9 +655,10 @@ class NoteService:
         title = str(payload.get("title") or "Untitled note")[:180]
         requested_note_type = str(payload.get("noteType") or "canvas")
         note_type = requested_note_type if requested_note_type in NOTE_TYPES else "canvas"
-        initial_content = (
-            DEFAULT_MINDMAP_CONTENT if note_type == "mindmap" else DEFAULT_CONTENT
+        initial_text = (
+            json.dumps(DEFAULT_MINDMAP_CONTENT, separators=(",", ":")) if note_type == "mindmap" else empty_canvas_text()
         )
+        content_format = FORMAT_MINDMAP if note_type == "mindmap" else FORMAT_CANVAS
         try:
             requested_notebook_id = int(payload.get("notebookId"))
         except (TypeError, ValueError):
@@ -492,14 +667,8 @@ class NoteService:
         with self.connection() as connection:
             notebook_id = requested_notebook_id if self.notebook_exists(connection, requested_notebook_id) else self.default_notebook_id
             cursor = connection.execute(
-                "INSERT INTO notes (resource_id, note_type, title, content, notebook_id) VALUES (?, ?, ?, ?, ?)",
-                (
-                    resource_id,
-                    note_type,
-                    title,
-                    json.dumps(initial_content, separators=(",", ":")),
-                    notebook_id,
-                ),
+                "INSERT INTO notes (resource_id, note_type, title, content, content_format, notebook_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (resource_id, note_type, title, initial_text, content_format, notebook_id),
             )
             note = connection.execute(
                 "SELECT * FROM notes WHERE id = ?", (cursor.lastrowid,)
@@ -510,6 +679,7 @@ class NoteService:
                 note["title"],
                 note["content"],
                 note["note_type"],
+                note["content_format"],
             )
             self.record_change(connection, "note", resource_id, 1, "created")
             connection.commit()
@@ -526,23 +696,26 @@ class NoteService:
                 raise NotFoundError("Note not found")
             expected_revision = self.expected_revision(payload, current["revision"])
             note_type = current["note_type"]
-            default_content = DEFAULT_MINDMAP_CONTENT if note_type == "mindmap" else DEFAULT_CONTENT
-            document = payload.get("content") or default_content
+            body = None
             if note_type == "mindmap":
-                document = self.normalize_mindmap_document(document)
+                content_format = FORMAT_MINDMAP
+                document = self.normalize_mindmap_document(payload.get("content") or DEFAULT_MINDMAP_CONTENT)
+                content = json.dumps(document, separators=(",", ":"))
             else:
-                document, _ = self.normalize_canvas_document(
-                    document, self.reserved_block_ids(connection, note_id)
+                # Either format comes in (the app sends JSON Canvas; older scripts send Fabric JSON); JSON Canvas is stored.
+                content_format = FORMAT_CANVAS
+                document, content, saved_page, body = self.prepare_canvas(
+                    payload.get("content") or DEFAULT_CONTENT, payload.get("pageState"), self.reserved_block_ids(connection, note_id)
                 )
-            content = json.dumps(document, separators=(",", ":"))
+                page_state = json.dumps(saved_page, separators=(",", ":"))
             revision = expected_revision + 1
             cursor = connection.execute(
                 """
                 UPDATE notes
-                SET title = ?, content = ?, page_state = ?, revision = ?, updated_at = CURRENT_TIMESTAMP
+                SET title = ?, content = ?, content_format = ?, page_state = ?, revision = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND revision = ?
                 """,
-                (title, content, page_state, revision, note_id, expected_revision),
+                (title, content, content_format, page_state, revision, note_id, expected_revision),
             )
             if cursor.rowcount == 0:
                 raise ConflictError("Resource revision does not match")
@@ -555,7 +728,7 @@ class NoteService:
                     "UPDATE notes SET notebook_id = ? WHERE id = ?",
                     (notebook_id, note_id),
                 )
-            self.index_note(connection, note_id, title, content, note_type)
+            self.index_note(connection, note_id, title, content, note_type, content_format, body=body)
             self.record_change(connection, "note", current["resource_id"], revision, "updated")
             connection.commit()
         return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
@@ -603,35 +776,35 @@ class NoteService:
         note = self.get_note(note_id)
         if note["noteType"] != "canvas":
             raise UnsupportedNoteTypeError("Text can only be appended to canvas notes")
-        objects = [
-            item for item in note["content"].get("objects", []) if isinstance(item, dict)
-        ]
-        content = {**note["content"], "objects": list(note["content"].get("objects", []))}
+        document = self.document_of(note["content"], note["contentFormat"], note["pageState"])
+        objects = [item for item in document["objects"] if isinstance(item, dict)]
         width = PAGE_WIDTH - 2 * APPEND_LEFT
         top = (
-            max(self.object_bottom(item) for item in objects) + APPEND_GAP
+            max(self.doc_object_bottom(item) for item in objects) + APPEND_GAP
             if objects
             else APPEND_TOP
         )
         bottom = top + self.estimate_text_height(text, width)
-        page_state = dict(note["pageState"]) if isinstance(note["pageState"], dict) else dict(DEFAULT_PAGE_STATE)
-        columns = max(1, int(page_state.get("columns") or 1))
-        rows = max(1, int(page_state.get("rows") or 1))
-        rows = max(rows, -(-int(bottom + APPEND_LEFT) // PAGE_HEIGHT))
-        content["objects"].append(
+        self.normalize_page(document)
+        page = document["page"]
+        page["rows"] = max(page["rows"], -(-int(bottom + APPEND_LEFT) // PAGE_HEIGHT))
+        # A text node (Markdown) with no stored height: whatever shows the note measures it, as it did for the old Textbox.
+        document["objects"].append(
             {
-                "type": "Textbox",
-                "originX": "left",
-                "originY": "top",
-                "left": APPEND_LEFT,
-                "top": round(top, 2),
-                "width": width,
-                "fill": "#20201e",
-                "fontFamily": "Source Serif 4",
-                "fontSize": APPEND_FONT_SIZE,
-                "lineHeight": APPEND_LINE_HEIGHT,
-                "padding": APPEND_PADDING,
-                "text": text,
+                "id": self.new_resource_id(),
+                "type": "text",
+                "z": len(document["objects"]),
+                "mode": "box",
+                "geometry": {
+                    "x": APPEND_LEFT, "y": round(top, 2), "width": width, "rotation": 0, "scaleX": 1, "scaleY": 1,
+                    "flipX": False, "flipY": False, "skewX": 0, "skewY": 0,
+                },
+                "content": text,
+                "style": {
+                    "fontFamily": "Source Serif 4", "fontSize": APPEND_FONT_SIZE, "lineHeight": APPEND_LINE_HEIGHT,
+                    "padding": APPEND_PADDING, "color": "#20201e",
+                },
+                "extras": {},
             }
         )
         return self.update_note(
@@ -640,10 +813,24 @@ class NoteService:
                 "title": note["title"],
                 "notebookId": note["notebookId"],
                 "revision": note["revision"] if revision is None else revision,
-                "content": content,
-                "pageState": {**page_state, "columns": columns, "rows": rows},
+                "content": to_json_canvas(document, media=self.media),
             },
         )
+
+    @staticmethod
+    def doc_object_bottom(item: dict) -> float:
+        """Bottom edge of a document object, ignoring rotation (as the old Fabric-level rule did)."""
+        if item.get("type") == "unknown":
+            raw = item.get("raw")
+            return NoteService.object_bottom(raw) if isinstance(raw, dict) else 0.0
+        geometry = item.get("geometry") or {}
+        top = float(geometry.get("y") or 0)
+        if geometry.get("height") is not None:
+            height = float(geometry["height"])
+            return top + height / 2 + height * abs(float(geometry.get("scaleY", 1.0))) / 2
+        if item.get("type") in ("text", "sticky"):
+            return top + estimate_text_box(item)["height"]
+        return top + 40.0
 
     def move_note(self, note_id: int, payload: dict) -> dict:
         try:
@@ -696,7 +883,7 @@ class NoteService:
                 "SELECT resource_id, name, color, category, created_at, updated_at FROM notebooks ORDER BY id"
             ).fetchall()
             notes = connection.execute(
-                "SELECT resource_id, note_type, title, content, page_state, notebook_id, created_at, updated_at FROM notes ORDER BY id"
+                "SELECT resource_id, note_type, title, content, content_format, page_state, notebook_id, created_at, updated_at FROM notes ORDER BY id"
             ).fetchall()
             notebook_resources = {
                 row["id"]: row["resource_id"]
@@ -721,7 +908,8 @@ class NoteService:
                     "notebookResourceId": notebook_resources[row["notebook_id"]],
                     "noteType": row["note_type"],
                     "title": row["title"],
-                    "content": self.parse_json(row["content"], DEFAULT_CONTENT),
+                    "contentFormat": self.format_of(row),
+                    "content": self.snapshot_content(row),
                     "pageState": self.parse_json(row["page_state"], DEFAULT_PAGE_STATE),
                     "createdAt": row["created_at"],
                     "updatedAt": row["updated_at"],
@@ -729,6 +917,29 @@ class NoteService:
                 for row in notes
             ],
         }
+
+    def snapshot_content(self, row) -> dict:
+        """A note's content for a backup or export: canvases as self-contained JSON Canvas (pictures and SVGs inline as data URLs)."""
+        content = self.parse_json(row["content"], DEFAULT_CONTENT)
+        if row["note_type"] == "mindmap":
+            return content
+        try:
+            document = self.document_of(content, self.format_of(row), self.parse_json(row["page_state"], None))
+        except InvalidNoteContentError:
+            return content
+        for obj in document["objects"]:
+            self.inline_media(obj)
+        return to_json_canvas(document)
+
+    def inline_media(self, obj: dict) -> None:
+        if obj.get("type") == "image" and obj["mediaRef"]["kind"] == "media":
+            media_id = obj["mediaRef"]["id"]
+            data = self.media.read(media_id)
+            if data is not None:
+                obj["mediaRef"] = {"kind": "inline", "dataUrl": data_url_of(data, media_id.rsplit(".", 1)[1])}
+        if obj.get("type") == "group":
+            for child in obj["children"]:
+                self.inline_media(child)
 
     def import_workspace_snapshot(self, snapshot: dict) -> dict:
         """Merge a validated backup into the workspace without overwriting data."""
@@ -780,44 +991,41 @@ class NoteService:
 
             for note in notes:
                 note_type = note.get("noteType", "canvas")
-                document = json.loads(json.dumps(note["content"]))
-                if note_type == "mindmap":
-                    document = self.normalize_mindmap_document(document)
-                else:
-                    document, _ = self.normalize_canvas_document(document, reserved_ids)
-                    reserved_ids.update(
-                        item["semanticId"]
-                        for item in document.get("objects", [])
-                        if isinstance(item, dict) and isinstance(item.get("semanticId"), str)
-                    )
                 page_state_value = note.get("pageState")
                 page_state = page_state_value if isinstance(page_state_value, dict) else DEFAULT_PAGE_STATE
+                body = None
+                if note_type == "mindmap":
+                    content_format = FORMAT_MINDMAP
+                    content = json.dumps(self.normalize_mindmap_document(json.loads(json.dumps(note["content"]))), separators=(",", ":"))
+                else:
+                    # A backup made before JSON Canvas (version 1) carries Fabric JSON; both are accepted and JSON Canvas is stored.
+                    content_format = FORMAT_CANVAS
+                    try:
+                        document, content, page_state, body = self.prepare_canvas(json.loads(json.dumps(note["content"])), page_state, reserved_ids)
+                    except InvalidNoteContentError as error:
+                        raise WorkspaceImportError(f"A note in the backup cannot be read: {error}") from error
+                    reserved_ids.update(o["id"] for o in document["objects"] if isinstance(o, dict) and isinstance(o.get("id"), str))
                 title = str(note.get("title") or "Untitled note")[:180]
                 resource_id = self.new_resource_id()
                 cursor = connection.execute(
                     """
                     INSERT INTO notes
-                        (resource_id, note_type, title, content, page_state, notebook_id)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                        (resource_id, note_type, title, content, content_format, page_state, notebook_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         resource_id,
                         note_type,
                         title,
-                        json.dumps(document, separators=(",", ":")),
+                        content,
+                        content_format,
                         json.dumps(page_state, separators=(",", ":")),
                         imported_notebooks[note["notebookResourceId"]],
                     ),
                 )
                 note_id = cursor.lastrowid
                 imported_note_ids.append(note_id)
-                self.index_note(
-                    connection,
-                    note_id,
-                    title,
-                    json.dumps(document, separators=(",", ":")),
-                    note_type,
-                )
+                self.index_note(connection, note_id, title, content, note_type, content_format, body=body)
                 self.record_change(connection, "note", resource_id, 1, "created")
             connection.commit()
         return {
