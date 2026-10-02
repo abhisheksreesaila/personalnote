@@ -41,7 +41,7 @@ import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
-import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './modules/editor/save-flush.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
 import { nextPageGhost } from './modules/editor/edge-ghost.js'
@@ -2055,15 +2055,16 @@ async function saveActiveNote({ unloading = false } = {}) {
     // it, JSON Canvas) goes back untouched. The Fabric editor saves its working copy converted to JSON Canvas (F-026).
     const editedLeafer = useLeafer && state.activeNoteType === 'canvas' && leaferSource.editedDoc
     const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : useLeafer ? leaferSource.content : canvas.toJSON()
-    const CONTENT_HERE = '"__content__"'
-    let body = JSON.stringify({
+    const fields = {
       title,
-      content: editedLeafer ? '__content__' : state.activeNoteType === 'canvas' && !useLeafer ? encodeNote(savedContent, state.pages) : savedContent,
       pageState: useLeafer && state.activeNoteType === 'canvas' ? leaferSource.pageState : state.pages,
       notebookId: note?.notebookId,
       revision: note?.revision,
-    })
-    if (editedLeafer) body = body.replace(CONTENT_HERE, () => leaferSource.contentJson) // the note's text is joined in as it was kept, not walked again
+    }
+    // An edited Leafer note's text is joined in as it was kept, not walked again (and never searched for: a title can say anything).
+    const body = editedLeafer
+      ? joinSaveBody(leaferSource.contentJson, fields)
+      : JSON.stringify({ ...fields, content: state.activeNoteType === 'canvas' && !useLeafer ? encodeNote(savedContent, state.pages) : savedContent })
     saveTiming.saved(body)
     // While the page is going away a keepalive request is the only one guaranteed to be sent (it takes the text itself). Otherwise the
     // body goes as a Blob: handing a note of megabytes to fetch as a string copies it on the main thread and stalls a drag for ~100 ms.

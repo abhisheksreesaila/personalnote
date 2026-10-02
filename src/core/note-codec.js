@@ -7,7 +7,7 @@
 // projection (jsoncanvas-extras.js), which only the server side and the tests need.
 import { fromFabric, toFabricUnchecked } from './document/fabric.js'
 import { isJsonCanvas, readJsonCanvas, writeJsonCanvas } from './document/jsoncanvas.js'
-import { compactStacking } from './document/operations.js'
+import { compactStacking, stacking } from './document/operations.js'
 import { DEFAULT_PAGE, PAGE, SCHEMA_VERSION } from './document/schema.js'
 
 const dataUrlByName = new Map() // media file name -> data URL, so a note's pictures are fetched once
@@ -102,11 +102,10 @@ export function createDocumentEncoder() {
   return {
     stats: () => ({ written }),
     encode(doc) {
-      const stacked = compactStacking(doc)
-      const list = stacked.objects
+      const list = stacking(doc)
       const byId = new Map()
       for (const object of list) {
-        if (!object || typeof object.id !== 'string' || object.id === '' || byId.has(object.id)) return fallback(stacked)
+        if (!object || typeof object.id !== 'string' || object.id === '' || byId.has(object.id)) return fallback(compactStacking(doc))
         byId.set(object.id, object)
       }
       const rank = new Map(list.map((object, index) => [object.id, index]))
@@ -116,12 +115,12 @@ export function createDocumentEncoder() {
         if (object.type === 'connector') {
           const from = byId.get(object.fromId)
           const to = byId.get(object.toId)
-          if (!from || !to || from.type === 'connector' || to.type === 'connector') return fallback(stacked)
+          if (!from || !to || from.type === 'connector' || to.type === 'connector') return fallback(compactStacking(doc))
           const at = rank.get(object.id)
           let entry = edges.get(object)
           if (!entry || entry.from !== from || entry.to !== to || entry.rank !== at) {
             written += 1
-            const edge = writeJsonCanvas({ ...stacked, objects: [{ ...from, z: 0 }, { ...to, z: 1 }, { ...object, z: 2 }].filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index) }, options).edges[0]
+            const edge = writeJsonCanvas({ ...doc, objects: [{ ...from, z: 0 }, { ...to, z: 1 }, { ...object, z: 2 }].filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index) }, options).edges[0]
             edge.pn.z = at
             entry = { from, to, rank: at, json: JSON.stringify(edge) }
             edges.set(object, entry)
@@ -131,14 +130,14 @@ export function createDocumentEncoder() {
           let json = nodes.get(object)
           if (json === undefined) {
             written += 1
-            json = JSON.stringify(writeJsonCanvas({ ...stacked, objects: [object] }, options).nodes[0])
+            json = JSON.stringify(writeJsonCanvas({ ...doc, objects: [object] }, options).nodes[0])
             nodes.set(object, json)
           }
           nodeJson.push(json)
         }
       }
-      const pn = { schemaVersion: SCHEMA_VERSION, page: stacked.page ?? DEFAULT_PAGE, grid: { width: PAGE.width, height: PAGE.height } }
-      if (stacked.extras && Object.keys(stacked.extras).length) pn.extras = stacked.extras
+      const pn = { schemaVersion: SCHEMA_VERSION, page: doc.page ?? DEFAULT_PAGE, grid: { width: PAGE.width, height: PAGE.height } }
+      if (doc.extras && Object.keys(doc.extras).length) pn.extras = doc.extras
       return `{"nodes":[${nodeJson.join(',')}],"edges":[${edgeJson.join(',')}],"pn":${JSON.stringify(pn)}}`
     },
   }

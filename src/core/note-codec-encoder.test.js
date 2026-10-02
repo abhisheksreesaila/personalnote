@@ -53,3 +53,19 @@ test('a document the cache cannot vouch for (an object without an id) falls back
   doc.objects[0] = { ...doc.objects[0], id: undefined }
   assert.equal(createDocumentEncoder().encode(doc), plain(doc))
 })
+
+test('after a delete (a gap in z), a move still writes only the moved object and its connectors', () => {
+  forgetMedia()
+  let doc = idsAdded(fromFabric(generateNote(), { columns: COLUMNS, rows: ROWS }))
+  const encoder = createDocumentEncoder()
+  const solid = doc.objects.filter((o) => o.type !== 'connector' && o.type !== 'unknown')
+  doc = applyChanges(doc, planOperation(doc, { type: 'remove', ids: [solid[3].id] }).op)
+  encoder.encode(doc)
+  const target = solid[400]
+  const before = encoder.stats().written
+  doc = applyChanges(doc, planOperation(doc, { type: 'move', ids: [target.id], dx: 4, dy: 4 }).op)
+  assert.equal(encoder.encode(doc), plain(doc))
+  const touching = doc.objects.filter((o) => o.type === 'connector' && (o.fromId === target.id || o.toId === target.id)).length
+  const written = encoder.stats().written - before
+  assert.ok(written <= 1 + touching, `${written} written for one move after a delete (${touching} connectors touch it)`)
+})
