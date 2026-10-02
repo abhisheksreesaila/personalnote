@@ -75,6 +75,23 @@ test('a stacking renumber alone is not a change, and untouched objects keep thei
   assert.deepEqual(merged.objects.map((o) => o.z), [0, 1, 2])
 })
 
+test('an object named as touched counts as changed by the user: the agent cannot delete it, and its own fields win', () => {
+  const remote = doc([text('a', 'A'), text('c', 'C')]) // b deleted by the agent
+  const { doc: merged } = mergeDocuments({ base: base(), local: base(), remote, touched: ['b'] })
+  assert.deepEqual(ids(merged), ['a', 'b', 'c'])
+  const rewritten = doc([text('a', 'A'), text('b', 'B by agent'), text('c', 'C')])
+  assert.equal(byId(mergeDocuments({ base: base(), local: base(), remote: rewritten, touched: ['b'] }).doc, 'b').content, 'B by agent')
+})
+
+test('a connector already detached in the stored note stays; only one whose end this merge removed goes', () => {
+  const loose = { id: 'k1', type: 'connector', fromId: 'a', toId: 'gone', geometry: g } // already dangling before the merge
+  const tied = { id: 'k2', type: 'connector', fromId: 'a', toId: 'b', geometry: g }
+  const start = doc([text('a', 'A'), text('b', 'B'), loose, tied])
+  const remote = doc([text('a', 'A'), loose, tied]) // b deleted
+  const { doc: merged } = mergeDocuments({ base: start, local: start, remote })
+  assert.deepEqual(ids(merged), ['a', 'k1'])
+})
+
 test('the page grid: the agent\'s when the user left it, the user\'s when changed', () => {
   const grown = doc([text('a', 'A')], { columns: 2, rows: 1 })
   assert.deepEqual(mergeDocuments({ base: base(), local: base(), remote: grown }).doc.page, { columns: 2, rows: 1 })

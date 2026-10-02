@@ -31,6 +31,8 @@ fixture.content.objects.push(
 let stored = { content: fixture.content, pageState: fixture.pageState, revision: 1 }
 const puts = []
 const puts2 = []
+let holdPutMs = 0 // the response to a save is held back this long
+let putStarted = 0
 let enforceRevision = false // a stale save is refused, as the real server does
 let changeSeq = 1
 const changeLog = []
@@ -66,6 +68,8 @@ async function mock(page) {
     if (p === '/notes/1' && req.method() === 'GET') return json({ ...summary, content: stored.content, pageState: stored.pageState })
     if (p === '/notes/1' && req.method() === 'PUT') {
       const body = JSON.parse(req.postData())
+      putStarted += 1
+      if (holdPutMs) await new Promise((resolve) => setTimeout(resolve, holdPutMs))
       if (enforceRevision && body.revision !== stored.revision) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'revision conflict' }) })
       puts.push(body)
       stored = { content: body.content, pageState: body.pageState, revision: stored.revision + 1 }
@@ -463,6 +467,50 @@ try {
     await page.waitForTimeout(600)
   }
 
+
+  // ---- an agent deletes the text being typed while the typing never pauses: the text and every word survive
+  {
+    enforceRevision = true
+    await scene(page, 'clearSelection')
+    const target = (await live(page)).objects.find((o) => o.type === 'text' && o.content === 'made while typing').id
+    await scene(page, 'editText', target)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.press('Control+End')
+    let typed = ''
+    for (let i = 0; i < 16; i += 1) { // a key every 300 ms: no pause long enough for a draft
+      await page.keyboard.type(String.fromCharCode(97 + i))
+      typed += String.fromCharCode(97 + i)
+      if (i === 3) agentWrite({ remove: [target] })
+      await page.waitForTimeout(300)
+    }
+    check('the editor stays open and keeps every word through an agent deletion of its text', (await editorOpen(page)) && (await editorValue(page)).endsWith(typed), String(await editorValue(page)))
+    const during = objectOf(await live(page), target)
+    check('the deleted text is still there, with the words typed up to the merge', during?.content.startsWith('made while typingabc'), during?.content)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(1800)
+    check('the text and its words are in the document and saved', objectOf(await live(page), target)?.content.endsWith(typed) && objectOf(savedDoc(), target)?.content.endsWith(typed), objectOf(savedDoc(), target)?.content)
+    enforceRevision = false
+  }
+
+  // ---- the base for the next merge is not moved by a save that a merge overtook
+  {
+    await page.waitForTimeout(800)
+    holdPutMs = 3500
+    const started = putStarted
+    await scene(page, 'editText', N1)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.press('Control+End')
+    await page.keyboard.type(' HELD')
+    await page.keyboard.press('Escape')
+    for (let i = 0; i < 40 && putStarted === started; i += 1) await page.waitForTimeout(100)
+    agentWrite({ append: [{ id: 'agent_node_3', content: 'while saving' }] })
+    await page.waitForTimeout(5500) // the merge happens (the changes feed), then the held save lands
+    holdPutMs = 0
+    const base = await page.evaluate(() => window.__personalNote.leaferBase().objects.map((o) => o.id))
+    check('a save that a merge overtook does not move the base back', base.includes('agent_node_3'), JSON.stringify(base.slice(-4)))
+    await page.waitForTimeout(1500)
+  }
+
   // ---- the overlay lines up with the drawn text, at three zooms, upright and turned
   const lineUp = async (id, label) => {
     const hostBox = await page.evaluate(() => { const r = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height } })
@@ -650,10 +698,13 @@ try {
     await page.waitForTimeout(800)
     n = puts.length
     await typeInto(' SWITCH')
+    holdPutMs = 1200 // the save of the note being left is still out when the other note appears
     await page.evaluate(() => window.__personalNote.selectNote(2))
+    holdPutMs = 0
     await waitForSave(page, n)
     await page.waitForTimeout(500)
     check('choosing another note with the editor open saves the words into the note being left', objectOf(savedDoc(), N1)?.content.endsWith(' SWITCH') && !(await editorOpen(page)), objectOf(savedDoc(), N1)?.content)
+    check('the base for merges is the note now open, not the one left', await page.evaluate(() => window.__personalNote.leaferBase().objects.length === 0))
     check('and puts nothing into the note chosen', puts2.length === 0 && (await live(page)).objects.length === 0, JSON.stringify([puts2.length, (await live(page)).objects.length]))
   }
   await page.screenshot({ path: `${SHOTS}/final.png` })

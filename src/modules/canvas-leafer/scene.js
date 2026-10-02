@@ -572,6 +572,13 @@ export function createScene({ host, width, height, onOperation = () => null, onD
 
   const textApi = {
     isEditingText: () => overlay.isOpen,
+    // Before a merge: the words typed so far go into the document now (not in the middle of a composition, which cannot be read yet).
+    // Returns the id of the object being typed (it counts as the user's in the merge), or null.
+    flushText() {
+      if (!textEdit || !overlay.isOpen) return null
+      if (!overlay.composing) { clearTimeout(draftTimer); storeWords(textEdit, overlay.value, { final: false }) }
+      return textEdit.entry?.id ?? null
+    },
     // Ends a text edit in progress (the words typed so far are kept). The host calls it before it saves or leaves the note.
     finishTextEdit() { if (overlay.isOpen) overlay.commit() },
     // Starts editing the words of a text or sticky (by id, or the topmost one at a page point, with the caret there). False when nothing editable is there.
@@ -675,7 +682,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
           const object = after.get(entry.id)
           if (object === entry.object) continue
           if (!object) {
-            if (entry.id === editingId) { clearTimeout(draftTimer); textEdit = null; overlay.cancel(); onEnd(); onTextEvent('end') } // the agent deleted the text being typed
+            if (entry.id === editingId) continue // never taken from under the typing: the merge treats it as the user's, so this is not reached
             dropEntry(entry)
             continue
           }

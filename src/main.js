@@ -2078,9 +2078,11 @@ async function saveActiveNote({ unloading = false } = {}) {
     saveTiming.saved(body)
     // While the page is going away a keepalive request is the only one guaranteed to be sent (it takes the text itself). Otherwise the
     // body goes as a Blob: handing a note of megabytes to fetch as a string copies it on the main thread and stalls a drag for ~100 ms.
+    const mergesBefore = mergeCount
     const result = await api(`/notes/${noteId}`, { method: 'PUT', body: unloading ? body : new Blob([body]), keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
-    if (editedLeafer) leaferBase = editedLeafer
+    // What the server now holds is the base for the next merge, unless the note was left or a merge moved the base on while this save was out.
+    if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && mergeCount === mergesBefore) leaferBase = editedLeafer
     if (state.activeNoteType === 'canvas') syncedIds = editedLeafer ? new Set(editedLeafer.objects.map((object) => object.id).filter(Boolean)) : canvasObjectIds(savedContent)
     renderNoteList()
     setSaveState('Saved')
@@ -2483,8 +2485,9 @@ async function mergeLeaferNote(note) {
   const decoded = await decodeNoteDocument(note)
   if (note.id !== state.activeNoteId) return 0
   mergeCount += 1
+  const typing = leaferCanvas.flushText() // words typed so far are in the document now; that text counts as the user's whatever the agent did to it
   const local = leaferEdits.doc
-  const { doc: merged, added } = mergeDocuments({ base: leaferBase ?? local, local, remote: decoded.doc })
+  const { doc: merged, added } = mergeDocuments({ base: leaferBase ?? local, local, remote: decoded.doc, touched: typing ? [typing] : [] })
   const summary = state.notes.find((item) => item.id === note.id)
   if (summary) summary.revision = note.revision
   syncedIds = canvasObjectIds(note.content)
@@ -4544,5 +4547,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { selectNote, canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { selectNote, leaferBase: () => leaferBase, canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()

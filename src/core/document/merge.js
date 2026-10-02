@@ -38,7 +38,10 @@ function mergeFields(base, local, remote, nested) {
 const idsOf = (document) => new Map(document.objects.filter((object) => object && object.id !== undefined).map((object) => [object.id, object]))
 
 // -> { doc, added: [ids the agent appended], changed: [ids whose object differs from `local`] }
-export function mergeDocuments({ base, local, remote }) {
+// `touched`: ids the user is working on right now (words not yet in `local`): they count as changed by the user.
+export function mergeDocuments({ base, local, remote, touched = [] }) {
+  const mine = new Set(touched)
+  const removed = new Set()
   const inBase = idsOf(base)
   const inRemote = idsOf(remote)
   const inLocal = idsOf(local)
@@ -52,11 +55,11 @@ export function mergeDocuments({ base, local, remote }) {
     let result = object
     if (!was) { // made by the user (or by both)
       if (now && !same(object, now)) result = mergeFields({}, object, now, true)
-    } else if (same(object, was)) { // untouched by the user
+    } else if (same(object, was) && !mine.has(id)) { // untouched by the user
       if (!now) result = null // the agent deleted it
       else if (!same(now, was)) result = { ...now, z: object.z }
     } else if (now && !same(now, was)) result = mergeFields(was, object, now, true) // both changed it
-    if (result === null) { changed.push(id); continue }
+    if (result === null) { changed.push(id); removed.add(id); continue }
     if (result !== object) changed.push(id)
     objects.push(result)
   }
@@ -68,10 +71,9 @@ export function mergeDocuments({ base, local, remote }) {
     added.push(id)
     changed.push(id)
   }
-  // no connector is left pointing at something that is gone
-  const present = new Set(objects.map((object) => object?.id))
+  // no connector is left pointing at something this merge removed (one already detached in the stored note stays as it is)
   const kept = objects.filter((object) => {
-    if (object?.type !== 'connector' || (present.has(object.fromId) && present.has(object.toId))) return true
+    if (object?.type !== 'connector' || !(removed.has(object.fromId) || removed.has(object.toId))) return true
     changed.push(object.id)
     return false
   })
