@@ -220,6 +220,7 @@ Merged into `leafer` at d6683b1.
 ## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [todo]
 ## F-033 Images (media library, F-023), export, print on Leafer (P-09) [todo]
 ## F-034 Performance pass and agent sync on Leafer (P-10) [todo]
+- [ ] an agent change arriving while you edit in Leafer mode merges in without discarding unsaved local edits (today the remote redraw replaces them; fine only while Leafer was read-only)
 Includes a speed test in the Mac app before shipping.
 ## F-035 Phones and pencil, Leafer becomes default (P-11) [todo]
 ## F-036 Remove Fabric (P-12) [todo]
