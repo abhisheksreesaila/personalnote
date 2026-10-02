@@ -52,6 +52,11 @@ export function sizeOf(value) {
   return total
 }
 
+// Equality that ignores what a JSON Canvas round trip (an agent merge) rewrites without the object changing: stacking values are
+// renumbered 0..n and an empty `extras` appears.
+const plain = (object) => { const { z, extras, ...rest } = object; return extras && Object.keys(extras).length ? { ...rest, extras } : rest }
+const sameIgnoringZ = (a, b) => a === b || Boolean(a && b && deepEqual(plain(a), plain(b)))
+
 const idsOf = (doc) => new Map(doc.objects.filter((object) => object && object.id !== undefined).map((object, index) => [object.id, object]))
 
 // The changes that turn document a into document b (by id; reference equality first, then structural equality).
@@ -101,17 +106,17 @@ function applyOp(doc, op, direction, force = false) {
     if (force) {
       if (target === null) removed.add(change.id)
       else if (current) replaced.set(change.id, target)
-      else added.push(target)
+      else added.push({ object: target, anchor: change.anchor })
       changed.push(change.id)
       continue
     }
     if (target === null) { // revert an add (or redo a remove): remove it, unless someone changed it since
       if (!current) continue
-      if (current !== expected && !deepEqual(current, expected)) { skipped++; continue }
+      if (!sameIgnoringZ(current, expected)) { skipped++; continue }
       removed.add(change.id)
     } else if (expected === null) { // revert a remove (or redo an add): bring it back, unless it is back already
       if (current) { skipped++; continue }
-      added.push(target)
+      added.push({ object: target, anchor: change.anchor })
     } else { // revert a replace
       if (!current) { skipped++; continue }
       const merged = mergeFields(current, expected, target)
@@ -120,6 +125,29 @@ function applyOp(doc, op, direction, force = false) {
       replaced.set(change.id, merged.value)
     }
     changed.push(change.id)
+  }
+  if (!force) {
+    // No dangling connectors, and never lose an agent's content: a connector only comes back when both ends exist, and an object
+    // someone connected to since is kept.
+    const present = new Set(index.keys())
+    for (const id of removed) present.delete(id)
+    for (const { object } of added) present.add(object.id)
+    for (let at = added.length - 1; at >= 0; at--) {
+      const { object } = added[at]
+      if (object.type === 'connector' && (!present.has(object.fromId) || !present.has(object.toId))) {
+        added.splice(at, 1)
+        changed.splice(changed.indexOf(object.id), 1)
+        skipped++
+        present.delete(object.id)
+      }
+    }
+    const inOp = new Set(op.changes.map((change) => change.id))
+    for (const object of doc.objects) {
+      if (object?.type !== 'connector' || removed.has(object.id) || inOp.has(object.id)) continue
+      for (const end of [object.fromId, object.toId]) {
+        if (removed.has(end)) { removed.delete(end); changed.splice(changed.indexOf(end), 1); skipped++ }
+      }
+    }
   }
   let page = doc.page
   let pageChanged = false
@@ -140,10 +168,24 @@ function applyOp(doc, op, direction, force = false) {
       objects.push(replaced.has(id) ? replaced.get(id) : object)
     }
   } else if (added.length) objects = doc.objects.slice()
-  for (const object of added) { // keep the stacking order: before the first object that sits above it
-    let at = objects.length
-    for (let position = 0; position < objects.length; position++) if ((objects[position]?.z ?? 0) > (object.z ?? 0)) { at = position; break }
+  // Bring objects back next to the neighbour they had (ids survive a merge; `z` may be renumbered), else by their stacking value.
+  for (const { object, anchor } of [...added].sort((a, b) => (a.object.z ?? 0) - (b.object.z ?? 0))) {
+    let at = -1
+    const prev = anchor?.prev == null ? -1 : objects.findIndex((candidate) => candidate?.id === anchor.prev)
+    if (prev >= 0) at = prev + 1
+    else {
+      const next = anchor?.next == null ? -1 : objects.findIndex((candidate) => candidate?.id === anchor.next)
+      if (next >= 0) at = next
+    }
+    if (at < 0) {
+      at = objects.length
+      for (let position = 0; position < objects.length; position++) if ((objects[position]?.z ?? 0) > (object.z ?? 0)) { at = position; break }
+    }
     objects.splice(at, 0, object)
+  }
+  // Stacking values must stay unique and in array order: renumber only when an insertion broke that.
+  if (added.length && objects.some((object, position) => position > 0 && !((objects[position - 1]?.z ?? 0) < (object?.z ?? 0)))) {
+    objects = objects.map((object, position) => (object && object.z !== position ? { ...object, z: position } : object))
   }
   return { doc: { ...doc, objects, page }, changed, page: pageChanged, skipped }
 }
@@ -154,7 +196,7 @@ function combine(first, second) {
   for (const change of second.changes) {
     const earlier = byId.get(change.id)
     if (!earlier) byId.set(change.id, { ...change })
-    else byId.set(change.id, { id: change.id, before: earlier.before, after: change.after })
+    else byId.set(change.id, { id: change.id, before: earlier.before, after: change.after, anchor: change.anchor ?? earlier.anchor })
   }
   const changes = [...byId.values()].filter((change) => !(change.before === null && change.after === null) && change.before !== change.after && !(change.before && change.after && deepEqual(change.before, change.after)))
   const merged = { label: first.label ?? second.label, changes }
@@ -214,6 +256,11 @@ export function createHistory({ doc, maxSteps = DEFAULT_MAX_STEPS, maxBytes = DE
   }
 
   function record(op, { coalesce } = {}) {
+    for (const change of op.changes) {
+      if (change.after !== null || change.before === null || change.anchor) continue
+      const at = current.objects.findIndex((object) => object?.id === change.id)
+      change.anchor = { prev: current.objects[at - 1]?.id ?? null, next: current.objects[at + 1]?.id ?? null }
+    }
     const applied = applyOp(current, op, 'redo', true)
     current = applied.doc
     if (group) { group.op = group.op ? combine(group.op, op) : combine({ changes: [] }, op); if (op.label && !group.op.label) group.op.label = op.label }
@@ -240,7 +287,7 @@ export function createHistory({ doc, maxSteps = DEFAULT_MAX_STEPS, maxBytes = DE
     const finished = group
     group = null
     if (cancel && finished.op) { // undo what the group did, without a step
-      const applied = applyOp(current, finished.op, 'undo', true)
+      const applied = applyOp(current, finished.op, 'undo')
       current = applied.doc
       emit({ type: 'cancel', changed: applied.changed })
       return null
@@ -250,7 +297,7 @@ export function createHistory({ doc, maxSteps = DEFAULT_MAX_STEPS, maxBytes = DE
   }
 
   function step(from, to, direction) {
-    if (depth) end()
+    while (depth) end()
     last = null
     while (from.length) {
       const entry = from.pop()
@@ -286,6 +333,9 @@ export function createHistory({ doc, maxSteps = DEFAULT_MAX_STEPS, maxBytes = DE
     // An agent or sync merge: a new base, not an edit. Both stacks stay as they are. Objects equal to the old ones keep their
     // references, so later steps and diffs stay cheap and untouched objects stay identical.
     mergeRemote(next) {
+      // A step never spans a merge: what was recorded before it is closed as its own step, and nothing coalesces across it.
+      last = null
+      if (group?.op) { commit(group.op); group.op = null }
       const known = idsOf(current)
       const objects = next.objects.map((object) => { const old = object && known.get(object.id); return old && deepEqual(old, object) ? old : object })
       current = { ...next, objects, page: deepEqual(next.page, current.page) ? current.page : next.page }

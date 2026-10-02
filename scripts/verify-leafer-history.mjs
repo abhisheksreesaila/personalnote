@@ -114,18 +114,23 @@ try {
 
   // an agent writes between the delete and the undo
   await page.evaluate((id) => window.__personalNote.leaferEdits.deleteObjects([id]), victim)
-  const agentDoc = await page.evaluate(() => {
+  const agentDoc = await page.evaluate(async () => {
+    const { readJsonCanvas } = await import('/src/core/document/jsoncanvas.js')
     const edits = window.__personalNote.leaferEdits
     const doc = edits.doc
     const last = doc.objects.at(-1)
     const agent = { ...doc.objects.find((o) => o.type === 'sticky' || o.type === 'text'), id: 'agent-added', z: (last.z ?? 0) + 1, content: 'written by an agent' }
-    edits.remote(edits.noteId, { ...doc, objects: [...doc.objects, agent] })
+    // the way a real agent write arrives: through the stored JSON Canvas, which renumbers z and normalizes objects
+    edits.remote(edits.noteId, readJsonCanvas(JSON.parse(JSON.stringify(window.__personalNote.encodeDocument({ ...doc, objects: [...doc.objects, agent] })))))
     return agent.id
   })
   await page.keyboard.press('Control+KeyZ')
   await page.waitForTimeout(300)
   const merged = await page.evaluate((id) => window.__personalNote.leaferEdits.doc.objects.map((o) => o.id).includes(id), agentDoc)
   check('undo brings the deleted object back and leaves the agent\'s object alone', merged && await page.evaluate((v) => window.__personalNote.leaferEdits.doc.objects.some((o) => o.id === v), victim))
+  const order = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.map((o) => [o.id, o.z]))
+  // (the JSON Canvas round trip itself moves a connector or two; undo's job is the deleted object's place and unique, ascending z)
+  check('after a real JSON Canvas merge, undo puts the object back where it was with unique ascending z', order.map(([id]) => id).indexOf(victim) === ids.indexOf(victim) && order.every(([, z], at) => at === 0 || order[at - 1][1] < z) && order.length === ids.length + 1, JSON.stringify(order))
 
   // many objects
   const timing = await page.evaluate(() => {
