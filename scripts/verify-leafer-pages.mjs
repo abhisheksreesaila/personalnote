@@ -66,6 +66,7 @@ async function mock(page, getNote) {
     if (p === '/notes/1' && req.method() === 'PUT') {
       if (putGate) await putGate
       const body = JSON.parse(req.postData())
+      if (body.revision !== note.revision) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'Resource revision does not match' }) }) // like the real server: a save that is not on the newest revision is refused
       puts.push(body)
       Object.assign(note, { content: body.content, pageState: body.pageState, revision: note.revision + 1 })
       return json({ revision: note.revision, resourceId: 'r1' })
@@ -124,7 +125,7 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('console', (message) => { if (message.type() === 'error' && !/409 \(Conflict\)|revision does not match/.test(message.text())) errors.push(message.text()) })
   await mock(page, () => stored)
   await open(page)
 
@@ -530,6 +531,7 @@ try {
     const local = await doc(page)
     check('(setup) the objects moved a page right and a page down on the user\'s side, the save is held', objectOf(local, 'C').geometry.x === objectOf(start, 'C').geometry.x + W && local.page.rows === start.page.rows + 1 && (await steps(page)) === stepsBefore + 1)
     agentWrite((d) => { d.objects.push({ id: 'AG', type: 'text', mode: 'box', z: 120, content: 'the agent was here', geometry: { x: 120, y: 900, width: 200, height: 60, ...UPRIGHT } }) })
+    release() // the held save lands on the agent's revision: refused, so the agent's write is merged (it waits for the save to be answered), then saved again
     await page.waitForTimeout(4500)
     const merged = await doc(page)
     const agent = objectOf(merged, 'AG')
@@ -565,7 +567,7 @@ try {
   }
 
 
-  // ---------------------------------------------------------------- the server's frame: a held save lands after a merge, and an agent writes again before the follow-up save
+  // ---------------------------------------------------------------- the server's frame: after a merge and a save, an agent writes again, in the frame the save left
   {
     const start = await doc(page)
     release = hold()
@@ -574,19 +576,16 @@ try {
     const aBox = objectOf(start, 'A').geometry
     await drag(page, sa, await screenOf(page, -40 + (aBox.width + 2) / 2, -60 + (aBox.height + 2) / 2)) // pages on the top and left: the frame moves; the save is held
     await page.waitForTimeout(1200)
-    agentWrite((d) => { objectOf(d, 'C').color = '#aaddff' }) // a first write by the agent (the held save, which lands later, overwrites it on this mock server)
-    await page.waitForTimeout(4500) // merged while the save is out
-    release() // the held save lands: the server now holds the user's document, in the user's frame
-    release = hold() // and the follow-up save is held too
-    await page.waitForTimeout(1500)
-    agentWrite((d) => { const c = objectOf(d, 'C').geometry; d.objects.push({ id: 'AG2', type: 'text', mode: 'box', z: 131, content: 'second write', geometry: { x: c.x + 300, y: c.y, width: 200, height: 60, ...UPRIGHT } }) }) // written in the frame the server holds
+    agentWrite((d) => { objectOf(d, 'C').color = '#aaddff' }) // a first write by the agent: the held save will be refused, the write merged, the note saved again
+    release()
+    await page.waitForTimeout(4500)
+    agentWrite((d) => { const c = objectOf(d, 'C').geometry; d.objects.push({ id: 'AG2', type: 'text', mode: 'box', z: 131, content: 'second write', geometry: { x: c.x + 300, y: c.y, width: 200, height: 60, ...UPRIGHT } }) }) // written in the frame the server holds now: the user's
     await page.waitForTimeout(4500)
     const merged2 = await doc(page)
     const c2 = objectOf(merged2, 'C').geometry
-    check('the second write lands where the agent meant, next to C (the server\'s frame is the one the first save left it in)', Boolean(objectOf(merged2, 'AG2')) && near(objectOf(merged2, 'AG2').geometry.x - c2.x, 300, 1e-6) && near(objectOf(merged2, 'AG2').geometry.y - c2.y, 0, 1e-6), JSON.stringify([objectOf(merged2, 'AG2')?.geometry, c2]))
-    release()
+    check('the second write lands where the agent meant, next to C (the server\'s frame is the one the save left it in)', Boolean(objectOf(merged2, 'AG2')) && near(objectOf(merged2, 'AG2').geometry.x - c2.x, 300, 1e-6) && near(objectOf(merged2, 'AG2').geometry.y - c2.y, 0, 1e-6), JSON.stringify([objectOf(merged2, 'AG2')?.geometry, c2]))
     await page.waitForTimeout(2500)
-    const finalDoc = savedDoc()
+    const finalDoc = readJsonCanvas(stored.content)
     check('the note saved at the end has the second write in place', near(objectOf(finalDoc, 'AG2').geometry.x - objectOf(finalDoc, 'C').geometry.x, 300, 1e-6))
     while ((await steps(page)) > 0) await page.evaluate(() => window.__personalNote.leaferEdits.undo())
   }
