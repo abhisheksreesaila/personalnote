@@ -195,12 +195,13 @@ Report: docs/research/f024-leafer.md (migration slices P-01…P-12 there; awaiti
 ## LeaferJS migration (approved 2026-10-01; detail: docs/research/f024-leafer.md §4)
 Captain: "it should be snappier, faster, savable through a SQLite database, the media should be saved differently so that you can point to it… the editing should feel fast… we'll add plugins as and when." Fabric stays the default until F-035.
 
-## F-025 Engine-independent document model (P-01) [doing]
-- [ ] plain JS document types (text, sticky, shape, ink, image, connector, group), page state, schemaVersion; images reference media by id (prepares F-023)
-- [ ] lossless fromFabric/toFabric round-trip on fixtures covering every object type and real-shaped notes; Python mirror with the same fixtures
+## F-025 Engine-independent document model (P-01) [done]
+- [x] plain JS document types (text, sticky, shape, ink, image, connector, group), page state, schemaVersion; images reference media by id (prepares F-023)
+- [x] lossless fromFabric/toFabric round-trip on fixtures covering every object type and real-shaped notes; Python mirror with the same fixtures
+Decided: reading order for plain text is by box top edge; F-026 moves note_text/CLI read to the same rule.
 ## F-026 Storage switch with originals kept (P-02) [todo]
 Blocked on captain's final yes before it touches real notes.
-## F-027 Leafer read-only render behind a switch (P-03) [todo]
+## F-027 Leafer read-only render behind a switch (P-03) [doing]
 ## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [todo]
 ## F-029 Text and stickies editing on Leafer, IME fix (P-05) [todo]
 ## F-030 Undo/redo on the document model (P-06) [todo]
