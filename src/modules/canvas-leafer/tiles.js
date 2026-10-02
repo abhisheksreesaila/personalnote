@@ -19,7 +19,6 @@ const GESTURE_GAP = 500 // ms: view changes closer than this belong to one pan o
 const SLOW_FRAME = 26 // ms
 const SLOW_COUNT = 6 // slow frames within the last WINDOW gesture frames mean the machine needs the bitmaps
 const WINDOW = 24
-const QUIET = 170 // ms without a view change: the movement has stopped
 
 export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, getPages, getSize, now = () => performance.now(), schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id) }) {
   const mode = perf.pageBitmaps
@@ -82,7 +81,12 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
       tiles.set(key(c, r), tile)
     } else if (tile.scale !== scale) { tile.node.pixelRatio = scale; tile.scale = scale }
     const { canvas } = tile.node
-    canvas.clear()
+    // Cleared whole, whatever transform the last draw left on the context (a clear under a scale clears only part of it).
+    const { context, view } = canvas
+    context.save()
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.clearRect(0, 0, view.width, view.height)
+    context.restore()
     const matrix = new Matrix(world.worldTransform).invert()
     matrix.multiplyParent(new Matrix().translate(BLEED - c * pageW, BLEED - r * pageH))
     world.__render(canvas, { matrix: matrix.withScale(), bounds: new Bounds(0, 0, width, height) })
@@ -173,7 +177,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
       if (!enter(next)) return false
     } else place(next)
     if (quietTimer) cancel(quietTimer)
-    quietTimer = schedule(exit, QUIET)
+    quietTimer = schedule(exit, perf.lodQuiet)
     return true
   }
 

@@ -3,7 +3,7 @@
 // Frame time = the gap between requestAnimationFrame callbacks (16.7 ms is 60 fps). "to frame" = from the input event to the frame after it.
 // Scenarios: open, pan, zoom, drag one object, drag 40, undo/redo, pen (stroke at 100%), typing.
 //
-//   node scripts/benchmark-f034.mjs [--note=600|stress|both] [--dpr=1|2] [--count=5400] [--flags='{"pageBitmaps":false}'] [--out=file.json] [--only=pan,zoom]
+//   node scripts/benchmark-f034.mjs [--note=600|stress|both] [--dpr=1|2] [--count=5400] [--grid=4x4] [--flags='{"pageBitmaps":false}'] [--out=file.json] [--only=pan,zoom]
 //
 // `--flags` is handed to the app before it starts (window.__pnPerf, see src/modules/canvas-leafer/perf.js), so one optimization can be measured off and on.
 // Add --gpu to start Chromium with the GPU (ANGLE/Vulkan) instead of the software rasteriser the headless default uses.
@@ -24,7 +24,8 @@ const summary = { id: 1, resourceId: 'res_bench', revision: 1, noteType: 'canvas
 
 const notes = []
 if (which === '600' || which === 'both') notes.push({ name: '600 objects', content: generateNote(), pageState: { columns: COLUMNS, rows: ROWS } })
-if (which === 'stress' || which === 'both') { const stress = generateStressNote(Number(args.count ?? 5400)); notes.push({ name: `${stress.objects} objects (stress)`, content: stress.content, pageState: stress.pageState }) }
+const [gridColumns, gridRows] = (args.grid ?? '4x4').split('x').map(Number)
+if (which === 'stress' || which === 'both') { const stress = generateStressNote(Number(args.count ?? 5400), { columns: gridColumns, rows: gridRows }); notes.push({ name: `${stress.objects} objects (stress)`, content: stress.content, pageState: stress.pageState }) }
 
 async function mockApi(page, note) {
   await page.route('**/api/**', async (route) => {

@@ -7,7 +7,8 @@
 //                 down meanwhile: 'adaptive' (only on a machine that shows it needs them), 'always', or 'off' (see tiles.js)
 //   cull          a page that is off screen is not put on the stage while the bitmaps are shown
 //   lodZoom       the zoom below which the page bitmaps may be used
-export const PERF_DEFAULTS = Object.freeze({ bakedShadow: true, dprCap: 2, pageBitmaps: 'adaptive', cull: true, lodZoom: 0.6 })
+//   lodQuiet      milliseconds without a view change after which the vectors come back (checks hold the bitmaps up with a large value)
+export const PERF_DEFAULTS = Object.freeze({ bakedShadow: true, dprCap: 2, pageBitmaps: 'adaptive', cull: true, lodZoom: 0.6, lodQuiet: 170 })
 
 export function readPerf(source = globalThis.__pnPerf) {
   return { ...PERF_DEFAULTS, ...(source && typeof source === 'object' ? source : {}) }
