@@ -672,7 +672,7 @@ try {
   }
 
   // ---- Prettify and voice are visibly off, not silently dead
-  check('Prettify and voice say they are not available yet', await page.evaluate(() => ['prettify', 'voice-button'].every((id) => { const b = document.getElementById(id); return b.disabled && /not available yet/.test(b.title) })))
+  check('Prettify and voice are live on the Leafer canvas (F-035; checked in verify-leafer-voice.mjs)', await page.evaluate(() => ['prettify', 'voice-button'].every((id) => !document.getElementById(id).disabled)))
 
   // ---- the editor is open and the page goes away, the window flushes, or another note is chosen
   {
