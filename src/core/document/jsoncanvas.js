@@ -177,10 +177,10 @@ export function writeJsonCanvas(doc, { media, derived = 'file', svg } = {}) {
   const detached = []
   for (const { object, id, noId, index } of connectors) {
     const { fromId, toId } = object
-    const pn = { ...pnOf(object, noId), z: object.z ?? index }
+    const pn = { ...pnOf(object, noId), z: index } // the rank in the stacking order, not the raw z: a gap in z (after a delete) must not move the edge
     delete pn.fromId
     delete pn.toId
-    if (!nodeIds.has(fromId) || !nodeIds.has(toId)) { const entry = { ...clone(object), z: object.z ?? index }; if (!noId.noId) entry.id = object.id; detached.push(entry); continue }
+    if (!nodeIds.has(fromId) || !nodeIds.has(toId)) { const entry = { ...clone(object), z: index }; if (!noId.noId) entry.id = object.id; detached.push(entry); continue }
     const edge = { id, fromNode: fromId, toNode: toId }
     const [fromSide, toSide] = sideOf(boxes.get(fromId) ?? { x: 0, y: 0, width: 1, height: 1 }, boxes.get(toId) ?? { x: 0, y: 0, width: 1, height: 1 })
     edge.fromSide = fromSide

@@ -136,6 +136,13 @@ class JsonCanvasTests(unittest.TestCase):
         self.assertEqual(canvas["edges"], [])
         self.assertEqual(jc.from_json_canvas(canvas), doc)
 
+    def test_a_gap_in_z_does_not_reorder_connectors(self):
+        doc = model_of("app-all-tools")
+        first = next(obj for obj in doc["objects"] if obj["type"] != "connector")
+        gapped = {**doc, "objects": [obj for obj in doc["objects"] if obj is not first]}
+        back = jc.from_json_canvas(json.loads(json.dumps(jc.to_json_canvas(gapped))))
+        self.assertEqual([obj["id"] for obj in back["objects"]], [obj["id"] for obj in gapped["objects"]])
+
     def test_reading_order_is_by_top_edge(self):
         doc = dm.from_fabric({"objects": [
             {"type": "Textbox", "text": "second", "left": 10, "top": 200, "width": 100, "height": 30, "originX": "left", "originY": "top"},

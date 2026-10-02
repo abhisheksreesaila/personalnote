@@ -304,7 +304,7 @@ def to_json_canvas(doc: dict, media: Any = None, derived: str = "file") -> dict:
     detached: list[dict] = []
     for obj, edge_id, no_id, index in connectors:
         from_id, to_id = obj.get("fromId"), obj.get("toId")
-        z = obj["z"] if obj.get("z") is not None else index
+        z = index  # the rank in the stacking order, not the raw z: a gap in z (after a delete) must not move the edge
         pn = {**_pn_of(obj, no_id), "z": z}
         pn.pop("fromId", None)
         pn.pop("toId", None)

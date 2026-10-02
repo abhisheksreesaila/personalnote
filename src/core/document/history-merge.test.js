@@ -122,6 +122,31 @@ test('an undo in the middle of a group closes it, nested or not', () => {
   assert.equal(history.canRedo, false)
 })
 
+test('record does not modify the change objects it is given', () => {
+  const history = createHistory({ doc: makeDoc() })
+  const op = { changes: [{ id: 'o2', before: byId(history.doc, 'o2'), after: null }] }
+  const frozen = JSON.stringify(op)
+  Object.freeze(op.changes[0])
+  history.record(op)
+  assert.equal(JSON.stringify(op), frozen)
+  history.undo()
+  assert.deepEqual(history.doc.objects.map((o) => o.id), ['o0', 'o1', 'o2', 'o3', 'o4'])
+})
+
+test('a group closed by a merge keeps its label on both steps', () => {
+  const labels = []
+  const history = createHistory({ doc: makeDoc() })
+  history.subscribe((event) => { if (event.type === 'undo') labels.push(event.label) })
+  history.begin('Drag')
+  history.record(moveOp(history, 'o1', 5))
+  history.mergeRemote(withText(history.doc, 'o2', 'AGENT'))
+  history.record(moveOp(history, 'o1', 5))
+  history.end()
+  history.undo()
+  history.undo()
+  assert.deepEqual(labels, ['Drag', 'Drag'])
+})
+
 test('the byte cap holds on a 600-object note', () => {
   const objects = Array.from({ length: 600 }, (_, n) => sticky(n, { content: 'y'.repeat(2000) }))
   const history = createHistory({ doc: { ...makeDoc(), objects }, maxBytes: 200_000, maxSteps: 10_000 })
