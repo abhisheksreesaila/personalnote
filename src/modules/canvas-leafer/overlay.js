@@ -81,9 +81,11 @@ export function createOverlays({ app, chrome }) {
   return {
     skyWorld,
     dragLayer,
-    setView(next) {
+    // `view` places the page furniture (the grid's frame); `noteView` the note's own layer (the same, unless a drag has added pages on the
+    // top or left and the nodes have not moved yet).
+    setView(next, noteView = next) {
       view = { ...next }
-      skyWorld.set({ x: view.x, y: view.y, scaleX: view.scale, scaleY: view.scale })
+      skyWorld.set({ x: noteView.x, y: noteView.y, scaleX: noteView.scale, scaleY: noteView.scale })
       drawGhost()
       drawConnect()
     },

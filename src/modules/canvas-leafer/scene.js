@@ -110,7 +110,10 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   const entries = new Map() // object id -> { id, node, built, rect, ... }: every top-level object that has a node
   const entryOfNode = new WeakMap()
   const linked = new Map() // object id -> the ids of the connectors on it (a drag only touches its own arrows)
-  const live = { active: false, kind: null, rest: null, shift: { x: 0, y: 0 }, grown: false, lifted: [], ghost: '' } // what a drag, resize or turn in progress has done on screen
+  // What a drag, resize or turn in progress has done on screen. `shift` is how far the page grid has grown on the top and left since it began:
+  // the grid (and the view) are in the new frame, the nodes and the document stay in the old one until the gesture lands (the editor works
+  // out every move from where the node was when the drag began), so the note's layer is placed by that much to keep everything where it is.
+  const live = { active: false, kind: null, rest: null, shift: { x: 0, y: 0 }, grown: false, lifted: [], ghost: '' }
   let connectorSelected = null // the id of the selected connector (it is picked by its line, apart from the editor's selection)
   const sizeOf = (object) => entries.get(object?.id)?.size ?? {}
 
@@ -142,7 +145,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     }
     ensure(pool.labels, plan.labels.length, () => new Text({ hittable: false, fontFamily: LABEL_FONT_FAMILY, fontSize: LABEL_FONT_SIZE, lineHeight: LABEL_FONT_SIZE, textWrap: 'none' }), labelGroup)
     plan.labels.forEach((label, index) => pool.labels[index].set({ text: label.text, x: label.x, y: label.y, fill: colors.label }))
-    overlays.setView(view)
+    overlays.setView(view, { x: view.x + live.shift.x * view.scale, y: view.y + live.shift.y * view.scale, scale: view.scale })
   }
 
   // ---- objects (page space, in the model's frames)
@@ -295,7 +298,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   }
 
   function applyView() {
-    world.set({ x: view.x, y: view.y, scaleX: view.scale, scaleY: view.scale })
+    world.set({ x: view.x + live.shift.x * view.scale, y: view.y + live.shift.y * view.scale, scaleX: view.scale, scaleY: view.scale })
     for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale
     drawChrome()
     placeEditor()
@@ -378,9 +381,8 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     for (const entry of entries.values()) {
       entry.node.set({ x: entry.node.x + by.x, y: entry.node.y + by.y })
       if (entry.box) { entry.box.left += by.x; entry.box.top += by.y }
-      for (const rect of [entry.rect, entry.live?.rect]) if (rect) { rect.left += by.x; rect.top += by.y }
+      if (entry.rect) { entry.rect.left += by.x; entry.rect.top += by.y }
     }
-    if (live.rest) { live.rest.left += by.x; live.rest.right += by.x; live.rest.top += by.y; live.rest.bottom += by.y }
     editing.update()
   }
 
@@ -394,12 +396,14 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   // (pages.js finalizeOp): the connectors that follow what moved, the connectors left without an end, and the page growth or fold-back the
   // edit causes, with every object moved when pages are added on the top or left: all of it one undo step.
   function commit(op, { coalesce, selection } = {}) {
-    if (!op.changes.length && !op.page && !live.shift.x && !live.shift.y) return false
+    if (!op.changes.length && !op.page) return false
     const named = new Set(op.changes.map((change) => change.id))
-    const plan = finalizeOp(doc, op, { sizeOf, grid: live.grown ? { ...pages } : null, preShift: live.shift })
-    const { op: whole, shift } = plan
+    const { op: whole, shift } = finalizeOp(doc, op, { sizeOf })
     if (!whole.changes.length && !whole.page) return false
-    const viewShift = { x: shift.x - live.shift.x, y: shift.y - live.shift.y } // what the nodes have not moved yet
+    // The view has followed the growth the drag made already; it follows the rest, and the note's layer goes back to the view's own place.
+    const viewShift = { x: shift.x - live.shift.x, y: shift.y - live.shift.y }
+    const offset = live.shift
+    live.shift = { x: 0, y: 0 }
     const handed = { ...whole, viewShift }
     if (selection) handed.selection = selection
     committing = true
@@ -411,7 +415,8 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       if (change.after) entry.object = latest.get(change.id) ?? change.after
       else if (!named.has(change.id)) dropEntry(entry) // a connector left without an end (the edit's own removals are dropped by its caller)
     }
-    if (viewShift.x || viewShift.y) shiftNodes(viewShift)
+    if (shift.x || shift.y) shiftNodes(shift)
+    if (offset.x || offset.y) applyView() // the note's layer goes back to the view's own place, in the same frame as the nodes catch up
     if (whole.page) pages = { columns: whole.page.after.columns, rows: whole.page.after.rows }
     for (const change of whole.changes) {
       const entry = entries.get(change.id)
@@ -505,19 +510,15 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     // pages appear before the object reaches an edge, in every direction
     let bounds = null
     for (const entry of list) bounds = unionOf(bounds, rectEdges(entry.live.rect))
-    const grow = growForDrag(pages, unionOf(live.rest, bounds))
+    const inGrid = (box) => ({ left: box.left + live.shift.x, top: box.top + live.shift.y, right: box.right + live.shift.x, bottom: box.bottom + live.shift.y })
+    const grow = growForDrag(pages, inGrid(unionOf(live.rest, bounds)))
     if (grow.changed) {
       pages = { columns: grow.columns, rows: grow.rows }
-      if (grow.shiftX || grow.shiftY) {
-        const by = { x: grow.shiftX, y: grow.shiftY }
-        live.shift = { x: live.shift.x + by.x, y: live.shift.y + by.y }
-        bounds = { left: bounds.left + by.x, top: bounds.top + by.y, right: bounds.right + by.x, bottom: bounds.bottom + by.y }
-        shiftNodes(by)
-        for (const entry of list) entry.liveBase = { x: entry.liveBase.x + by.x, y: entry.liveBase.y + by.y }
-      }
+      live.shift = { x: live.shift.x + grow.shiftX, y: live.shift.y + grow.shiftY }
       live.grown = true
-      onPages({ columns: grow.columns, rows: grow.rows, shiftX: grow.shiftX, shiftY: grow.shiftY })
+      onPages({ columns: grow.columns, rows: grow.rows, shiftX: grow.shiftX, shiftY: grow.shiftY }) // the host sets its grid and moves the view by the shift
     }
+    bounds = inGrid(bounds)
     // the page that would be added next, previewed
     if (kind === 'move') {
       const ghost = nextPageGhost(bounds, { columns: pages.columns, rows: pages.rows, pageW: PAGE.width, pageH: PAGE.height, reach: GHOST_REACH })
@@ -558,7 +559,16 @@ export function createScene({ host, width, height, onOperation = () => null, onD
       entry.size = { width: next.width, height: next.height }
       if (entry.built.sized) rebuilds.push(entry) // the size may have changed: shadow, wrapping and sticky corners are made again from the model
     }
+    const grew = live.grown
+    const dragShift = live.shift
     const committed = commit({ label: 'Transform', changes }, { selection: { before: ids, after: ids } })
+    // The grid the document holds is the one that counts now. A step that records a page change has told the host already; when the edit
+    // left the grid as it was (the object came back) or nothing was recorded, the pages the drag added go again.
+    if (grew && (!committed || pages.columns !== doc.page.columns || pages.rows !== doc.page.rows)) {
+      live.shift = { x: 0, y: 0 }
+      pages = { columns: doc.page.columns, rows: doc.page.rows }
+      onPages({ ...pages, shiftX: committed ? 0 : -dragShift.x, shiftY: committed ? 0 : -dragShift.y })
+    }
     endGesture()
     if (!committed) return
     for (const entry of rebuilds) refreshBox(entry)

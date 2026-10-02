@@ -2296,7 +2296,7 @@ const leaferEdits = createLeaferEdits({
     if (leaferSource.noteId !== state.activeNoteId) return
     if (pageShift) leaferFrameShift = { x: leaferFrameShift.x + pageShift.x, y: leaferFrameShift.y + pageShift.y }
     // Pages added or folded on the top or left moved every object; the view moves by the same amount, so what is on screen stays where it is.
-    if (page || viewShift) {
+    if ((page || viewShift) && (viewShift?.x || viewShift?.y || !samePageGrid(doc.page, state.pages))) {
       const folded = doc.page.columns < state.pages.columns || doc.page.rows < state.pages.rows
       state.pages = { ...doc.page }
       resizePaper(viewShift?.x ?? 0, viewShift?.y ?? 0, folded)
