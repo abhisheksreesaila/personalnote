@@ -213,9 +213,9 @@ Direction change: no dual engine; Leafer work accumulates on the `leafer` integr
 Merged into `leafer` at d6683b1.
 - [ ] follow-up: parity script matches both directions and catches a missing thin stroke at dpr 1 (limit ~15-20% or a corrected comment)
 - [ ] follow-up: a headless test that uniform strokes double in width at view scale 2; check Leafer strokeScaleFixed on non-uniform x/y scale
-## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [todo]
+## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [doing]
 ## F-029 Text and stickies editing on Leafer, IME fix (P-05) [todo]
-## F-030 Undo/redo on the document model (P-06) [todo]
+## F-030 Undo/redo on the document model (P-06) [doing]
 ## F-031 Pen, highlighter, eraser on Leafer (P-07) [todo]
 ## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [todo]
 ## F-033 Images (media library, F-023), export, print on Leafer (P-09) [todo]
