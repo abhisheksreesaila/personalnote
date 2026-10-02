@@ -41,6 +41,19 @@ def decode_data_url(url: str) -> tuple[bytes, str] | None:
     return data, _EXTENSIONS[match.group(1).lower()]
 
 
+def sniff_image(data: bytes) -> str | None:
+    """The extension a picture's own bytes say it is (png, jpg, gif, webp), or None. SVG is never accepted from a client: it can carry script."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
 def data_url_of(data: bytes, ext: str) -> str:
     return f"data:{_MIME[ext]};base64,{base64.b64encode(data).decode('ascii')}"
 

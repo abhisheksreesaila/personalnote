@@ -346,6 +346,48 @@ class ApiContractTests(unittest.TestCase):
             self.assertIn("Renew the passport", markdown)
             self.assertTrue(any(name.startswith("assets/") and name.endswith(".webp") for name in names))
 
+    PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000001e221bc330000000049454e44ae426082")
+
+    def upload(self, body, content_type="image/png", app_header=True):
+        headers = {"Content-Type": content_type}
+        if app_header:
+            headers["x-personal-note"] = "1"
+        return self.client.post("/api/media", content=body, headers=headers)
+
+    def test_media_upload_stores_a_picture_once_by_content_and_serves_it(self):
+        first = self.upload(self.PNG)
+        self.assertEqual(first.status_code, 201)
+        name = first.json()["id"]
+        self.assertRegex(name, r"^[0-9a-f]{64}\.png$")
+        self.assertEqual(first.json()["path"], f"media/{name}")
+        self.assertEqual(self.upload(self.PNG).json()["id"], name)  # the same bytes are the same file
+        served = self.client.get(f"/api/media/{name}")
+        self.assertEqual(served.status_code, 200)
+        self.assertEqual(served.content, self.PNG)
+        self.assertIn("default-src 'none'", served.headers["content-security-policy"])  # the existing policy on media files
+
+    def test_media_upload_refuses_what_is_not_a_picture_or_not_from_the_app(self):
+        self.assertEqual(self.upload(b"<html>not a picture</html>").status_code, 400)
+        self.assertEqual(self.upload(b"<svg xmlns='http://www.w3.org/2000/svg'><script>1</script></svg>", "image/svg+xml").status_code, 400)  # no script-capable files
+        self.assertEqual(self.upload(b"").status_code, 400)
+        self.assertEqual(self.upload(self.PNG, app_header=False).status_code, 403)
+        self.assertEqual(self.upload(b"\x89PNG\r\n\x1a\n" + b"0" * (20 * 1024 * 1024 + 1)).status_code, 413)
+
+    def test_an_uploaded_picture_is_a_media_reference_in_the_saved_note_and_travels_with_exports(self):
+        name = self.upload(self.PNG).json()["id"]
+        notebook = self.client.get("/api/notebooks").json()[0]
+        note = self.client.post("/api/notes", json={"title": "Pictures", "notebookId": notebook["id"]}).json()
+        canvas = {"nodes": [{"id": "n1", "type": "file", "file": f"media/{name}", "x": 10, "y": 20, "width": 100, "height": 80,
+                             "pn": {"type": "image", "z": 0}}], "edges": [], "pn": {"schemaVersion": 1, "page": {"columns": 1, "rows": 1}}}
+        saved = self.client.put(f"/api/notes/{note['id']}", json={"title": "Pictures", "revision": note["revision"], "notebookId": notebook["id"], "content": canvas})
+        self.assertEqual(saved.status_code, 200)
+        stored = self.client.get(f"/api/notes/{note['id']}").json()["content"]
+        self.assertEqual(stored["nodes"][0]["file"], f"media/{name}")
+        with zipfile.ZipFile(io.BytesIO(self.client.get("/api/export/vault").content)) as archive:
+            self.assertTrue(any(entry.endswith(f"{name}") for entry in archive.namelist()), archive.namelist())
+        backup = self.client.get("/api/export/workspace").json()
+        self.assertIn("data:image/png;base64,", json.dumps(backup))
+
 
 if __name__ == "__main__":
     unittest.main()

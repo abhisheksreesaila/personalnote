@@ -14,7 +14,7 @@ from portability import (
     utc_timestamp,
     workspace_backup,
 )
-from media_store import MEDIA_NAME
+from media_store import MAX_MEDIA_BYTES, MEDIA_NAME, sniff_image
 from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, WorkspaceImportError
 from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
 from voice_runtime import VoiceError, VoiceRuntime, app_version
@@ -256,6 +256,25 @@ def create_app(
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="personal-note-markdown-{date}.zip"'},
         )
+
+    @app.post("/api/media")
+    async def upload_media(request):
+        # A picture dropped, pasted or picked in the app: stored once under its SHA-256, so the note holds only `media/<name>`.
+        if not from_this_app(request):  # a raw body can be sent cross-site without a preflight, unlike JSON
+            return forbidden()
+        try:
+            if int(request.headers.get("content-length") or 0) > MAX_MEDIA_BYTES:
+                return JSONResponse({"error": "That picture is larger than 20 MB"}, status_code=413)
+        except ValueError:
+            pass
+        data = await request.body()
+        if len(data) > MAX_MEDIA_BYTES:
+            return JSONResponse({"error": "That picture is larger than 20 MB"}, status_code=413)
+        extension = sniff_image(data)
+        if extension is None:
+            return JSONResponse({"error": "That is not a PNG, JPEG, WebP or GIF picture"}, status_code=400)
+        path = service.media.put_bytes(data, extension)
+        return JSONResponse({"id": path.removeprefix("media/"), "path": path}, status_code=201)
 
     @app.get("/api/media/{name}")
     def get_media(name: str):
