@@ -2292,12 +2292,12 @@ function leaferSourceOf(noteId, doc) {
   return { noteId, editedDoc: doc, shift: { ...leaferFrameShift }, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
 }
 const leaferEdits = createLeaferEdits({
-  onChange(doc, { page, pageShift, viewShift, selection }) {
+  onChange(doc, { kind, page, pageShift, viewShift, selection }) {
     if (leaferSource.noteId !== state.activeNoteId) return
     if (pageShift) leaferFrameShift = { x: leaferFrameShift.x + pageShift.x, y: leaferFrameShift.y + pageShift.y }
     // Pages added or folded on the top or left moved every object; the view moves by the same amount, so what is on screen stays where it is.
     if ((page || viewShift) && (viewShift?.x || viewShift?.y || !samePageGrid(doc.page, state.pages))) {
-      const folded = doc.page.columns < state.pages.columns || doc.page.rows < state.pages.rows
+      const folded = doc.page.columns < state.pages.columns || doc.page.rows < state.pages.rows || kind === 'undo' || kind === 'redo' // F-009: after a fold-back or an undo the view settles inside the content now, not at the next pan
       state.pages = { ...doc.page }
       resizePaper(viewShift?.x ?? 0, viewShift?.y ?? 0, folded)
     }

@@ -96,6 +96,8 @@ export function createOverlays({ app, chrome }) {
     showHalo(next) { halo = next; drawHalo() },
     // The connect tool: { outlines: [box], dots: [point], arrow: { start, end } | null } (page space) or null.
     showConnect(next) { connect = next; drawConnect() },
+    // For checks: what is showing now.
+    state: () => ({ ghost: ghostGroup.visible, halo: haloNode.visible, outlines: outlines.filter((node) => node.visible).length, dots: dots.filter((node) => node.visible).length, draft: draft.visible }),
     destroy() { skyWorld.destroy?.() },
   }
 }

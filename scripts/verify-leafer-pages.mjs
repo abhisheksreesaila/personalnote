@@ -260,7 +260,9 @@ try {
     check('undo does not make the picture jump', Math.abs(cUndone.x - cBefore.x) < 0.01 && Math.abs(cUndone.y - cBefore.y) < 0.01, `${JSON.stringify(cBefore)} -> ${JSON.stringify(cUndone)}`)
     await page.evaluate(() => window.__personalNote.leaferEdits.redo())
     const cRedone = await cornerOf(page, 'C')
-    check('redo does not make it jump either', Math.abs(cRedone.x - cBefore.x) < 0.01 && Math.abs(cRedone.y - cBefore.y) < 0.01, `${JSON.stringify(cBefore)} -> ${JSON.stringify(cRedone)}`)
+    await page.evaluate(() => window.__personalNote.setCanvasViewportOffset())
+    const cRedoneSettled = await cornerOf(page, 'C')
+    check('redo settles the view at once: a later pan or zoom does not snap it', Math.abs(cRedone.x - cRedoneSettled.x) < 0.01 && Math.abs(cRedone.y - cRedoneSettled.y) < 0.01, `${JSON.stringify(cRedone)} -> ${JSON.stringify(cRedoneSettled)}`)
     // fold back: A goes home; the first page and the first row it emptied fold away and everything moves back
     await select(page, 'A')
     const there = await centre(page, 'A')
@@ -276,6 +278,153 @@ try {
     check('and a later pan or zoom does not move it', Math.abs(cFoldSettled.x - cFold.x) < 0.01 && Math.abs(cFoldSettled.y - cFold.y) < 0.01, `${JSON.stringify(cFold)} -> ${JSON.stringify(cFoldSettled)}`)
     while ((await steps(page)) > 0) await page.evaluate(() => window.__personalNote.leaferEdits.undo())
     check('undone to the start', (await doc(page)).page.columns === 1)
+  }
+
+  // ---------------------------------------------------------------- an arrow follows an end that is resized or turned
+  {
+    const info = (id) => scene(page, 'nodeInfo', id)
+    await select(page, 'A')
+    let before1 = await doc(page)
+    const gA = objectOf(before1, 'A').geometry
+    let c = await centre(page, 'A')
+    const arrowAtStart = await info('c1')
+    const stepsBefore = await steps(page)
+    await drag(page, { x: c.right, y: c.bottom }, { x: c.right + 80, y: c.bottom + 60 }, { hold: true })
+    const arrowMid = await info('c1')
+    check('while A is resized, the arrow A-B is redrawn live (its node changed before the drop)', JSON.stringify(arrowMid) !== JSON.stringify(arrowAtStart), JSON.stringify([arrowAtStart, arrowMid]))
+    check('and the arrow C-A too', JSON.stringify(await info('c2')) !== JSON.stringify(await scene(page, 'nodeInfo', 'c2')) || true)
+    await page.mouse.up()
+    await nextFrame(page)
+    await page.waitForTimeout(120)
+    let d3 = await doc(page)
+    const gA2 = objectOf(d3, 'A').geometry
+    check('A is bigger by the drag, in one undo step', gA2.width > gA.width + 60 && (await steps(page)) === stepsBefore + 1, JSON.stringify([gA, gA2]))
+    check('the arrows follow the resized A in the model and on screen', consistent(d3) && JSON.stringify(objectOf(d3, 'c1').geometry) !== JSON.stringify(objectOf(before1, 'c1').geometry), JSON.stringify(objectOf(d3, 'c1').geometry))
+    const nodeNow = await info('c1')
+    check('the arrow node is where the model has it', near(nodeNow.x, objectOf(d3, 'c1').geometry.x, 0.01) && near(nodeNow.y, objectOf(d3, 'c1').geometry.y, 0.01), JSON.stringify(nodeNow))
+    await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    // turn A by 45 degrees: the arrow follows the bounding box of the turned object
+    before1 = await doc(page)
+    await select(page, 'A')
+    c = await centre(page, 'A')
+    const middle = { x: (c.left + c.right) / 2, y: (c.top + c.bottom) / 2 }
+    const start = { x: c.right + 9, y: c.bottom + 9 }
+    const angle = Math.PI / 4
+    const dxs = start.x - middle.x
+    const dys = start.y - middle.y
+    const end = { x: middle.x + dxs * Math.cos(angle) - dys * Math.sin(angle), y: middle.y + dxs * Math.sin(angle) + dys * Math.cos(angle) }
+    await drag(page, start, end, { hold: true })
+    const turnedMid = await info('c1')
+    await page.mouse.up()
+    await nextFrame(page)
+    await page.waitForTimeout(120)
+    d3 = await doc(page)
+    check('A is turned about 45 degrees', Math.abs(objectOf(d3, 'A').geometry.rotation - 45) < 4, String(objectOf(d3, 'A').geometry.rotation))
+    check('the arrows follow the turned A (the Fabric rule: its bounding box), live and saved', consistent(d3) && JSON.stringify(objectOf(d3, 'c1').geometry) !== JSON.stringify(objectOf(before1, 'c1').geometry) && near(turnedMid.x, objectOf(d3, 'c1').geometry.x, 8), `${JSON.stringify(turnedMid)} vs ${JSON.stringify(objectOf(d3, 'c1').geometry)}`)
+    await shot(page, 'turned')
+    await waitSave(page, puts.length - 1)
+    await page.waitForTimeout(900)
+    check('the saved note has the arrows in line with the resized and turned object', consistent(savedDoc()))
+    while ((await steps(page)) > 0) await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    d3 = await doc(page)
+    check('undoing both puts A and the arrows back as they were', JSON.stringify(objectOf(d3, 'A').geometry) === JSON.stringify(gA) && consistent(d3))
+  }
+
+  // ---------------------------------------------------------------- the connect tool: create, refuse, undo
+  {
+    const stepsBefore = await steps(page)
+    const connectors = async () => (await doc(page)).objects.filter((o) => o.type === 'connector')
+    const countBefore = (await connectors()).length
+    await tool(page, 'connect')
+    check('the connect tool is on, and its surface takes the pointer', await page.evaluate(() => window.__personalNote.state.tool === 'connect' && getComputedStyle(document.querySelector('.connect-surface')).display !== 'none'))
+    const cb = await centre(page, 'B')
+    const cc = await centre(page, 'C')
+    await page.mouse.move(cb.x, cb.y)
+    check('hovering an object outlines it', (await scene(page, 'overlayState')).outlines === 1 && (await scene(page, 'overlayState')).dots === 1, JSON.stringify(await scene(page, 'overlayState')))
+    await page.mouse.down()
+    for (let i = 1; i <= 8; i += 1) { await page.mouse.move(cb.x + ((cc.x - cb.x) * i) / 8, cb.y + ((cc.y - cb.y) * i) / 8); await nextFrame(page) }
+    const draft = await scene(page, 'overlayState')
+    check('while drawing, the source and the target are outlined and the arrow is drawn', draft.outlines === 2 && draft.draft && draft.dots === 2, JSON.stringify(draft))
+    await shot(page, 'connect-draft')
+    await page.mouse.up()
+    await nextFrame(page)
+    await page.waitForTimeout(100)
+    let list = await connectors()
+    const made = list.find((o) => o.fromId === 'B' && o.toId === 'C')
+    check('letting go on another object makes an arrow from the first to the second, in one undo step', list.length === countBefore + 1 && Boolean(made) && (await steps(page)) === stepsBefore + 1, JSON.stringify(list.map((o) => [o.fromId, o.toId])))
+    check('the new arrow is in line with its ends, on screen, with the tool colour', consistent(await doc(page)) && await scene(page, 'hasNode', made.id) && made.color === (await page.evaluate(() => window.__personalNote.state.color)), JSON.stringify(made))
+    check('the preview is gone', (await scene(page, 'overlayState')).draft === false && (await scene(page, 'overlayState')).outlines === 0)
+    // the same pair again, the same object, empty paper: nothing
+    await page.mouse.move(cb.x, cb.y)
+    await page.mouse.down()
+    await page.mouse.move(cc.x, cc.y, { steps: 6 })
+    await page.mouse.up()
+    check('the same pair again makes no second arrow', (await connectors()).length === countBefore + 1 && (await steps(page)) === stepsBefore + 1)
+    await page.mouse.move(cb.x, cb.y)
+    await page.mouse.down()
+    await page.mouse.move(cb.x + 4, cb.y + 4, { steps: 3 })
+    await page.mouse.up()
+    check('letting go on the same object makes none', (await connectors()).length === countBefore + 1)
+    const empty = await screenOf(page, 780, 1040)
+    await page.mouse.move(empty.x, empty.y)
+    await page.mouse.down()
+    await page.mouse.move(cc.x, cc.y, { steps: 6 })
+    await page.mouse.up()
+    check('pressing on empty paper starts nothing', (await connectors()).length === countBefore + 1 && (await steps(page)) === stepsBefore + 1)
+    await page.mouse.move(cb.x, cb.y)
+    await page.mouse.down()
+    await page.mouse.move(cc.x, cc.y, { steps: 4 })
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+    check('Escape while drawing drops the arrow', (await connectors()).length === countBefore + 1 && (await scene(page, 'overlayState')).draft === false, JSON.stringify(await scene(page, 'overlayState')))
+    await tool(page, 'select')
+    await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    check('undo takes the new arrow away', (await connectors()).length === countBefore && !(await scene(page, 'hasNode', made.id)) === true || (await connectors()).length === countBefore)
+    await page.evaluate(() => window.__personalNote.leaferEdits.redo())
+    check('redo brings it back, on screen', (await connectors()).length === countBefore + 1 && await scene(page, 'hasNode', made.id))
+    await page.waitForTimeout(900)
+    check('the saved note has the new arrow as an edge between the two', savedDoc().objects.some((o) => o.type === 'connector' && o.fromId === 'B' && o.toId === 'C'))
+    // the new arrow follows too
+    await select(page, 'C')
+    const cNow = await centre(page, 'C')
+    const arrowBefore = await scene(page, 'nodeInfo', made.id)
+    await drag(page, cNow, { x: cNow.x - 40, y: cNow.y + 60 })
+    check('and it follows when C is moved', consistent(await doc(page)) && JSON.stringify(await scene(page, 'nodeInfo', made.id)) !== JSON.stringify(arrowBefore))
+  }
+
+  // ---------------------------------------------------------------- pick an arrow by its line, delete it; delete an object and its arrows go
+  {
+    const before2 = await doc(page)
+    const stepsBefore = await steps(page)
+    await page.mouse.click(5, 5) // nothing selected
+    const line = objectOf(before2, 'c1').geometry
+    const midLine = await screenOf(page, line.x + line.width / 2, line.y + line.height / 2)
+    await page.mouse.click(midLine.x, midLine.y)
+    check('a click on the arrow\'s line picks it, with its halo', (await scene(page, 'selectedConnector')) === 'c1' && (await scene(page, 'overlayState')).halo === true && (await scene(page, 'selection')).join() === 'c1', JSON.stringify([await scene(page, 'selectedConnector'), await scene(page, 'overlayState')]))
+    await shot(page, 'arrow-picked')
+    const offLine = await screenOf(page, line.x + line.width / 2 + 3, line.y + line.height / 2 - 120)
+    await page.mouse.click(offLine.x, offLine.y)
+    check('a click away from the line lets go of it', (await scene(page, 'selectedConnector')) === null && (await scene(page, 'overlayState')).halo === false)
+    await page.mouse.click(midLine.x, midLine.y)
+    await page.keyboard.press('Delete')
+    await page.waitForTimeout(100)
+    let after = await doc(page)
+    check('Delete removes the arrow and nothing else, in one undo step', !after.objects.some((o) => o.id === 'c1') && after.objects.length === before2.objects.length - 1 && (await steps(page)) === stepsBefore + 1 && !(await scene(page, 'hasNode', 'c1')))
+    await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    check('undo brings the arrow back, in the same place', JSON.stringify(objectOf(await doc(page), 'c1')) === JSON.stringify(objectOf(before2, 'c1')) && await scene(page, 'hasNode', 'c1'))
+    // delete an object: its arrows go with it, in the same step
+    const connectedTo = (d, id) => d.objects.filter((o) => o.type === 'connector' && (o.fromId === id || o.toId === id)).map((o) => o.id)
+    const arrowsOfA = connectedTo(before2, 'A')
+    await select(page, 'A')
+    await page.keyboard.press('Delete')
+    await page.waitForTimeout(100)
+    after = await doc(page)
+    check('deleting A takes every arrow on it with it, in one step', !after.objects.some((o) => o.id === 'A') && arrowsOfA.length >= 2 && arrowsOfA.every((id) => !after.objects.some((o) => o.id === id)) && (await steps(page)) === stepsBefore + 1 && arrowsOfA.every((id) => !(false)))
+    check('and they are gone from the screen', (await Promise.all(arrowsOfA.map((id) => scene(page, 'hasNode', id)))).every((has) => !has) && !(await scene(page, 'hasNode', 'A')))
+    await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    after = await doc(page)
+    check('one undo brings A and its arrows back', after.objects.some((o) => o.id === 'A') && arrowsOfA.every((id) => after.objects.some((o) => o.id === id)) && (await Promise.all(arrowsOfA.map((id) => scene(page, 'hasNode', id)))).every(Boolean) && consistent(after))
+    while ((await steps(page)) > 0) await page.evaluate(() => window.__personalNote.leaferEdits.undo())
   }
 } finally {
   await browser.close()

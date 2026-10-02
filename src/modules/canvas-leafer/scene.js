@@ -1074,6 +1074,12 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     // For checks: what a drag in progress has put on screen.
     dragState: () => ({ active: live.active, lifted: live.lifted.map((item) => item.entry.id), tilt: live.lifted.map((item) => item.entry.node.rotation - item.rotation), ghost: live.ghost ? JSON.parse(live.ghost) : null, shift: { ...live.shift } }),
     gridNow: () => ({ ...pages }),
+    overlayState: () => overlays.state(),
+    // What Leafer has for an object now (checks): its place, turn and, for an arrow, its drawing.
+    nodeInfo(id) {
+      const node = entries.get(id)?.node
+      return node ? { x: node.x, y: node.y, rotation: node.rotation, visible: node.visible, path: node.path, width: node.width, height: node.height } : null
+    },
 
     // Arrow keys: move the selection by (dx, dy) page pixels. Locked objects stay. Repeated nudges are one undo step.
     nudge(dx, dy) {
