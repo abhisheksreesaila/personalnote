@@ -46,7 +46,9 @@ export async function settleSaves({ flushPending, isSaving, hasUnsaved, save, wa
   return !hasUnsaved()
 }
 
-export const bodyBytes = (body) => new TextEncoder().encode(body).length
+// A body longer than the keepalive limit in characters is longer in bytes: every caller only asks whether it fits, so a note of
+// megabytes is not walked just to count them.
+export const bodyBytes = (body) => (body.length > KEEPALIVE_LIMIT ? body.length : new TextEncoder().encode(body).length)
 
 /**
  * Debounce delays for the Chromium app window, which has no pre-close hook and so saves sooner (about 250ms

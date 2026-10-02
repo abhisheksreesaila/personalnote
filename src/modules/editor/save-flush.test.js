@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { KEEPALIVE_LIMIT, bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './save-flush.js'
+import { KEEPALIVE_LIMIT, bindPageLifecycle, bodyBytes, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './save-flush.js'
 
 function targets() {
   const listeners = new Map()
@@ -100,4 +100,10 @@ test('a body over the keepalive limit keeps the normal delays, measured in UTF-8
   timing.saved('€'.repeat(25000))
   assert.equal(timing.saveDelay(), 650)
   assert.equal(timing.historyDelay(), 180)
+})
+
+test('bodyBytes counts a small body exactly and never calls a big one small', () => {
+  assert.equal(bodyBytes('é'), 2)
+  assert.ok(bodyBytes('é'.repeat(KEEPALIVE_LIMIT)) > KEEPALIVE_LIMIT)
+  assert.equal(canKeepAlive('é'.repeat(KEEPALIVE_LIMIT)), false)
 })

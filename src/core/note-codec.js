@@ -7,6 +7,8 @@
 // projection (jsoncanvas-extras.js), which only the server side and the tests need.
 import { fromFabric, toFabricUnchecked } from './document/fabric.js'
 import { isJsonCanvas, readJsonCanvas, writeJsonCanvas } from './document/jsoncanvas.js'
+import { compactStacking } from './document/operations.js'
+import { DEFAULT_PAGE, PAGE, SCHEMA_VERSION } from './document/schema.js'
 
 const dataUrlByName = new Map() // media file name -> data URL, so a note's pictures are fetched once
 const pathByDataUrl = new Map() // data URL -> 'media/<name>', so an unchanged picture is saved as a reference
@@ -79,6 +81,67 @@ export function encodeNote(fabricContent, pageState) {
 // A document model (what the Leafer editor holds) -> JSON Canvas, the same way encodeNote writes it, without the Fabric detour.
 export function encodeDocument(doc) {
   return writeJsonCanvas(doc, { derived: 'omit', media: { putDataUrl: (url) => pathByDataUrl.get(url) ?? url } })
+}
+
+// A document model -> the JSON text of its JSON Canvas, made so that saving costs what changed. Objects are immutable values, so the
+// JSON of each node is kept per object (and of each edge per connector, its two ends and its place in the stack); an edit writes the
+// objects it replaced and the connectors that touch them, and the text is joined from the kept pieces. The bytes are exactly those of
+// JSON.stringify(encodeDocument(compactStacking(doc))). A document it cannot vouch for (an object without a unique id, a connector
+// whose end is missing) is written by the plain writer.
+export function createDocumentEncoder() {
+  const nodes = new WeakMap() // object -> JSON of its node
+  const edges = new WeakMap() // connector -> { from, to, rank, json }
+  let written = 0
+  const options = { derived: 'omit', media: { putDataUrl: (url) => pathByDataUrl.get(url) ?? url } }
+
+  function fallback(doc) {
+    written += doc.objects.length
+    return JSON.stringify(writeJsonCanvas(doc, options))
+  }
+
+  return {
+    stats: () => ({ written }),
+    encode(doc) {
+      const stacked = compactStacking(doc)
+      const list = stacked.objects
+      const byId = new Map()
+      for (const object of list) {
+        if (!object || typeof object.id !== 'string' || object.id === '' || byId.has(object.id)) return fallback(stacked)
+        byId.set(object.id, object)
+      }
+      const rank = new Map(list.map((object, index) => [object.id, index]))
+      const nodeJson = []
+      const edgeJson = []
+      for (const object of list) {
+        if (object.type === 'connector') {
+          const from = byId.get(object.fromId)
+          const to = byId.get(object.toId)
+          if (!from || !to || from.type === 'connector' || to.type === 'connector') return fallback(stacked)
+          const at = rank.get(object.id)
+          let entry = edges.get(object)
+          if (!entry || entry.from !== from || entry.to !== to || entry.rank !== at) {
+            written += 1
+            const edge = writeJsonCanvas({ ...stacked, objects: [{ ...from, z: 0 }, { ...to, z: 1 }, { ...object, z: 2 }].filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index) }, options).edges[0]
+            edge.pn.z = at
+            entry = { from, to, rank: at, json: JSON.stringify(edge) }
+            edges.set(object, entry)
+          }
+          edgeJson.push(entry.json)
+        } else {
+          let json = nodes.get(object)
+          if (json === undefined) {
+            written += 1
+            json = JSON.stringify(writeJsonCanvas({ ...stacked, objects: [object] }, options).nodes[0])
+            nodes.set(object, json)
+          }
+          nodeJson.push(json)
+        }
+      }
+      const pn = { schemaVersion: SCHEMA_VERSION, page: stacked.page ?? DEFAULT_PAGE, grid: { width: PAGE.width, height: PAGE.height } }
+      if (stacked.extras && Object.keys(stacked.extras).length) pn.extras = stacked.extras
+      return `{"nodes":[${nodeJson.join(',')}],"edges":[${edgeJson.join(',')}],"pn":${JSON.stringify(pn)}}`
+    },
+  }
 }
 
 // Test support.

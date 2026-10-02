@@ -7,8 +7,8 @@ import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/de
 import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
-import { decodeNote, decodeNoteDocument, encodeDocument, encodeNote } from './core/note-codec.js'
-import { compactStacking, nudgeDistance } from './core/document/operations.js'
+import { createDocumentEncoder, decodeNote, decodeNoteDocument, encodeDocument, encodeNote } from './core/note-codec.js'
+import { nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
@@ -602,6 +602,8 @@ loadPreferences()
 const useLeafer = true
 let leaferCanvas = null
 let leaferHost = null
+// Saving an edited note writes only what changed: the encoder keeps the JSON of every object it has written (core/note-codec.js).
+const leaferEncoder = createDocumentEncoder()
 let leaferSource = { noteId: null, content: { objects: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
 
 const canvas = new Canvas('note-canvas', {
@@ -895,6 +897,8 @@ function renderNotebookPicker() {
 const SAVED_LABEL = `Saved on this ${/mac|iphone|ipad/i.test(navigator.platform) ? 'Mac' : 'device'}`
 
 function setSaveState(status, isError = false) {
+  if (status === 'Saving' && !isError && elements.saveState.dataset.state === 'Saving') return // already showing it: leave the spinner running
+  elements.saveState.dataset.state = status
   elements.saveState.classList.toggle('error', isError)
   elements.saveState.innerHTML = status === 'Saving'
     ? '<span class="saving-spinner"></span>Saving'
@@ -2049,19 +2053,23 @@ async function saveActiveNote({ unloading = false } = {}) {
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
     // Leafer shows the note read-only: the empty Fabric canvas must never be saved, so the note's own content (as the server sent
     // it, JSON Canvas) goes back untouched. The Fabric editor saves its working copy converted to JSON Canvas (F-026).
+    const editedLeafer = useLeafer && state.activeNoteType === 'canvas' && leaferSource.editedDoc
     const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : useLeafer ? leaferSource.content : canvas.toJSON()
-    const body = JSON.stringify({
+    const CONTENT_HERE = '"__content__"'
+    let body = JSON.stringify({
       title,
-      content: state.activeNoteType === 'canvas' && !useLeafer ? encodeNote(savedContent, state.pages) : savedContent,
+      content: editedLeafer ? '__content__' : state.activeNoteType === 'canvas' && !useLeafer ? encodeNote(savedContent, state.pages) : savedContent,
       pageState: useLeafer && state.activeNoteType === 'canvas' ? leaferSource.pageState : state.pages,
       notebookId: note?.notebookId,
       revision: note?.revision,
     })
+    if (editedLeafer) body = body.replace(CONTENT_HERE, () => leaferSource.contentJson) // the note's text is joined in as it was kept, not walked again
     saveTiming.saved(body)
-    // While the page is going away a keepalive request is the only one guaranteed to be sent.
-    const result = await api(`/notes/${noteId}`, { method: 'PUT', body, keepalive: unloading && canKeepAlive(body) })
+    // While the page is going away a keepalive request is the only one guaranteed to be sent (it takes the text itself). Otherwise the
+    // body goes as a Blob: handing a note of megabytes to fetch as a string copies it on the main thread and stalls a drag for ~100 ms.
+    const result = await api(`/notes/${noteId}`, { method: 'PUT', body: unloading ? body : new Blob([body]), keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
-    if (state.activeNoteType === 'canvas') syncedIds = canvasObjectIds(savedContent)
+    if (state.activeNoteType === 'canvas') syncedIds = editedLeafer ? new Set(editedLeafer.objects.map((object) => object.id).filter(Boolean)) : canvasObjectIds(savedContent)
     renderNoteList()
     setSaveState('Saved')
   } catch (error) {
@@ -2219,7 +2227,7 @@ const leaferEdits = createLeaferEdits({
       leaferCanvas.select(selection)
     }
     // The stored form is made when a save asks for it (a held arrow key makes many edits for one save).
-    leaferSource = { noteId: leaferSource.noteId, get content() { const content = encodeDocument(compactStacking(doc)); Object.defineProperty(this, 'content', { value: content }); return content }, pageState: { ...doc.page } }
+    leaferSource = { noteId: leaferSource.noteId, editedDoc: doc, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
     queueSave()
   },
 })
