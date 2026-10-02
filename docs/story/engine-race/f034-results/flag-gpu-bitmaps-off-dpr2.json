@@ -1,0 +1,70 @@
+{
+ "when": "2026-10-02T12:45:15.476Z",
+ "browser": "151.0.7922.34",
+ "results": [
+  {
+   "note": "5296 objects (stress)",
+   "dpr": 2,
+   "flags": {
+    "pageBitmaps": "off"
+   },
+   "setup": {
+    "openingZoom": 1,
+    "drawn": 5296,
+    "skipped": 0,
+    "unknown": 0,
+    "images": 0
+   },
+   "rows": [
+    {
+     "scenario": "open (to first settled frame, cold)",
+     "p50": 1362,
+     "p95": null,
+     "max": null,
+     "n": 1
+    },
+    {
+     "scenario": "pan, zoomed out to 30%",
+     "p50": 16.7,
+     "p95": 33.4,
+     "max": 50,
+     "n": 468,
+     "slow": 109
+    },
+    {
+     "scenario": "zoom (ctrl+wheel) from 30%",
+     "p50": 16.7,
+     "p95": 33.3,
+     "max": 66.7,
+     "n": 405,
+     "slow": 23
+    },
+    {
+     "scenario": "pan at 100%",
+     "p50": 16.7,
+     "p95": 16.8,
+     "max": 16.8,
+     "n": 360,
+     "slow": 0
+    },
+    {
+     "scenario": "drag one object (100%)",
+     "p50": 16.7,
+     "p95": 16.8,
+     "max": 16.8,
+     "n": 184,
+     "slow": 0
+    },
+    {
+     "scenario": "drag 40 selected objects (100%)",
+     "p50": 16.7,
+     "p95": 16.8,
+     "max": 83.3,
+     "n": 152,
+     "slow": 1
+    }
+   ],
+   "errors": []
+  }
+ ]
+}

@@ -1,0 +1,55 @@
+{
+ "when": "2026-10-02T12:43:21.064Z",
+ "browser": "151.0.7922.34",
+ "results": [
+  {
+   "note": "15744 objects (stress)",
+   "dpr": 1,
+   "flags": {
+    "pageBitmaps": "off",
+    "dprCap": 0
+   },
+   "setup": {
+    "openingZoom": 1,
+    "drawn": 15744,
+    "skipped": 0,
+    "unknown": 0,
+    "images": 0
+   },
+   "rows": [
+    {
+     "scenario": "open (to first settled frame, cold)",
+     "p50": 2625,
+     "p95": null,
+     "max": null,
+     "n": 1
+    },
+    {
+     "scenario": "pan, zoomed out to 30%",
+     "p50": 16.7,
+     "p95": 183.3,
+     "max": 200,
+     "n": 482,
+     "slow": 121
+    },
+    {
+     "scenario": "zoom (ctrl+wheel) from 30%",
+     "p50": 16.7,
+     "p95": 133.3,
+     "max": 183.4,
+     "n": 434,
+     "slow": 101
+    },
+    {
+     "scenario": "pan at 100%",
+     "p50": 16.7,
+     "p95": 116.7,
+     "max": 133.3,
+     "n": 472,
+     "slow": 155
+    }
+   ],
+   "errors": []
+  }
+ ]
+}
