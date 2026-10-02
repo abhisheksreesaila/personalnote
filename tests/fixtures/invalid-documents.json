@@ -1,0 +1,44 @@
+[
+ {
+  "name": "every kind of mistake",
+  "document": {
+   "schemaVersion": 1,
+   "page": { "columns": 0, "rows": 1 },
+   "objects": [
+    { "id": "a", "type": "text", "z": 0, "geometry": { "x": "left", "flipX": 1 }, "content": 5 },
+    { "id": "b", "type": "sticky", "z": 0, "geometry": {}, "content": "x", "visible": "yes", "shadow": { "color": 3, "blur": "wide" } },
+    { "id": "c", "type": "shape", "z": 2, "geometry": {}, "kind": "blob" },
+    { "id": "d", "type": "ink", "z": 3, "geometry": {}, "kind": "stroke", "points": [{ "x": 1 }], "alpha": 2 },
+    { "id": "e", "type": "image", "z": 4, "geometry": {}, "mediaRef": { "kind": "url" } },
+    { "id": "f", "type": "connector", "z": 5, "geometry": {}, "fromId": "a" },
+    { "id": "g", "type": "group", "z": 6, "geometry": {}, "children": "no" },
+    { "id": "h", "type": "sparkle", "z": 7 },
+    { "id": "i", "type": "unknown", "z": 8 },
+    { "id": "a", "type": "text", "z": 9, "mode": "point", "content": "dup" },
+    { "type": "text", "z": 10, "mode": "sideways", "content": "no id" },
+    { "id": "", "type": "text", "z": 11, "mode": "box", "content": "empty id", "opacity": 3 },
+    "not an object"
+   ]
+  }
+ },
+ {
+  "name": "wrong schema version",
+  "document": { "schemaVersion": 99, "page": { "columns": 1, "rows": 1 }, "objects": [] }
+ },
+ {
+  "name": "objects is not an array",
+  "document": { "schemaVersion": 1, "page": { "columns": 1, "rows": 1 }, "objects": "no" }
+ },
+ {
+  "name": "not a document",
+  "document": null
+ },
+ {
+  "name": "no page",
+  "document": { "schemaVersion": 1, "objects": [] }
+ },
+ {
+  "name": "unquoted media reference",
+  "document": { "schemaVersion": 1, "page": { "columns": 1, "rows": 1 }, "objects": [{ "id": "a", "type": "image", "z": 0, "mediaRef": { "kind": "media" } }, { "id": "b", "type": "image", "z": 1, "mediaRef": { "kind": "inline" } }] }
+ }
+]

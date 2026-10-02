@@ -1,0 +1,58 @@
+{
+ "name": "cli-created",
+ "description": "A note written only by the CLI: three appended Textboxes, the last long enough to grow the page.",
+ "source": "NoteService.append_text",
+ "pageState": {
+  "columns": 1,
+  "rows": 2
+ },
+ "content": {
+  "objects": [
+   {
+    "type": "Textbox",
+    "originX": "left",
+    "originY": "top",
+    "left": 72,
+    "top": 80,
+    "width": 716,
+    "fill": "#20201e",
+    "fontFamily": "Source Serif 4",
+    "fontSize": 24,
+    "lineHeight": 1.45,
+    "padding": 8,
+    "text": "Keep a searchable local idea",
+    "semanticId": "res_00000000000000000000000000000002"
+   },
+   {
+    "type": "Textbox",
+    "originX": "left",
+    "originY": "top",
+    "left": 72,
+    "top": 138.8,
+    "width": 716,
+    "fill": "#20201e",
+    "fontFamily": "Source Serif 4",
+    "fontSize": 24,
+    "lineHeight": 1.45,
+    "padding": 8,
+    "text": "Second thought\nwith two lines",
+    "semanticId": "res_00000000000000000000000000000003"
+   },
+   {
+    "type": "Textbox",
+    "originX": "left",
+    "originY": "top",
+    "left": 72,
+    "top": 232.4,
+    "width": 716,
+    "fill": "#20201e",
+    "fontFamily": "Source Serif 4",
+    "fontSize": 24,
+    "lineHeight": 1.45,
+    "padding": 8,
+    "text": "A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. A long one. ",
+    "semanticId": "res_00000000000000000000000000000004"
+   }
+  ]
+ }
+}

@@ -121,6 +121,21 @@ erDiagram
 
 `resource_id` is stable inside a workspace and keeps exports independent from local row IDs. Import intentionally creates copies with new resource IDs. Existing installations may retain unused legacy tables; v1 neither reads nor populates them, avoiding destructive database migrations.
 
+### Engine-independent document model (F-025, not yet in use)
+
+Notes still persist as Fabric JSON; invariant 2 is unchanged. `src/core/document/` and its Python mirror `document_model.py` define the plain-data model that F-026 will persist instead, so the canvas engine can change (ADR 0001) without a second format change. `fromFabric`, `toFabric` and `geometry.js` are the only code that knows Fabric's conventions; the model and the engines that read it do not.
+
+- A document is `{schemaVersion, page: {columns, rows}, objects, extras}`. Each object has `id` (= `semanticId`), `type` (`text`, `sticky`, `shape`, `ink`, `image`, `connector`, `group`, or `unknown`), `z` (stacking order), `geometry` and typed fields per type. `schema.js` is the field reference.
+- Frames: positions are in page pixels, x right and y down, from the top-left of the first page. `geometry` is `{x, y, width, height, rotation, scaleX, scaleY, flipX, flipY, skewX, skewY}`: the box is `width` x `height` with its top-left at `(x, y)` (stroke not included); with centre `c`, a point `p` lands at `c + Rotate(rotation) * Scale(flip) * SkewX * SkewY * (p - c)` (SkewY acts first; skews are `tan(degrees)`; rotation is clockwise degrees about the box centre). There are no origins. A text block saved without a height (an agent-written Textbox) has no `height` in the model; its rotation, scale and skew only mean something once the engine has measured the height, so an adapter measures first. A group's children are in the group's box frame (origin at its top-left). An ink stroke's `path` and `points` are relative to its box's top-left corner, so nothing depends on Fabric's `pathOffset`.
+- `opacity`, `visible`, `strokeUniform` and a simple `shadow {color, blur, x, y}` are typed. Per-character text styles (not used by any feature) stay in `extras`.
+- Other fields are sparse: present only if the stored note had them. Fabric properties without a typed field (defaults like `fillRule`) stay in the object's `extras`, so nothing is dropped. Object types the model does not know, objects with malformed placement, and ink paths using commands other than absolute M/L/Q/C/Z are kept whole in `raw`.
+- `fromFabric(content, pageState)` and `toFabric(doc)` are pure. `toFabric(fromFabric(x))` is render-equivalent to `x`: every box corner and ink point lands within 1e-6 of where Fabric puts it, proved with Fabric's own matrices on every fixture and a set of rotated, scaled, flipped, skewed, stroked and nested-group objects. Everything that is not placement is exactly equal. What changes, and only that: Fabric's origin convention is normalised (`originX`/`originY` come back as `center` with `left`/`top` the box centre; an object saved without a height keeps top-left), ink path numbers are translated into the box frame and back (rounding of ~1e-13) and an ink path's width and height come back as Fabric measures them rather than the 4-decimal saved values. `arrowheads`, `colorKey` and `fillKey` are derived on the way in and ignored on the way out.
+- The highlighter's `#rrggbb55` colour is split into `color` and `alpha`; any other colour spelling is kept whole.
+- Pictures are `mediaRef`: `{kind: 'inline', dataUrl}` today, `{kind: 'media', id}` once the media library exists (`toFabric` takes a `resolveMedia` function for those).
+- `validateDocument` lists problems with their paths, with identical wording in JS and Python. Missing, empty and duplicate ids are errors there but still convert, so old notes load.
+- `search_text` in `document_model.py` returns exactly what `NoteService.canvas_text` returns now. `plain_text` has the same blocks as `note_text.py` but reads them by the box's top edge rather than Fabric's origin point (the centre for app-made objects, the corner for agent-written ones); the order is identical when text blocks share an origin and differs when a tall object and a short one are centred on the same line. F-026 decides whether `note_text.py` moves to the same rule.
+- Shared fixtures live in `tests/fixtures/documents/` (real-app gestures, the agent CLI, Fabric-built transform and edge cases, deliberately damaged notes); `scripts/generate-document-fixtures.mjs` and `scripts/generate_cli_fixture.py` rebuild them reproducibly. The seeded 600-object benchmark note is built at test time from `scripts/benchmark-note.mjs`. `tests/test_document_model.py` runs the JS build through `scripts/dump-document-models.mjs` and requires the same model, validation messages and Fabric output from both (on CI it fails rather than skips when node is missing). The app does not import the model yet, so the bundle is unchanged.
+
 ## API surface
 
 | Method | Path | Responsibility |
@@ -170,6 +185,7 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `app_paths.py` | Default database location shared by the app, CLI and server |
 | `scripts/build-mac-app.sh`, `packaging/` | macOS app bundle build and Linux launcher |
 | `personal_note_cli.py`, `bin/personal-note` | Machine-readable local CLI for agents, using the same service and portability contracts |
+| `src/core/document/`, `document_model.py` | Engine-independent document model with render-equivalent Fabric conversion (JS and Python mirrors; not yet used by the app) |
 | `note_text.py` | Plain-text projections of notes for agents (reading-order canvas text, mind-map outline) |
 | `src/modules/sync/` | Change-feed polling, safe merge of agent writes, and the agent presence chip |
 | `services.py` | SQLite persistence and FTS5 indexing |
