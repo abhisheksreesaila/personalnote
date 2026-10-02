@@ -1,31 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { FabricObject } from 'fabric'
+import { frozen } from '../../core/document/oracle.js'
 import { boundingRect, contentBounds } from './bounds.js'
 
-// Real Fabric is the oracle: the page rules (growth, fold-back, connector ends) are measured on getBoundingRect(), which counts the stroke
+// Fabric (frozen in tests/fixtures/fabric-oracle.json) is the oracle: the page rules (growth, fold-back, connector ends) are measured on getBoundingRect(), which counts the stroke
 // and turns the box about its centre, so the model-side rect must give the same numbers.
 const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) <= 1e-7, `${label}: ${actual} vs ${expected}`)
-let seed = 5
-const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-const between = (low, high) => low + random() * (high - low)
-
-test('the bounding rect of a model object is the one Fabric measures (stroke, scale, skew, flip and turn)', () => {
-  for (let i = 0; i < 300; i += 1) {
-    const geometry = {
-      x: between(-200, 900), y: between(-200, 900), width: between(1, 400), height: between(1, 300),
-      rotation: i % 5 === 0 ? 90 : i % 7 === 0 ? 0 : between(-180, 180), scaleX: between(0.3, 3), scaleY: between(0.3, 3),
-      flipX: i % 2 === 0, flipY: i % 3 === 0, skewX: i % 3 === 0 ? between(-30, 30) : 0, skewY: i % 4 === 0 ? between(-30, 30) : 0,
-    }
-    const strokeWidth = i % 2 ? between(0.5, 8) : 2
-    const object = { type: 'shape', kind: 'rect', geometry, stroke: '#000', strokeWidth, strokeUniform: i % 6 === 0 }
-    const real = new FabricObject({
-      left: geometry.x + geometry.width / 2, top: geometry.y + geometry.height / 2, originX: 'center', originY: 'center', width: geometry.width, height: geometry.height,
-      angle: geometry.rotation, scaleX: geometry.scaleX, scaleY: geometry.scaleY, flipX: geometry.flipX, flipY: geometry.flipY, skewX: geometry.skewX, skewY: geometry.skewY,
-      strokeWidth, strokeUniform: i % 6 === 0,
-    })
-    const rect = real.getBoundingRect()
-    const mine = boundingRect(object)
+test('the bounding rect of a model object is the one Fabric measured (stroke, scale, skew, flip and turn)', () => {
+  assert.equal(frozen.boundingRects.length, 300)
+  for (const { geometry, strokeWidth, strokeUniform, rect } of frozen.boundingRects) {
+    const mine = boundingRect({ type: 'shape', kind: 'rect', geometry, stroke: '#000', strokeWidth, strokeUniform })
     near(mine.left, rect.left, 'left'); near(mine.top, rect.top, 'top'); near(mine.width, rect.width, 'width'); near(mine.height, rect.height, 'height')
   }
 })

@@ -1,4 +1,4 @@
-// Pure connector geometry and bookkeeping. No Fabric, no DOM: endpoints are plain
+// Pure connector geometry. No DOM: endpoints are plain
 // bounding rectangles ({ left, top, width, height }) in canvas coordinates.
 
 export const CONNECTOR_GAP = 6
@@ -74,52 +74,4 @@ export function distanceToSegment(point, a, b) {
   if (!lengthSquared) return Math.hypot(point.x - a.x, point.y - a.y)
   const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared))
   return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy))
-}
-
-// Connectors whose endpoints are missing from the note (or that join an object to itself).
-export function connectorsLeftDangling(connectors, objectIds) {
-  return connectors.filter((c) => c.fromId === c.toId || !objectIds.has(c.fromId) || !objectIds.has(c.toId))
-}
-
-// object id -> connectors touching it, so a drag only touches its own connectors.
-export class ConnectorIndex {
-  constructor() {
-    this.byId = new Map()
-    this.byObject = new Map()
-  }
-
-  add(connector) {
-    this.byId.set(connector.id, connector)
-    for (const objectId of [connector.fromId, connector.toId]) {
-      if (!this.byObject.has(objectId)) this.byObject.set(objectId, new Set())
-      this.byObject.get(objectId).add(connector)
-    }
-  }
-
-  remove(id) {
-    const connector = this.byId.get(id)
-    if (!connector) return
-    this.byId.delete(id)
-    for (const objectId of [connector.fromId, connector.toId]) {
-      const set = this.byObject.get(objectId)
-      set?.delete(connector)
-      if (set && !set.size) this.byObject.delete(objectId)
-    }
-  }
-
-  rebuild(connectors) {
-    this.byId.clear()
-    this.byObject.clear()
-    connectors.forEach((connector) => this.add(connector))
-  }
-
-  has(fromId, toId) {
-    return [...(this.byObject.get(fromId) || [])].some((c) => c.fromId === fromId && c.toId === toId)
-  }
-
-  forObjects(objectIds) {
-    const found = new Set()
-    for (const id of objectIds) this.byObject.get(id)?.forEach((connector) => found.add(connector))
-    return [...found]
-  }
 }

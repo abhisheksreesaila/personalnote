@@ -1,6 +1,6 @@
 // The desk furniture of a canvas note, as plain primitives in SCREEN pixels: the page tiles with their shadow, edge and paper,
-// the dashed fold lines between pages and the "Page N" labels. It mirrors drawPageTiles/drawPageLabels in main.js (the Fabric
-// path draws the same things in world units divided by the zoom, so every metric below is a constant number of screen pixels).
+// the dashed fold lines between pages and the "Page N" labels. Every metric below is a constant number of screen pixels (the former
+// Fabric engine drew the same things in world units divided by the zoom).
 // Pure, so the rules are tested without a canvas; scene.js turns the primitives into Leafer nodes.
 import { shadowBands } from '../editor/viewport.js'
 

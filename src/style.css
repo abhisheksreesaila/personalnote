@@ -1,4 +1,4 @@
-/* Source Serif 4 must be pinned to a single optical size (opsz 24): Fabric measures
+/* Source Serif 4 must be pinned to a single optical size (opsz 24): a canvas measures
    text at a large cache size where auto optical sizing picks different glyph widths
    than the rendered 24px text, misplacing the caret and shrinking the text box. */
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,24,400;0,24,600;1,24,400;1,24,600&display=swap');
@@ -121,14 +121,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   overflow: hidden;
   background-color: var(--canvas);
 }
-/* The canvas fills the workspace; page tiles are painted by the canvas itself. */
+/* The canvas fills the workspace; the Leafer view draws the page tiles. */
 .paper {
   position: absolute;
   inset: 0;
 }
-.paper.is-dragging { z-index: auto; }
-.canvas-container { position: absolute !important; inset: 0; z-index: 2; }
-.paper.is-dragging .canvas-container { z-index: 20; }
+/* The transparent layer over the Leafer view that takes the pointer for the hand, text and sticky tools, and for touch pan and pinch. */
+.input-surface { position: absolute; inset: 0; z-index: 2; touch-action: none; -webkit-user-select: none; user-select: none; }
 
 /* Mind-map notes share the notebook shell, but own their editing surface. */
 .mindmap-host { position: absolute; inset: 0; min-width: 0; min-height: 0; color: #292a25; background: #f8f6ef; }
@@ -555,7 +554,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 @media (max-width: 800px) {
   .note-create-menu { display: none; }
-  .canvas-container { touch-action: none; }
   .mindmap-active .workspace { padding: 0; }
   .mindmap-minimap { display: none; }
   .mindmap-hint { display: none; }
@@ -620,7 +618,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 @media print {
   html, body, #app { width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 0; overflow: visible; background: white; }
   #app > :not(.print-preview) { display: none !important; }
-  .speed-meter, .engine-pill, body > :not(#app):not(script):not(style) { display: none !important; }
+  .speed-meter, body > :not(#app):not(script):not(style) { display: none !important; }
   .print-preview { position: static; display: block; color: black; background: white; }
   .print-preview-bar, .print-summary, .print-sheet-number, .print-sheet-card footer { display: none !important; }
   .print-preview-body, .print-sheet-list { display: block; overflow: visible; margin: 0; padding: 0; }

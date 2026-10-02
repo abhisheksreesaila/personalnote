@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { COLUMNS, ROWS, generateNote } from '../../scripts/benchmark-note.mjs'
-import { fromFabric } from './document/fabric.js'
+import { fromFabric } from './document/legacy-fabric.js'
 import { applyChanges, compactStacking, planOperation } from './document/operations.js'
 import { createDocumentEncoder, encodeDocument, forgetMedia } from './note-codec.js'
 

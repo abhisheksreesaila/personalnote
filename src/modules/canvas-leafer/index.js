@@ -2,7 +2,7 @@
 // it statically; Leafer is the canvas (ADR 0001), so there is no flag and no separate chunk.
 import { createScene } from './scene.js'
 
-// Every top-level object needs an id for an edit to name it (a note saved before ids existed has none); the Fabric path gives them
+// Every top-level object needs an id for an edit to name it (a note saved before ids existed has none); the former Fabric engine gives them
 // out the same way when it saves.
 function ensureIds(doc) {
   for (const object of doc.objects) if (object.type !== 'unknown' && !object.id) object.id = `res_${globalThis.crypto.randomUUID().replaceAll('-', '')}`
@@ -14,7 +14,7 @@ export function createLeaferCanvas(options) {
   return {
     ...scene,
     // A document model (read from the stored note) -> Leafer nodes. `loadOptions.resolveMedia` shows library pictures.
-    // The arrows are brought in line with the objects they join, as the Fabric path does on every load (a note an older app or an agent
+    // The arrows are brought in line with the objects they join, as the former Fabric engine does on every load (a note an older app or an agent
     // saved with a stale arrow); the document returned is the one on screen.
     showDocument(doc, loadOptions) {
       scene.load(ensureIds(doc), loadOptions)

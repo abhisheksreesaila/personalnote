@@ -12,7 +12,7 @@ const byId = (doc, id) => doc.objects.find((object) => object?.id === id)
 
 export const nextZ = (doc) => doc.objects.reduce((top, object, index) => Math.max(top, (object?.z ?? index) + 1), 0)
 
-// A text made by a click: the way the Fabric path makes one (an IText, so a point text that is as wide as its words).
+// A text made by a click: the way the former Fabric engine makes one (an IText, so a point text that is as wide as its words).
 // `style` is the model's text style (fontFamily, fontSize, color ...).
 export function newText({ id, z, point, style }) {
   return { id, type: 'text', mode: 'point', z, content: '', style: { fontWeight: 'normal', fontStyle: 'normal', textAlign: 'left', lineHeight: 1.45, padding: 8, ...style }, geometry: { x: point.x, y: point.y, width: 0, height: 0, ...UPRIGHT } }
@@ -60,7 +60,7 @@ export function planSetStyle(doc, { ids, style, paper }) {
   return result('Text style', changes)
 }
 
-// Prettify (the same mechanical tidy as the Fabric path: prettifyText on the whole of each text) for every text and sticky that is not
+// Prettify (the same mechanical tidy as the former Fabric engine: prettifyText on the whole of each text) for every text and sticky that is not
 // locked. `fit(object)` gives the geometry the new words need. One op, so one undo step; nothing to record when all is tidy already.
 export function planPrettify(doc, { fit }) {
   const changes = []

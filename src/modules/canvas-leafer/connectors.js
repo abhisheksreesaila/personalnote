@@ -1,8 +1,8 @@
 // Connectors on the document model (F-032), as pure functions: no Leafer, no DOM, tested in Node. A connector joins two top-level objects by
 // id (`fromId`, `toId`); its own geometry is derived data, the box between the two ends and two direction flags (`reverseX`, `reverseY`),
-// exactly as the Fabric path stores it, so that translating the box translates the arrow. Whenever an end moves, is resized, turned or its
+// exactly as the former Fabric engine stores it, so that translating the box translates the arrow. Whenever an end moves, is resized, turned or its
 // words change, the connector's box is worked out again from the two objects' bounding rects (bounds.js: the rects Fabric measures).
-// The geometry rules are the Fabric path's (modules/editor/connectors.js); this file applies them to the model.
+// The geometry rules are the former Fabric engine's (modules/editor/connectors.js); this file applies them to the model.
 import { arrowHeadPoints, connectorBox, connectorEndpoints, distanceToSegment, endpointsFromBox } from '../editor/connectors.js'
 import { boundingRect } from './bounds.js'
 
@@ -97,8 +97,8 @@ export function endpointsOf(connector) {
   return endpointsFromBox({ left: g.x, top: g.y, width: g.width, height: g.height, reverseX: connector.reverseX ?? false, reverseY: connector.reverseY ?? false })
 }
 
-// An arrow from `start` to `end` as one path: a line to the base of the head, and the head (a filled triangle). Same drawing as the Fabric
-// path's drawArrow (modules/editor/connector-object.js).
+// An arrow from `start` to `end` as one path: a line to the base of the head, and the head (a filled triangle). The same drawing the former
+// Fabric engine made, so an arrow looks as it always did.
 export function arrowPathFrom(start, end) {
   const length = Math.hypot(end.x - start.x, end.y - start.y)
   const [tip, wingA, wingB] = arrowHeadPoints(start, end, Math.min(CONNECTOR_HEAD, length * 0.6))

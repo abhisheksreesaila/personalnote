@@ -4,8 +4,8 @@ import fs from 'node:fs'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { COLUMNS, ROWS, generateNote } from '../../../scripts/benchmark-note.mjs'
-import { modelPoints } from './oracle.js'
-import { fromFabric, fromJsonCanvas, isJsonCanvas, plainText, toFabric, toJsonCanvas, validateJsonCanvas } from './index.js'
+import { placedPoints } from './placement.js'
+import { fromFabric, fromJsonCanvas, isJsonCanvas, plainText, toJsonCanvas, validateJsonCanvas } from './index.js'
 
 const FIXTURE_DIR = fileURLToPath(new URL('../../../tests/fixtures/documents/', import.meta.url))
 const fixtures = [
@@ -30,8 +30,8 @@ const viaJson = (value) => JSON.parse(JSON.stringify(value))
 
 function assertSameDocument(before, after, label) {
   assert.deepStrictEqual(after, before, label)
-  const a = modelPoints(before.objects)
-  const b = modelPoints(after.objects)
+  const a = placedPoints(before.objects)
+  const b = placedPoints(after.objects)
   assert.equal(b.length, a.length)
   for (let i = 0; i < a.length; i += 1) assert.ok(Math.abs(a[i] - b[i]) <= 1e-9, `${label}: point ${i}`)
 }
@@ -56,7 +56,7 @@ for (const entry of fixtures) {
     // pictures now point at the library; everything else is identical
     const strip = (d) => ({ ...d, objects: d.objects.map((o) => (o.type === 'image' ? { ...o, mediaRef: null } : o)) })
     assertSameDocument(strip(doc), strip(back), entry.name)
-    assert.equal(toFabric(doc).objects.length, toFabric(back, { resolveMedia: () => 'data:image/png;base64,AA==' }).objects.length)
+    assert.equal(back.objects.length, doc.objects.length)
   })
 
   test(`${entry.name}: node order is the stacking order and JSON Canvas boxes are the nearest integers`, () => {
@@ -138,7 +138,7 @@ test('a canvas made by another app (no pn, negative coordinates, colours, files,
   assert.match(byId.e.content, /example\.com/)
   assert.equal(byId.f.type, 'shape')
   assert.equal(byId.g.type, 'connector')
-  assert.ok(toFabric(doc, { resolveMedia: () => 'data:image/png;base64,AA==' }).objects.length >= 7)
+  assert.ok(doc.objects.length >= 7)
   assert.ok(validateJsonCanvas(toJsonCanvas(doc)).ok)
 })
 

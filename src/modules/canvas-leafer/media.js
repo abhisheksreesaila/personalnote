@@ -1,5 +1,5 @@
 // Pictures on the Leafer canvas (F-033, F-023): a dropped, pasted or picked file is shrunk off the main thread, uploaded once to the media
-// library (content-addressed files; the note keeps `media/<sha256>.<ext>` and nothing else), and placed the way the Fabric path placed
+// library (content-addressed files; the note keeps `media/<sha256>.<ext>` and nothing else), and placed the way the former Fabric engine placed
 // it. The rules (what is stored as it came, what is re-encoded, how big a new picture is) are pure and tested in Node; the decode and
 // encode use createImageBitmap and OffscreenCanvas, so a 12-megapixel photo never blocks a frame. No Leafer import: scene.js draws.
 import { fitImage, IMAGE_MAX_DATA_URL, IMAGE_MAX_SIDE, imageFiles } from '../editor/objects.js'
@@ -13,7 +13,7 @@ export const MAX_MEGAPIXELS = 100 // a picture bigger than this is refused befor
 export const pictureFiles = imageFiles
 
 // How a picture is stored. Small pictures in a kept format go in as they came; the rest are shrunk to 1400 on the long side and
-// re-encoded (a GIF is frozen to one frame, as the Fabric path did).
+// re-encoded (a GIF is frozen to one frame, as the former Fabric engine did).
 export function imageStorage({ width, height, bytes, type }) {
   const target = fitImage({ width, height }, IMAGE_MAX_SIDE)
   const resized = target.width !== width || target.height !== height
@@ -28,7 +28,7 @@ export function storedEncoding({ hasAlpha }) {
 }
 
 // A new picture of stored size width x height, centred on `point`, at most 520 on the long side and never enlarged. Same geometry the
-// Fabric path wrote (natural size, scaled about the box's centre, so x and y are the corner of the UNSCALED box), so the note opens the same in both. `index` offsets the 2nd, 3rd ... picture of one drop.
+// Fabric path wrote (natural size, scaled about the box's centre, so x and y are the corner of the UNSCALED box), so a note opens the same as it always did. `index` offsets the 2nd, 3rd ... picture of one drop.
 export function newImage({ id, z, mediaId, width, height, point, index = 0 }) {
   const shown = fitImage({ width, height }, MEDIA_PLACE_SIDE)
   const scale = shown.width / width

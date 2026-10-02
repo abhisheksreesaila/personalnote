@@ -2,7 +2,7 @@
 // about its centre. The page rules (growth, fold-back) and the connector ends are measured on this rect, so it is the Fabric rule, tested
 // against real Fabric (bounds.test.js). Pure JS: no Leafer, no DOM.
 import { rotatePoint, transformedDimensions } from '../../core/document/geometry.js'
-import { strokeWidthOfModel } from '../../core/document/fabric.js'
+import { strokeWidthOfModel } from '../../core/document/geometry.js'
 
 const toRadians = (degrees) => degrees * (Math.PI / 180)
 

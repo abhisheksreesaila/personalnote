@@ -69,7 +69,7 @@ function textProps(object, { width, padding = 0, offsetY = 0 }) {
   const { pitch, firstBaselineShift } = fabricLineMetrics(fontSize, style.lineHeight ?? TEXT_DEFAULTS.lineHeight)
   const props = {
     text: object.content ?? '',
-    fontFamily: canvasFamily(!style.fontFamily ? TEXT_DEFAULTS.fontFamily : style.fontFamily === 'Georgia' ? 'Source Serif 4' : style.fontFamily), // the Fabric path renames the legacy Georgia
+    fontFamily: canvasFamily(!style.fontFamily ? TEXT_DEFAULTS.fontFamily : style.fontFamily === 'Georgia' ? 'Source Serif 4' : style.fontFamily), // the former Fabric engine renames the legacy Georgia
     fontSize,
     fontWeight: style.fontWeight ?? TEXT_DEFAULTS.fontWeight,
     italic: (style.fontStyle ?? TEXT_DEFAULTS.fontStyle) === 'italic',
@@ -204,7 +204,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     const base = commonProps(object)
     switch (object.type) {
       case 'text': {
-        // The Fabric path drops empty and legacy placeholder text blocks when it opens a note; so does this one.
+        // The former Fabric engine drops empty and legacy placeholder text blocks when it opens a note; so does this one.
         if (isPlaceholderText(object.content)) return null
         const text = new Text(textProps(object, { width: g.width }))
         textNodes.push(text)
@@ -675,7 +675,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // overlay, the nodes and the document. A typing session is ONE undo step: it runs inside one history group (onBegin/onEnd), and the
   // words typed so far go into the document a moment after the typing pauses (never in the middle of an input-method composition), so
   // they are saved as they are typed. A new text is made at its first such moment (and never at all when nothing is typed); a new
-  // sticky is made at once (an empty sticky stays, as in the Fabric path). An emptied text is removed when the session ends.
+  // sticky is made at once (an empty sticky stays, as in the former Fabric engine). An emptied text is removed when the session ends.
   const overlay = createTextOverlay({ host })
   const DRAFT_DELAY = 650 // the save delay
   let textEdit = null // { id, entry|null, object, size, select, caret }
@@ -929,7 +929,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
   }
 
-  // A double click on a text or sticky edits it; on empty paper it makes a new text (the Fabric path does the same). A phone sends no
+  // A double click on a text or sticky edits it; on empty paper it makes a new text (the former Fabric engine does the same). A phone sends no
   // reliable double click, so two taps close together (by finger or pen) count as one, noticed on the click that ends the second tap.
   function editOrCreateAt(clientX, clientY) {
     const rect = host.getBoundingClientRect()

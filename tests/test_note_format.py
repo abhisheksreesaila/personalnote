@@ -141,10 +141,11 @@ class AgentRoundTripTests(Folder):
         self.assertEqual((added["type"], added["text"]), ("text", "## From the agent\n- item"))
         self.assertTrue(added["id"].startswith("res_"))
         self.assertTrue(note_plain_text(after).endswith("## From the agent\n- item"))
-        # the app opens it: the new node becomes a Fabric Textbox with the same id
-        fabric = dm.to_fabric(jc.from_json_canvas(after["content"]))
-        self.assertEqual(fabric["objects"][-1]["semanticId"], added["id"])
-        self.assertEqual(fabric["objects"][-1]["text"], "## From the agent\n- item")
+        # the app opens it: the new node becomes the last text object of the model, with the same id
+        opened = jc.from_json_canvas(after["content"])
+        last = opened["objects"][-1]
+        self.assertEqual((last["id"], last["type"]), (added["id"], "text"))
+        self.assertEqual(last["content"], "## From the agent\n- item")
 
 
 class ConversionTests(Folder):

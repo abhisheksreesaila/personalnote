@@ -5,9 +5,7 @@ import {
   contrastRatio,
   fitImage,
   imageFiles,
-  imageEncoding,
   objectPalette,
-  shapeDefaults,
   stickyDefaults,
   stickyInk,
 } from './objects.js'
@@ -36,33 +34,12 @@ test('sticky text is readable on every colour of every skin', () => {
   }
 })
 
-test('a small picture that already fits is stored as it is', () => {
-  assert.equal(imageEncoding({ dataUrlLength: 120_000, resized: false, hasAlpha: false, type: 'image/png' }), null)
-})
-
-test('a large picture is re-encoded even when its dimensions already fit', () => {
-  assert.deepEqual(imageEncoding({ dataUrlLength: 900_000, resized: false, hasAlpha: false, type: 'image/png' }), { type: 'image/jpeg', quality: 0.85 })
-})
-
-test('transparent pictures never become JPEG, and resized or animated ones are always re-encoded', () => {
-  assert.equal(imageEncoding({ dataUrlLength: 900_000, resized: false, hasAlpha: true, type: 'image/png' }).type, 'image/webp')
-  assert.equal(imageEncoding({ dataUrlLength: 1000, resized: true, hasAlpha: false, type: 'image/jpeg' }).type, 'image/jpeg')
-  assert.notEqual(imageEncoding({ dataUrlLength: 1000, resized: false, hasAlpha: false, type: 'image/gif' }), null)
-})
-
-test('a sticky is a fixed-width handwriting note that serialises its own colour', () => {
+test('a sticky is a fixed-width handwriting note that carries its own colour', () => {
   const sticky = stickyDefaults({ fill: '#ffd60a', ink: '#4d3f00' })
   assert.equal(sticky.fontFamily, 'Caveat')
   assert.equal(sticky.fill, '#4d3f00')
   assert.equal(sticky.stickyColor, '#ffd60a')
   assert.ok(sticky.width >= 200)
-})
-
-test('a shape is a rounded rectangle with the chosen fill and no outline', () => {
-  const shape = shapeDefaults({ fill: '#64b5ff', ink: '#06294F' })
-  assert.equal(shape.fill, '#64b5ff')
-  assert.ok(shape.rx > 0 && shape.rx === shape.ry)
-  assert.equal(shape.strokeWidth, 0)
 })
 
 test('large pictures are scaled down to the maximum side, small ones are never enlarged', () => {

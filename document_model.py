@@ -1,10 +1,11 @@
 """Engine-independent document model, Python mirror of src/core/document/ (F-025).
 
 Same shape, same rules, same fixtures (tests/fixtures/documents/); tests/test_document_model.py compares it with the JS
-build on every fixture. The Fabric placement rules live in the "geometry" section below, as in src/core/document/geometry.js. A document is
-`{schemaVersion, page, objects, extras}`; see src/core/document/schema.js for the full field list. Nothing in the app uses
-this yet: F-026 moves storage onto it. Until then it proves the Fabric conversion is render-equivalent and gives agent-facing text helpers
-(`plain_text_blocks`, `plain_text`, `search_text`); search_text equals NoteService.canvas_text, plain_text reads by top edge (see its docstring).
+build on every fixture. The placement rules of the old canvas engine (Fabric) live in the "geometry" section below, as in
+src/core/document/geometry.js: `from_fabric` reads the notes that engine saved (the one-time conversion to JSON Canvas at startup, a
+version 1 backup). A document is `{schemaVersion, page, objects, extras}`; see src/core/document/schema.js for the full field list.
+It also gives the agent-facing text helpers (`plain_text_blocks`, `plain_text`, `search_text`); search_text equals
+NoteService.canvas_text, plain_text reads by top edge (see its docstring).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import copy
 import json
 import math
 import re
-from typing import Any, Callable
+from typing import Any
 
 SCHEMA_VERSION = 1
 PAGE = {"width": 860, "height": 1080}
@@ -54,8 +55,6 @@ _FIELDS = {
     "stroke": (("inkTool", "tool"), ("strokeWidth", "width"), ("globalCompositeOperation", "blend"), ("strokeLineCap", "cap"), ("strokeLineJoin", "join")),
     "dot": (("inkTool", "tool"), ("radius", "radius"), ("globalCompositeOperation", "blend")),
 }
-_FABRIC_TYPE = {"sticky": "Sticky", "rect": "Rect", "circle": "Circle", "stroke": "Path", "dot": "Circle", "image": "Image", "connector": "Connector", "group": "Group"}
-_TEXT_TYPE = {"point": "IText", "box": "Textbox"}
 _HEX_WITH_ALPHA = re.compile(r"(#[0-9a-fA-F]{6})([0-9a-f]{2})")
 
 
@@ -149,11 +148,6 @@ def _transformed_dimensions(width=0, height=0, stroke_width=0, stroke_uniform=Fa
 def _center_from_origin(left, top, origin_x, origin_y, angle, dimensions) -> dict:
     point = {"x": left + (0.5 - _origin_number(origin_x)) * dimensions["x"], "y": top + (0.5 - _origin_number(origin_y)) * dimensions["y"]}
     return _rotate_point(point, _to_radians(angle), {"x": left, "y": top}) if angle else point
-
-
-def _origin_from_center(x, y, origin_x, origin_y, angle, dimensions) -> dict:
-    point = {"x": x + (_origin_number(origin_x) - 0.5) * dimensions["x"], "y": y + (_origin_number(origin_y) - 0.5) * dimensions["y"]}
-    return _rotate_point(point, _to_radians(angle), {"x": x, "y": y}) if angle else point
 
 
 def _curve_bounds(beg_x, beg_y, cp1_x, cp1_y, cp2_x, cp2_y, end_x, end_y) -> list[dict]:
@@ -253,43 +247,15 @@ def _set_path(target: dict, path: str, value: Any) -> None:
     node[last] = value
 
 
-_MISSING = object()
-
-
-def _get_path(source: Any, path: str) -> Any:
-    node = source
-    for key in path.split("."):
-        node = node.get(key, _MISSING) if isinstance(node, dict) else _MISSING
-    return node
-
-
 def _take(rest: dict, target: dict, pairs) -> None:
     for fabric_key, path in pairs:
         if fabric_key in rest:
             _set_path(target, path, rest.pop(fabric_key))
 
 
-def _put(source: dict, out: dict, pairs) -> None:
-    for fabric_key, path in pairs:
-        value = _get_path(source, path)
-        if value is not _MISSING:
-            out[fabric_key] = value
-
-
 def _split_color(value: Any) -> tuple[Any, float | None]:
     match = _HEX_WITH_ALPHA.fullmatch(value) if isinstance(value, str) else None
     return (match.group(1), int(match.group(2), 16) / 255) if match else (value, None)
-
-
-def _join_color(color: Any, alpha: float | None) -> Any:
-    if alpha is None or not isinstance(color, str):
-        return color
-    return f"{color}{_js_round(alpha * 255):02x}"
-
-
-def _js_round(value: float) -> int:
-    # Math.round rounds halves up; Python's round() rounds them to even.
-    return int(value + 0.5) if value >= 0 else -int(-value + 0.5)
 
 
 _NUMERIC_PLACEMENT = ("left", "top", "width", "height", "angle", "scaleX", "scaleY", "skewX", "skewY", "strokeWidth")
@@ -331,16 +297,6 @@ def _stroke_width_of_raw(raw: dict, fabric_type: str) -> float:
     return raw["strokeWidth"] if _is_number(raw.get("strokeWidth")) else 0 if fabric_type in ("Group", "Image", "Connector") else 1
 
 
-def _stroke_width_of_model(obj: dict) -> float:
-    if obj["type"] == "shape":
-        stored = obj.get("strokeWidth")
-    elif obj["type"] == "ink" and obj.get("kind") == "stroke":
-        stored = obj.get("width")
-    else:
-        stored = (obj.get("extras") or {}).get("strokeWidth")
-    return stored if _is_number(stored) else 0 if obj["type"] in ("group", "image", "connector") else 1
-
-
 _FLAT = {"dx": 0, "dy": 0}
 _PLACEMENT_KEYS = ("left", "top", "width", "height", "angle", "scaleX", "scaleY", "flipX", "flipY", "skewX", "skewY", "originX", "originY")
 
@@ -367,31 +323,6 @@ def _geometry_from_fabric(rest: dict, frame: dict, size: dict | None, fabric_typ
         ordered["height"] = height
     ordered.update(geometry)
     return ordered
-
-
-def _geometry_to_fabric(obj: dict, frame: dict, out: dict) -> None:
-    geometry = obj.get("geometry") or {}
-    rotation = geometry.get("rotation", 0)
-    scale_x, scale_y = geometry.get("scaleX", 1), geometry.get("scaleY", 1)
-    skew_x, skew_y = geometry.get("skewX", 0), geometry.get("skewY", 0)
-    width, height = geometry.get("width"), geometry.get("height")
-    center = {"x": geometry.get("x", 0) + (width or 0) / 2 - frame["dx"], "y": geometry.get("y", 0) + (height or 0) / 2 - frame["dy"]}
-    out["angle"] = rotation
-    out["scaleX"], out["scaleY"] = scale_x, scale_y
-    out["flipX"], out["flipY"] = geometry.get("flipX", False), geometry.get("flipY", False)
-    out["skewX"], out["skewY"] = skew_x, skew_y
-    if width is not None:
-        out["width"] = width
-    if height is not None:
-        out["height"] = height
-    if width is not None and height is not None:
-        out["originX"] = out["originY"] = "center"
-        out["left"], out["top"] = center["x"], center["y"]
-    else:
-        dimensions = _transformed_dimensions(width or 0, height or 0, _stroke_width_of_model(obj), obj.get("strokeUniform") is True, scale_x, scale_y, skew_x, skew_y)
-        point = _origin_from_center(center["x"], center["y"], "left", "top", rotation, dimensions)
-        out["originX"], out["originY"] = "left", "top"
-        out["left"], out["top"] = point["x"], point["y"]
 
 
 def _shadow_from_fabric(rest: dict) -> dict | None:
@@ -484,77 +415,6 @@ def _ordered(objects: list[dict]) -> list[dict]:
     keyed = [(obj.get("z", index), index, obj) for index, obj in enumerate(objects)]
     keyed.sort(key=lambda item: (item[0], item[1]))
     return [obj for _, _, obj in keyed]
-
-
-def _object_to_fabric(obj: dict, resolve_media: Callable[[dict], Any] | None, frame: dict = _FLAT) -> dict:
-    if obj["type"] == "unknown":
-        return copy.deepcopy(obj["raw"])
-    out = copy.deepcopy(obj.get("extras") or {})
-    if "id" in obj:
-        out["semanticId"] = obj["id"]
-    _geometry_to_fabric(obj, frame, out)
-    for key in ("opacity", "visible", "strokeUniform"):
-        if key in obj:
-            out[key] = obj[key]
-    if "shadow" in obj:
-        shadow = obj["shadow"]
-        out["shadow"] = {"color": shadow["color"], "blur": shadow["blur"], "offsetX": shadow["x"], "offsetY": shadow["y"], **(shadow.get("extras") or {})}
-
-    kind = obj["type"]
-    if kind == "text":
-        out["type"] = _TEXT_TYPE[obj["mode"]]
-        _put(obj, out, _FIELDS["text"])
-    elif kind == "sticky":
-        out["type"] = _FABRIC_TYPE["sticky"]
-        _put(obj, out, _FIELDS["sticky"])
-    elif kind == "shape":
-        out["type"] = _FABRIC_TYPE[obj["kind"]]
-        _put(obj, out, _FIELDS[obj["kind"]])
-    elif kind == "connector":
-        out["type"] = _FABRIC_TYPE["connector"]
-        _put(obj, out, _FIELDS["connector"])
-    elif kind == "image":
-        out["type"] = _FABRIC_TYPE["image"]
-        ref = obj["mediaRef"]
-        if ref["kind"] == "inline":
-            out["src"] = ref["dataUrl"]
-        else:
-            resolved = resolve_media(ref) if resolve_media else None
-            if not isinstance(resolved, str):
-                raise DocumentError(f"Picture {json.dumps(ref.get('id'), ensure_ascii=False)} is in the media library; pass resolve_media to turn it into a data URL")
-            out["src"] = resolved
-    elif kind == "group":
-        out["type"] = _FABRIC_TYPE["group"]
-        geometry = obj.get("geometry") or {}
-        child_frame = {"dx": (geometry.get("width") or 0) / 2, "dy": (geometry.get("height") or 0) / 2}
-        out["objects"] = [_object_to_fabric(child, resolve_media, child_frame) for child in _ordered(obj["children"])]
-    else:  # ink
-        out["type"] = _FABRIC_TYPE[obj["kind"]]
-        out["isInk"] = True
-        _put(obj, out, _FIELDS[obj["kind"]])
-        color_key = "fill" if obj["kind"] == "dot" else "stroke"
-        if "color" in obj:
-            out[color_key] = _join_color(obj["color"], obj.get("alpha"))
-        geometry = obj.get("geometry") or {}
-        x, y = geometry.get("x", 0), geometry.get("y", 0)
-        if "path" in obj:
-            out["path"] = _shift_path(obj["path"], x, y)
-        if "points" in obj:
-            out["inkPoints"] = [{**p, "x": p["x"] + x, "y": p["y"] + y} for p in obj["points"]]
-    return out
-
-
-def to_fabric(doc: dict, resolve_media: Callable[[dict], Any] | None = None) -> dict:
-    """Document to Fabric content. `resolve_media(ref)` turns a `{kind: 'media', id}` picture into a data URL."""
-    result = validate_document(doc, require_ids=False, strict=False)
-    if not result["ok"]:
-        detail = "; ".join(f"{error['path']}: {error['message']}" for error in result["errors"])
-        raise DocumentError(f"Not a valid document: {detail}", result["errors"])
-    return {**copy.deepcopy(doc.get("extras") or {}), "objects": [_object_to_fabric(obj, resolve_media) for obj in _ordered(doc["objects"])]}
-
-
-def page_state_of(doc: dict) -> dict:
-    return copy.deepcopy(doc["page"])
 
 
 def _js_json(container: dict, key: str) -> str:

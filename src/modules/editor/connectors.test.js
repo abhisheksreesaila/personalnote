@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  ConnectorIndex,
   arrowHeadPoints,
   connectorBox,
   connectorEndpoints,
-  connectorsLeftDangling,
   distanceToSegment,
   endpointsFromBox,
 } from './connectors.js'
@@ -76,43 +74,4 @@ test('distance to a segment', () => {
   close(distanceToSegment({ x: 50, y: 10 }, { x: 0, y: 0 }, { x: 100, y: 0 }), 10, 'perpendicular')
   close(distanceToSegment({ x: -30, y: 40 }, { x: 0, y: 0 }, { x: 100, y: 0 }), 50, 'past the start')
   close(distanceToSegment({ x: 3, y: 4 }, { x: 0, y: 0 }, { x: 0, y: 0 }), 5, 'degenerate')
-})
-
-test('index finds connectors by either endpoint, and only those', () => {
-  const index = new ConnectorIndex()
-  index.add({ id: 'c1', fromId: 'a', toId: 'b' })
-  index.add({ id: 'c2', fromId: 'b', toId: 'c' })
-  assert.deepEqual(index.forObjects(['a']).map((c) => c.id), ['c1'])
-  assert.deepEqual(index.forObjects(['b']).map((c) => c.id).sort(), ['c1', 'c2'])
-  assert.deepEqual(index.forObjects(['a', 'b']).map((c) => c.id).sort(), ['c1', 'c2'])
-  assert.deepEqual(index.forObjects(['zzz']), [])
-})
-
-test('index removal and duplicate detection', () => {
-  const index = new ConnectorIndex()
-  index.add({ id: 'c1', fromId: 'a', toId: 'b' })
-  assert.equal(index.has('a', 'b'), true)
-  assert.equal(index.has('b', 'a'), false)
-  index.remove('c1')
-  assert.equal(index.has('a', 'b'), false)
-  assert.deepEqual(index.forObjects(['a']), [])
-})
-
-test('index rebuild replaces earlier contents', () => {
-  const index = new ConnectorIndex()
-  index.add({ id: 'old', fromId: 'a', toId: 'b' })
-  index.rebuild([{ id: 'n', fromId: 'c', toId: 'd' }])
-  assert.deepEqual(index.forObjects(['a']), [])
-  assert.deepEqual(index.forObjects(['d']).map((c) => c.id), ['n'])
-})
-
-test('dangling connectors are those missing an endpoint', () => {
-  const objectIds = new Set(['a', 'b'])
-  const dangling = connectorsLeftDangling([
-    { id: 'ok', fromId: 'a', toId: 'b' },
-    { id: 'gone', fromId: 'a', toId: 'x' },
-    { id: 'gone2', fromId: 'y', toId: 'b' },
-    { id: 'self', fromId: 'a', toId: 'a' },
-  ], objectIds)
-  assert.deepEqual(dangling.map((c) => c.id), ['gone', 'gone2', 'self'])
 })

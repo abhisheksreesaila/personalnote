@@ -1,5 +1,4 @@
-// Pure helpers for the dock's Sticky note, Shape and Image tools. No DOM or Fabric here so the
-// rules (palette, defaults, image sizing) are easy to test; main.js turns them into canvas objects.
+// Pure helpers for the dock's Sticky note and Image tools. No DOM here so the rules (palette, defaults, image sizing) are easy to test.
 
 export const IMAGE_MAX_SIDE = 1400
 export const IMAGE_MAX_DATA_URL = 300 * 1024
@@ -8,8 +7,6 @@ export const STICKY_FONT = 'Caveat'
 export const STICKY_WIDTH = 240
 export const STICKY_PADDING = 22
 export const STICKY_MIN_HEIGHT = 200
-export const SHAPE_SIZE = { width: 280, height: 180 }
-export const SHAPE_RADIUS = 28
 const FALLBACK_COLORS = ['#ffd60a', '#30d158', '#64b5ff', '#bf5af2', '#ff6b3d']
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
@@ -57,22 +54,11 @@ export function stickyDefaults({ fill, ink }) {
   }
 }
 
-export function shapeDefaults({ fill }) {
-  return { ...SHAPE_SIZE, fill, rx: SHAPE_RADIUS, ry: SHAPE_RADIUS, strokeWidth: 0 }
-}
-
 export function fitImage({ width, height }, maxSide = IMAGE_MAX_SIDE) {
   const longest = Math.max(width, height)
   if (longest <= maxSide) return { width, height }
   const ratio = maxSide / longest
   return { width: Math.round(width * ratio), height: Math.round(height * ratio) }
-}
-
-// Null when the picture can be stored as it is; otherwise how to re-encode it. Photos become JPEG; pictures with
-// transparency stay lossless-capable (WebP) so they keep their see-through parts.
-export function imageEncoding({ dataUrlLength, resized, hasAlpha, type }) {
-  if (!resized && dataUrlLength <= IMAGE_MAX_DATA_URL && type !== 'image/gif') return null
-  return hasAlpha ? { type: 'image/webp', quality: 0.85 } : { type: 'image/jpeg', quality: 0.85 }
 }
 
 export function imageFiles(files) {

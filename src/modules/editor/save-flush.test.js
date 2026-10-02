@@ -74,21 +74,11 @@ test('settleSaves reports false when the save did not land', async () => {
 
 test('save timing is normal outside the Chromium window', () => {
   const timing = createSaveTiming({ fast: false })
-  timing.noteLoaded({ objects: [] })
-  assert.deepEqual([timing.historyDelay(), timing.saveDelay()], [180, 650])
+  assert.equal(timing.saveDelay(), 650)
 })
 
 test('save timing is fast in the Chromium window for a small note', () => {
   const timing = createSaveTiming({ fast: true })
-  timing.noteLoaded({ objects: [{}] })
-  assert.deepEqual([timing.historyDelay(), timing.saveDelay()], [100, 150])
-})
-
-test('a dense note starts on the normal delays until a small save is measured', () => {
-  const timing = createSaveTiming({ fast: true })
-  timing.noteLoaded({ objects: new Array(41).fill({}) })
-  assert.equal(timing.saveDelay(), 650)
-  timing.saved('{"a":1}')
   assert.equal(timing.saveDelay(), 150)
 })
 
@@ -99,7 +89,6 @@ test('a body over the keepalive limit keeps the normal delays, measured in UTF-8
   // 25,000 three-byte characters are 25,000 characters but 75,000 bytes.
   timing.saved('€'.repeat(25000))
   assert.equal(timing.saveDelay(), 650)
-  assert.equal(timing.historyDelay(), 180)
 })
 
 test('bodyBytes counts a small body exactly and never calls a big one small', () => {

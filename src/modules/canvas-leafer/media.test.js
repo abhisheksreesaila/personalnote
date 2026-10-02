@@ -24,7 +24,7 @@ test('only picture files are taken, from a drop, a paste or the picker', () => {
   assert.deepEqual(pictureFiles(files).map((file) => file.name), ['a', 'd'])
 })
 
-test('a new picture is placed like the Fabric path: at most 520 on the long side, centred on the point, each further one offset', () => {
+test('a new picture is placed like the former Fabric engine: at most 520 on the long side, centred on the point, each further one offset', () => {
   const a = newImage({ id: 'i1', z: 4, mediaId: 'h.png', width: 1400, height: 1050, point: { x: 430, y: 540 }, index: 0 })
   assert.equal(a.type, 'image')
   assert.deepEqual(a.mediaRef, { kind: 'media', id: 'h.png' })

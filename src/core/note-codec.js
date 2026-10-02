@@ -1,11 +1,11 @@
-// The browser end of the stored note format (F-026). The server stores and serves JSON Canvas; until the Leafer editor reads the
-// document model directly, the Fabric editor on main still needs Fabric JSON. So:
-//   load: JSON Canvas -> document model -> Fabric JSON (pictures fetched from /api/media and handed to Fabric as data URLs)
-//   save: Fabric JSON -> document model -> JSON Canvas (a picture that came from the media library is sent as its path, not again)
-// A note the server could not convert yet (contentFormat 'fabric') loads as it is, and its next save converts it.
+// The browser end of the stored note format (F-026). The server stores and serves JSON Canvas (ADR 0002); the editor reads it straight
+// into the document model and writes the model straight back (pictures from the media library fetched from /api/media and shown as data
+// URLs; a picture that came from the library is saved as its path, not sent again).
+// A note the server could not convert yet (contentFormat 'fabric', the old canvas engine's JSON) is read through the legacy reader and
+// its next save converts it.
 // Named files, not the index: the browser ships the reader and writer, not the SVG pictures, foreign-canvas reading, validator or
 // projection (jsoncanvas-extras.js), which only the server side and the tests need.
-import { fromFabric, toFabricUnchecked } from './document/fabric.js'
+import { fromFabric } from './document/legacy-fabric.js'
 import { isJsonCanvas, readJsonCanvas, writeJsonCanvas } from './document/jsoncanvas.js'
 import { compactStacking, stacking } from './document/operations.js'
 import { DEFAULT_PAGE, PAGE, SCHEMA_VERSION } from './document/schema.js'
@@ -35,7 +35,7 @@ function mediaNames(objects, out = new Set()) {
 }
 
 // note: { content, contentFormat, pageState } as the API returns it. -> { doc, resolveMedia }: the document model, and how to show
-// each library picture in it (a data URL; a placeholder when it cannot be fetched). This is how the Leafer editor opens a note.
+// each library picture in it (a data URL; a placeholder when it cannot be fetched). This is how the editor opens a note.
 export async function decodeNoteDocument(note, { fetchMedia = defaultFetchMedia } = {}) {
   const content = note.content || { objects: [] }
   if (!isJsonCanvas(content)) return { doc: fromFabric(content, note.pageState || { columns: 1, rows: 1 }), resolveMedia: undefined }
@@ -64,21 +64,7 @@ export async function decodeNoteDocument(note, { fetchMedia = defaultFetchMedia 
   return { doc, resolveMedia }
 }
 
-// The same, as Fabric JSON for the Fabric editor on main: -> { content: Fabric JSON, pageState }
-export async function decodeNote(note, { fetchMedia = defaultFetchMedia } = {}) {
-  const content = note.content || { objects: [] }
-  if (!isJsonCanvas(content)) return { content, pageState: note.pageState || { columns: 1, rows: 1 } }
-  const { doc, resolveMedia } = await decodeNoteDocument(note, { fetchMedia })
-  return { content: toFabricUnchecked(doc, { resolveMedia }), pageState: doc.page }
-}
-
-// Fabric JSON + page state -> JSON Canvas for the server. SVG pictures of ink and shapes are left out (the server derives them).
-export function encodeNote(fabricContent, pageState) {
-  const doc = fromFabric(fabricContent, pageState)
-  return writeJsonCanvas(doc, { derived: 'omit', media: { putDataUrl: (url) => pathByDataUrl.get(url) ?? url } })
-}
-
-// A document model (what the Leafer editor holds) -> JSON Canvas, the same way encodeNote writes it, without the Fabric detour.
+// A document model (what the editor holds) -> JSON Canvas for the server. SVG pictures of ink and shapes are left out (the server derives them).
 export function encodeDocument(doc) {
   return writeJsonCanvas(doc, { derived: 'omit', media: { putDataUrl: (url) => pathByDataUrl.get(url) ?? url } })
 }

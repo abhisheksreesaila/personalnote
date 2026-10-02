@@ -59,10 +59,7 @@ export function createSaveTiming({ fast }) {
   let lastBytes = 0
   const useFast = () => fast && lastBytes <= KEEPALIVE_LIMIT
   return {
-    // Until a save measures the real size, a note with many objects is assumed too big.
-    noteLoaded: (content) => { lastBytes = (content?.objects?.length ?? 0) > 40 ? Infinity : 0 },
     saved: (body) => { lastBytes = bodyBytes(body) },
-    historyDelay: () => (useFast() ? 100 : 180),
     saveDelay: () => (useFast() ? 150 : 650),
   }
 }

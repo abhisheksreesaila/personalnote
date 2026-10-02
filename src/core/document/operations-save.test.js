@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { fromFabric } from './fabric.js'
+import { fromFabric } from './legacy-fabric.js'
 import { readJsonCanvas, writeJsonCanvas } from './jsoncanvas.js'
 import { applyChanges, compactStacking, planOperation, stacking } from './operations.js'
 

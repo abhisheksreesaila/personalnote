@@ -1,27 +1,18 @@
-import { centerFromOrigin, isSimplePath, originFromCenter, pathBounds, shiftPath, transformedDimensions } from './geometry.js'
+import { centerFromOrigin, isSimplePath, pathBounds, shiftPath, transformedDimensions } from './geometry.js'
 import { paletteKeyFor } from './palette.js'
-import { DEFAULTS, DEFAULT_PAGE, DocumentError, SCHEMA_VERSION } from './schema.js'
-import { validateDocument } from './validate.js'
+import { DEFAULTS, DEFAULT_PAGE, SCHEMA_VERSION } from './schema.js'
 
-// Fabric JSON <-> document model. Pure functions over plain data; nothing here imports Fabric. This file and geometry.js own
-// every Fabric convention (origins, stroke-inclusive boxes, path offsets, group-centred child coordinates), so the model and
-// the engines that read it never see them.
+// Fabric JSON -> document model: the reader for notes saved by the old canvas engine (Fabric.js), before JSON Canvas became the stored
+// form (ADR 0002). It opens a note the server has not converted yet and reads a version 1 backup; the server does the same
+// conversion in Python (document_model.py, the same rules). Pure functions over plain data; nothing here imports Fabric. This file and
+// geometry.js own every Fabric convention (origins, stroke-inclusive boxes, path offsets, group-centred child coordinates), so the
+// model and the engine that draws it never see them.
 //
-// Fabric JSON is what the app saves today: canvas.toJSON() ({ version, objects: [...] }), plus the page state kept beside it.
-// fromFabric moves every property it understands into a typed model field and leaves the rest in `extras`.
-//
-// toFabric(fromFabric(x)) is RENDER-EQUIVALENT to x, and equal to x key for key except for these deliberate, geometric changes:
-//   - Placement is rewritten in Fabric's centre convention: originX/originY come back as 'center' and left/top as the box
-//     centre (an object whose width or height is not stored, such as an agent-written Textbox, keeps origin 'left'/'top').
-//     Angle, scale, flip and skew come back as stored, with Fabric's defaults filled in for the ones that were absent.
-//   - Ink paths and inkPoints are re-based on the object's box, so their numbers change by a translation (and by ~1e-13 of
-//     rounding). A path's width and height come back as Fabric would compute them from the path, not as the 4-decimal rounded
-//     values in the saved JSON.
-//   - Group children's left/top are re-derived from their model position (rounding only).
-// Everything else is exactly equal. Besides that, `arrowheads`, `colorKey` and `fillKey` are derived on the way in and ignored
-// on the way out; a content object without an `objects` array comes back with an empty one; and an ink colour is only split
-// into colour + alpha when it is `#rrggbb` followed by two lowercase hex digits (what the highlighter writes), any other
-// spelling staying whole.
+// Fabric JSON is what canvas.toJSON() wrote ({ version, objects: [...] }), plus the page state kept beside it. fromFabric moves
+// every property it understands into a typed model field and leaves the rest in `extras`. The model is written out as JSON Canvas
+// (jsoncanvas.js), never back as Fabric JSON. `arrowheads`, `colorKey` and `fillKey` are derived on the way in; a content object
+// without an `objects` array reads as an empty one; and an ink colour is only split into colour + alpha when it is `#rrggbb`
+// followed by two lowercase hex digits (what the highlighter wrote), any other spelling staying whole.
 
 const has = (object, key) => Object.hasOwn(object, key)
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -40,8 +31,6 @@ const FIELDS = {
   stroke: [['inkTool', 'tool'], ['strokeWidth', 'width'], ['globalCompositeOperation', 'blend'], ['strokeLineCap', 'cap'], ['strokeLineJoin', 'join']],
   dot: [['inkTool', 'tool'], ['radius', 'radius'], ['globalCompositeOperation', 'blend']],
 }
-const FABRIC_TYPE = { sticky: 'Sticky', rect: 'Rect', circle: 'Circle', stroke: 'Path', dot: 'Circle', image: 'Image', connector: 'Connector', group: 'Group' }
-const TEXT_TYPE = { point: 'IText', box: 'Textbox' }
 
 function setPath(target, path, value) {
   const keys = path.split('.')
@@ -50,7 +39,6 @@ function setPath(target, path, value) {
   for (const key of keys) node = node[key] ??= {}
   node[last] = value
 }
-const getPath = (source, path) => path.split('.').reduce((node, key) => (isObject(node) ? node[key] : undefined), source)
 
 // Moves each listed key out of `rest` into `target`.
 function take(rest, target, pairs) {
@@ -61,23 +49,11 @@ function take(rest, target, pairs) {
   }
 }
 
-// The reverse of take: model fields back into Fabric keys, skipping fields the model does not have.
-function put(source, out, pairs) {
-  for (const [fabricKey, path] of pairs) {
-    const value = getPath(source, path)
-    if (value !== undefined) out[fabricKey] = value
-  }
-}
-
 const HEX_WITH_ALPHA = /^(#[0-9a-fA-F]{6})([0-9a-f]{2})$/
 function splitColor(value) {
   const match = typeof value === 'string' ? HEX_WITH_ALPHA.exec(value) : null
   return match ? { color: match[1], alpha: Number.parseInt(match[2], 16) / 255 } : { color: value }
 }
-function joinColor(color, alpha) {
-  return alpha === undefined || typeof color !== 'string' ? color : `${color}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`
-}
-
 // Only objects whose placement fields are all well-formed are modelled; anything odd stays verbatim as `unknown`.
 const NUMERIC_PLACEMENT = ['left', 'top', 'width', 'height', 'angle', 'scaleX', 'scaleY', 'skewX', 'skewY', 'strokeWidth']
 function hasCleanPlacement(raw) {
@@ -105,12 +81,6 @@ function classify(raw) {
 const NO_STROKE_BY_DEFAULT = new Set(['Group', 'Image', 'Connector'])
 const strokeWidthOfRaw = (raw, type) => (isNumber(raw.strokeWidth) ? raw.strokeWidth : NO_STROKE_BY_DEFAULT.has(type) ? 0 : 1)
 
-// The model's own stroke width (it lives under a different name per type), with Fabric's default when the note had none.
-export function strokeWidthOfModel(object) {
-  const stored = object.type === 'shape' ? object.strokeWidth : object.type === 'ink' && object.kind === 'stroke' ? object.width : object.extras?.strokeWidth
-  return isNumber(stored) ? stored : ['group', 'image', 'connector'].includes(object.type) ? 0 : 1
-}
-
 const FLAT = { dx: 0, dy: 0 }
 
 // Fabric placement -> neutral geometry: the box's top-left in the parent frame, size, and rotation/scale/flip/skew about the
@@ -136,40 +106,6 @@ function geometryFromFabric(rest, frame, size, fabricType) {
   if (width !== undefined) ordered.width = width
   if (height !== undefined) ordered.height = height
   return Object.assign(ordered, geometry)
-}
-
-function geometryToFabric(object, frame, out) {
-  const geometry = object.geometry ?? {}
-  const rotation = geometry.rotation ?? 0
-  const scaleX = geometry.scaleX ?? 1
-  const scaleY = geometry.scaleY ?? 1
-  const skewX = geometry.skewX ?? 0
-  const skewY = geometry.skewY ?? 0
-  const { width, height } = geometry
-  const center = { x: (geometry.x ?? 0) + (width ?? 0) / 2 - frame.dx, y: (geometry.y ?? 0) + (height ?? 0) / 2 - frame.dy }
-  out.angle = rotation
-  out.scaleX = scaleX
-  out.scaleY = scaleY
-  out.flipX = geometry.flipX ?? false
-  out.flipY = geometry.flipY ?? false
-  out.skewX = skewX
-  out.skewY = skewY
-  if (width !== undefined) out.width = width
-  if (height !== undefined) out.height = height
-  if (width !== undefined && height !== undefined) {
-    out.originX = 'center'
-    out.originY = 'center'
-    out.left = center.x
-    out.top = center.y
-  } else {
-    // A size the engine measures itself (an agent-written Textbox has no height): place by the top-left, as it was written.
-    const dimensions = transformedDimensions({ width: width ?? 0, height: height ?? 0, strokeWidth: strokeWidthOfModel(object), strokeUniform: object.strokeUniform === true, scaleX, scaleY, skewX, skewY })
-    const point = originFromCenter({ ...center, originX: 'left', originY: 'top', angle: rotation, dimensions })
-    out.originX = 'left'
-    out.originY = 'top'
-    out.left = point.x
-    out.top = point.y
-  }
 }
 
 function shadowFromFabric(rest) {
@@ -256,84 +192,4 @@ export function fromFabric(content, pageState) {
   const objects = Array.isArray(source.objects) ? source.objects.map((raw, index) => objectFromFabric(raw, index)) : []
   const page = isObject(pageState) ? clone(pageState) : { ...DEFAULT_PAGE }
   return { schemaVersion: SCHEMA_VERSION, page, objects, extras }
-}
-
-function objectToFabric(object, resolveMedia, frame = FLAT) {
-  if (object.type === 'unknown') return clone(object.raw)
-  const out = clone(object.extras ?? {})
-  const source = object
-  if (object.id !== undefined) out.semanticId = object.id
-  geometryToFabric(object, frame, out)
-  if (object.opacity !== undefined) out.opacity = object.opacity
-  if (object.visible !== undefined) out.visible = object.visible
-  if (object.strokeUniform !== undefined) out.strokeUniform = object.strokeUniform
-  if (object.shadow !== undefined) out.shadow = { color: object.shadow.color, blur: object.shadow.blur, offsetX: object.shadow.x, offsetY: object.shadow.y, ...object.shadow.extras }
-
-  switch (object.type) {
-    case 'text':
-      out.type = TEXT_TYPE[object.mode]
-      put(source, out, FIELDS.text)
-      break
-    case 'sticky':
-      out.type = FABRIC_TYPE.sticky
-      put(source, out, FIELDS.sticky)
-      break
-    case 'shape':
-      out.type = FABRIC_TYPE[object.kind]
-      put(source, out, FIELDS[object.kind])
-      break
-    case 'connector':
-      out.type = FABRIC_TYPE.connector
-      put(source, out, FIELDS.connector)
-      break
-    case 'image': {
-      out.type = FABRIC_TYPE.image
-      const ref = object.mediaRef
-      if (ref.kind === 'inline') out.src = ref.dataUrl
-      else {
-        const resolved = resolveMedia ? resolveMedia(ref) : null
-        if (typeof resolved !== 'string') throw new DocumentError(`Picture ${JSON.stringify(ref.id)} is in the media library; pass resolveMedia to turn it into a data URL`)
-        out.src = resolved
-      }
-      break
-    }
-    case 'group': {
-      out.type = FABRIC_TYPE.group
-      const childFrame = { dx: (object.geometry?.width ?? 0) / 2, dy: (object.geometry?.height ?? 0) / 2 }
-      out.objects = orderedChildren(object.children).map((child) => objectToFabric(child, resolveMedia, childFrame))
-      break
-    }
-    default: { // ink
-      out.type = FABRIC_TYPE[object.kind]
-      out.isInk = true
-      put(source, out, FIELDS[object.kind])
-      const colorKey = object.kind === 'dot' ? 'fill' : 'stroke'
-      if (object.color !== undefined) out[colorKey] = joinColor(object.color, object.alpha)
-      const { x = 0, y = 0 } = object.geometry ?? {}
-      if (object.path !== undefined) out.path = shiftPath(object.path, x, y)
-      if (object.points !== undefined) out.inkPoints = object.points.map((point) => ({ ...point, x: point.x + x, y: point.y + y }))
-    }
-  }
-  return structuredClone(out)
-}
-
-function orderedChildren(objects) {
-  return objects.map((object, index) => [object, index]).sort(([a, i], [b, j]) => ((a.z ?? i) - (b.z ?? j)) || (i - j)).map(([object]) => object)
-}
-
-// Document -> Fabric content. `resolveMedia(ref)` turns a { kind: 'media', id } picture into a data URL.
-export function toFabric(doc, { resolveMedia } = {}) {
-  const { ok, errors } = validateDocument(doc, { requireIds: false, strict: false })
-  if (!ok) throw new DocumentError(`Not a valid document: ${errors.map((error) => `${error.path}: ${error.message}`).join('; ')}`, errors)
-  return toFabricUnchecked(doc, { resolveMedia })
-}
-
-// toFabric without the structural check, for a document this app just built itself (the browser's note loader). Separate so the
-// validator is not part of the browser bundle when nothing else uses it.
-export function toFabricUnchecked(doc, { resolveMedia } = {}) {
-  return { ...clone(doc.extras ?? {}), objects: orderedChildren(doc.objects).map((object) => objectToFabric(object, resolveMedia)) }
-}
-
-export function pageStateOf(doc) {
-  return clone(doc.page)
 }

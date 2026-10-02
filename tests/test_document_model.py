@@ -13,7 +13,6 @@ from services import NoteService
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "documents"
 WITHOUT_IDS = {"edge-ids", "edge-unknown", "benchmark-600"}
-PLACEMENT = {"left", "top", "width", "height", "angle", "scaleX", "scaleY", "flipX", "flipY", "skewX", "skewY", "originX", "originY", "path", "inkPoints"}
 
 # The JS build is the second implementation to compare with, and it also builds the seeded 600-object benchmark note (not stored).
 HAS_NODE = shutil.which("node") is not None
@@ -41,15 +40,6 @@ def of_type(doc, kind):
     return [obj for obj in doc["objects"] if obj["type"] == kind]
 
 
-def without_placement(value):
-    """Fabric JSON minus the properties the round trip re-derives (where things are); everything else must match exactly."""
-    if isinstance(value, list):
-        return [without_placement(item) for item in value]
-    if isinstance(value, dict):
-        return {key: without_placement(item) for key, item in value.items() if key not in PLACEMENT}
-    return value
-
-
 def approx_equal(a, b, tolerance=1e-9):
     """Equal, except that numbers may differ by libm rounding between JS and Python."""
     if isinstance(a, bool) or isinstance(b, bool):
@@ -63,40 +53,36 @@ def approx_equal(a, b, tolerance=1e-9):
     return a == b
 
 
-class RoundTripTests(unittest.TestCase):
-    def test_every_fixture_comes_back_with_everything_but_placement_unchanged(self):
+class LegacyReaderTests(unittest.TestCase):
+    """Notes saved by the old canvas engine (Fabric JSON) read into the model; the model is never written back as Fabric JSON."""
+
+    def test_every_fixture_reads_with_its_page_state_and_object_count(self):
         self.assertGreaterEqual(len(FIXTURES), 10)
         for fixture in FIXTURES:
             with self.subTest(fixture["name"]):
                 doc = dm.from_fabric(fixture["content"], fixture["pageState"])
-                back = dm.to_fabric(doc)
-                self.assertEqual(without_placement(back), without_placement(fixture["content"]))
-                self.assertEqual(len(back["objects"]), len(fixture["content"]["objects"]))
-                self.assertEqual(dm.page_state_of(doc), fixture["pageState"])
+                self.assertEqual(doc["page"], fixture["pageState"])
+                self.assertEqual(len(doc["objects"]), len(fixture["content"]["objects"]))
 
-    def test_converting_twice_changes_nothing_more(self):
+    def test_the_model_survives_json(self):
         for fixture in FIXTURES:
             with self.subTest(fixture["name"]):
-                once = dm.to_fabric(dm.from_fabric(fixture["content"], fixture["pageState"]))
-                twice = dm.to_fabric(dm.from_fabric(once, fixture["pageState"]))
-                self.assertTrue(approx_equal(once, twice, 1e-6))
-
-    def test_the_round_trip_survives_json(self):
-        for fixture in FIXTURES:
-            with self.subTest(fixture["name"]):
-                doc = json.loads(json.dumps(dm.from_fabric(fixture["content"], fixture["pageState"])))
-                self.assertEqual(without_placement(dm.to_fabric(doc)), without_placement(fixture["content"]))
+                doc = dm.from_fabric(fixture["content"], fixture["pageState"])
+                self.assertEqual(json.loads(json.dumps(doc)), doc)
 
     def test_explicit_null_properties_are_not_confused_with_absent_ones(self):
         content = {"objects": [{"type": "Rect", "stroke": None, "fill": None, "rx": 0, "semanticId": "a"}, {"type": "Rect", "semanticId": "b"}]}
-        self.assertEqual(without_placement(dm.to_fabric(dm.from_fabric(content))), without_placement(content))
+        first, second = dm.from_fabric(content)["objects"]
+        self.assertEqual((first["stroke"], first["fill"], first["cornerRadius"]), (None, None, 0))
+        self.assertNotIn("stroke", second)
+        self.assertNotIn("fill", second)
 
     def test_the_model_shares_nothing_with_its_input(self):
         fixture = BY_NAME["app-all-tools"]
         before = copy.deepcopy(fixture["content"])
         doc = dm.from_fabric(fixture["content"], fixture["pageState"])
         of_type(doc, "ink")[0]["points"][0]["x"] = -999
-        dm.to_fabric(doc)["objects"][0]["left"] = -1
+        of_type(doc, "text")[0]["extras"]["stroke"] = "mutated"
         self.assertEqual(fixture["content"], before)
 
     def test_unknown_objects_are_kept_verbatim(self):
@@ -124,28 +110,17 @@ class RoundTripTests(unittest.TestCase):
         self.assertEqual([dot["kind"] for dot in dots], ["dot"] * 3)
         self.assertEqual(dots[2]["color"], "#d0021b")
 
-    def test_colours_that_are_not_hex_with_alpha_are_not_rewritten(self):
-        for stroke in ("#20201E55", "rgba(1,2,3,0.5)", "red", "#223", "#2020aa"):
-            content = {"objects": [{"type": "Path", "isInk": True, "path": [["M", 0, 0]], "stroke": stroke, "semanticId": "a"}]}
-            self.assertEqual(without_placement(dm.to_fabric(dm.from_fabric(content))), without_placement(content), stroke)
+    def test_colours_that_are_not_hex_with_alpha_are_kept_whole(self):
+        for stroke in ("rgba(1,2,3,0.5)", "red", "#223", "#2020aa"):
+            [ink] = dm.from_fabric({"objects": [{"type": "Path", "isInk": True, "path": [["M", 0, 0]], "stroke": stroke, "semanticId": "a"}]})["objects"]
+            self.assertEqual(ink["color"], stroke)
+            self.assertNotIn("alpha", ink)
 
-    def test_media_library_pictures_need_a_resolver(self):
+    def test_a_media_library_picture_is_a_valid_document(self):
         doc = model_of("app-objects")
-        data_url = of_type(doc, "image")[0]["mediaRef"]["dataUrl"]
         stored = copy.deepcopy(doc)
         of_type(stored, "image")[0]["mediaRef"] = {"kind": "media", "id": "med_123"}
         self.assertTrue(dm.validate_document(stored)["ok"])
-        with self.assertRaisesRegex(dm.DocumentError, "med_123"):
-            dm.to_fabric(stored)
-        resolved = dm.to_fabric(stored, resolve_media=lambda ref: data_url if ref["id"] == "med_123" else None)
-        self.assertEqual(without_placement(resolved), without_placement(BY_NAME["app-objects"]["content"]))
-
-    def test_stacking_order_follows_z(self):
-        doc = model_of("app-text")
-        first, second = doc["objects"]
-        swapped = {**doc, "objects": [{**first, "z": 1}, {**second, "z": 0}]}
-        out = dm.to_fabric(swapped)
-        self.assertEqual([obj["semanticId"] for obj in out["objects"]], [second["id"], first["id"]])
 
 
 class ValidationTests(unittest.TestCase):
@@ -196,9 +171,7 @@ class ValidationTests(unittest.TestCase):
         ]:
             self.assertIn(line, messages)
 
-    def test_to_fabric_refuses_an_invalid_document(self):
-        with self.assertRaises(dm.DocumentError):
-            dm.to_fabric({"schemaVersion": 1, "page": {"columns": 1, "rows": 1}, "objects": [{"type": "sparkle", "z": 0}]})
+    def test_a_wrong_schema_version_and_a_non_document_are_rejected(self):
         self.assertFalse(dm.validate_document({"schemaVersion": 99, "page": {"columns": 1, "rows": 1}, "objects": []})["ok"])
         self.assertFalse(dm.validate_document(None)["ok"])
 
@@ -293,13 +266,12 @@ class GeometryTests(unittest.TestCase):
         [rect] = dm.from_fabric(content)["objects"]
         self.assertEqual((rect["opacity"], rect["visible"], rect["strokeUniform"]), (0.5, False, True))
         self.assertEqual(rect["shadow"], {"color": "rgba(0,0,0,.3)", "blur": 8, "x": 2, "y": 4, "extras": {"affectStroke": False, "nonScaling": False}})
-        self.assertEqual(dm.to_fabric(dm.from_fabric(content))["objects"][0]["shadow"], shadow)
 
     def test_malformed_placement_is_kept_verbatim_as_unknown(self):
         content = {"objects": [{"type": "Textbox", "text": "x", "top": "300", "left": 5}, {"type": "Rect", "angle": "turn"}, {"type": "Path", "isInk": True, "path": [["A", 1, 1, 0, 0, 0, 5, 5]]}]}
         doc = dm.from_fabric(content)
         self.assertEqual([obj["type"] for obj in doc["objects"]], ["unknown"] * 3)
-        self.assertEqual(dm.to_fabric(doc), content)
+        self.assertEqual([obj["raw"] for obj in doc["objects"]], content["objects"])
 
     def test_a_trailing_newline_does_not_make_a_colour_look_like_hex_with_alpha(self):
         content = {"objects": [{"type": "Path", "isInk": True, "path": [["M", 0, 0]], "stroke": "#20201e55\n", "semanticId": "a"}]}
@@ -309,7 +281,7 @@ class GeometryTests(unittest.TestCase):
 
 
 class JavaScriptParityTests(unittest.TestCase):
-    """The JS build is the reference: same model, same validation messages, same Fabric output, on every fixture."""
+    """The JS build is the reference: same model, same validation messages, on every fixture."""
 
     def setUp(self):
         if not HAS_NODE:
@@ -328,11 +300,6 @@ class JavaScriptParityTests(unittest.TestCase):
                 self.assertEqual(dm.validate_document(doc), js["validation"])
                 self.assertEqual(dm.validate_document(doc, require_ids=False), js["validationWithoutIds"])
 
-    def test_to_fabric_gives_the_same_output(self):
-        for name, js in JS_DUMP["fixtures"].items():
-            with self.subTest(name):
-                self.assertTrue(approx_equal(dm.to_fabric(model_of(name)), js["fabric"]))
-
     def test_invalid_documents_get_identical_errors_in_both(self):
         invalid = json.loads((ROOT / "tests" / "fixtures" / "invalid-documents.json").read_text())
         self.assertEqual([entry["name"] for entry in invalid], [entry["name"] for entry in JS_DUMP["invalid"]])
@@ -341,12 +308,6 @@ class JavaScriptParityTests(unittest.TestCase):
                 document = entry["document"]
                 self.assertEqual(dm.validate_document(document), js["validation"])
                 self.assertEqual(dm.validate_document(document, require_ids=False, strict=False), js["structural"])
-                try:
-                    dm.to_fabric(document)
-                    error = None
-                except dm.DocumentError as exc:
-                    error = str(exc)
-                self.assertEqual(error, js["fabricError"])
 
 
 if __name__ == "__main__":

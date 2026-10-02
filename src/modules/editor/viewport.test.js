@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   clampView,
-  lerpExtents,
   parseBoxShadow,
   pageExtents,
   shadowBands,
@@ -64,14 +63,6 @@ test('prepending a page shifts the old extents by exactly that page', () => {
   assert.deepEqual(shiftExtents(old, 860, 0), { left: 860, top: 0, right: 1720, bottom: 1080 })
 })
 
-test('extent animation interpolates both edges and lands exactly on the target', () => {
-  const from = { left: 860, top: 0, right: 1720, bottom: 1080 }
-  const to = pageExtents(2, 1, 860, 1080)
-  assert.deepEqual(lerpExtents(from, to, 0), from)
-  assert.deepEqual(lerpExtents(from, to, 1), to)
-  assert.equal(lerpExtents(from, to, 0.5).left, 430)
-})
-
 test('a CSS box-shadow token is parsed into canvas shadow layers', () => {
   assert.deepEqual(
     parseBoxShadow('0 1px 2px rgba(0, 0, 30, .05), 0 16px 40px -16px rgba(0, 0, 60, .22)'),
@@ -99,8 +90,4 @@ test('shadow bands stack from the outside in and reach the full shadow strength'
 
 test('an unblurred shadow is one solid band', () => {
   assert.deepEqual(shadowBands({ blur: 0, spread: 2, alpha: 0.5 }), [{ grow: 2, alpha: 0.5 }])
-})
-
-test('the legacy (Fabric) clamp still centres a page that fits', () => {
-  assert.equal(clampView({ x: 300, y: 104 }, { ...desktop, contentW: 860, contentH: 1080, scale: 1, legacy: true }).x, (1400 - 860) / 2)
 })

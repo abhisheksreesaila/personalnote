@@ -1,5 +1,5 @@
-// Pure geometry for the window-sized canvas. The Fabric canvas is always as big
-// as the workspace; these helpers decide where the page grid sits inside it.
+// Pure geometry for the window-sized canvas. The view is always as big as the workspace; these helpers decide where the page grid
+// sits inside it.
 
 export function viewMargins(windowWidth) {
   if (windowWidth <= 560) return { left: 12, right: 12, top: 88, bottom: 96 }
@@ -12,13 +12,9 @@ export function viewMargins(windowWidth) {
 // pannable from its leading margin to its trailing margin; one that fits may sit anywhere between the two margins.
 // `previous` is where the view was a moment ago: when pages were added on the top or left the view followed the content, which can leave it
 // outside the range. It then stays where it is (nothing snaps) and may only move back toward the range, never further out.
-function clampAxis(offset, viewSize, contentSize, before, after, keep, previous, legacy) {
+function clampAxis(offset, viewSize, contentSize, before, after, keep, previous) {
   if (keep) return offset
   const far = viewSize - after - contentSize
-  if (legacy) { // the Fabric engine: a page that fits is centred (or pinned to the leading margin)
-    if (contentSize + before + after <= viewSize) return before === after ? (viewSize - contentSize) / 2 : before
-    return Math.min(before, Math.max(far, offset))
-  }
   let low = Math.min(before, far)
   let high = Math.max(before, far)
   if (Number.isFinite(previous)) { low = Math.min(low, previous); high = Math.max(high, previous) }
@@ -26,10 +22,10 @@ function clampAxis(offset, viewSize, contentSize, before, after, keep, previous,
 }
 
 // `keep` skips the clamp so page growth never moves what is on screen.
-export function clampView(view, { viewW, viewH, contentW, contentH, scale, margins, keep = false, previous = null, legacy = false }) {
+export function clampView(view, { viewW, viewH, contentW, contentH, scale, margins, keep = false, previous = null }) {
   return {
-    x: clampAxis(view.x, viewW, contentW * scale, margins.left, margins.right, keep, previous?.x, legacy),
-    y: clampAxis(view.y, viewH, contentH * scale, margins.top, margins.bottom, keep, previous?.y, legacy),
+    x: clampAxis(view.x, viewW, contentW * scale, margins.left, margins.right, keep, previous?.x),
+    y: clampAxis(view.y, viewH, contentH * scale, margins.top, margins.bottom, keep, previous?.y),
   }
 }
 
@@ -50,23 +46,6 @@ export function shiftExtents(extents, dx, dy) {
     right: extents.right + dx,
     bottom: extents.bottom + dy,
   }
-}
-
-export function lerpExtents(from, to, t) {
-  if (t <= 0) return { ...from }
-  if (t >= 1) return { ...to }
-  const mix = (a, b) => a + (b - a) * t
-  return {
-    left: mix(from.left, to.left),
-    top: mix(from.top, to.top),
-    right: mix(from.right, to.right),
-    bottom: mix(from.bottom, to.bottom),
-  }
-}
-
-export function easeInOut(progress) {
-  const t = Math.min(1, Math.max(0, progress))
-  return t * t * (3 - 2 * t)
 }
 
 export function wheelPanDelta(event) {

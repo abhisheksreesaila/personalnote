@@ -1,8 +1,8 @@
 // What is drawn over (or under) the note while it is edited, none of it part of the note (F-032): the ghost of the page that would be added,
 // the halo of a selected connector, the connect tool's outlines and draft arrow, and the layer a dragged object moves in. Leafer is
 // imported here, in scene.js and in editing.js and nowhere else. The ghost sits with the page furniture (screen space, under the objects,
-// like the Fabric path's before:render pass); everything else lives in the sky layer, in page space with the same view transform as the
-// note, with strokes sized in screen pixels (divided by the zoom, as the Fabric path does).
+// like the former Fabric engine's before:render pass); everything else lives in the sky layer, in page space with the same view transform as the
+// note, with strokes sized in screen pixels (divided by the zoom, as the former Fabric engine does).
 import { Ellipse, Group, Path, Rect, Text } from 'leafer-ui'
 import { arrowPathFrom } from './connectors.js'
 

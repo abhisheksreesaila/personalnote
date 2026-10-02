@@ -22,7 +22,7 @@ const moved = (bounds, dx, dy) => ({ left: bounds.left + dx, top: bounds.top + d
 
 // The grid the content needs. `bounds` is { left, top, right, bottom } of everything (connectors left out) or null for an empty note.
 // Returns the new grid and the distance every object must move because pages were added on the top or left (positive) or folded away
-// there (negative). Unlike a single reconcile on the Fabric path, a note that was emptied by several pages folds back all the way.
+// there (negative). Unlike a single reconcile on the former Fabric engine, a note that was emptied by several pages folds back all the way.
 export function settlePages(pages, bounds, { pageW = PAGE.width, pageH = PAGE.height } = {}) {
   if (!bounds) return { columns: 1, rows: 1, shiftX: 0, shiftY: 0 }
   let { columns, rows } = pages

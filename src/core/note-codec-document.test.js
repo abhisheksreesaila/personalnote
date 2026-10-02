@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { fromFabric } from './document/fabric.js'
+import { fromFabric } from './document/legacy-fabric.js'
 import { compactStacking, planOperation, applyChanges } from './document/operations.js'
 import { decodeNoteDocument, encodeDocument, forgetMedia } from './note-codec.js'
 
