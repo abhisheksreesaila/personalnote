@@ -408,7 +408,7 @@
     .app-shell .tool-dock::-webkit-scrollbar { display: none; }
     .app-shell .tool-dock .tool-button { width: 44px; height: 44px; flex-basis: 44px; }
     .app-shell .tool-dock [data-tool="hand"] { order: -1; }
-    .app-shell .tool-dock .ink-options-trigger { width: 32px; height: 32px; flex-basis: 32px; }
+    .app-shell .tool-dock .ink-options-trigger { width: 40px; height: 40px; flex-basis: 40px; }
     .app-shell .voice-button { flex-basis: 46px; width: 46px; height: 46px; }
     .app-shell .ink-options-popover { bottom: 84px; width: min(266px, calc(100vw - 24px)); }
     .app-shell .voice-caption { left: 12px; right: auto; bottom: 84px; max-width: calc(100vw - 24px); transform: none; }

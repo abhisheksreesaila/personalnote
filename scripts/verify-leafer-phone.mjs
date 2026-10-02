@@ -206,6 +206,79 @@ try {
       await page.evaluate(() => window.__personalNote.leaferCanvas().finishTextEdit())
       check(`${tag}: the text holds what was typed`, (await live(page)).objects.some((o) => o.type === 'text' && o.content === 'phone text'), JSON.stringify([spot2, (await live(page)).objects.filter((o) => o.type === 'text').map((o) => o.content)]))
     }
+
+    // ---- ink by finger, then the pen with a finger panning (palm rejection)
+    {
+      await page.evaluate(() => { const n = window.__personalNote; n.leaferCanvas().clearSelection(); n.state.canvasZoom = 1; n.setCanvasViewportOffset(20, 110); n.setTool('pen') })
+      await page.waitForTimeout(150)
+      const inks = async () => (await live(page)).objects.filter((o) => o.type === 'ink').length
+      const inkBefore = await inks()
+      const start = await bareSpot(page, 20)
+      const stroke = (d) => [0, 1, 2, 3, 4, 5].map((i) => ({ x: start.x + i * 8 * d, y: start.y + Math.sin(i) * 6 }))
+      const draw = async (device, points) => { await device.down(points[0]); for (const q of points.slice(1)) { await device.move(q); await nextFrame(page) } await device.up(points.at(-1)); await nextFrame(page); await page.waitForTimeout(80) }
+      await draw(touch, stroke(1))
+      check(`${tag}: before a pen is used, a finger draws`, (await inks()) === inkBefore + 1, `${inkBefore} -> ${await inks()}`)
+      const p = pen(cdp)
+      await draw({ down: p.down, move: p.move, up: p.up }, stroke(-1))
+      check(`${tag}: the pen draws`, (await inks()) === inkBefore + 2, `${inkBefore} -> ${await inks()}`)
+      const v0 = await view(page)
+      await draw(touch, stroke(1))
+      check(`${tag}: once a pen has been used a finger draws nothing`, (await inks()) === inkBefore + 2, `${inkBefore} -> ${await inks()}`)
+      // a finger drag pans while the pen tool is on (the view has room: zoom in)
+      await page.evaluate(() => { const n = window.__personalNote; n.state.canvasZoom = 2; n.setCanvasViewportOffset(-300, -300) })
+      await page.waitForTimeout(150)
+      const v1 = await view(page)
+      await drag(page, touch, { x: width / 2, y: height / 2 }, { x: width / 2 - 40, y: height / 2 - 30 })
+      const v2 = await view(page)
+      check(`${tag}: a finger pans the view while the pen tool is on and a pen is in use`, Math.abs(v2.x - v1.x) + Math.abs(v2.y - v1.y) > 20 && (await inks()) === inkBefore + 2, JSON.stringify([v1.x, v1.y, v2.x, v2.y]))
+      // the pen draws while a finger is down on the paper (a resting hand)
+      await touch.down({ x: 60, y: height - 260 })
+      await draw({ down: p.down, move: p.move, up: p.up }, stroke(1).map((q) => ({ x: q.x, y: q.y + 20 })))
+      await touch.up()
+      check(`${tag}: the pen draws while a finger rests on the screen`, (await inks()) === inkBefore + 3, `${inkBefore} -> ${await inks()}`)
+      void v0
+      await page.evaluate(() => window.__personalNote.setTool('select'))
+    }
+
+    // ---- the keyboard: the editor stays above it
+    {
+      await page.evaluate(() => { const n = window.__personalNote; n.leaferCanvas().clearSelection(); n.state.canvasZoom = 1.2; n.setCanvasViewportOffset(20, 40); n.setTool('text') })
+      await page.waitForTimeout(150)
+      const low = await page.evaluate(() => { const r = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: 60, y: Math.round(innerHeight * 0.72) + r.top * 0 } })
+      await tap(page, touch, low)
+      await page.waitForSelector('.leafer-text-editor')
+      await page.keyboard.type('line one')
+      // the on-screen keyboard takes the lower half of the window
+      await page.setViewportSize({ width, height: Math.round(height * 0.5) })
+      await page.waitForTimeout(500)
+      const area = await page.evaluate(() => { const r = document.querySelector('.leafer-text-editor').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, vh: window.visualViewport.height + window.visualViewport.offsetTop } })
+      check(`${tag}: the text being typed stays above the on-screen keyboard`, area.bottom <= area.vh - 4 && area.top >= 0, JSON.stringify(area))
+      await page.setViewportSize({ width, height })
+      await page.waitForTimeout(300)
+      await page.evaluate(() => window.__personalNote.leaferCanvas().finishTextEdit())
+      await page.evaluate(() => window.__personalNote.setTool('select'))
+    }
+
+    // ---- the controls
+    {
+      const boxes = await page.evaluate(() => [...document.querySelectorAll('.tool-dock .tool-button, .tool-dock .voice-button, .mobile-capture-controls button')].filter((b) => b.offsetParent && getComputedStyle(b).visibility !== 'hidden').map((b) => { const r = b.getBoundingClientRect(); return { id: b.id || b.dataset.tool || b.className, x: r.left, y: r.top, w: r.width, h: r.height } }))
+      const inside = boxes.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= width + 0.5 && b.y + b.h <= height + 0.5)
+      const big = boxes.filter((b) => b.w < 38 || b.h < 38)
+      check(`${tag}: every visible dock and phone button is on screen`, inside && boxes.length > 3, JSON.stringify(boxes.filter((b) => b.x < 0 || b.x + b.w > width)))
+      check(`${tag}: and big enough for a finger (38 px or more)`, big.length === 0, JSON.stringify(big))
+      if (width <= 560) {
+        await page.evaluate(() => window.__personalNote.setTool('text'))
+        await page.tap('#mobile-select')
+        check(`${tag}: the phone Select button turns the Select tool on`, (await page.evaluate(() => window.__personalNote.state.tool)) === 'select' && (await page.getAttribute('#mobile-select', 'aria-pressed')) === 'true', JSON.stringify([await page.evaluate(() => window.__personalNote.state.tool), await page.getAttribute('#mobile-select', 'aria-pressed')]))
+        await page.tap('#mobile-sticky')
+        check(`${tag}: the phone Sticky button turns the Sticky tool on`, (await page.evaluate(() => window.__personalNote.state.tool)) === 'sticky')
+        await page.tap('#mobile-sticky')
+      }
+      const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+      let collide = []
+      for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) if (overlap(boxes[i], boxes[j])) collide.push([boxes[i].id, boxes[j].id])
+      check(`${tag}: no two buttons overlap`, collide.length === 0, JSON.stringify(collide))
+    }
     await page.screenshot({ path: `${SHOTS}/${tag}-after.png` })
 
     await context.close()

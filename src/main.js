@@ -4804,6 +4804,26 @@ const repaintPageColors = () => {
 new MutationObserver(repaintPageColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-skin'] })
 window.matchMedia('(prefers-contrast: more)').addEventListener('change', repaintPageColors)
 window.addEventListener('resize', handleWorkspaceResize)
+
+// F-035: the on-screen keyboard takes the lower part of the window (visualViewport shrinks, or the window does). The text being typed stays
+// in the part still showing: the view moves up just far enough, never pushing the first line under the top bar.
+let keyboardTimer = 0
+function keepEditorAboveKeyboard() {
+  clearTimeout(keyboardTimer)
+  keyboardTimer = setTimeout(() => {
+    const area = useLeafer && leaferCanvas.isEditingText() ? document.querySelector('.leafer-text-editor') : null
+    if (!area) return
+    const vv = window.visualViewport
+    const rect = area.getBoundingClientRect()
+    const delta = Math.min(rect.bottom - ((vv ? vv.offsetTop + vv.height : window.innerHeight) - 16), rect.top - ((vv ? vv.offsetTop : 0) + 70))
+    if (delta > 0) setCanvasViewportOffset(viewportOffsetX, viewportOffsetY - delta, true)
+  }, 120)
+}
+window.visualViewport?.addEventListener('resize', keepEditorAboveKeyboard)
+window.visualViewport?.addEventListener('scroll', keepEditorAboveKeyboard)
+window.addEventListener('resize', keepEditorAboveKeyboard)
+document.addEventListener('input', (event) => { if (event.target?.classList?.contains('leafer-text-editor')) keepEditorAboveKeyboard() }, true)
+document.addEventListener('focusin', (event) => { if (event.target?.classList?.contains('leafer-text-editor')) keepEditorAboveKeyboard() })
 if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResize).observe(elements.workspace)
 setupVoiceInput()
 setupToolOptionGestures()
