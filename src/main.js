@@ -2228,6 +2228,10 @@ async function settleOutgoingNote() {
 }
 
 // Leafer mode undo/redo (F-030): the history lives in modules/canvas-leafer/edits.js; this puts each new document on screen and saves it.
+// The stored form is made when a save asks for it (a held arrow key makes many edits for one save).
+function leaferSourceOf(noteId, doc) {
+  return { noteId, editedDoc: doc, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
+}
 const leaferEdits = createLeaferEdits({
   onChange(doc, { page, selection }) {
     if (leaferSource.noteId !== state.activeNoteId) return
@@ -2238,8 +2242,7 @@ const leaferEdits = createLeaferEdits({
       leaferCanvas.load(doc)
       leaferCanvas.select(selection)
     }
-    // The stored form is made when a save asks for it (a held arrow key makes many edits for one save).
-    leaferSource = { noteId: leaferSource.noteId, editedDoc: doc, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
+    leaferSource = leaferSourceOf(leaferSource.noteId, doc)
     queueSave()
   },
 })
@@ -2280,7 +2283,11 @@ function mountLeaferCanvas() {
   leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options), onDelete: (ids) => { leaferEdits.deleteObjects(ids); return leaferEdits.doc },
     onBegin: (label) => leaferEdits.begin(label),
     onEnd: () => leaferEdits.end(),
-    onTextEvent: (type) => { if (type === 'escape') setTool('select') },
+    onTextEvent: (type) => {
+      if (type === 'escape') setTool('select')
+      // An agent wrote while words were being typed: its note was held back; it is merged in now that the words are in the document.
+      if (type === 'end' && remoteWhileTyping) setTimeout(() => agentSync?.syncActiveNote().catch(console.error), 0)
+    },
     // What a new text and a new sticky look like: the Fabric path's defaults (addText, stickyDefaults), in the model's words.
     defaults: {
       text: () => ({ fontFamily: canvasFontFamily(state.fontFamily), fontSize: getInputFontSize(), color: state.color }),
@@ -2295,7 +2302,16 @@ function mountLeaferCanvas() {
   const pill = document.createElement('div')
   pill.className = 'engine-pill'
   pill.setAttribute('role', 'status')
-  pill.textContent = 'Preview: select and arrange'
+  pill.textContent = 'Preview: select, arrange, text and notes'
+  // Not on the new canvas yet: say so on the controls instead of leaving them dead.
+  for (const id of ['prettify', 'voice-button', 'mobile-speak']) {
+    const button = document.getElementById(id)
+    if (!button) continue
+    button.disabled = true
+    button.setAttribute('aria-disabled', 'true')
+    button.title = `${button.getAttribute('aria-label') || button.title} (not available yet on the new canvas)`
+    button.dataset.leaferDisabled = 'true'
+  }
   document.body.append(pill)
 }
 mountLeaferCanvas()
@@ -2454,9 +2470,36 @@ async function applyRemoteNote(note) {
 }
 
 // Unsaved local edits win: add only the objects an agent appended, then save on top of the newer revision.
+let remoteWhileTyping = false
+// Leafer: the same rule for the document model. The local document stays as it is (its typed words included); objects the agent
+// appended are added on top; then the note is saved on the agent's revision.
+async function mergeLeaferAppends(note) {
+  const decoded = await decodeNoteDocument(note)
+  if (note.id !== state.activeNoteId) return 0
+  const local = leaferEdits.doc
+  const known = new Set([...syncedIds, ...local.objects.map((object) => object.id)])
+  let top = local.objects.reduce((most, object, index) => Math.max(most, (object.z ?? index) + 1), 0)
+  const appended = decoded.doc.objects.filter((object) => object.id && !known.has(object.id)).map((object) => ({ ...object, z: top++ }))
+  const summary = state.notes.find((item) => item.id === note.id)
+  if (summary) summary.revision = note.revision
+  syncedIds = canvasObjectIds(note.content)
+  if (appended.length) {
+    const merged = { ...local, objects: [...local.objects, ...appended] }
+    const shown = leaferCanvas.showDocument(merged, { resolveMedia: decoded.resolveMedia })
+    leaferEdits.remote(note.id, shown)
+    leaferCanvas.adopt(leaferEdits.doc)
+    leaferSource = leaferSourceOf(note.id, leaferEdits.doc)
+  }
+  queueSave()
+  return appended.length
+}
 async function mergeRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
   if (useLeafer) {
+    // Words are being typed: the agent's note waits (drawing it now would replace the document under the typing). It is merged in
+    // when the session ends, in onTextEvent below.
+    if (leaferCanvas.isEditingText()) { remoteWhileTyping = true; return 0 }
+    if (remoteWhileTyping) { remoteWhileTyping = false; return mergeLeaferAppends(note) }
     // Only the title can be unsaved here: draw the agent's newer content and save the title on top of the new revision.
     const added = [...canvasObjectIds(note.content)].filter((id) => !syncedIds.has(id)).length
     if (!(await showLeaferNote(note, { openView: false }))) return 0
@@ -4507,5 +4550,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { selectNote, canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()

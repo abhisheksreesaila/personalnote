@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { applyChanges } from '../../core/document/operations.js'
 import { applyMatrix, placementMatrix } from './placement.js'
-import { fitGeometry, newSticky, newText, nextZ, objectAt, planSetContent, planSetStyle } from './text-ops.js'
+import { fitGeometry, newSticky, newText, nextZ, objectAt, planSetContent, planSetStyle, toLocal } from './text-ops.js'
 
 const box = { x: 100, y: 50, width: 240, height: 200, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const doc = () => ({
@@ -66,14 +66,14 @@ test('a content-fitted size keeps the top-left corner where it was, turned or no
   }
 })
 
-test('size rules: a point text is as big as its words, a box text as tall as its lines, a sticky grows but never below its minimum or its own height', () => {
+test('size rules: a point text is as big as its words, a box text as tall as its lines, a sticky is as tall as its words need, never below its minimum', () => {
   const point = fitGeometry({ type: 'text', mode: 'point', geometry: box }, { width: 77, height: 30 })
   assert.deepEqual([point.width, point.height], [77, 30])
   const wide = fitGeometry({ type: 'text', mode: 'box', geometry: box }, { width: 999, height: 44 })
   assert.deepEqual([wide.width, wide.height], [240, 44])
   assert.equal(fitGeometry({ type: 'sticky', geometry: box }, { width: 196, height: 40 }).height, 200)
   assert.equal(fitGeometry({ type: 'sticky', geometry: box }, { width: 196, height: 300 }).height, 344)
-  assert.equal(fitGeometry({ type: 'sticky', geometry: { ...box, height: 500 } }, { width: 196, height: 100 }).height, 500)
+  assert.equal(fitGeometry({ type: 'sticky', geometry: { ...box, height: 500 } }, { width: 196, height: 100 }).height, 200) // it shrinks back, as the Fabric sticky does
 })
 
 test('objectAt finds the topmost editable text or sticky under a page point, through a turn', () => {
@@ -86,4 +86,11 @@ test('objectAt finds the topmost editable text or sticky under a page point, thr
   d.objects[1].geometry = { ...d.objects[1].geometry, rotation: 90 } // centre (620,150): the box is now 200 wide and 240 tall around it
   assert.equal(objectAt(d, sizes, { x: 620, y: 40 })?.id, 's')
   assert.equal(objectAt(d, sizes, { x: 740, y: 150 }), null)
+})
+
+test('toLocal is the inverse of the placement, turned or not', () => {
+  const g = { ...box, rotation: 30 }
+  const p = applyMatrix(placementMatrix(g), { x: 40, y: 25 })
+  const local = toLocal(g, { width: g.width, height: g.height }, p)
+  assert.ok(Math.abs(local.x - 40) < 1e-9 && Math.abs(local.y - 25) < 1e-9)
 })

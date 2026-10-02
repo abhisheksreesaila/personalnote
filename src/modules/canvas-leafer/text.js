@@ -20,6 +20,47 @@ function cssBaseline(font) {
 }
 
 const IME_KEY = 229
+const CARET_SCAN_LIMIT = 6000
+
+// The character gap nearest a point in the field's own frame (px from its top-left, before the turn and zoom), found on a mirror that
+// breaks lines exactly as the field does. The end of the words when there are too many to scan.
+function indexAtPoint(area, x, y) {
+  const value = area.value
+  if (!value || value.length > CARET_SCAN_LIMIT) return value.length
+  const style = getComputedStyle(area)
+  const mirror = document.createElement('div')
+  Object.assign(mirror.style, { position: 'absolute', left: '-9999px', top: '0', width: style.width, font: style.font, letterSpacing: style.letterSpacing, whiteSpace: style.whiteSpace, overflowWrap: style.overflowWrap, wordBreak: style.wordBreak, textAlign: style.textAlign, lineHeight: style.lineHeight, tabSize: style.tabSize })
+  mirror.textContent = value
+  document.body.append(mirror)
+  const origin = mirror.getBoundingClientRect()
+  const text = mirror.firstChild
+  const lineHeight = Number.parseFloat(style.lineHeight) || 1
+  let best = value.length
+  let bestDistance = Infinity
+  let lineEnd = null
+  const range = document.createRange()
+  for (let i = 0; i < value.length; i += 1) {
+    range.setStart(text, i)
+    range.setEnd(text, i + 1)
+    const rect = range.getClientRects()[0]
+    if (!rect) continue
+    const top = rect.top - origin.top
+    const inLine = y >= top - 0.5 && y < top + lineHeight - 0.5
+    const left = rect.left - origin.left
+    const right = rect.right - origin.left
+    if (inLine) {
+      lineEnd = i + 1
+      const gap = x < left + (right - left) / 2 ? i : i + 1
+      const distance = Math.abs((gap === i ? left : right) - x)
+      if (distance < bestDistance) { best = gap; bestDistance = distance }
+    }
+  }
+  if (bestDistance === Infinity) best = y < 0 ? 0 : lineEnd ?? value.length
+  mirror.remove()
+  // a click past the end of a line that ends in a newline lands before the newline, not after it
+  if (value[best - 1] === '\n' && best === lineEnd) best -= 1
+  return best
+}
 
 export function createTextOverlay({ host }) {
   let area = null
@@ -93,10 +134,11 @@ export function createTextOverlay({ host }) {
     get isOpen() { return Boolean(area) },
     get element() { return area },
     get value() { return area?.value ?? '' },
+    get composing() { return composing },
     // value: the words so far. font: { family, size, weight, italic, lineHeight (px), letterSpacing (px), align, color, decoration, baseline (px, where
     // the host draws the first baseline below the text's top) }. wrap: false for a text as wide as its words; width: the wrapping width.
-    // matrix: the text's own frame -> pixels from the host's top-left. Callbacks: onInput({ width, height }), onCommit(value), onEscape().
-    open({ value, font, wrap, width, matrix, onInput = () => {}, onCommit, onEscape }) {
+    // matrix: the text's own frame -> pixels from the host's top-left. caret: { x, y } in that frame, where to put the caret. Callbacks: onInput({ width, height }), onCommit(value), onEscape().
+    open({ value, font, wrap, width, matrix, caret = null, onInput = () => {}, onCommit, onEscape }) {
       if (area) finish(true)
       area = document.createElement('textarea')
       area.className = 'leafer-text-editor'
@@ -125,7 +167,9 @@ export function createTextOverlay({ host }) {
       area.addEventListener('blur', onBlur)
       window.addEventListener('pointerdown', outside, true)
       area.focus({ preventScroll: true })
-      area.setSelectionRange(area.value.length, area.value.length)
+      // The caret goes where the person pointed (in the text's own frame), else to the end of the words.
+      const at = caret ? indexAtPoint(area, caret.x, caret.y - shift) : area.value.length
+      area.setSelectionRange(at, at)
       onInput(fit())
     },
     // The text moved on screen (the view moved, the window changed size): put the overlay back over it.

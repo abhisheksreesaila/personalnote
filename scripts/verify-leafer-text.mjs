@@ -8,7 +8,7 @@
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
-import { readJsonCanvas } from '../src/core/document/jsoncanvas.js'
+import { readJsonCanvas, writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
 
 const PORT = 4760
 const SHOTS = process.env.SHOTS || '/var/tmp/f029'
@@ -30,6 +30,19 @@ fixture.content.objects.push(
 )
 let stored = { content: fixture.content, pageState: fixture.pageState, revision: 1 }
 const puts = []
+const puts2 = []
+let enforceRevision = false // a stale save is refused, as the real server does
+let changeSeq = 1
+const changeLog = []
+const agentWrite = () => { // an agent appends a text block to the note (the server canonicalizes it, so it carries `pn`)
+  const doc = readJsonCanvas(stored.content)
+  const g = { x: 600, y: 940, width: 200, height: 60, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
+  doc.objects.push({ id: 'agent_node_1', type: 'text', mode: 'box', z: doc.objects.length + 50, content: 'agent was here', geometry: g })
+  stored.content = writeJsonCanvas(doc, { derived: 'omit' })
+  stored.revision += 1
+  changeSeq += 1
+  changeLog.push({ sequence: changeSeq, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: stored.revision })
+}
 
 const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4769' } }, logLevel: 'error' })
 await server.listen()
@@ -42,10 +55,15 @@ async function mock(page) {
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     const summary = { id: 1, resourceId: 'r1', revision: stored.revision, noteType: 'canvas', title: 'Text', notebookId: 1, createdAt: now, updatedAt: now }
     if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'N', color: '#76669a', noteCount: 1 }])
-    if (p === '/notes' && req.method() === 'GET') return json([summary])
+    const second = { ...summary, id: 2, resourceId: 'r2', title: 'Other', revision: 1 }
+    if (p === '/notes' && req.method() === 'GET') return json([summary, second])
+    if (p === '/notes/2' && req.method() === 'GET') return json({ ...second, content: { version: '7.4.0', objects: [] }, pageState: { columns: 1, rows: 1 } })
+    if (p === '/notes/2' && req.method() === 'PUT') { puts2.push(JSON.parse(req.postData())); return json({ revision: 2, resourceId: 'r2' }) }
+    if (p === '/changes') { const since = Number(new URL(req.url()).searchParams.get('since') ?? changeSeq); return json({ sequence: changeSeq, changes: changeLog.filter((c) => c.sequence > since), agents: [] }) }
     if (p === '/notes/1' && req.method() === 'GET') return json({ ...summary, content: stored.content, pageState: stored.pageState })
     if (p === '/notes/1' && req.method() === 'PUT') {
       const body = JSON.parse(req.postData())
+      if (enforceRevision && body.revision !== stored.revision) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'revision conflict' }) })
       puts.push(body)
       stored = { content: body.content, pageState: body.pageState, revision: stored.revision + 1 }
       return json({ revision: stored.revision, resourceId: 'r1' })
@@ -166,6 +184,7 @@ try {
   })
   let after = await live(page)
   const made = newObjects(before, after)
+  check('a new text uses the monospace default font', made[0]?.style.fontFamily === '"Geist Mono", monospace', JSON.stringify(made[0]?.style))
   check('the Text tool makes one text from a click and typing', made.length === 1 && made[0].type === 'text' && made[0].content === 'Hello text', JSON.stringify(made))
   const N1 = made[0]?.id
   check('creating a text is one undo step', (await steps(page)) === stepsBefore + 1, `${stepsBefore} -> ${await steps(page)}`)
@@ -216,6 +235,7 @@ try {
     await page.mouse.dblclick(c.x, c.y)
     await page.waitForSelector('.leafer-text-editor')
     check('a double click opens the editor with the words in it', (await editorValue(page)) === 'Hello text')
+    await page.keyboard.press('Control+End')
     await page.keyboard.type(' and more')
     await page.keyboard.press('Home')
     await page.keyboard.type('>> ')
@@ -294,7 +314,7 @@ try {
   await page.keyboard.type('short')
   await page.keyboard.press('Escape')
   await page.waitForTimeout(150)
-  check('a sticky never shrinks below what it was', objectOf(await live(page), stickyId).geometry.height === grown.geometry.height)
+  check('a sticky shrinks back to what its words need, never below 200 (as the Fabric sticky does)', objectOf(await live(page), stickyId).geometry.height === 200, String(objectOf(await live(page), stickyId).geometry.height))
   await page.waitForTimeout(900)
 
   // ---- wrap and auto-grow of a text box
@@ -347,6 +367,77 @@ try {
   const strip = (doc) => doc.objects.filter((o) => ['text', 'sticky'].includes(o.type)).map((o) => ({ id: o.id, type: o.type, content: o.content, color: o.color, g: ['x', 'y', 'width', 'height', 'rotation'].map((k) => Math.round((o.geometry[k] ?? 0) * 100) / 100), size: o.style?.fontSize, font: o.style?.fontFamily }))
   check('reload shows identical text, colours and geometry', JSON.stringify(strip(beforeReload)) === JSON.stringify(strip(reloaded)), JSON.stringify([strip(beforeReload), strip(reloaded)]))
   check('opening the note again saves nothing', puts.length === savedCount)
+
+  // ---- words typed are saved as they are typed, inside the one undo step
+  {
+    await scene(page, 'clearSelection')
+    const draftSteps = await steps(page)
+    const putsBefore = puts.length
+    await scene(page, 'editText', N1)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.press('Control+End')
+    await page.keyboard.type(' DRAFT')
+    check('typed words reach a save without ending the session', await (async () => { for (let i = 0; i < 40 && puts.length === putsBefore; i += 1) await page.waitForTimeout(100); return puts.length > putsBefore && objectOf(savedDoc(), N1)?.content.endsWith(' DRAFT') && (await editorOpen(page)) })(), JSON.stringify(puts.at(-1) && objectOf(savedDoc(), N1)?.content))
+    check('the session is still a single undo step while it saves', (await steps(page)) === draftSteps, `${draftSteps} -> ${await steps(page)}`)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(150)
+    check('ending the session makes it one undo step', (await steps(page)) === draftSteps + 1, `${draftSteps} -> ${await steps(page)}`)
+    await page.click('#undo')
+    check('undo takes back everything typed in the session at once', !objectOf(await live(page), N1).content.endsWith(' DRAFT'))
+    await page.click('#redo')
+    // a new text made by drafts, mid-session
+    await page.click('[data-tool="text"]')
+    const at = await pagePoint(page, 60, 520)
+    const stepsNew = await steps(page)
+    const before = await live(page)
+    await page.mouse.click(at.x, at.y)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.type('made while typing')
+    await page.waitForTimeout(1200)
+    const midway = newObjects(before, await live(page))
+    check('a new text is made at its first pause in typing, inside the session', midway.length === 1 && midway[0].content === 'made while typing' && (await editorOpen(page)) && (await steps(page)) === stepsNew, JSON.stringify(midway.map((o) => o.content)))
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(150)
+    check('creating that text is still one undo step', (await steps(page)) === stepsNew + 1, `${stepsNew} -> ${await steps(page)}`)
+    // typed and emptied again inside one session: nothing is made
+    await page.click('[data-tool="text"]')
+    const at2 = await pagePoint(page, 60, 600)
+    const stepsGone = await steps(page)
+    await page.mouse.click(at2.x, at2.y)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.type('gone')
+    await page.waitForTimeout(1100)
+    await page.keyboard.press('Control+A')
+    await page.keyboard.press('Delete')
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(200)
+    check('words typed and deleted again in one session leave no text and no step', (await steps(page)) === stepsGone && !(await live(page)).objects.some((o) => o.content === 'gone'))
+    await page.waitForTimeout(900)
+  }
+
+  // ---- an agent writes while words are typed: the words survive, the agent's block arrives after
+  {
+    enforceRevision = true
+    await scene(page, 'clearSelection')
+    await scene(page, 'editText', N1)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.press('Control+End')
+    await page.keyboard.type(' [typing]')
+    agentWrite()
+    await page.waitForTimeout(5500) // the changes feed polls every 2 s; the refused draft save also asks for a merge
+    check('the editor is untouched by the agent write', (await editorOpen(page)) && (await editorValue(page)).endsWith(' [typing]'), String(await editorValue(page)))
+    check('the agent block is held back while typing', !objectOf(await live(page), 'agent_node_1'))
+    await page.keyboard.type(' more')
+    await page.keyboard.press('Escape')
+    let arrived = false
+    for (let i = 0; i < 60 && !arrived; i += 1) { await page.waitForTimeout(150); arrived = Boolean(objectOf(await live(page), 'agent_node_1')) }
+    await page.waitForTimeout(1500)
+    const after = await live(page)
+    check('the typed words survive the merge', objectOf(after, N1)?.content.endsWith(' [typing] more'), objectOf(after, N1)?.content)
+    check('the agent block arrives once the session has ended', arrived && objectOf(after, 'agent_node_1')?.content === 'agent was here')
+    check('the save that follows has both the words and the agent block', objectOf(savedDoc(), N1)?.content.endsWith(' [typing] more') && Boolean(objectOf(savedDoc(), 'agent_node_1')), JSON.stringify(savedDoc().objects.map((o) => o.id)))
+    enforceRevision = false
+  }
 
   // ---- the overlay lines up with the drawn text, at three zooms, upright and turned
   const lineUp = async (id, label) => {
@@ -451,8 +542,99 @@ try {
     await page.keyboard.press('Escape'); await page.waitForTimeout(100)
     return v.endsWith('tnv pd') && tool === 'select'
   })())
+
+  // ---- the caret goes where the double click was
+  {
+    await page.evaluate(() => window.__personalNote.leaferCanvas().setView({ x: 80, y: 40, scale: 1 }))
+    await page.waitForTimeout(200)
+    await deselect()
+    const m = objectOf(await live(page), multi.id) // 'first line\nsecond line\n\nafter a blank line'
+    const pitch = m.geometry.height / 4
+    const caretAfterDblClick = async (px, py) => {
+      const p = await pagePoint(page, px, py)
+      await page.mouse.dblclick(p.x, p.y)
+      await page.waitForSelector('.leafer-text-editor')
+      const at = await page.evaluate(() => document.querySelector('.leafer-text-editor').selectionStart)
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(150)
+      await deselect()
+      return at
+    }
+    const start2 = await caretAfterDblClick(m.geometry.x + 2, m.geometry.y + pitch * 1.5)
+    check('a double click at the start of line 2 puts the caret there', start2 === 11, String(start2))
+    const mid4 = await caretAfterDblClick(m.geometry.x + 80, m.geometry.y + pitch * 3.5)
+    check('a double click in the middle of line 4 puts the caret inside that line', mid4 >= 24 + 3 && mid4 <= 24 + 12, String(mid4))
+    const end1 = await caretAfterDblClick(m.geometry.x + m.geometry.width - 1, m.geometry.y + pitch * 0.5)
+    check('a double click past the end of line 1 puts the caret at its end', end1 === 10, String(end1))
+  }
+
+  // ---- style controls act on the text just edited with the Text tool (nothing is selected then)
+  {
+    await page.evaluate(() => window.__personalNote.leaferCanvas().setView({ x: 80, y: -300, scale: 1 })) // the bottom of the page, clear of the dock
+    await page.waitForTimeout(200)
+    await page.click('[data-tool="text"]')
+    const at = await pagePoint(page, 60, 700)
+    const before = await live(page)
+    await page.mouse.click(at.x, at.y)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.type('tool styled')
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(150)
+    const made = newObjects(before, await live(page))[0]
+    await page.evaluate(() => document.querySelector('[data-font-family="Source Serif 4"]').click())
+    check('the font buttons act on the text just made with the Text tool', objectOf(await live(page), made.id).style.fontFamily === 'Source Serif 4', JSON.stringify(objectOf(await live(page), made.id).style))
+    // a real click on a swatch while that kind of text is still being typed ends the edit and styles it
+    await page.click('[data-tool="text"]')
+    const at2 = await pagePoint(page, 60, 760)
+    const before2 = await live(page)
+    await page.mouse.click(at2.x, at2.y)
+    await page.waitForSelector('.leafer-text-editor')
+    await page.keyboard.type('colour me')
+    const color = await page.evaluate(() => document.querySelectorAll('.ink-swatch')[3].dataset.color)
+    await page.locator('.ink-swatch').nth(3).click()
+    await page.waitForTimeout(200)
+    const made2 = newObjects(before2, await live(page))[0]
+    check('a swatch clicked while typing ends the edit and colours that text', made2?.content === 'colour me' && made2.style.color === color && !(await editorOpen(page)), JSON.stringify(made2?.style))
+    await page.click('[data-tool="select"]')
+    await page.waitForTimeout(900)
+  }
+
+  // ---- Prettify and voice are visibly off, not silently dead
+  check('Prettify and voice say they are not available yet', await page.evaluate(() => ['prettify', 'voice-button'].every((id) => { const b = document.getElementById(id); return b.disabled && /not available yet/.test(b.title) })))
+
+  // ---- the editor is open and the page goes away, the window flushes, or another note is chosen
+  {
+    await page.waitForTimeout(900)
+    await deselect()
+    const typeInto = async (word) => {
+      await scene(page, 'editText', N1)
+      await page.waitForSelector('.leafer-text-editor')
+      await page.keyboard.press('Control+End')
+      await page.keyboard.type(word)
+    }
+    let n = puts.length
+    await typeInto(' FLUSH')
+    await page.evaluate(() => window.personalNote.flush())
+    await waitForSave(page, n)
+    check('flush() with the editor open saves the typed words', objectOf(savedDoc(), N1)?.content.endsWith(' FLUSH') && !(await editorOpen(page)), objectOf(savedDoc(), N1)?.content)
+    await page.waitForTimeout(800)
+    n = puts.length
+    await typeInto(' HIDE')
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
+    await waitForSave(page, n)
+    check('the page going away with the editor open saves the typed words', puts.length > n && objectOf(savedDoc(), N1)?.content.endsWith(' HIDE'), objectOf(savedDoc(), N1)?.content)
+    await page.waitForTimeout(800)
+    n = puts.length
+    await typeInto(' SWITCH')
+    await page.evaluate(() => window.__personalNote.selectNote(2))
+    await waitForSave(page, n)
+    await page.waitForTimeout(500)
+    check('choosing another note with the editor open saves the words into the note being left', objectOf(savedDoc(), N1)?.content.endsWith(' SWITCH') && !(await editorOpen(page)), objectOf(savedDoc(), N1)?.content)
+    check('and puts nothing into the note chosen', puts2.length === 0 && (await live(page)).objects.length === 0, JSON.stringify([puts2.length, (await live(page)).objects.length]))
+  }
   await page.screenshot({ path: `${SHOTS}/final.png` })
-  check('no page errors', errors.length === 0, errors.join(' | '))
+  const realErrors = errors.filter((e) => !/409|revision|Could not save|Failed to fetch/.test(e))
+  check('no page errors', realErrors.length === 0, realErrors.join(' | '))
   void stillSteps
   void TURNED_T
 } finally {

@@ -67,12 +67,22 @@ export function fitGeometry(object, content) {
   const g = object.geometry
   let width = g.width
   let height = g.height
-  if (object.type === 'sticky') height = Math.max(g.height ?? 0, STICKY_MIN_HEIGHT, content.height + STICKY_PADDING * 2)
+  if (object.type === 'sticky') height = Math.max(STICKY_MIN_HEIGHT, content.height + STICKY_PADDING * 2)
   else if (object.mode === 'point') { width = content.width; height = content.height } else height = content.height
   if (width === g.width && height === g.height) return g
   const corner = applyMatrix(placementMatrix(g), { x: 0, y: 0 })
   const moved = applyMatrix(placementMatrix(g, { width, height }), { x: 0, y: 0 })
   return { ...g, width, height, x: (g.x ?? 0) + corner.x - moved.x, y: (g.y ?? 0) + corner.y - moved.y }
+}
+
+// A page point in an object's own frame (origin at its box's top-left corner, before any transform), or null for a degenerate matrix.
+export function toLocal(geometry, size, point) {
+  const m = placementMatrix(geometry, size)
+  const det = m.a * m.d - m.b * m.c
+  if (Math.abs(det) < 1e-12) return null
+  const dx = point.x - m.e
+  const dy = point.y - m.f
+  return { x: (m.d * dx - m.c * dy) / det, y: (-m.b * dx + m.a * dy) / det }
 }
 
 // The topmost text or sticky (not locked) under a page point. `sizes` maps id -> { width, height } for objects whose size is not stored.
@@ -83,14 +93,8 @@ export function objectAt(doc, sizes, point) {
     const size = sizes.get(object.id) ?? {}
     const width = size.width ?? object.geometry.width ?? 0
     const height = size.height ?? object.geometry.height ?? 0
-    const m = placementMatrix(object.geometry, { width, height })
-    const det = m.a * m.d - m.b * m.c
-    if (Math.abs(det) < 1e-12) continue
-    const dx = point.x - m.e
-    const dy = point.y - m.f
-    const x = (m.d * dx - m.c * dy) / det
-    const y = (-m.b * dx + m.a * dy) / det
-    if (x >= 0 && x <= width && y >= 0 && y <= height) return object
+    const local = toLocal(object.geometry, { width, height }, point)
+    if (local && local.x >= 0 && local.x <= width && local.y >= 0 && local.y <= height) return object
   }
   return null
 }
