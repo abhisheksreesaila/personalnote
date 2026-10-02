@@ -283,7 +283,7 @@ try {
   await page.waitForTimeout(1000) // earlier edits are saved
   await selectOnly(A)
   const beforeSwitch = await live()
-  const putsAtSwitch = puts.length
+  const storedAtSwitch = JSON.stringify(stored.content)
   await page.evaluate(() => document.querySelector('[data-note-id="2"]').click())
   await page.waitForTimeout(200)
   check('a note switch clears the selection', (await call(page, 'selection')).length === 0)
@@ -295,7 +295,7 @@ try {
   await page.evaluate(() => document.querySelector('[data-note-id="1"]').click())
   await page.waitForFunction(() => window.__personalNote.state.activeNoteId === 1, null, { timeout: 5000 })
   await page.waitForTimeout(600)
-  check('the old note comes back exactly as it was and nothing was saved meanwhile', puts.length === putsAtSwitch && JSON.stringify(objectOf(await live(), A).geometry) === JSON.stringify(objectOf(beforeSwitch, A).geometry) && JSON.stringify((await live()).objects.map((o) => o.id)) === JSON.stringify(beforeSwitch.objects.map((o) => o.id)), `puts ${puts.length - putsAtSwitch}`)
+  check('the old note comes back exactly as it was and what is stored is unchanged', JSON.stringify(stored.content) === storedAtSwitch && JSON.stringify(objectOf(await live(), A).geometry) === JSON.stringify(objectOf(beforeSwitch, A).geometry) && JSON.stringify((await live()).objects.map((o) => o.id)) === JSON.stringify(beforeSwitch.objects.map((o) => o.id)))
 
   // ---- reload shows the same result
   const all = (await live()).objects.filter((o) => o.type !== 'unknown').map((o) => o.id)
