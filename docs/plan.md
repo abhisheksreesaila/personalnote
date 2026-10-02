@@ -82,6 +82,8 @@ Needs: F-002
 - [ ] JS bundle is near its 230 KiB budget: trim or split before adding features
 - [ ] landing button hover uses the new softer blue (#2459B8), not #0059D6
 - [ ] startup error: check notify-send exit status; avoid stacking zenity then kdialog
+- [ ] media/ files no note references are cleaned up (every ink/shape save writes new SVGs)
+- [ ] saving doesn't parse every other note to reserve block ids (ids table or revision-keyed cache)
 
 ## F-010 Save pending edits on close [done]
 - [x] edits made just before a reload or close are saved (flush on pagehide / hidden, keepalive under 64 KiB)
