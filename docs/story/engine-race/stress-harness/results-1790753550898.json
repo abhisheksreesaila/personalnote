@@ -1,0 +1,1762 @@
+[
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "dragConnected",
+  "frame": {
+   "med": 316.6,
+   "p95": 966.7,
+   "max": 1316.6,
+   "n": 120
+  },
+  "step": {
+   "med": 1,
+   "p95": 3.4,
+   "max": 6.1,
+   "n": 120
+  },
+  "render": {
+   "med": 224.9,
+   "p95": 667.2,
+   "max": 1120.9,
+   "n": 121
+  },
+  "jank": 120,
+  "moved": 360,
+  "growths": 0,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 15.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 463.6,
+   "warmRender": 199.7,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "dragAcrossEdge",
+  "frame": {
+   "med": 233.4,
+   "p95": 1016.7,
+   "max": 1183.3,
+   "n": 120
+  },
+  "step": {
+   "med": 0.8,
+   "p95": 2.8,
+   "max": 6.2,
+   "n": 120
+  },
+  "render": {
+   "med": 182.2,
+   "p95": 749.3,
+   "max": 834.6,
+   "n": 121
+  },
+  "jank": 120,
+  "moved": 480,
+  "growths": 1,
+  "cols": 5,
+  "rows": 4,
+  "backingMpx": 19,
+  "setup": {
+   "objects": 600,
+   "coldRender": 385.8,
+   "warmRender": 164.2,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "pan",
+  "frame": {
+   "med": 16.7,
+   "p95": 116.7,
+   "max": 433.3,
+   "n": 150
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.1,
+   "max": 1.2,
+   "n": 150
+  },
+  "render": {
+   "med": 0,
+   "p95": 0,
+   "max": 0,
+   "n": 0
+  },
+  "jank": 56,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 15.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 960.2,
+   "warmRender": 414.7,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "zoom",
+  "frame": {
+   "med": 583.2,
+   "p95": 949.9,
+   "max": 1849.9,
+   "n": 120
+  },
+  "step": {
+   "med": 2.9,
+   "p95": 4.6,
+   "max": 7.8,
+   "n": 120
+  },
+  "render": {
+   "med": 573.6,
+   "p95": 928.5,
+   "max": 1167.6,
+   "n": 120
+  },
+  "jank": 119,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 8.6,
+  "setup": {
+   "objects": 600,
+   "coldRender": 434.6,
+   "warmRender": 181.4,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "zoomMaxProbe",
+  "backingMpx": 95.2,
+  "pixelAlpha": 255,
+  "setup": {
+   "objects": 600,
+   "coldRender": 505.5,
+   "warmRender": 203.8,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "deleteCollapse",
+  "frame": {
+   "med": 249.9,
+   "p95": 316.7,
+   "max": 400,
+   "n": 150
+  },
+  "step": {
+   "med": 0.3,
+   "p95": 1,
+   "max": 8.7,
+   "n": 150
+  },
+  "render": {
+   "med": 196.2,
+   "p95": 235.2,
+   "max": 295.7,
+   "n": 145
+  },
+  "jank": 145,
+  "deleted": 145,
+  "startRows": 4,
+  "reconcile": {
+   "med": 0.3,
+   "p95": 1,
+   "max": 8.7,
+   "n": 145
+  },
+  "cols": 4,
+  "rows": 3,
+  "backingMpx": 11.5,
+  "setup": {
+   "objects": 600,
+   "coldRender": 506.1,
+   "warmRender": 201.3,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "dragConnected",
+  "frame": {
+   "med": 100,
+   "p95": 116.7,
+   "max": 216.7,
+   "n": 120
+  },
+  "step": {
+   "med": 0.7,
+   "p95": 2.6,
+   "max": 5.3,
+   "n": 120
+  },
+  "render": {
+   "med": 9.2,
+   "p95": 13.1,
+   "max": 21.7,
+   "n": 121
+  },
+  "jank": 120,
+  "moved": 360,
+  "growths": 0,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 15.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 58.9,
+   "warmRender": 13.9,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "dragAcrossEdge",
+  "frame": {
+   "med": 100,
+   "p95": 150.1,
+   "max": 349.9,
+   "n": 120
+  },
+  "step": {
+   "med": 0.8,
+   "p95": 2.7,
+   "max": 12.3,
+   "n": 120
+  },
+  "render": {
+   "med": 10.7,
+   "p95": 17,
+   "max": 60.9,
+   "n": 121
+  },
+  "jank": 119,
+  "moved": 480,
+  "growths": 1,
+  "cols": 5,
+  "rows": 4,
+  "backingMpx": 19,
+  "setup": {
+   "objects": 600,
+   "coldRender": 67.5,
+   "warmRender": 14.8,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "pan",
+  "frame": {
+   "med": 33.3,
+   "p95": 199.9,
+   "max": 316.7,
+   "n": 150
+  },
+  "step": {
+   "med": 0.1,
+   "p95": 0.3,
+   "max": 0.6,
+   "n": 150
+  },
+  "render": {
+   "med": 0,
+   "p95": 0,
+   "max": 0,
+   "n": 0
+  },
+  "jank": 105,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 15.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 60.7,
+   "warmRender": 13.1,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "zoom",
+  "frame": {
+   "med": 83.3,
+   "p95": 133.3,
+   "max": 716.6,
+   "n": 120
+  },
+  "step": {
+   "med": 2.1,
+   "p95": 3.2,
+   "max": 3.9,
+   "n": 120
+  },
+  "render": {
+   "med": 74.7,
+   "p95": 126.6,
+   "max": 138.1,
+   "n": 120
+  },
+  "jank": 115,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 8.6,
+  "setup": {
+   "objects": 600,
+   "coldRender": 59.5,
+   "warmRender": 12.9,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "zoomMaxProbe",
+  "backingMpx": 95.2,
+  "pixelAlpha": 255,
+  "setup": {
+   "objects": 600,
+   "coldRender": 38.2,
+   "warmRender": 10,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "deleteCollapse",
+  "frame": {
+   "med": 66.6,
+   "p95": 233.2,
+   "max": 283.3,
+   "n": 150
+  },
+  "step": {
+   "med": 0.2,
+   "p95": 0.8,
+   "max": 9.1,
+   "n": 150
+  },
+  "render": {
+   "med": 6.2,
+   "p95": 14.4,
+   "max": 27.4,
+   "n": 145
+  },
+  "jank": 144,
+  "deleted": 145,
+  "startRows": 4,
+  "reconcile": {
+   "med": 0.2,
+   "p95": 0.8,
+   "max": 9.1,
+   "n": 145
+  },
+  "cols": 4,
+  "rows": 3,
+  "backingMpx": 11.5,
+  "setup": {
+   "objects": 600,
+   "coldRender": 41.9,
+   "warmRender": 9.8,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "dragConnected",
+  "frame": {
+   "med": 33.3,
+   "p95": 50,
+   "max": 50.1,
+   "n": 120
+  },
+  "step": {
+   "med": 0.5,
+   "p95": 1.2,
+   "max": 2.4,
+   "n": 120
+  },
+  "render": {
+   "med": 2,
+   "p95": 4.1,
+   "max": 7.7,
+   "n": 121
+  },
+  "jank": 85,
+  "moved": 360,
+  "growths": 0,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 49.9,
+   "warmRender": 3.3,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "dragAcrossEdge",
+  "frame": {
+   "med": 16.7,
+   "p95": 16.8,
+   "max": 16.8,
+   "n": 120
+  },
+  "step": {
+   "med": 0.3,
+   "p95": 0.7,
+   "max": 5.5,
+   "n": 120
+  },
+  "render": {
+   "med": 1,
+   "p95": 2,
+   "max": 5.3,
+   "n": 121
+  },
+  "jank": 0,
+  "moved": 480,
+  "growths": 1,
+  "cols": 5,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 46.3,
+   "warmRender": 2.6,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "pan",
+  "frame": {
+   "med": 33.3,
+   "p95": 50,
+   "max": 50,
+   "n": 150
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.1,
+   "max": 0.1,
+   "n": 150
+  },
+  "render": {
+   "med": 3,
+   "p95": 6,
+   "max": 10.1,
+   "n": 150
+  },
+  "jank": 83,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 71.3,
+   "warmRender": 2.5,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "zoom",
+  "frame": {
+   "med": 16.7,
+   "p95": 50,
+   "max": 83.3,
+   "n": 120
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.1,
+   "max": 0.1,
+   "n": 120
+  },
+  "render": {
+   "med": 11.8,
+   "p95": 36.1,
+   "max": 62.7,
+   "n": 120
+  },
+  "jank": 38,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 46,
+   "warmRender": 2.6,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "zoomMaxProbe",
+  "backingMpx": 1.3,
+  "pixelAlpha": 0,
+  "setup": {
+   "objects": 600,
+   "coldRender": 42.8,
+   "warmRender": 3.5,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "deleteCollapse",
+  "frame": {
+   "med": 33.3,
+   "p95": 33.4,
+   "max": 50,
+   "n": 150
+  },
+  "step": {
+   "med": 0.2,
+   "p95": 0.3,
+   "max": 0.7,
+   "n": 150
+  },
+  "render": {
+   "med": 1.5,
+   "p95": 3.1,
+   "max": 4.8,
+   "n": 145
+  },
+  "jank": 111,
+  "deleted": 145,
+  "startRows": 4,
+  "reconcile": {
+   "med": 0.2,
+   "p95": 0.3,
+   "max": 0.7,
+   "n": 145
+  },
+  "cols": 4,
+  "rows": 3,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 44.8,
+   "warmRender": 3,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 0,
+  "dpr": 1,
+  "scenario": "dragConnected",
+  "frame": {
+   "med": 33.3,
+   "p95": 49.9,
+   "max": 50.15,
+   "n": 120
+  },
+  "step": {
+   "med": 0.6,
+   "p95": 1,
+   "max": 3,
+   "n": 120
+  },
+  "render": {
+   "med": 25.9,
+   "p95": 30.3,
+   "max": 44,
+   "n": 121
+  },
+  "jank": 109,
+  "moved": 360,
+  "growths": 0,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 248.2,
+   "warmRender": 5.8,
+   "mode": "viewport",
+   "caching": true,
+   "skip": false,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 0,
+  "dpr": 1,
+  "scenario": "dragAcrossEdge",
+  "frame": {
+   "med": 16.7,
+   "p95": 16.8,
+   "max": 16.8,
+   "n": 120
+  },
+  "step": {
+   "med": 0.4,
+   "p95": 0.6,
+   "max": 0.9,
+   "n": 120
+  },
+  "render": {
+   "med": 3,
+   "p95": 3.9,
+   "max": 10.2,
+   "n": 121
+  },
+  "jank": 0,
+  "moved": 480,
+  "growths": 1,
+  "cols": 5,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 193.2,
+   "warmRender": 5.7,
+   "mode": "viewport",
+   "caching": true,
+   "skip": false,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 0,
+  "dpr": 1,
+  "scenario": "pan",
+  "frame": {
+   "med": 33.3,
+   "p95": 33.4,
+   "max": 50,
+   "n": 150
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.1,
+   "max": 0.1,
+   "n": 150
+  },
+  "render": {
+   "med": 22.9,
+   "p95": 31.7,
+   "max": 41.3,
+   "n": 150
+  },
+  "jank": 115,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 201.1,
+   "warmRender": 7.4,
+   "mode": "viewport",
+   "caching": true,
+   "skip": false,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 0,
+  "dpr": 1,
+  "scenario": "zoom",
+  "frame": {
+   "med": 116.7,
+   "p95": 166.7,
+   "max": 183.3,
+   "n": 120
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.1,
+   "max": 0.2,
+   "n": 120
+  },
+  "render": {
+   "med": 109,
+   "p95": 158.1,
+   "max": 170.5,
+   "n": 120
+  },
+  "jank": 118,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 195.9,
+   "warmRender": 5.8,
+   "mode": "viewport",
+   "caching": true,
+   "skip": false,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 0,
+  "dpr": 1,
+  "scenario": "zoomMaxProbe",
+  "backingMpx": 1.3,
+  "pixelAlpha": 0,
+  "setup": {
+   "objects": 600,
+   "coldRender": 192.8,
+   "warmRender": 5.9,
+   "mode": "viewport",
+   "caching": true,
+   "skip": false,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 0,
+  "dpr": 1,
+  "scenario": "deleteCollapse",
+  "frame": {
+   "med": 33.3,
+   "p95": 50,
+   "max": 50.1,
+   "n": 150
+  },
+  "step": {
+   "med": 0.3,
+   "p95": 0.4,
+   "max": 4.4,
+   "n": 150
+  },
+  "render": {
+   "med": 4.1,
+   "p95": 5.3,
+   "max": 9,
+   "n": 145
+  },
+  "jank": 126,
+  "deleted": 145,
+  "startRows": 4,
+  "reconcile": {
+   "med": 0.3,
+   "p95": 0.4,
+   "max": 4.4,
+   "n": 145
+  },
+  "cols": 4,
+  "rows": 3,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 197.7,
+   "warmRender": 6.3,
+   "mode": "viewport",
+   "caching": true,
+   "skip": false,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "dragConnected",
+  "frame": {
+   "med": 16.7,
+   "p95": 16.8,
+   "max": 50,
+   "n": 120
+  },
+  "step": {
+   "med": 0.8,
+   "p95": 1.5,
+   "max": 6.2,
+   "n": 120
+  },
+  "render": {
+   "med": 3,
+   "p95": 5.2,
+   "max": 8.1,
+   "n": 121
+  },
+  "jank": 3,
+  "moved": 360,
+  "growths": 0,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 15.1,
+   "warmRender": 4.9,
+   "mode": "viewport",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "dragAcrossEdge",
+  "frame": {
+   "med": 16.7,
+   "p95": 33.3,
+   "max": 50,
+   "n": 120
+  },
+  "step": {
+   "med": 0.4,
+   "p95": 2.4,
+   "max": 9.8,
+   "n": 120
+  },
+  "render": {
+   "med": 1.1,
+   "p95": 8.6,
+   "max": 18.1,
+   "n": 121
+  },
+  "jank": 6,
+  "moved": 480,
+  "growths": 1,
+  "cols": 5,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 26.8,
+   "warmRender": 4.5,
+   "mode": "viewport",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "pan",
+  "frame": {
+   "med": 16.7,
+   "p95": 50,
+   "max": 66.6,
+   "n": 150
+  },
+  "step": {
+   "med": 0,
+   "p95": 1.4,
+   "max": 2.3,
+   "n": 150
+  },
+  "render": {
+   "med": 4.5,
+   "p95": 13.3,
+   "max": 18,
+   "n": 150
+  },
+  "jank": 59,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 15.1,
+   "warmRender": 3.4,
+   "mode": "viewport",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "zoom",
+  "frame": {
+   "med": 16.7,
+   "p95": 116.6,
+   "max": 183.3,
+   "n": 120
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.2,
+   "max": 2.5,
+   "n": 120
+  },
+  "render": {
+   "med": 2.1,
+   "p95": 20.7,
+   "max": 68.8,
+   "n": 120
+  },
+  "jank": 26,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 25.4,
+   "warmRender": 6,
+   "mode": "viewport",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "zoomMaxProbe",
+  "backingMpx": 1.3,
+  "pixelAlpha": 0,
+  "setup": {
+   "objects": 600,
+   "coldRender": 13,
+   "warmRender": 3.8,
+   "mode": "viewport",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 1,
+  "scenario": "deleteCollapse",
+  "frame": {
+   "med": 16.7,
+   "p95": 16.7,
+   "max": 16.8,
+   "n": 150
+  },
+  "step": {
+   "med": 0.1,
+   "p95": 0.3,
+   "max": 0.5,
+   "n": 150
+  },
+  "render": {
+   "med": 1.9,
+   "p95": 3.8,
+   "max": 5.2,
+   "n": 145
+  },
+  "jank": 0,
+  "deleted": 145,
+  "startRows": 4,
+  "reconcile": {
+   "med": 0.1,
+   "p95": 0.3,
+   "max": 0.5,
+   "n": 145
+  },
+  "cols": 4,
+  "rows": 3,
+  "backingMpx": 1.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 14.4,
+   "warmRender": 3.2,
+   "mode": "viewport",
+   "caching": false,
+   "skip": true,
+   "dpr": 1
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "dragConnected",
+  "frame": {
+   "med": 333.3,
+   "p95": 416.7,
+   "max": 600.03,
+   "n": 120
+  },
+  "step": {
+   "med": 0.6,
+   "p95": 1.3,
+   "max": 4.3,
+   "n": 120
+  },
+  "render": {
+   "med": 248.7,
+   "p95": 294.9,
+   "max": 396,
+   "n": 121
+  },
+  "jank": 120,
+  "moved": 360,
+  "growths": 0,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 60.9,
+  "setup": {
+   "objects": 600,
+   "coldRender": 496.5,
+   "warmRender": 236.5,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "dragAcrossEdge",
+  "frame": {
+   "med": 383.3,
+   "p95": 2133.2,
+   "max": 2366.5,
+   "n": 120
+  },
+  "step": {
+   "med": 0.7,
+   "p95": 3.5,
+   "max": 111.3,
+   "n": 120
+  },
+  "render": {
+   "med": 277.3,
+   "p95": 1300.4,
+   "max": 1617.3,
+   "n": 121
+  },
+  "jank": 120,
+  "moved": 480,
+  "growths": 1,
+  "cols": 5,
+  "rows": 4,
+  "backingMpx": 76,
+  "setup": {
+   "objects": 600,
+   "coldRender": 549.5,
+   "warmRender": 256.2,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "pan",
+  "frame": {
+   "med": 50,
+   "p95": 483.3,
+   "max": 700,
+   "n": 150
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.2,
+   "max": 0.7,
+   "n": 150
+  },
+  "render": {
+   "med": 0,
+   "p95": 0,
+   "max": 0,
+   "n": 0
+  },
+  "jank": 149,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 60.9,
+  "setup": {
+   "objects": 600,
+   "coldRender": 527.1,
+   "warmRender": 262.3,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "zoom",
+  "frame": {
+   "med": 1166.6,
+   "p95": 3666.6,
+   "max": 4683.1,
+   "n": 120
+  },
+  "step": {
+   "med": 62.8,
+   "p95": 434.7,
+   "max": 889.7,
+   "n": 120
+  },
+  "render": {
+   "med": 531.3,
+   "p95": 1467.2,
+   "max": 2938.7,
+   "n": 120
+  },
+  "jank": 120,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 34.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 1647.9,
+   "warmRender": 888.5,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "zoomMaxProbe",
+  "backingMpx": 380.9,
+  "pixelAlpha": 0,
+  "setup": {
+   "objects": 600,
+   "coldRender": 532.8,
+   "warmRender": 253,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "deleteCollapse",
+  "frame": {
+   "med": 300.1,
+   "p95": 1299.9,
+   "max": 1816.6,
+   "n": 150
+  },
+  "step": {
+   "med": 0.3,
+   "p95": 1.2,
+   "max": 93.2,
+   "n": 150
+  },
+  "render": {
+   "med": 247.7,
+   "p95": 734.1,
+   "max": 1324.6,
+   "n": 145
+  },
+  "jank": 145,
+  "deleted": 145,
+  "startRows": 4,
+  "reconcile": {
+   "med": 0.3,
+   "p95": 1.1,
+   "max": 93.1,
+   "n": 145
+  },
+  "cols": 4,
+  "rows": 3,
+  "backingMpx": 45.9,
+  "setup": {
+   "objects": 600,
+   "coldRender": 521.4,
+   "warmRender": 254.9,
+   "mode": "full",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "dragConnected",
+  "frame": {
+   "med": 216.7,
+   "p95": 949.9,
+   "max": 1066.7,
+   "n": 120
+  },
+  "step": {
+   "med": 0.8,
+   "p95": 2.8,
+   "max": 3.4,
+   "n": 120
+  },
+  "render": {
+   "med": 9.6,
+   "p95": 22.3,
+   "max": 39.3,
+   "n": 121
+  },
+  "jank": 120,
+  "moved": 360,
+  "growths": 0,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 60.9,
+  "setup": {
+   "objects": 600,
+   "coldRender": 20.5,
+   "warmRender": 9.8,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "dragAcrossEdge",
+  "frame": {
+   "med": 266.6,
+   "p95": 1066.6,
+   "max": 1449.9,
+   "n": 120
+  },
+  "step": {
+   "med": 0.9,
+   "p95": 3.1,
+   "max": 117.2,
+   "n": 120
+  },
+  "render": {
+   "med": 10.8,
+   "p95": 24.9,
+   "max": 52,
+   "n": 121
+  },
+  "jank": 120,
+  "moved": 480,
+  "growths": 1,
+  "cols": 5,
+  "rows": 4,
+  "backingMpx": 76,
+  "setup": {
+   "objects": 600,
+   "coldRender": 21.3,
+   "warmRender": 11,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "pan",
+  "frame": {
+   "med": 50,
+   "p95": 66.7,
+   "max": 1949.9,
+   "n": 150
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.1,
+   "max": 0.3,
+   "n": 150
+  },
+  "render": {
+   "med": 0,
+   "p95": 0,
+   "max": 0,
+   "n": 0
+  },
+  "jank": 149,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 60.9,
+  "setup": {
+   "objects": 600,
+   "coldRender": 36.2,
+   "warmRender": 17.9,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "zoom",
+  "frame": {
+   "med": 883.4,
+   "p95": 3833.2,
+   "max": 9116.2,
+   "n": 120
+  },
+  "step": {
+   "med": 134.2,
+   "p95": 917,
+   "max": 2893.6,
+   "n": 120
+  },
+  "render": {
+   "med": 12.3,
+   "p95": 30.9,
+   "max": 1872,
+   "n": 120
+  },
+  "jank": 119,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 34.3,
+  "setup": {
+   "objects": 600,
+   "coldRender": 26,
+   "warmRender": 11.2,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "zoomMaxProbe",
+  "backingMpx": 380.9,
+  "pixelAlpha": 0,
+  "setup": {
+   "objects": 600,
+   "coldRender": 19.8,
+   "warmRender": 10.1,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "full",
+  "caching": 0,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "deleteCollapse",
+  "frame": {
+   "med": 133.3,
+   "p95": 150.1,
+   "max": 483.3,
+   "n": 150
+  },
+  "step": {
+   "med": 0.2,
+   "p95": 0.4,
+   "max": 77.6,
+   "n": 150
+  },
+  "render": {
+   "med": 5.6,
+   "p95": 9.9,
+   "max": 14.2,
+   "n": 145
+  },
+  "jank": 145,
+  "deleted": 145,
+  "startRows": 4,
+  "reconcile": {
+   "med": 0.2,
+   "p95": 0.4,
+   "max": 77.6,
+   "n": 145
+  },
+  "cols": 4,
+  "rows": 3,
+  "backingMpx": 45.9,
+  "setup": {
+   "objects": 600,
+   "coldRender": 19,
+   "warmRender": 10.3,
+   "mode": "full",
+   "caching": false,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "dragConnected",
+  "frame": {
+   "med": 49.9,
+   "p95": 50.1,
+   "max": 66.7,
+   "n": 120
+  },
+  "step": {
+   "med": 0.5,
+   "p95": 0.7,
+   "max": 1.6,
+   "n": 120
+  },
+  "render": {
+   "med": 23.2,
+   "p95": 25.9,
+   "max": 29.4,
+   "n": 121
+  },
+  "jank": 120,
+  "moved": 360,
+  "growths": 0,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 5.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 76.3,
+   "warmRender": 25.8,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "dragAcrossEdge",
+  "frame": {
+   "med": 16.7,
+   "p95": 33.3,
+   "max": 33.4,
+   "n": 120
+  },
+  "step": {
+   "med": 0.5,
+   "p95": 1,
+   "max": 11.5,
+   "n": 120
+  },
+  "render": {
+   "med": 1.2,
+   "p95": 2.5,
+   "max": 3.2,
+   "n": 121
+  },
+  "jank": 9,
+  "moved": 480,
+  "growths": 1,
+  "cols": 5,
+  "rows": 4,
+  "backingMpx": 5.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 73.9,
+   "warmRender": 25.5,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "pan",
+  "frame": {
+   "med": 49.9,
+   "p95": 66.6,
+   "max": 116.6,
+   "n": 150
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.1,
+   "max": 0.1,
+   "n": 150
+  },
+  "render": {
+   "med": 24.4,
+   "p95": 40.6,
+   "max": 69,
+   "n": 150
+  },
+  "jank": 146,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 5.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 116,
+   "warmRender": 39.5,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "zoom",
+  "frame": {
+   "med": 50,
+   "p95": 83.2,
+   "max": 149.9,
+   "n": 120
+  },
+  "step": {
+   "med": 0,
+   "p95": 0.1,
+   "max": 0.2,
+   "n": 120
+  },
+  "render": {
+   "med": 23.5,
+   "p95": 47.2,
+   "max": 88.5,
+   "n": 120
+  },
+  "jank": 119,
+  "cols": 4,
+  "rows": 4,
+  "backingMpx": 5.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 74.8,
+   "warmRender": 27.1,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "zoomMaxProbe",
+  "backingMpx": 5.2,
+  "pixelAlpha": 0,
+  "setup": {
+   "objects": 600,
+   "coldRender": 73.4,
+   "warmRender": 24.9,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ },
+ {
+  "mode": "viewport",
+  "caching": 1,
+  "skip": 1,
+  "dpr": 2,
+  "scenario": "deleteCollapse",
+  "frame": {
+   "med": 50,
+   "p95": 50.1,
+   "max": 83.3,
+   "n": 150
+  },
+  "step": {
+   "med": 0.2,
+   "p95": 0.4,
+   "max": 10.3,
+   "n": 150
+  },
+  "render": {
+   "med": 24.1,
+   "p95": 26.8,
+   "max": 35.3,
+   "n": 145
+  },
+  "jank": 145,
+  "deleted": 145,
+  "startRows": 4,
+  "reconcile": {
+   "med": 0.2,
+   "p95": 0.4,
+   "max": 10.3,
+   "n": 145
+  },
+  "cols": 4,
+  "rows": 3,
+  "backingMpx": 5.2,
+  "setup": {
+   "objects": 600,
+   "coldRender": 74.4,
+   "warmRender": 25.7,
+   "mode": "viewport",
+   "caching": true,
+   "skip": true,
+   "dpr": 2
+  }
+ }
+]

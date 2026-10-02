@@ -1,0 +1,1310 @@
+<meta charset="utf-8">
+<title>Engine Showdown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,500&display=swap">
+<style>
+/* Layout: a control strip over two equal canvas bays (stacked on phones), then results and notes in a reading column. */
+:root {
+  --bg: #f4f2ee; --surface: #fffdf9; --ink: #1f1b16; --muted: #6f675b; --line: #e2dbcd;
+  --accent: #c8452f; --accent-ink: #ffffff; --accent-soft: #f7e1db;
+  --good: #2f7a52; --warn: #a86512; --bad: #b4321f;
+  --desk: #efebe3; --desk-dot: rgba(60, 45, 20, .16);
+  --font-display: "Fraunces", Georgia, serif;
+  --font-ui: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --surface: #1a1f27; --ink: #eceff4; --muted: #94a0b0; --line: #2a313d;
+    --accent: #ff8a73; --accent-ink: #1b0e0a; --accent-soft: rgba(255, 138, 115, .14);
+    --good: #7fd6a6; --warn: #f2bf6b; --bad: #ff8f7f;
+    --desk: #0d1015; --desk-dot: rgba(160, 190, 255, .10);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --surface: #1a1f27; --ink: #eceff4; --muted: #94a0b0; --line: #2a313d;
+  --accent: #ff8a73; --accent-ink: #1b0e0a; --accent-soft: rgba(255, 138, 115, .14);
+  --good: #7fd6a6; --warn: #f2bf6b; --bad: #ff8f7f;
+  --desk: #0d1015; --desk-dot: rgba(160, 190, 255, .10);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font-ui); margin: 0; padding-inline: 16px; padding-block: 20px 48px; }
+.wrap { max-width: 1440px; margin: 0 auto; display: grid; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+h1 { font: 500 clamp(26px, 4vw, 36px)/1.1 var(--font-display); letter-spacing: -.02em; margin: 0; text-wrap: balance; }
+.lede { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+.bar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink); font: 500 13px var(--font-ui); padding: 6px 11px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.btn { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); font: 600 13px var(--font-ui); padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+.btn:disabled { opacity: .55; cursor: progress; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 500; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.status { font: 12px var(--font-mono); color: var(--muted); }
+.bays { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.bays:not([data-view="all"]) { grid-template-columns: 1fr; }
+.bays[data-view="fabric"] .bay:not([data-engine="fabric"]), .bays[data-view="leafer"] .bay:not([data-engine="leafer"]), .bays[data-view="pixi"] .bay:not([data-engine="pixi"]) { display: none; }
+@media (max-width: 1240px) { .bays { grid-template-columns: 1fr; } }
+.leafer-view { position: absolute; inset: 0; }
+.na { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; font: 13px/1.5 var(--font-ui); color: var(--muted); background: color-mix(in srgb, var(--desk) 88%, transparent); z-index: 6; }
+.na b { display: block; color: var(--ink); font-size: 15px; margin-bottom: 4px; }
+.bay { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: grid; }
+.bay-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.bay-name { font: 600 15px var(--font-ui); }
+.bay-sub { color: var(--muted); font-size: 12px; margin-left: 6px; font-weight: 400; }
+.meter { display: flex; gap: 14px; font: 12px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); flex-wrap: wrap; }
+.meter b { color: var(--ink); font-weight: 500; }
+.meter .pill { display: inline-block; min-width: 3.2em; text-align: right; }
+.meter .good { color: var(--good); } .meter .warn { color: var(--warn); } .meter .bad { color: var(--bad); }
+.host { position: relative; height: 580px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+  background-color: var(--desk); background-image: radial-gradient(circle, var(--desk-dot) 1.2px, transparent 1.6px); background-size: 22px 22px; }
+@media (max-width: 860px) { .host { height: 440px; } }
+.host canvas { display: block; }
+.host[data-tool="pen"] { cursor: crosshair; }
+.bay-foot { padding: 6px 12px; border-top: 1px solid var(--line); }
+.overlay-edit { position: absolute; z-index: 5; margin: 0; border: 0; resize: none; overflow: hidden; background: rgba(255, 255, 255, .0);
+  outline: 1.5px dashed #2f6fe0; outline-offset: 2px; color: #1f1b16; white-space: pre; transform-origin: 0 0; padding: 0; }
+.busy { position: absolute; inset: 0; display: grid; place-items: center; font: 13px var(--font-mono); color: var(--muted); background: color-mix(in srgb, var(--desk) 70%, transparent); z-index: 6; }
+section.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; min-width: 0; }
+h2 { font: 500 20px/1.2 var(--font-display); margin: 0 0 8px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { text-align: left; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+td.num { font-family: var(--font-mono); }
+.empty td { color: var(--muted); text-align: left; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.notes p, .notes li { max-width: 65ch; }
+.notes ul { padding-left: 18px; margin: 0; }
+.notes li + li { margin-top: 4px; }
+kbd { font: 12px var(--font-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Engine Showdown</h1>
+      <p class="lede">The same Personal Note desk drawn three times: by Fabric.js (Canvas 2D, what the app uses today), by LeaferJS (Canvas 2D with an editor plugin and partial redraw) and by PixiJS (WebGL). Pan, zoom, select, drag, draw and edit in each and compare how they feel. One engine at a time is the fair comparison.</p>
+    </div>
+    <button class="btn ghost" id="theme-btn" type="button" title="Switch the page chrome between system, light and dark">Theme: system</button>
+  </header>
+
+  <div class="bar" role="toolbar" aria-label="Scene controls">
+    <div class="group"><span class="label">Objects</span>
+      <div class="seg" id="count-seg">
+        <button type="button" data-count="500" aria-pressed="true">500</button>
+        <button type="button" data-count="2000" aria-pressed="false">2,000</button>
+        <button type="button" data-count="5000" aria-pressed="false">5,000</button>
+        <button type="button" data-count="10000" aria-pressed="false">10k</button>
+        <button type="button" data-count="50000" aria-pressed="false">50k</button>
+        <button type="button" data-count="100000" aria-pressed="false">100k</button>
+      </div>
+    </div>
+    <div class="group"><span class="label">Tool</span>
+      <div class="seg" id="tool-seg">
+        <button type="button" data-tool="select" aria-pressed="true">Select</button>
+        <button type="button" data-tool="pen" aria-pressed="false">Pen</button>
+      </div>
+    </div>
+    <div class="group"><span class="label">Show</span>
+      <div class="seg" id="view-seg">
+        <button type="button" data-view="all" aria-pressed="true">All three</button>
+        <button type="button" data-view="fabric" aria-pressed="false">Fabric</button>
+        <button type="button" data-view="leafer" aria-pressed="false">Leafer</button>
+        <button type="button" data-view="pixi" aria-pressed="false">Pixi</button>
+      </div>
+    </div>
+    <label class="check" for="cull-toggle"><input type="checkbox" id="cull-toggle" checked> Pixi culls off-screen objects</label>
+    <div class="group">
+      <button class="btn" id="bench-btn" type="button">Run benchmark</button>
+      <span class="status" id="bench-status"></span>
+    </div>
+  </div>
+
+  <div class="bays" id="bays" data-view="all">
+    <div class="bay" data-engine="fabric">
+      <div class="bay-head">
+        <div class="bay-name">Fabric.js (today)<span class="bay-sub">Canvas 2D, redraws the view · editor built in</span></div>
+        <div class="meter" id="meter-fabric"></div>
+      </div>
+      <div class="host" id="host-fabric"></div>
+      <div class="bay-foot status" id="foot-fabric">Loading</div>
+    </div>
+    <div class="bay" data-engine="leafer">
+      <div class="bay-head">
+        <div class="bay-name">LeaferJS<span class="bay-sub">Canvas 2D, redraws changed regions · editor plugin</span></div>
+        <div class="meter" id="meter-leafer"></div>
+      </div>
+      <div class="host" id="host-leafer"></div>
+      <div class="bay-foot status" id="foot-leafer">Loading</div>
+    </div>
+    <div class="bay" data-engine="pixi">
+      <div class="bay-head">
+        <div class="bay-name">PixiJS (WebGL)<span class="bay-sub">GPU · no selection handles (none built in)</span></div>
+        <div class="meter" id="meter-pixi"></div>
+      </div>
+      <div class="host" id="host-pixi"></div>
+      <div class="bay-foot status" id="foot-pixi">Loading</div>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Benchmark results</h2>
+    <p class="status" style="margin:0 0 8px">Each run takes about 5 to 7 seconds per engine: a pan sweep, a zoom in and out, dragging the most-connected object in a circle, then (Fabric and Leafer only) selecting the 50 objects nearest it and dragging them together with their handles showing. Frame time is the gap between screen refreshes (16.7 ms = 60 fps). Draw time is CPU time inside the engine's render call; WebGL finishes its GPU work later, so for Pixi the frame time is the truer number. The four right-hand columns are the median frame for each phase.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Engine</th><th>Objects</th><th>View</th><th>Frames</th><th>Median frame</th><th>p95 frame</th><th>Worst frame</th><th>Median draw</th><th>p95 draw</th><th>≈ FPS</th><th>Pan</th><th>Zoom</th><th>Drag hub</th><th>Drag 50</th></tr></thead>
+        <tbody id="results"><tr class="empty"><td colspan="14">No runs yet. Press Run benchmark.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="notes">
+    <section class="card">
+      <h2>What to try</h2>
+      <ul>
+        <li>Two-finger scroll (or the mouse wheel) to pan. <kbd>Ctrl</kbd> or <kbd>⌘</kbd> + wheel, or a trackpad pinch, zooms to the pointer. Hold <kbd>Space</kbd> and drag (or drag with the middle button) to pan. In Pixi, dragging empty desk also pans.</li>
+        <li>In Fabric and Leafer, drag across empty desk to box-select, and <kbd>Shift</kbd>-click to add to a selection. Drag the selection: the arrows follow. Use the corner handles to resize and the rotate handle (Fabric) or the area just outside a corner (Leafer) to rotate.</li>
+        <li>Pick <b>Pen</b> and write on a page.</li>
+        <li>Double-click a text label or a sticky to edit its text.</li>
+        <li>Switch to <b>Leafer only</b> or <b>Pixi only</b> at 50k or 100k, zoom out to see every page, then pan quickly. Watch the slowest-frame number. Then zoom in on one page and drag a sticky: that is where Leafer's region redraw pays off.</li>
+        <li>Zoom in close on a label in each bay and compare how sharp the text is.</li>
+      </ul>
+    </section>
+    <section class="card">
+      <h2>What each engine is</h2>
+      <p><b>Fabric.js</b> redraws every visible object with Canvas 2D on every frame that changes anything. It skips off-screen objects and caches some as bitmaps. Selection, handles, text editing and the pen are built in. It is not built at 10,000 objects and above here: we already know it struggles there.</p>
+      <p><b>LeaferJS</b> also draws with Canvas 2D on the CPU, not the GPU, but it redraws only the regions that changed: dragging a sticky repaints a rectangle around it, not the page. Panning and zooming change every pixel, so those are full redraws of what is on screen. Selection, transform handles, box select, text editing and arrows come from its official editor plugins. It has no built-in undo or freehand brush.</p>
+      <p><b>PixiJS</b> uploads shapes and ink to the GPU once and then only moves one container to pan and zoom. It is a drawing engine only: no selection, no handles, no text editing, no serialization. Every one of those would be app code, so this bay has a plain outline instead of handles.</p>
+    </section>
+    <section class="card">
+      <h2>How editing works in each</h2>
+      <p><b>Fabric</b> edits text on the canvas itself with a hidden text box feeding it keystrokes. <b>Leafer</b> lays a real browser text box over the text while you type (its text editor plugin), then draws the result back into the canvas. <b>Pixi</b> cannot edit text, so this demo does the same overlay trick by hand: <kbd>Enter</kbd> or <kbd>Esc</kbd> commits a label, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line.</p>
+      <p>The Leafer pen is app code on top of Leafer (it has no brush tool): it adds one path and updates it as you move, and Leafer repaints only the stroke's area. Fabric's pen is its built-in brush. Neither Fabric nor Leafer ships undo and redo; both would need an app-side history.</p>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.18.1/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leafer-editor@2.3.0/dist/web.min.js"></script>
+<script>
+(() => {
+'use strict'
+const PAGE_W = 860, PAGE_H = 1080, COLS = 3, ROWS = 4
+const WORLD_W = PAGE_W * COLS, WORLD_H = PAGE_H * ROWS
+const PAPER = '#fbfaf5', PAGE_EDGE = '#e4ddcf', FOLD = 'rgba(31,27,22,.13)'
+const STICKY_COLORS = ['#ffd66b', '#9fe0c0', '#a9cfff', '#cdb8ff', '#ff9c85']
+const SHAPE_FILLS = ['#fde9b0', '#d3f0e1', '#d9e9ff', '#e8defe', '#ffd8cf']
+const INK_COLORS = ['#1f1b16', '#1f1b16', '#2f6fe0', '#e5533d']
+const LABEL_COLORS = ['#1f1b16', '#1f1b16', '#4a443b', '#e5533d']
+const CONNECTOR = '#4a443b'
+const STICKY_PAD = 14
+const DPR = Math.min(window.devicePixelRatio || 1, 2)
+
+// ---------- deterministic scene ----------
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+const WORDS = ['Q3 roadmap', 'Ideas', 'call Sam re: budget', 'Bring the tent', 'API boundary', 'Ship Friday', 'Reading list', 'Why does search stall?', 'Groceries', 'Mom bday 14th', 'Draft intro', 'Risks', 'Open questions', 'Sketch v2', 'Talk to design', 'Export as PDF?', 'Pros / cons', 'Next steps', 'Fix the hinge', 'Trip to Lisbon', 'Book dentist', 'Chapter 3 notes', 'Pricing tiers', 'Measure twice', 'Water the ferns', 'Interview recap', 'Ask Priya', 'Timeline', 'Budget: $1,240', 'Done!']
+const STICKY_LINES = ['remember to', 'check the', 'numbers again', 'before Monday', 'call back', 'buy milk + eggs', 'idea: dark mode', 'what if we', 'move the', 'meeting to 3pm', 'ask about', 'the lease', 'try the', 'blue one', 'fix later', 'big picture', 'small wins', 'love this']
+
+function makeScene(n, seed = 7) {
+  const rnd = mulberry32(seed)
+  const pick = (arr) => arr[Math.floor(rnd() * arr.length)]
+  const objects = [], byPage = Array.from({ length: COLS * ROWS }, () => [])
+  for (let i = 0; i < n; i++) {
+    const r = rnd(), page = Math.floor(rnd() * COLS * ROWS)
+    const px = (page % COLS) * PAGE_W, py = Math.floor(page / COLS) * PAGE_H
+    const place = (w, h) => [px + 40 + rnd() * (PAGE_W - 80 - w), py + 40 + rnd() * (PAGE_H - 80 - h)]
+    let o
+    if (r < 0.37) {
+      const size = Math.round(18 + rnd() * 16)
+      const [x, y] = place(200, size * 1.3)
+      o = { type: 'text', x, y, text: pick(WORDS), size, color: pick(LABEL_COLORS) }
+    } else if (r < 0.58) {
+      const w = Math.round(180 + rnd() * 50), lines = 2 + (rnd() < 0.5 ? 1 : 0)
+      const text = Array.from({ length: lines }, () => pick(STICKY_LINES)).join('\n')
+      const h = Math.max(140, lines * 30 + STICKY_PAD * 2)
+      const [x, y] = place(w, h)
+      o = { type: 'sticky', x, y, w, h, text, color: pick(STICKY_COLORS) }
+    } else if (r < 0.74) {
+      const w = Math.round(90 + rnd() * 130), h = Math.round(70 + rnd() * 90)
+      const [x, y] = place(w, h)
+      o = { type: 'shape', x, y, w, h, kind: rnd() < 0.65 ? 'rect' : 'ellipse', fill: pick(SHAPE_FILLS) }
+    } else {
+      const count = 50 + Math.floor(rnd() * 101)
+      let cx = px + 120 + rnd() * (PAGE_W - 240), cy = py + 120 + rnd() * (PAGE_H - 240)
+      let ang = rnd() * Math.PI * 2, turn = 0
+      const pts = []
+      for (let k = 0; k < count; k++) {
+        turn = turn * 0.85 + (rnd() - 0.5) * 0.35
+        ang += turn
+        const step = 4 + rnd() * 3
+        cx = Math.min(px + PAGE_W - 30, Math.max(px + 30, cx + Math.cos(ang) * step))
+        cy = Math.min(py + PAGE_H - 30, Math.max(py + 30, cy + Math.sin(ang) * step))
+        pts.push(Math.round(cx * 10) / 10, Math.round(cy * 10) / 10)
+      }
+      o = { type: 'ink', pts, color: pick(INK_COLORS), width: 2 + Math.round(rnd() * 2) }
+    }
+    o.page = page
+    objects.push(o); byPage[page].push(i)
+  }
+  const connectors = [], seen = new Set()
+  const want = Math.round(n * 0.1)
+  for (let tries = 0; connectors.length < want && tries < want * 10; tries++) {
+    const a = Math.floor(rnd() * n), list = byPage[objects[a].page]
+    if (list.length < 2) continue
+    const b = list[Math.floor(rnd() * list.length)]
+    const key = Math.min(a, b) + ':' + Math.max(a, b)
+    if (a === b || seen.has(key)) continue
+    seen.add(key); connectors.push([a, b])
+  }
+  const degree = new Array(n).fill(0)
+  for (const [a, b] of connectors) { degree[a]++; degree[b]++ }
+  let hub = 0
+  for (let i = 0; i < n; i++) if (degree[i] > degree[hub] || (degree[i] === degree[hub] && objects[i].type === 'sticky' && objects[hub].type !== 'sticky')) hub = i
+  return { objects, connectors, hub }
+}
+
+function smoothPath(pts, moveTo, quadTo, lineTo) {
+  const n = pts.length / 2
+  if (n < 2) return
+  moveTo(pts[0], pts[1])
+  if (n === 2) { lineTo(pts[2], pts[3]); return }
+  for (let i = 1; i < n - 1; i++) {
+    const x = pts[i * 2], y = pts[i * 2 + 1]
+    quadTo(x, y, (x + pts[i * 2 + 2]) / 2, (y + pts[i * 2 + 3]) / 2)
+  }
+  lineTo(pts[pts.length - 2], pts[pts.length - 1])
+}
+function edgePoint(box, tx, ty) {
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2
+  const dx = tx - cx, dy = ty - cy
+  if (!dx && !dy) return [cx, cy]
+  const s = Math.min(dx ? (box.w / 2 + 6) / Math.abs(dx) : Infinity, dy ? (box.h / 2 + 6) / Math.abs(dy) : Infinity)
+  return [cx + dx * Math.min(s, 1), cy + dy * Math.min(s, 1)]
+}
+function connectorEnds(a, b) {
+  const p = edgePoint(a, b.x + b.w / 2, b.y + b.h / 2), q = edgePoint(b, a.x + a.w / 2, a.y + a.h / 2)
+  return [p[0], p[1], q[0], q[1]]
+}
+// Page shadow, paper and fold lines in world units (both engines draw the same thing).
+const SHADOW_BANDS = [[2, .05], [6, .04], [12, .03], [20, .02], [30, .012]]
+
+// ---------- shared view helpers ----------
+function updateDesk(host, z, x, y) {
+  const s = 22 * z
+  host.style.backgroundSize = s + 'px ' + s + 'px'
+  host.style.backgroundPosition = x + 'px ' + y + 'px'
+}
+function fitView(host) {
+  const w = host.clientWidth, z = Math.max(0.05, (w - 32) / WORLD_W)
+  return { z, x: (w - WORLD_W * z) / 2, y: 24 }
+}
+
+// ---------- frame accounting ----------
+function makeStats() { return { hist: [], pendingDraw: 0, rendered: false } }
+
+// =====================================================================
+// Fabric engine
+// =====================================================================
+function createFabricEngine(host, foot) {
+  const F = window.fabric
+  const el = document.createElement('canvas')
+  host.appendChild(el)
+  const canvas = new F.Canvas(el, {
+    width: host.clientWidth, height: host.clientHeight, backgroundColor: 'transparent',
+    renderOnAddRemove: false, skipOffscreen: true, selection: true, preserveObjectStacking: true,
+    enableRetinaScaling: true, fireRightClick: false,
+  })
+  const stats = makeStats()
+  let benchMode = false
+  const origRenderAll = canvas.renderAll.bind(canvas)
+  canvas.renderAll = function () {
+    const t0 = performance.now(); origRenderAll(); stats.pendingDraw += performance.now() - t0; stats.rendered = true
+  }
+
+  class Arrow extends F.Line {
+    _render(ctx) {
+      super._render(ctx)
+      const p = this.calcLinePoints(), ang = Math.atan2(p.y2 - p.y1, p.x2 - p.x1), s = 11
+      ctx.save(); ctx.translate(p.x2, p.y2); ctx.rotate(ang)
+      ctx.beginPath(); ctx.moveTo(1, 0); ctx.lineTo(-s, -s * .5); ctx.lineTo(-s, s * .5); ctx.closePath()
+      ctx.fillStyle = this.stroke; ctx.fill(); ctx.restore()
+    }
+  }
+  class Sticky extends F.Textbox {
+    calcTextHeight() { return Math.max(super.calcTextHeight() + STICKY_PAD * 2, this.minHeight || 140) }
+    _wrapText(lines, w) { return super._wrapText(lines, w - STICKY_PAD * 2) }
+    _getLeftOffset() { return super._getLeftOffset() + STICKY_PAD }
+    _getTopOffset() { return super._getTopOffset() + STICKY_PAD }
+    _renderBackground(ctx) {
+      ctx.save()
+      ctx.shadowColor = 'rgba(0,0,0,.26)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 9
+      ctx.fillStyle = this.stickyColor
+      ctx.beginPath(); ctx.roundRect(-this.width / 2, -this.height / 2, this.width, this.height, [4, 4, 24, 4]); ctx.fill()
+      ctx.restore()
+    }
+  }
+
+  // Desk pages are painted in before:render like the app (never objects).
+  canvas.on('before:render', ({ ctx }) => {
+    const v = canvas.viewportTransform, z = v[0]
+    ctx.save(); ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5])
+    ctx.fillStyle = 'rgb(60,40,10)'
+    for (const [g, a] of SHADOW_BANDS) { ctx.globalAlpha = a; ctx.fillRect(-g / z, (-g + 8) / z, WORLD_W + 2 * g / z, WORLD_H + 2 * g / z) }
+    ctx.globalAlpha = 1
+    ctx.fillStyle = PAGE_EDGE; ctx.beginPath(); ctx.roundRect(-1 / z, -1 / z, WORLD_W + 2 / z, WORLD_H + 2 / z, 5 / z); ctx.fill()
+    ctx.fillStyle = PAPER; ctx.beginPath(); ctx.roundRect(0, 0, WORLD_W, WORLD_H, 4 / z); ctx.fill()
+    ctx.strokeStyle = FOLD; ctx.lineWidth = 1.5 / z; ctx.setLineDash([6 / z, 5 / z]); ctx.beginPath()
+    for (let c = 1; c < COLS; c++) { ctx.moveTo(c * PAGE_W, 0); ctx.lineTo(c * PAGE_W, WORLD_H) }
+    for (let r = 1; r < ROWS; r++) { ctx.moveTo(0, r * PAGE_H); ctx.lineTo(WORLD_W, r * PAGE_H) }
+    ctx.stroke(); ctx.setLineDash([])
+    ctx.fillStyle = '#857c6e'; ctx.font = `${12 / z}px Geist, system-ui, sans-serif`
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) ctx.fillText(`Page ${r * COLS + c + 1}`, c * PAGE_W + 14 / z, (r + 1) * PAGE_H - 12 / z)
+    ctx.restore()
+  })
+
+  let objs = [], conns = [], connsOf = [], boxes = []
+  const boxOf = (o) => { o.setCoords(); const b = o.getBoundingRect(); return { x: b.left, y: b.top, w: b.width, h: b.height } }
+  function updateConnectors(i) {
+    for (const c of connsOf[i] || []) {
+      const [x1, y1, x2, y2] = connectorEnds(boxes[c.a], boxes[c.b])
+      c.line.set({ x1, y1, x2, y2 }); c.line.setCoords()
+    }
+  }
+  function onView() { const v = canvas.viewportTransform; updateDesk(host, v[0], v[4], v[5]) }
+
+  // Above 5,000 objects Fabric is not built at all (we already know it struggles there).
+  function release() { canvas.discardActiveObject(); canvas.clear(); canvas.backgroundColor = 'transparent'; objs = []; conns = []; connsOf = []; boxes = []; canvas.requestRenderAll() }
+  function build(scene) {
+    canvas.discardActiveObject()
+    canvas.clear(); canvas.backgroundColor = 'transparent'
+    const t0 = performance.now()
+    objs = scene.objects.map((o, i) => {
+      let f
+      const base = { originX: 'left', originY: 'top' }
+      if (o.type === 'text') f = new F.IText(o.text, { ...base, left: o.x, top: o.y, fontSize: o.size, fill: o.color, fontFamily: 'Geist, system-ui, sans-serif', lineHeight: 1.2 })
+      else if (o.type === 'sticky') {
+        f = new Sticky(o.text, { ...base, left: o.x, top: o.y, width: o.w, minHeight: o.h, fontSize: 24, lineHeight: 1.1, fontFamily: 'Caveat, cursive', fill: '#1f1b16', stickyColor: o.color, objectCaching: false, lockScalingY: true })
+      } else if (o.type === 'shape') {
+        f = o.kind === 'rect'
+          ? new F.Rect({ ...base, left: o.x, top: o.y, width: o.w, height: o.h, rx: 14, ry: 14, fill: o.fill, stroke: '#1f1b16', strokeWidth: 2 })
+          : new F.Ellipse({ ...base, left: o.x, top: o.y, rx: o.w / 2, ry: o.h / 2, fill: o.fill, stroke: '#1f1b16', strokeWidth: 2 })
+      } else {
+        let d = ''
+        smoothPath(o.pts, (x, y) => { d += `M ${x} ${y} ` }, (a, b, x, y) => { d += `Q ${a} ${b} ${x} ${y} ` }, (x, y) => { d += `L ${x} ${y} ` })
+        f = new F.Path(d, { fill: null, stroke: o.color, strokeWidth: o.width, strokeLineCap: 'round', strokeLineJoin: 'round' })
+      }
+      f._idx = i
+      return f
+    })
+    boxes = objs.map(boxOf)
+    connsOf = []
+    conns = scene.connectors.map(([a, b]) => {
+      const [x1, y1, x2, y2] = connectorEnds(boxes[a], boxes[b])
+      const line = new Arrow([x1, y1, x2, y2], { stroke: CONNECTOR, strokeWidth: 2, selectable: false, evented: false, objectCaching: false, strokeLineCap: 'round' })
+      const c = { a, b, line };
+      (connsOf[a] ||= []).push(c); (connsOf[b] ||= []).push(c)
+      return c
+    })
+    canvas.add(...conns.map((c) => c.line), ...objs)
+    const ms = performance.now() - t0
+    resetView()
+    canvas.requestRenderAll()
+    return ms
+  }
+
+  // Keep arrows attached while one object or a whole selection moves, resizes or rotates.
+  function refresh(i) { boxes[i] = boxOf(objs[i]); updateConnectors(i) }
+  function syncTarget(target) {
+    if (!target) return
+    if (target._idx != null) refresh(target._idx)
+    else if (target.getObjects) for (const o of target.getObjects()) if (o._idx != null) refresh(o._idx)
+  }
+  for (const ev of ['object:moving', 'object:scaling', 'object:rotating', 'object:skewing', 'object:modified', 'text:changed']) canvas.on(ev, ({ target }) => syncTarget(target))
+  canvas.on('path:created', ({ path }) => { path._idx = objs.length; objs.push(path); boxes.push(boxOf(path)) })
+  // Empty-desk drag is now Fabric's rubber-band selection; Space-drag and middle-drag pan (handled by the shell).
+
+  function panBy(dx, dy) { canvas.relativePan(new F.Point(dx, dy)); onView(); canvas.requestRenderAll() }
+  function zoomAt(sx, sy, f) {
+    const z = Math.min(8, Math.max(0.05, canvas.getZoom() * f))
+    canvas.zoomToPoint(new F.Point(sx, sy), z); onView(); canvas.requestRenderAll()
+  }
+  function getView() { const v = canvas.viewportTransform; return { z: v[0], x: v[4], y: v[5] } }
+  function setView(z, x, y) { canvas.setViewportTransform([z, 0, 0, z, x, y]); onView(); if (!benchMode) canvas.requestRenderAll() }
+  function resetView() { const v = fitView(host); setView(v.z, v.x, v.y) }
+  function objectBox(i) { return boxes[i] }
+  function moveObject(i, x, y) {
+    const o = objs[i], b = boxes[i]
+    o.set({ left: o.left + (x - b.x), top: o.top + (y - b.y) })
+    boxes[i] = boxOf(o); updateConnectors(i)
+  }
+  function renderNow() { canvas.renderAll() }
+  function setTool(t) {
+    canvas.isDrawingMode = t === 'pen'
+    if (canvas.isDrawingMode) {
+      const brush = new F.PencilBrush(canvas); brush.color = '#1f1b16'; brush.width = 3; canvas.freeDrawingBrush = brush
+      canvas.discardActiveObject(); canvas.requestRenderAll()
+    }
+  }
+  function cancelGesture() { }
+  function resize() { canvas.setDimensions({ width: host.clientWidth, height: host.clientHeight }); canvas.requestRenderAll() }
+  function setBench(on) { benchMode = on; if (on) { canvas.discardActiveObject(); canvas.requestRenderAll() } }
+  // Benchmark multi-select: a real ActiveSelection, so Fabric pays for the group box and its handles.
+  let multi = null
+  function selectMany(list) {
+    canvas.discardActiveObject()
+    const sel = new F.ActiveSelection(list.map((i) => objs[i]), { canvas })
+    canvas.setActiveObject(sel)
+    multi = { sel, left: sel.left, top: sel.top }
+  }
+  function moveSelection(dx, dy) {
+    const { sel } = multi
+    sel.set({ left: multi.left + dx, top: multi.top + dy }); sel.setCoords()
+    syncTarget(sel)
+  }
+  function endMulti() {
+    if (!multi) return
+    moveSelection(0, 0)
+    const list = multi.sel.getObjects(); multi = null
+    canvas.discardActiveObject()
+    for (const o of list) refresh(o._idx)
+    canvas.requestRenderAll()
+  }
+  function selectedCount() { const a = canvas.getActiveObject(); return a ? (a.getObjects ? a.getObjects().length : 1) : 0 }
+  return { name: 'Fabric.js', key: 'fabric', host, stats, build, panBy, zoomAt, getView, setView, resetView, objectBox, moveObject, renderNow, setTool, cancelGesture, resize, setBench, selectMany, moveSelection, endMulti, selectedCount, multiDrag: true, maxCount: 5000, canvas, footer: () => '', el: (i) => objs[i], conns: () => conns, count: () => objs.length, release, usesOwnLoop: false }
+}
+
+// =====================================================================
+// Pixi engine
+// =====================================================================
+async function createPixiEngine(host, foot) {
+  const P = window.PIXI
+  const app = new P.Application()
+  await app.init({ width: host.clientWidth, height: host.clientHeight, backgroundAlpha: 0, antialias: true, resolution: DPR, autoDensity: true, autoStart: false, sharedTicker: false, preference: 'webgl' })
+  app.ticker.stop()
+  app.stage.eventMode = 'none'
+  host.appendChild(app.canvas)
+  const stats = makeStats()
+  const world = new P.Container({ isRenderGroup: true })
+  app.stage.addChild(world)
+  const pagesG = new P.Graphics()
+  const connLayer = new P.Container(), objLayer = new P.Container(), topLayer = new P.Container()
+  world.addChild(pagesG, connLayer, objLayer, topLayer)
+  const selG = new P.Graphics(); topLayer.addChild(selG)
+
+  // Static desk pages: one Graphics, built once.
+  for (const [g, a] of SHADOW_BANDS) pagesG.rect(-g, -g + 8, WORLD_W + 2 * g, WORLD_H + 2 * g).fill({ color: 0x3c280a, alpha: a })
+  pagesG.roundRect(-1, -1, WORLD_W + 2, WORLD_H + 2, 5).fill(PAGE_EDGE)
+  pagesG.roundRect(0, 0, WORLD_W, WORLD_H, 4).fill(PAPER)
+  for (let c = 1; c < COLS; c++) for (let y = 0; y < WORLD_H; y += 11) pagesG.moveTo(c * PAGE_W, y).lineTo(c * PAGE_W, Math.min(y + 6, WORLD_H))
+  for (let r = 1; r < ROWS; r++) for (let x = 0; x < WORLD_W; x += 11) pagesG.moveTo(x, r * PAGE_H).lineTo(Math.min(x + 6, WORLD_W), r * PAGE_H)
+  pagesG.stroke({ width: 1.5, color: 0x1f1b16, alpha: .13 })
+  const pageLabelStyle = new P.TextStyle({ fontFamily: 'Geist, system-ui, sans-serif', fontSize: 20, fill: '#857c6e' })
+  const pageLabels = []
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const t = new P.Text({ text: `Page ${r * COLS + c + 1}`, style: pageLabelStyle }); t.position.set(c * PAGE_W + 16, (r + 1) * PAGE_H - 34);
+    world.addChildAt(t, 1); pageLabels.push(t)
+  }
+
+  // Shared sticky shadow texture, baked once.
+  const shadowTex = (() => {
+    const c = document.createElement('canvas'); c.width = 260; c.height = 240
+    const x = c.getContext('2d'); x.shadowColor = 'rgba(0,0,0,.26)'; x.shadowBlur = 16; x.shadowOffsetY = 9; x.fillStyle = '#000'
+    x.beginPath(); x.roundRect(30, 30, 200, 170, [4, 4, 24, 4]); x.fill()
+    x.globalCompositeOperation = 'destination-out'; x.shadowColor = 'transparent'; x.beginPath(); x.roundRect(30, 30, 200, 170, [4, 4, 24, 4]); x.fill()
+    return P.Texture.from(c)
+  })()
+  const styleCache = new Map()
+  const labelStyle = (size, color) => {
+    const k = size + color
+    if (!styleCache.has(k)) styleCache.set(k, new P.TextStyle({ fontFamily: 'Geist, system-ui, sans-serif', fontSize: size, fill: color, lineHeight: Math.round(size * 1.2) }))
+    return styleCache.get(k)
+  }
+  const stickyStyles = new Map()
+  const stickyStyle = (w) => {
+    if (!stickyStyles.has(w)) stickyStyles.set(w, new P.TextStyle({ fontFamily: 'Caveat, cursive', fontSize: 24, fill: '#1f1b16', lineHeight: 26, wordWrap: true, wordWrapWidth: w - STICKY_PAD * 2 }))
+    return stickyStyles.get(w)
+  }
+
+  let model = [], nodes = [], texts = [], conns = [], connsOf = [], hub = 0
+  let dirty = true, viewDirty = true, cullOn = true, selected = -1, benchMode = false
+  let textRes = DPR, resTimer = 0, lastResInfo = ''
+
+  function drawConnector(c) {
+    const [x1, y1, x2, y2] = connectorEnds(model[c.a].box, model[c.b].box)
+    const g = c.g; g.clear()
+    g.moveTo(x1, y1).lineTo(x2, y2).stroke({ width: 2, color: CONNECTOR, cap: 'round' })
+    const ang = Math.atan2(y2 - y1, x2 - x1), s = 11, ca = Math.cos(ang), sa = Math.sin(ang)
+    g.poly([x2 + ca, y2 + sa, x2 - s * ca + s * .5 * sa, y2 - s * sa - s * .5 * ca, x2 - s * ca - s * .5 * sa, y2 - s * sa + s * .5 * ca]).fill(CONNECTOR)
+    c.bounds = { x: Math.min(x1, x2) - 12, y: Math.min(y1, y2) - 12, w: Math.abs(x2 - x1) + 24, h: Math.abs(y2 - y1) + 24 }
+  }
+  function inkGraphics(pts, color, width, ox, oy) {
+    const g = new P.Graphics()
+    smoothPath(pts, (x, y) => g.moveTo(x - ox, y - oy), (a, b, x, y) => g.quadraticCurveTo(a - ox, b - oy, x - ox, y - oy), (x, y) => g.lineTo(x - ox, y - oy))
+    g.stroke({ width, color, cap: 'round', join: 'round' })
+    return g
+  }
+  function makeNode(o) {
+    if (o.type === 'text') {
+      const t = new P.Text({ text: o.text, style: labelStyle(o.size, o.color), resolution: textRes })
+      t.position.set(o.x, o.y)
+      o.box = { x: o.x, y: o.y, w: t.width, h: t.height }
+      texts.push(t); return t
+    }
+    if (o.type === 'sticky') {
+      const c = new P.Container(); c.position.set(o.x, o.y)
+      const sh = new P.Sprite(shadowTex); sh.position.set(-30 * o.w / 200, -30 * o.h / 170); sh.scale.set(o.w / 200, o.h / 170)
+      const bg = new P.Graphics(); bg.moveTo(4, 0).lineTo(o.w - 4, 0).arcTo(o.w, 0, o.w, 4, 4).lineTo(o.w, o.h - 4).arcTo(o.w, o.h, o.w - 4, o.h, 4).lineTo(24, o.h).arcTo(0, o.h, 0, o.h - 24, 24).lineTo(0, 4).arcTo(0, 0, 4, 0, 4).closePath().fill(o.color)
+      const t = new P.Text({ text: o.text, style: stickyStyle(o.w), resolution: textRes }); t.position.set(STICKY_PAD, STICKY_PAD)
+      c.addChild(sh, bg, t); c.label = 'sticky'
+      o.textNode = t
+      o.box = { x: o.x, y: o.y, w: o.w, h: o.h }
+      texts.push(t); return c
+    }
+    if (o.type === 'shape') {
+      const g = new P.Graphics()
+      if (o.kind === 'rect') g.roundRect(1, 1, o.w - 2, o.h - 2, 14); else g.ellipse(o.w / 2, o.h / 2, o.w / 2 - 1, o.h / 2 - 1)
+      g.fill(o.fill).stroke({ width: 2, color: 0x1f1b16 })
+      g.position.set(o.x, o.y)
+      o.box = { x: o.x, y: o.y, w: o.w, h: o.h }
+      return g
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (let k = 0; k < o.pts.length; k += 2) { minX = Math.min(minX, o.pts[k]); maxX = Math.max(maxX, o.pts[k]); minY = Math.min(minY, o.pts[k + 1]); maxY = Math.max(maxY, o.pts[k + 1]) }
+    const pad = o.width
+    const g = inkGraphics(o.pts, o.color, o.width, minX, minY)
+    g.position.set(minX, minY)
+    o.box = { x: minX - pad, y: minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad }
+    o.inkOffset = [-pad, -pad]; o.pts0x = minX; o.pts0y = minY
+    return g
+  }
+
+  function build(scene) {
+    closeEditor(false)
+    for (const c of [...connLayer.removeChildren(), ...objLayer.removeChildren()]) c.destroy({ children: true, context: true })
+    texts = []; selected = -1; selG.clear()
+    const t0 = performance.now()
+    model = scene.objects.map((o) => ({ ...o, pts: o.pts }))
+    nodes = model.map(makeNode)
+    objLayer.addChild(...nodes)
+    connsOf = []
+    conns = scene.connectors.map(([a, b]) => {
+      const c = { a, b, g: new P.Graphics() }
+      drawConnector(c); connLayer.addChild(c.g);
+      (connsOf[a] ||= []).push(c); (connsOf[b] ||= []).push(c)
+      return c
+    })
+    hub = scene.hub
+    const ms = performance.now() - t0
+    resetView()
+    return ms
+  }
+
+  function markView() { viewDirty = true; dirty = true; updateDesk(host, world.scale.x, world.position.x, world.position.y); positionEditor(); scheduleTextRes() }
+  function panBy(dx, dy) { world.position.x += dx; world.position.y += dy; markView() }
+  function zoomAt(sx, sy, f) {
+    const z0 = world.scale.x, z = Math.min(8, Math.max(0.05, z0 * f)), k = z / z0
+    world.position.set(sx - (sx - world.position.x) * k, sy - (sy - world.position.y) * k)
+    world.scale.set(z); markView()
+  }
+  function getView() { return { z: world.scale.x, x: world.position.x, y: world.position.y } }
+  function setView(z, x, y) { world.scale.set(z); world.position.set(x, y); markView() }
+  function resetView() { const v = fitView(host); setView(v.z, v.x, v.y) }
+
+  function cull() {
+    const z = world.scale.x, m = 40 / z
+    const vx = -world.position.x / z - m, vy = -world.position.y / z - m, vw = app.renderer.screen.width / z + 2 * m, vh = app.renderer.screen.height / z + 2 * m
+    let shown = 0
+    for (let i = 0; i < nodes.length; i++) {
+      const b = model[i].box
+      const out = cullOn && (b.x > vx + vw || b.y > vy + vh || b.x + b.w < vx || b.y + b.h < vy)
+      if (nodes[i].culled !== out) nodes[i].culled = out
+      if (!out) shown++
+    }
+    for (const c of conns) {
+      const b = c.bounds
+      const out = cullOn && (b.x > vx + vw || b.y > vy + vh || b.x + b.w < vx || b.y + b.h < vy)
+      if (c.g.culled !== out) c.g.culled = out
+    }
+    lastShown = shown
+  }
+  let lastShown = 0
+
+  // Re-rasterize visible labels at a sharper resolution once zooming stops.
+  function scheduleTextRes() {
+    if (benchMode) return
+    clearTimeout(resTimer)
+    resTimer = setTimeout(applyTextRes, 160)
+  }
+  function applyTextRes() {
+    const z = world.scale.x
+    const want = DPR * (z <= 1 ? 1 : z <= 2 ? 2 : z <= 4 ? 4 : 6)
+    textRes = want
+    const t0 = performance.now(); let n = 0
+    for (const t of texts) {
+      if (t.resolution === want) continue
+      let p = t; let culled = false
+      while (p && p !== world) { if (p.culled) { culled = true; break } p = p.parent }
+      if (culled) continue
+      t.resolution = want; n++
+    }
+    if (n) { dirty = true; lastResInfo = `sharpened ${n} labels for ${(z).toFixed(2)}× zoom (${(performance.now() - t0).toFixed(0)} ms + next frame)` }
+  }
+
+  function renderNow() {
+    if (viewDirty) { cull(); viewDirty = false }
+    const t0 = performance.now()
+    app.renderer.render(app.stage)
+    stats.pendingDraw += performance.now() - t0; stats.rendered = true
+    dirty = false
+  }
+  function tick() { if (dirty) renderNow() }
+
+  function moveObject(i, x, y) {
+    const o = model[i], dx = x - o.box.x, dy = y - o.box.y
+    o.box.x += dx; o.box.y += dy
+    nodes[i].position.x += dx; nodes[i].position.y += dy
+    for (const c of connsOf[i] || []) drawConnector(c)
+    if (selected === i) drawSelection()
+    viewDirty = true; dirty = true
+  }
+  function objectBox(i) { return model[i].box }
+  function drawSelection() {
+    selG.clear()
+    if (selected < 0) return
+    const b = model[selected].box, z = world.scale.x
+    selG.rect(b.x - 4 / z, b.y - 4 / z, b.w + 8 / z, b.h + 8 / z).stroke({ width: 1.5 / z, color: 0x2f6fe0 })
+  }
+
+  // ----- pointer handling (own hit test over the model, topmost first) -----
+  const toWorld = (sx, sy) => [(sx - world.position.x) / world.scale.x, (sy - world.position.y) / world.scale.x]
+  const local = (e) => { const r = app.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top] }
+  // Ink is hit only near its stroke, not anywhere in its bounding box.
+  function nearInk(o, wx, wy) {
+    const p = o.pts, r = o.width / 2 + 6 / world.scale.x, r2 = r * r
+    const dx0 = o.box.x - (o.inkOffset ? o.inkOffset[0] : 0) - o.pts0x, dy0 = o.box.y - (o.inkOffset ? o.inkOffset[1] : 0) - o.pts0y
+    for (let k = 0; k + 3 < p.length; k += 2) {
+      const ax = p[k] + dx0, ay = p[k + 1] + dy0, bx = p[k + 2] + dx0, by = p[k + 3] + dy0
+      const vx = bx - ax, vy = by - ay, L = vx * vx + vy * vy || 1
+      const t = Math.max(0, Math.min(1, ((wx - ax) * vx + (wy - ay) * vy) / L))
+      const ex = ax + t * vx - wx, ey = ay + t * vy - wy
+      if (ex * ex + ey * ey <= r2) return true
+    }
+    return false
+  }
+  function hitTest(wx, wy) {
+    for (let i = model.length - 1; i >= 0; i--) {
+      if (nodes[i].culled) continue
+      const o = model[i], b = o.box
+      if (!(wx >= b.x && wy >= b.y && wx <= b.x + b.w && wy <= b.y + b.h)) continue
+      if (o.type !== 'ink' || nearInk(o, wx, wy)) return i
+    }
+    return -1
+  }
+  let tool = 'select', drag = null, live = null
+  app.canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return
+    app.canvas.setPointerCapture(e.pointerId)
+    const [sx, sy] = local(e), [wx, wy] = toWorld(sx, sy)
+    if (editor) closeEditor(true)
+    if (tool === 'pen') {
+      live = { pts: [wx, wy], g: new P.Graphics() }; topLayer.addChild(live.g); return
+    }
+    const hit = hitTest(wx, wy)
+    if (hit < 0) { selected = -1; drawSelection(); dirty = true; drag = { pan: true, sx, sy }; return }
+    const wasSelected = selected === hit
+    selected = hit; drawSelection(); dirty = true
+    drag = { idx: hit, wx, wy, sx, sy, ox: model[hit].box.x, oy: model[hit].box.y, moved: false, wasSelected }
+  })
+  app.canvas.addEventListener('pointermove', (e) => {
+    const [sx, sy] = local(e)
+    if (live) {
+      const [wx, wy] = toWorld(sx, sy); live.pts.push(wx, wy)
+      live.g.clear()
+      smoothPath(live.pts, (x, y) => live.g.moveTo(x, y), (a, b, x, y) => live.g.quadraticCurveTo(a, b, x, y), (x, y) => live.g.lineTo(x, y))
+      live.g.stroke({ width: 3, color: 0x1f1b16, cap: 'round', join: 'round' })
+      dirty = true; return
+    }
+    if (!drag) { if (tool === 'select') { const [wx, wy] = toWorld(sx, sy); app.canvas.style.cursor = hitTest(wx, wy) >= 0 ? 'move' : 'default' } return }
+    if (drag.pan) { panBy(sx - drag.sx, sy - drag.sy); drag.sx = sx; drag.sy = sy; return }
+    const [wx, wy] = toWorld(sx, sy)
+    if (Math.abs(sx - drag.sx) + Math.abs(sy - drag.sy) > 3) drag.moved = true
+    if (drag.moved) moveObject(drag.idx, drag.ox + wx - drag.wx, drag.oy + wy - drag.wy)
+  })
+  const endPointer = () => {
+    if (live) {
+      const pts = live.pts; live.g.destroy({ context: true }); live = null
+      if (pts.length >= 4) {
+        const o = { type: 'ink', pts, color: '#1f1b16', width: 3 }
+        const n = makeNode(o); model.push(o); nodes.push(n); objLayer.addChild(n)
+      }
+      dirty = true; return
+    }
+    if (drag && !drag.pan && !drag.moved && drag.wasSelected && (model[drag.idx].type === 'text' || model[drag.idx].type === 'sticky')) openEditor(drag.idx)
+    drag = null
+  }
+  app.canvas.addEventListener('pointerup', endPointer)
+  app.canvas.addEventListener('pointercancel', () => { drag = null; if (live) { live.g.destroy({ context: true }); live = null; dirty = true } })
+  app.canvas.addEventListener('dblclick', (e) => {
+    if (tool !== 'select' || editor) return
+    const [sx, sy] = local(e), [wx, wy] = toWorld(sx, sy), hit = hitTest(wx, wy)
+    if (hit >= 0 && (model[hit].type === 'text' || model[hit].type === 'sticky')) openEditor(hit)
+  })
+
+  // ----- DOM text overlay editor -----
+  let editor = null
+  const measureCtx = document.createElement('canvas').getContext('2d')
+  function openEditor(i) {
+    const o = model[i]
+    const ta = document.createElement('textarea')
+    ta.className = 'overlay-edit'; ta.id = 'pixi-edit'; ta.spellcheck = false
+    ta.value = o.text
+    host.appendChild(ta)
+    editor = { i, ta }
+    const node = o.type === 'text' ? nodes[i] : o.textNode
+    node.visible = false; selG.clear(); dirty = true
+    positionEditor()
+    ta.addEventListener('input', positionEditor)
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey && o.type === 'text')) { e.preventDefault(); closeEditor(true) }
+    })
+    ta.addEventListener('blur', () => closeEditor(true))
+    ta.focus(); ta.select()
+  }
+  function positionEditor() {
+    if (!editor) return
+    const o = model[editor.i], ta = editor.ta, z = world.scale.x
+    const sticky = o.type === 'sticky'
+    const size = sticky ? 24 : o.size, lh = sticky ? 26 : Math.round(o.size * 1.2)
+    const family = sticky ? 'Caveat, cursive' : 'Geist, system-ui, sans-serif'
+    ta.style.font = `${size}px/${lh}px ${family}`
+    ta.style.color = sticky ? '#1f1b16' : o.color
+    let w, h
+    if (sticky) {
+      w = o.w; h = o.h
+      ta.style.padding = `${STICKY_PAD}px`; ta.style.background = o.color; ta.style.whiteSpace = 'pre-wrap'; ta.style.borderRadius = '4px 4px 4px 24px'
+    } else {
+      measureCtx.font = `${size}px ${family}`
+      const lines = ta.value.split('\n')
+      w = Math.max(...lines.map((l) => measureCtx.measureText(l || ' ').width)) + size * .6
+      h = lines.length * lh + 2
+      ta.style.background = 'transparent'
+    }
+    ta.style.width = w + 'px'; ta.style.height = h + 'px'
+    ta.style.transform = `translate(${world.position.x + o.box.x * z}px, ${world.position.y + o.box.y * z}px) scale(${z})`
+    ta.style.left = '0px'; ta.style.top = '0px'
+  }
+  function closeEditor(commit) {
+    if (!editor) return
+    const { i, ta } = editor; editor = null
+    const o = model[i]
+    const node = o.type === 'text' ? nodes[i] : o.textNode
+    if (commit && ta.value !== o.text) {
+      o.text = ta.value; node.text = ta.value
+      if (o.type === 'text') { o.box.w = node.width; o.box.h = node.height }
+      for (const c of connsOf[i] || []) drawConnector(c)
+      if (selected === i) drawSelection()
+    }
+    node.visible = true
+    ta.remove(); dirty = true; viewDirty = true
+  }
+
+  function setTool(t) { tool = t; if (t === 'pen') { selected = -1; drawSelection(); dirty = true } app.canvas.style.cursor = t === 'pen' ? 'crosshair' : 'default' }
+  function cancelGesture() { drag = null }
+  function resize() { app.renderer.resize(host.clientWidth, host.clientHeight); markView() }
+  function setCull(on) { cullOn = on; viewDirty = true; dirty = true }
+  function setBench(on) { benchMode = on; if (on) { selected = -1; drawSelection(); closeEditor(true) } else scheduleTextRes() }
+  function footer() { return `${lastShown.toLocaleString()} of ${nodes.length.toLocaleString()} objects drawn${cullOn ? ' (rest culled)' : ''} · ${texts.length.toLocaleString()} text textures${lastResInfo ? ' · ' + lastResInfo : ''}` }
+  return { name: "PixiJS", key: "pixi", host, stats, selectedCount: () => (selected >= 0 ? 1 : 0), multiDrag: false, el: (i) => model[i], hitAt: (sx, sy) => hitTest(...toWorld(sx, sy)), build, panBy, zoomAt, getView, setView, resetView, objectBox, moveObject, renderNow, tick, setTool, cancelGesture, resize, setCull, setBench, footer, renderer: app.renderer }
+}
+
+// =====================================================================
+// Leafer engine (leafer-editor bundle: App + editor + text editor + viewport + arrow)
+// =====================================================================
+function createLeaferEngine(host, foot) {
+  const L = window.LeaferUI
+  const view = document.createElement('div')
+  view.className = 'leafer-view'
+  host.appendChild(view)
+  // App = tree layer (content, design viewport) + sky layer (editor handles), each its own canvas.
+  const app = new L.App({
+    view, pixelRatio: DPR,
+    tree: { type: 'design' },
+    sky: {},
+    editor: {
+      stroke: '#2f6fe0', strokeWidth: 1.5, pointFill: '#ffffff', pointSize: 9, pointRadius: 2,
+      circle: {}, rotateGap: 0, // a visible rotate handle above the box, like Fabric's
+      hover: true, boxSelect: true, multipleSelect: true, openInner: 'double',
+    },
+    zoom: { min: 0.05, max: 8 },
+  })
+  app.start()
+  const tree = app.tree, sky = app.sky, editor = app.editor
+  const stats = makeStats()
+  let benchMode = false, lastRegion = '', regionCount = 0
+
+  // Draw time = wall time of each layer's render call (layout + region redraw). Leafer calls these from its own frame loop.
+  for (const layer of [tree, sky]) {
+    const r = layer.renderer, orig = r.render.bind(r)
+    r.render = function (...a) { const t0 = performance.now(); orig(...a); stats.pendingDraw += performance.now() - t0; stats.rendered = true }
+  }
+  tree.on(L.RenderEvent.START, onView)
+  {
+    tree.on(L.RenderEvent.END, (e) => {
+      if (e.renderBounds) {
+        const b = e.renderBounds, full = b.width >= host.clientWidth * 0.95 && b.height >= host.clientHeight * 0.95
+        lastRegion = full ? 'last redraw: whole view' : `last redraw: ${Math.round(b.width)}×${Math.round(b.height)} px region`
+      }
+    })
+  }
+  function onView() { updateDesk(host, tree.scaleX, tree.x, tree.y) }
+
+  function makePages() {
+    const g = new L.Group({ hittable: false })
+    for (const [gp, a] of SHADOW_BANDS) g.add(new L.Rect({ x: -gp, y: -gp + 8, width: WORLD_W + 2 * gp, height: WORLD_H + 2 * gp, fill: 'rgb(60,40,10)', opacity: a }))
+    g.add(new L.Rect({ x: -1, y: -1, width: WORLD_W + 2, height: WORLD_H + 2, cornerRadius: 5, fill: PAGE_EDGE }))
+    g.add(new L.Rect({ x: 0, y: 0, width: WORLD_W, height: WORLD_H, cornerRadius: 4, fill: PAPER }))
+    let d = ''
+    for (let c = 1; c < COLS; c++) d += `M ${c * PAGE_W} 0 L ${c * PAGE_W} ${WORLD_H} `
+    for (let r = 1; r < ROWS; r++) d += `M 0 ${r * PAGE_H} L ${WORLD_W} ${r * PAGE_H} `
+    g.add(new L.Path({ path: d, stroke: FOLD, strokeWidth: 1.5, dashPattern: [6, 5] }))
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) g.add(new L.Text({ x: c * PAGE_W + 16, y: (r + 1) * PAGE_H - 34, text: `Page ${r * COLS + c + 1}`, fontSize: 20, fill: '#857c6e', fontFamily: 'Geist, system-ui, sans-serif' }))
+    return g
+  }
+  function inkPath(pts) {
+    let d = ''
+    smoothPath(pts, (x, y) => { d += `M ${x} ${y} ` }, (a, b, x, y) => { d += `Q ${a} ${b} ${x} ${y} ` }, (x, y) => { d += `L ${x} ${y} ` })
+    return d
+  }
+  const LABEL_FONT = 'Geist, system-ui, sans-serif'
+  function makeElement(o) {
+    if (o.type === 'text') return new L.Text({ x: o.x, y: o.y, text: o.text, fontSize: o.size, fill: o.color, fontFamily: LABEL_FONT, lineHeight: { type: 'percent', value: 1.2 }, editable: true })
+    if (o.type === 'sticky') return new L.Text({
+      x: o.x, y: o.y, width: o.w, height: o.h, text: o.text, fontSize: 24, lineHeight: 26, fontFamily: 'Caveat, cursive', fill: '#1f1b16', padding: STICKY_PAD,
+      boxStyle: { fill: o.color, cornerRadius: [4, 4, 24, 4], shadow: { x: 0, y: 9, blur: 16, color: 'rgba(0,0,0,.26)' } }, editable: true,
+    })
+    if (o.type === 'shape') {
+      const base = { x: o.x, y: o.y, width: o.w, height: o.h, fill: o.fill, stroke: '#1f1b16', strokeWidth: 2, strokeAlign: 'center', editable: true }
+      return o.kind === 'rect' ? new L.Rect({ ...base, cornerRadius: 14 }) : new L.Ellipse(base)
+    }
+    return new L.Path({ path: inkPath(o.pts), stroke: o.color, strokeWidth: o.width, strokeCap: 'round', strokeJoin: 'round', editable: true })
+  }
+
+  let els = [], boxes = [], conns = [], connsOf = [], idxOf = new Map()
+  const boxOf = (el) => { const b = el.getBounds('box', 'local'); return { x: b.x, y: b.y, w: b.width, h: b.height } }
+  function drawConnector(c) {
+    const [x1, y1, x2, y2] = connectorEnds(boxes[c.a], boxes[c.b])
+    c.el.points = [x1, y1, x2, y2]
+  }
+  function updateConnectors(i) { for (const c of connsOf[i] || []) drawConnector(c) }
+  function refresh(i) { boxes[i] = boxOf(els[i]); updateConnectors(i) }
+  // Two passes: read every moved box first, then write arrow points. Interleaving reads and writes
+  // would force Leafer to re-run layout once per object (about 40 ms for 50 objects instead of 2 ms).
+  function syncSelection() {
+    const moved = []
+    for (const el of editor.list) { const i = idxOf.get(el); if (i != null) { boxes[i] = boxOf(el); moved.push(i) } }
+    for (const i of moved) updateConnectors(i)
+  }
+  for (const ev of [L.EditorMoveEvent.MOVE, L.EditorScaleEvent.SCALE, L.EditorRotateEvent.ROTATE, L.EditorSkewEvent.SKEW]) editor.on(ev, syncSelection)
+  editor.on(L.InnerEditorEvent.CLOSE, (e) => {
+    const el = e.editTarget || e.target, i = idxOf.get(el)
+    // Leafer's contenteditable can leave a zero-width space behind a trailing newline; keep stored text clean.
+    if (el && typeof el.text === 'string' && el.text.includes('​')) el.text = el.text.replace(/​/g, '')
+    if (i != null) refresh(i)
+  })
+
+  function build(scene) {
+    closeText(); editor.cancel()
+    tree.clear()
+    const t0 = performance.now()
+    els = scene.objects.map(makeElement)
+    idxOf = new Map(); els.forEach((el, i) => idxOf.set(el, i))
+    // One plain (non-editable) group per page: arrows first, then objects. A change re-bounds one page, not
+    // the whole desk, and the editor still picks the objects inside (it looks for the nearest editable element).
+    const pages = Array.from({ length: COLS * ROWS }, () => ({ g: new L.Group(), arrows: new L.Group({ hittable: false }), items: [] }))
+    scene.objects.forEach((o, i) => pages[o.page].items.push(els[i]))
+    boxes = new Array(els.length)
+    tree.add(makePages())
+    for (const p of pages) { p.g.add(p.arrows); p.g.add(p.items); tree.add(p.g) }
+    for (let i = 0; i < els.length; i++) boxes[i] = boxOf(els[i])
+    connsOf = []
+    conns = scene.connectors.map(([a, b]) => {
+      const c = { a, b, el: new L.Arrow({ points: [0, 0, 1, 1], stroke: CONNECTOR, strokeWidth: 2, strokeCap: 'round', endArrow: 'triangle' }) }
+      drawConnector(c);
+      (connsOf[a] ||= []).push(c); (connsOf[b] ||= []).push(c)
+      pages[scene.objects[a].page].arrows.add(c.el)
+      return c
+    })
+    const ms = performance.now() - t0
+    resetView()
+    return ms
+  }
+
+  // View: the tree layer is Leafer's zoom layer, so pan/zoom is just its x, y and scale.
+  function setView(z, x, y) { tree.set({ x, y, scaleX: z, scaleY: z }); onView() }
+  function getView() { return { z: tree.scaleX, x: tree.x, y: tree.y } }
+  function panBy(dx, dy) { setView(tree.scaleX, tree.x + dx, tree.y + dy) }
+  function zoomAt(sx, sy, f) {
+    const z0 = tree.scaleX, z = Math.min(8, Math.max(0.05, z0 * f)), k = z / z0
+    setView(z, sx - (sx - tree.x) * k, sy - (sy - tree.y) * k)
+  }
+  function resetView() { const v = fitView(host); setView(v.z, v.x, v.y) }
+  function objectBox(i) { return boxes[i] }
+  function moveObject(i, x, y) {
+    const el = els[i], b = boxes[i]
+    el.x += x - b.x; el.y += y - b.y
+    boxes[i] = { x, y, w: b.w, h: b.h }; updateConnectors(i)
+  }
+  // Synchronous render (layout + changed regions) so the benchmark measures the frame it drives.
+  function renderNow() { tree.renderer.render(); sky.renderer.render() }
+
+  // ----- Pen: app code (Leafer has no brush). One Path, updated per pointer event; Leafer repaints only its area. -----
+  let tool = 'select', live = null
+  const toWorld = (e) => { const r = host.getBoundingClientRect(); return [(e.clientX - r.left - tree.x) / tree.scaleX, (e.clientY - r.top - tree.y) / tree.scaleY] }
+  host.addEventListener('pointerdown', (e) => {
+    if (tool !== 'pen' || e.button !== 0 || !e.isPrimary) return
+    e.stopPropagation(); e.preventDefault()
+    host.setPointerCapture(e.pointerId)
+    const [wx, wy] = toWorld(e)
+    live = { pts: [wx, wy], el: new L.Path({ path: `M ${wx} ${wy} L ${wx} ${wy}`, stroke: '#1f1b16', strokeWidth: 3, strokeCap: 'round', strokeJoin: 'round' }) }
+    tree.add(live.el)
+  }, true)
+  host.addEventListener('pointermove', (e) => {
+    if (!live) return
+    e.stopPropagation()
+    for (const ce of (e.getCoalescedEvents ? e.getCoalescedEvents() : null) || [e]) { const [wx, wy] = toWorld(ce); live.pts.push(wx, wy) }
+    live.el.path = inkPath(live.pts)
+  }, true)
+  const endPen = (e) => {
+    if (!live) return
+    e.stopPropagation()
+    const { el, pts } = live; live = null
+    if (pts.length < 4) { el.remove(); return }
+    el.editable = true
+    idxOf.set(el, els.length); els.push(el); boxes.push(boxOf(el))
+  }
+  host.addEventListener('pointerup', endPen, true)
+  host.addEventListener('pointercancel', endPen, true)
+
+  function closeText() { try { editor.closeInnerEditor() } catch {} }
+  function setTool(t) {
+    tool = t
+    host.dataset.tool = t
+    if (t === 'pen') { closeText(); editor.cancel() }
+  }
+  function cancelGesture() { }
+  function resize() { }
+  function setBench(on) { benchMode = on; if (on) { closeText(); editor.cancel() } }
+
+  // Benchmark multi-select: the editor's own selection, moved through the editor like a drag.
+  let multi = null
+  function selectMany(list) { editor.select(list.map((i) => els[i])); multi = { dx: 0, dy: 0 } }
+  function moveSelection(dx, dy) { editor.move(dx - multi.dx, dy - multi.dy); multi.dx = dx; multi.dy = dy }
+  function endMulti() { if (!multi) return; moveSelection(0, 0); multi = null; editor.cancel() }
+  function selectedCount() { return editor.list.length }
+  function footer() { return `${els.length.toLocaleString()} objects${lastRegion ? ' · ' + lastRegion : ''}` }
+  return { name: 'LeaferJS', key: 'leafer', host, stats, build, panBy, zoomAt, getView, setView, resetView, objectBox, moveObject, renderNow, setTool, cancelGesture, resize, setBench, selectMany, moveSelection, endMulti, selectedCount, multiDrag: true, nativeGestures: true, app, footer, el: (i) => els[i], conns: () => conns, count: () => els.length }
+}
+
+// =====================================================================
+// Shell: wheel, pinch, space-pan, meters, benchmark
+// =====================================================================
+const engines = []
+let scene = null, count = 500, buildInfo = {}
+
+// Space is held for panning (ignored while typing into a text box or an editable element).
+let spaceDown = false
+const typing = () => { const a = document.activeElement; return a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable) }
+window.addEventListener('keydown', (e) => { if (e.code === 'Space' && !typing()) { spaceDown = true; e.preventDefault() } })
+window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceDown = false })
+window.addEventListener('blur', () => { spaceDown = false })
+
+// Fabric and Pixi get the shell's wheel, pinch and Space/middle-drag panning. Leafer uses its own viewport plugin for all three.
+function attachGestures(eng) {
+  if (eng.nativeGestures) return
+  const host = eng.host
+  host.addEventListener('wheel', (e) => {
+    e.preventDefault()
+    if (eng.disabled) return
+    const r = host.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? host.clientHeight : 1
+    let dx = e.deltaX * unit, dy = e.deltaY * unit
+    if (e.ctrlKey || e.metaKey) {
+      const d = Math.max(-60, Math.min(60, dy))
+      eng.zoomAt(sx, sy, Math.exp(-d * 0.01))
+    } else {
+      if (e.shiftKey && !dx) { dx = dy; dy = 0 }
+      eng.panBy(-dx, -dy)
+    }
+  }, { passive: false })
+  // Space-drag or middle-drag pans, intercepted before the engine sees the pointer.
+  let spacePan = null
+  host.addEventListener('pointerdown', (e) => {
+    if (!(spaceDown || e.button === 1) || e.pointerType === 'touch') return
+    e.stopPropagation(); e.preventDefault()
+    host.setPointerCapture(e.pointerId); spacePan = { x: e.clientX, y: e.clientY }
+  }, true)
+  host.addEventListener('pointermove', (e) => {
+    if (!spacePan) return
+    e.stopPropagation(); eng.panBy(e.clientX - spacePan.x, e.clientY - spacePan.y); spacePan = { x: e.clientX, y: e.clientY }
+  }, true)
+  const endSpace = (e) => { if (spacePan) { e.stopPropagation(); spacePan = null } }
+  host.addEventListener('pointerup', endSpace, true); host.addEventListener('pointercancel', endSpace, true)
+  // Two-finger touch pinch + pan, intercepted before the engine sees it.
+  const touches = new Map(); let pinch = null
+  const center = () => { const p = [...touches.values()]; return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1 } }
+  host.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return
+    const r = host.getBoundingClientRect(); touches.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top })
+    if (touches.size === 2) { pinch = center(); eng.cancelGesture(); e.stopPropagation() }
+  }, true)
+  host.addEventListener('pointermove', (e) => {
+    if (!touches.has(e.pointerId)) return
+    const r = host.getBoundingClientRect(); touches.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top })
+    if (pinch && touches.size === 2) {
+      e.stopPropagation()
+      const c = center()
+      eng.panBy(c.x - pinch.x, c.y - pinch.y); eng.zoomAt(c.x, c.y, c.d / pinch.d); pinch = c
+    }
+  }, true)
+  const up = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null }
+  host.addEventListener('pointerup', up, true); host.addEventListener('pointercancel', up, true)
+}
+
+function visibleEngines() { const v = document.getElementById('bays').dataset.view; return engines.filter((e) => (v === 'all' || v === e.key) && !e.disabled) }
+
+// ----- meters -----
+function renderMeter(eng, now) {
+  const h = eng.stats.hist
+  while (h.length && now - h[0].t > 2000) h.shift()
+  const el = document.getElementById('meter-' + eng.key)
+  if (eng.disabled) { el.innerHTML = '<span>not tested at this size</span>'; return }
+  const recent = h.filter((f) => now - f.t <= 1000)
+  if (recent.length < 3) { el.innerHTML = '<span>idle · move something to measure</span>'; return }
+  const fps = recent.length, worst = Math.max(...h.map((f) => f.dt)), draw = h.reduce((s, f) => s + f.draw, 0) / h.length
+  const cls = (v, a, b) => v <= a ? 'good' : v <= b ? 'warn' : 'bad'
+  el.innerHTML = `<span>FPS <b class="pill ${fps >= 50 ? 'good' : fps >= 30 ? 'warn' : 'bad'}">${fps}</b></span>` +
+    `<span>slowest 2 s <b class="pill ${cls(worst, 20, 40)}">${worst.toFixed(0)} ms</b></span>` +
+    `<span>draw <b class="pill ${cls(draw, 8, 16)}">${draw.toFixed(1)} ms</b></span>`
+}
+
+// ----- benchmark -----
+// Phases: pan sweep, zoom in/out, drag the hub object, then (editors only) drag a 50-object selection.
+const PHASES = [['pan', 1800], ['zoom', 1800], ['hub', 1400], ['multi', 1400]]
+let bench = null
+const results = []
+// The 50 objects nearest the hub on its page, deterministic for a given scene.
+function multiSet() {
+  const objs = scene.objects, hub = objs[scene.hub], center = (o) => o.type === 'ink' ? [o.pts[0], o.pts[1]] : [o.x + (o.w || 0) / 2, o.y + (o.h || 0) / 2]
+  const [hx, hy] = center(hub)
+  const list = []
+  for (let i = 0; i < objs.length; i++) if (objs[i].page === hub.page) { const [x, y] = center(objs[i]); list.push([(x - hx) ** 2 + (y - hy) ** 2, i]) }
+  return list.sort((a, b) => a[0] - b[0]).slice(0, 50).map((p) => p[1])
+}
+function phaseAt(eng, e) {
+  let t = 0
+  for (const [name, dur] of PHASES) {
+    if (name === 'multi' && !eng.multiDrag) break
+    if (e < t + dur) return [name, (e - t) / dur]
+    t += dur
+  }
+  return [null, 1]
+}
+function benchStep(eng, e, ctx) {
+  const b = ctx.base, W = eng.host.clientWidth, H = eng.host.clientHeight
+  const [phase, p] = phaseAt(eng, e)
+  if (phase === 'pan') {
+    eng.setView(b.z, b.x - Math.sin(p * Math.PI * 2) * 0.25 * WORLD_W * b.z, b.y - p * 0.6 * WORLD_H * b.z)
+  } else if (phase === 'zoom') {
+    const z = b.z * (1 + 4 * Math.sin(p * Math.PI))
+    const cx = W / 2, cy = H / 2, wx = (cx - b.x) / b.z, wy = (cy - b.y) / b.z
+    eng.setView(z, cx - wx * z, cy - wy * z)
+  } else if (phase === 'hub') {
+    if (!ctx.dragSetup) {
+      const box = eng.objectBox(scene.hub); ctx.dragSetup = true; ctx.origin = { x: box.x, y: box.y }
+      eng.setView(1, W / 2 - (box.x + box.w / 2), H / 2 - (box.y + box.h / 2))
+    }
+    const a = p * Math.PI * 2
+    eng.moveObject(scene.hub, ctx.origin.x + Math.cos(a) * 120 - 120, ctx.origin.y + Math.sin(a) * 120)
+  } else if (phase === 'multi') {
+    if (!ctx.multiSetup) {
+      eng.moveObject(scene.hub, ctx.origin.x, ctx.origin.y); ctx.origin = null
+      ctx.multiSetup = true
+      const box = eng.objectBox(scene.hub)
+      eng.setView(1, W / 2 - (box.x + box.w / 2), H / 2 - (box.y + box.h / 2))
+      eng.selectMany(multiSet()); ctx.selected = eng.selectedCount()
+    }
+    const a = p * Math.PI * 2
+    eng.moveSelection(Math.cos(a) * 120 - 120, Math.sin(a) * 120)
+  }
+  return phase
+}
+const pct = (arr, q) => { if (!arr.length) return NaN; const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * (s.length - 1)))] }
+function finishEngine() {
+  const { eng, frames, ctx } = bench
+  if (ctx.origin) eng.moveObject(scene.hub, ctx.origin.x, ctx.origin.y)
+  if (ctx.multiSetup) eng.endMulti()
+  eng.setBench(false); eng.resetView()
+  const dts = frames.map((f) => f.dt), draws = frames.map((f) => f.draw)
+  const med = pct(dts, .5)
+  const ph = (n) => pct(frames.filter((f) => f.phase === n).map((f) => f.dt), .5)
+  results.unshift({ engine: eng.name, objects: count, view: document.getElementById('bays').dataset.view === 'all' ? 'all three' : 'alone', frames: frames.length, med, p95: pct(dts, .95), worst: Math.max(...dts), dmed: pct(draws, .5), dp95: pct(draws, .95), fps: 1000 / med, pan: ph('pan'), zoom: ph('zoom'), hub: ph('hub'), multi: eng.multiDrag ? ph('multi') : NaN, selected: ctx.selected })
+  renderResults()
+}
+function renderResults() {
+  const tb = document.getElementById('results')
+  if (!results.length) return
+  const ms = (v) => Number.isFinite(v) ? v.toFixed(1) + ' ms' : '—'
+  tb.innerHTML = results.map((r) => `<tr><td>${r.engine}</td><td>${r.objects.toLocaleString()}</td><td>${r.view}</td><td class="num">${r.frames}</td><td class="num">${ms(r.med)}</td><td class="num">${ms(r.p95)}</td><td class="num">${ms(r.worst)}</td><td class="num">${ms(r.dmed)}</td><td class="num">${ms(r.dp95)}</td><td class="num">${r.fps.toFixed(0)}</td><td class="num">${ms(r.pan)}</td><td class="num">${ms(r.zoom)}</td><td class="num">${ms(r.hub)}</td><td class="num">${ms(r.multi)}</td></tr>`).join('')
+}
+function startBenchmark() {
+  if (bench || !scene) return
+  const queue = visibleEngines()
+  if (!queue.length) return
+  document.getElementById('bench-btn').disabled = true
+  const next = () => {
+    const eng = queue.shift()
+    if (!eng) { bench = null; document.getElementById('bench-btn').disabled = false; document.getElementById('bench-status').textContent = 'Done.'; window.__benchDone = true; return }
+    eng.setBench(true)
+    const base = fitView(eng.host)
+    bench = { eng, start: -1, frames: [], ctx: { base }, next }
+    document.getElementById('bench-status').textContent = `Running ${eng.name}…`
+  }
+  window.__benchDone = false
+  next()
+}
+
+// ----- main loop: one rAF drives Pixi rendering, benchmark steps and meters -----
+let last = performance.now(), lastMeter = 0
+function loop(t) {
+  const dt = t - last; last = t
+  if (bench) {
+    if (bench.start < 0) bench.start = t
+    const e = t - bench.start
+    bench.eng.stats.pendingDraw = 0
+    const phase = benchStep(bench.eng, e, bench.ctx)
+    if (!phase) { finishEngine(); bench.next() }
+    else {
+      bench.eng.renderNow()
+      if (e > 0) bench.frames.push({ dt, draw: bench.eng.stats.pendingDraw, phase })
+    }
+  }
+  for (const eng of engines) {
+    if (eng.tick) eng.tick()
+    if (eng.stats.rendered) { eng.stats.hist.push({ t, dt, draw: eng.stats.pendingDraw }); eng.stats.rendered = false; eng.stats.pendingDraw = 0 }
+  }
+  if (t - lastMeter > 250) {
+    lastMeter = t
+    for (const eng of engines) { renderMeter(eng, t); document.getElementById('foot-' + eng.key).textContent = (buildInfo[eng.key] || '') + (!eng.disabled && eng.footer() ? ' · ' + eng.footer() : '') }
+  }
+  requestAnimationFrame(loop)
+}
+
+// ----- controls -----
+function segment(id, attr, onPick) {
+  const seg = document.getElementById(id)
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b || bench || rebuilding) return
+    for (const x of seg.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b))
+    onPick(b.dataset[attr])
+  })
+}
+// usedJSHeapSize is coarse unless Chrome runs with --enable-precise-memory-info; gc() exists only with --js-flags=--expose-gc.
+const heap = () => { if (window.gc) window.gc(); return performance.memory ? performance.memory.usedJSHeapSize : 0 }
+const mb = (b) => (b / 1048576).toFixed(0) + ' MB'
+let rebuilding = false
+async function rebuild() {
+  rebuilding = true
+  scene = makeScene(count)
+  for (const eng of engines) {
+    eng.host.querySelector('.na')?.remove()
+    const busy = document.createElement('div'); busy.className = 'busy'; busy.textContent = `Building ${count.toLocaleString()} objects…`; eng.host.appendChild(busy)
+  }
+  await new Promise((r) => setTimeout(r, 30))
+  for (const eng of engines) {
+    if (eng.maxCount && count > eng.maxCount) {
+      // Fabric is not built at 10k and above.
+      if (!eng.disabled) eng.release()
+      eng.disabled = true
+      buildInfo[eng.key] = `not tested at ${count.toLocaleString()} objects`
+      eng.host.querySelector('.busy')?.remove()
+      const na = document.createElement('div'); na.className = 'na'
+      na.innerHTML = `<div><b>Not tested at this size</b>Fabric is only built up to 5,000 objects. We already know it struggles beyond that. Use Leafer only or Pixi only.</div>`
+      eng.host.appendChild(na)
+      continue
+    }
+    eng.disabled = false
+    const h0 = heap()
+    const ms = eng.build(scene)
+    const t0 = performance.now(); eng.renderNow(); const first = performance.now() - t0
+    const h1 = heap()
+    eng.stats.hist.length = 0; eng.stats.rendered = false; eng.stats.pendingDraw = 0
+    buildInfo[eng.key] = `built in ${ms.toFixed(0)} ms, first draw ${first.toFixed(0)} ms` + (h1 ? ` · JS heap ${mb(h1)} (${h1 >= h0 ? '+' : ''}${mb(h1 - h0)})` : '')
+    eng.lastBuild = { ms, first, heap: h1, heapDelta: h1 - h0 }
+    eng.host.querySelector('.busy')?.remove()
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  rebuilding = false
+}
+
+const themes = ['system', 'light', 'dark']
+let themeIdx = 0
+try { const saved = localStorage.getItem('engine-showdown-theme'); if (themes.includes(saved)) themeIdx = themes.indexOf(saved) } catch {}
+function applyTheme() {
+  const t = themes[themeIdx]
+  if (t === 'system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t)
+  document.getElementById('theme-btn').textContent = 'Theme: ' + t
+  try { localStorage.setItem('engine-showdown-theme', t) } catch {}
+}
+document.getElementById('theme-btn').addEventListener('click', () => { themeIdx = (themeIdx + 1) % 3; applyTheme() })
+applyTheme()
+
+async function main() {
+  const missing = [['fabric', window.fabric], ['leafer', window.LeaferUI], ['pixi', window.PIXI]].filter(([, g]) => !g)
+  for (const [k] of missing) document.getElementById('foot-' + k).textContent = 'Could not load this engine from the CDN. Check the network and reload.'
+  try { await Promise.race([Promise.all([document.fonts.load('24px Caveat'), document.fonts.load('20px Geist')]), new Promise((r) => setTimeout(r, 2500))]) } catch {}
+  if (window.fabric) engines.push(createFabricEngine(document.getElementById('host-fabric'), document.getElementById('foot-fabric')))
+  if (window.LeaferUI) {
+    try { engines.push(createLeaferEngine(document.getElementById('host-leafer'), document.getElementById('foot-leafer'))) }
+    catch (err) { document.getElementById('foot-leafer').textContent = 'LeaferJS could not start here: ' + err.message }
+  }
+  if (window.PIXI) {
+    try { engines.push(await createPixiEngine(document.getElementById('host-pixi'), document.getElementById('foot-pixi'))) }
+    catch (err) { document.getElementById('foot-pixi').textContent = 'PixiJS could not start WebGL here: ' + err.message }
+  }
+  engines.forEach(attachGestures)
+  await rebuild()
+
+  segment('count-seg', 'count', async (v) => { count = Number(v); await rebuild() })
+  segment('tool-seg', 'tool', (t) => engines.forEach((e) => e.setTool(t)))
+  segment('view-seg', 'view', (v) => {
+    document.getElementById('bays').dataset.view = v
+    requestAnimationFrame(() => engines.forEach((e) => { if (e.host.clientWidth && !e.disabled) { e.resize(); e.resetView() } }))
+  })
+  const pix = engines.find((e) => e.key === 'pixi')
+  document.getElementById('cull-toggle').addEventListener('change', (e) => pix && pix.setCull(e.target.checked))
+  document.getElementById('bench-btn').addEventListener('click', startBenchmark)
+  const widths = new Map()
+  const ro = new ResizeObserver(() => engines.forEach((e) => {
+    const w = e.host.clientWidth; if (!w || e.disabled) return
+    e.resize(); if (!bench && widths.has(e) && widths.get(e) !== w) e.resetView(); widths.set(e, w)
+  }))
+  engines.forEach((e) => ro.observe(e.host))
+  requestAnimationFrame(loop)
+  window.__proto = { engines, startBenchmark, results, multiSet, connectorEnds, get scene() { return scene }, get rebuilding() { return rebuilding }, setCount: async (n) => { count = n; await rebuild() }, ready: true }
+}
+main()
+})()
+</script>

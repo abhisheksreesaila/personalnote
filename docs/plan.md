@@ -223,3 +223,8 @@ Merged into `leafer` at d6683b1.
 Includes a speed test in the Mac app before shipping.
 ## F-035 Phones and pencil, Leafer becomes default (P-11) [todo]
 ## F-036 Remove Fabric (P-12) [todo]
+## F-037 Blog post: how we made it fast [todo]
+Captain: the 500/1,000/100,000-object engine test "shows the care… make it a story… publish it in the blog… the test is not a throwaway."
+- [ ] the engine race (docs/story/engine-race/) stays runnable and is kept up to date as Leafer lands
+- [ ] before/after numbers from the real app on Fabric vs Leafer (same notes, same machine, Mac and Linux)
+- [ ] a published post telling the story: Fabric limits, the race, why Leafer, the open note format, with the interactive race embedded
