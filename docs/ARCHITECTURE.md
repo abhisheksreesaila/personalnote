@@ -121,6 +121,19 @@ erDiagram
 
 `resource_id` is stable inside a workspace and keeps exports independent from local row IDs. Import intentionally creates copies with new resource IDs. Existing installations may retain unused legacy tables; v1 neither reads nor populates them, avoiding destructive database migrations.
 
+### Engine-independent document model (F-025, not yet in use)
+
+Notes still persist as Fabric JSON; invariant 2 is unchanged. `src/core/document/` and its Python mirror `document_model.py` define the plain-data model that F-026 will persist instead, so the canvas engine can change (ADR 0001) without a second format change.
+
+- A document is `{schemaVersion, page: {columns, rows}, objects, extras}`. Each object has `id` (= `semanticId`), `type` (`text`, `sticky`, `shape`, `ink`, `image`, `connector`, `group`, or `unknown`), `z` (stacking order), `geometry` (`x`, `y`, `width`, `height`, `rotation`, `scaleX`, `scaleY`, origin) and typed fields per type. `schema.js` is the field reference.
+- Fields are sparse: present only if the stored note had them. Fabric properties without a typed field (defaults like `fillRule`, per-character text styles, unknown future fields) stay in the object's `extras`, so nothing is dropped. Object types the model does not know are kept whole in `raw`.
+- `fromFabric(content, pageState)` and `toFabric(doc)` are pure and exact inverses: `toFabric(fromFabric(x))` deep-equals `x` for every fixture. The only derived values that do not go back are `arrowheads`, `colorKey` and `fillKey`; a content object with no `objects` array gains an empty one.
+- The highlighter's `#rrggbb55` colour is split into `color` and `alpha`; any other colour spelling is kept whole.
+- Pictures are `mediaRef`: `{kind: 'inline', dataUrl}` today, `{kind: 'media', id}` once the media library exists (`toFabric` takes a `resolveMedia` function for those).
+- `validateDocument` lists problems with their paths. Missing, empty and duplicate ids are errors there but still convert, so old notes load.
+- `plain_text` and `search_text` in `document_model.py` return exactly what `note_text.py` and `NoteService.canvas_text` return now, so readers can move onto the model without changing search or agent output.
+- Shared fixtures live in `tests/fixtures/documents/` (real-app gestures, the agent CLI, the seeded 600-object benchmark note, and deliberately damaged notes); `scripts/generate-document-fixtures.mjs` and `scripts/generate_cli_fixture.py` rebuild them. The app does not import the model yet, so the bundle is unchanged.
+
 ## API surface
 
 | Method | Path | Responsibility |
@@ -170,6 +183,7 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `app_paths.py` | Default database location shared by the app, CLI and server |
 | `scripts/build-mac-app.sh`, `packaging/` | macOS app bundle build and Linux launcher |
 | `personal_note_cli.py`, `bin/personal-note` | Machine-readable local CLI for agents, using the same service and portability contracts |
+| `src/core/document/`, `document_model.py` | Engine-independent document model with lossless Fabric conversion (JS and Python mirrors; not yet used by the app) |
 | `note_text.py` | Plain-text projections of notes for agents (reading-order canvas text, mind-map outline) |
 | `src/modules/sync/` | Change-feed polling, safe merge of agent writes, and the agent presence chip |
 | `services.py` | SQLite persistence and FTS5 indexing |
