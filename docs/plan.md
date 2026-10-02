@@ -221,9 +221,10 @@ Merged into `leafer` at e43fffc. Select/move/resize/turn/nudge/delete/z-order/lo
 Merged into `leafer` at 39992fc. Textarea overlay (native IME), words saved as you type (one undo step per session; a mid-session agent merge splits it in two, accepted). Three-way agent merge (src/core/document/merge.js): agent rewrites/deletions/appends and the user's typing all survive. Prettify and voice-into-text disabled on Leafer until F-035.
 ## F-030 Undo/redo on the document model (P-06) [done]
 Merged into `leafer` at ea54a5f. Patch-based history (~1.5 KB/step on 600 objects, undo ~9 ms in app); undo never reverts or corrupts an agent's write (three-way per field, steps never span a merge).
-## F-031 Pen, highlighter, eraser on Leafer (P-07) [doing]
-## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [todo]
-## F-033 Images (media library, F-023), export, print on Leafer (P-09) [todo]
+## F-031 Pen, highlighter, eraser on Leafer (P-07) [done]
+Merged into `leafer` at 79aa1c2. Live stroke on its own layer; one stroke or erase pass = one undo step; eraser takes ink only and leaves locked strokes (differs from Fabric, captain may overrule); an agent merge cancels an erase pass in progress. Up/left page growth and fold-back are F-032.
+## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [doing]
+## F-033 Images (media library, F-023), export, print on Leafer (P-09) [doing]
 ## F-034 Performance pass and agent sync on Leafer (P-10) [todo]
 - [ ] pen at dpr 2: pointer-to-frame p95 ~40 ms with 33-83 ms frames after pointer-down/mid-stroke in headless; confirm on the Mac and fix if real
 - [ ] an agent change arriving mid-erase or mid-stroke can't commit against a doc it wasn't planned on (test)
