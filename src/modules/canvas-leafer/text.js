@@ -118,7 +118,10 @@ export function createTextOverlay({ host }) {
     finish(true)
   }
 
+  let openedAt = 0
   function onBlur() {
+    // The compatibility mouse events that follow a tap can take the focus straight back from an editor opened by it: it keeps the focus.
+    if (area && performance.now() - openedAt < 400 && session) { area.focus({ preventScroll: true }); return }
     // A composition that is still open (the window lost focus mid-word) is committed as the browser leaves it.
     finish(true)
   }
@@ -166,6 +169,7 @@ export function createTextOverlay({ host }) {
         fontKerning: 'auto',
       })
       host.append(area)
+      openedAt = performance.now()
       place()
       fit()
       area.addEventListener('input', () => { if (area) onInput(fit()) })

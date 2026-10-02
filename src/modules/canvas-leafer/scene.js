@@ -904,14 +904,31 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
   }
 
-  // A double click on a text or sticky edits it; on empty paper it makes a new text (the Fabric path does the same).
-  host.addEventListener('dblclick', (event) => {
-    if (event.button !== 0 || event.target === overlay.element) return
+  // A double click on a text or sticky edits it; on empty paper it makes a new text (the Fabric path does the same). A phone sends no
+  // reliable double click, so two taps close together (by finger or pen) count as one, noticed on the click that ends the second tap.
+  function editOrCreateAt(clientX, clientY) {
     const rect = host.getBoundingClientRect()
-    const point = { x: (event.clientX - rect.left - view.x) / view.scale, y: (event.clientY - rect.top - view.y) / view.scale }
+    const point = { x: (clientX - rect.left - view.x) / view.scale, y: (clientY - rect.top - view.y) / view.scale }
     if (textApi.editText(point)) return
     if (boxes.some((box) => point.x >= box.left && point.x <= box.left + box.width && point.y >= box.top && point.y <= box.top + box.height)) return
     textApi.createText(point)
+  }
+  let downType = 'mouse'
+  let lastTap = null
+  let tapEditedAt = 0
+  host.addEventListener('pointerdown', (event) => { downType = event.pointerType || 'mouse' }, true)
+  host.addEventListener('dblclick', (event) => {
+    if (event.button !== 0 || event.target === overlay.element || performance.now() - tapEditedAt < 700) return
+    editOrCreateAt(event.clientX, event.clientY)
+  })
+  host.addEventListener('click', (event) => {
+    if (downType === 'mouse' || event.button !== 0 || event.target === overlay.element) return
+    const at = { x: event.clientX, y: event.clientY, time: performance.now() }
+    const again = lastTap && at.time - lastTap.time < 400 && Math.hypot(at.x - lastTap.x, at.y - lastTap.y) < 30
+    lastTap = again ? null : at
+    if (!again) return
+    tapEditedAt = at.time
+    editOrCreateAt(at.x, at.y)
   })
 
   // ---- pictures (F-033). media.js prepares and uploads them; each is one model object that references the media library file.
@@ -1204,6 +1221,30 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // Paints now what changed (so the live stroke can go the moment its final version is on screen).
     flush() { leafer.renderer.render() },
 
+    // What a finger put down at a window point is on (F-035): 'selection' (the selected objects or their handles), 'object', or 'empty'
+    // (paper, where a finger pans). `slop` is the reach of a fingertip in screen pixels; the handles of a selection reach further.
+    touchHit(clientX, clientY, { slop = 10, handleReach = 16 } = {}) {
+      const rect = host.getBoundingClientRect()
+      const x = clientX - rect.left
+      const y = clientY - rect.top
+      const picked = editorEntries()
+      if (picked.length) {
+        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+        for (const entry of picked) {
+          const b = entry.node.getBounds('box', 'world')
+          left = Math.min(left, b.x); top = Math.min(top, b.y); right = Math.max(right, b.x + b.width); bottom = Math.max(bottom, b.y + b.height)
+        }
+        const inFrame = x >= left - handleReach && x <= right + handleReach && y >= top - handleReach && y <= bottom + handleReach
+        const onTurnHandle = Math.abs(x - (left + right) / 2) <= handleReach + 8 && y >= top - 60 && y <= top // the turn handle sits above the middle of the top edge
+        if (inFrame || onTurnHandle) return 'selection'
+      }
+      const point = { x: (x - view.x) / view.scale, y: (y - view.y) / view.scale }
+      const reach = slop / view.scale
+      for (const box of boxes) {
+        if (point.x >= box.left - reach && point.x <= box.left + box.width + reach && point.y >= box.top - reach && point.y <= box.top + box.height + reach) return 'object'
+      }
+      return doc && connectorAt(doc.objects, point, CONNECTOR_HIT / view.scale) ? 'object' : 'empty'
+    },
     // Where an object is on screen (CSS pixels from the top-left of the Leafer view) and where its box corners are on the page.
     screenBox(id) {
       const node = entries.get(id)?.node

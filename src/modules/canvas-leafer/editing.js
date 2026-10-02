@@ -6,6 +6,8 @@ import '@leafer-in/editor'
 import { EditorEvent, EditorMoveEvent, EditorRotateEvent, EditorScaleEvent } from '@leafer-in/editor'
 
 const BLUE = '#1c70a8' // Fabric's selectionBorderColor and cornerColor
+// A fingertip is far bigger than a mouse pointer: on a touch screen the handles are larger (and so is what each one reaches).
+const COARSE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
 
 export const EDITOR_CONFIG = {
   editSize: 'size', // a resize changes width and height; the letters of a text box never stretch
@@ -13,11 +15,11 @@ export const EDITOR_CONFIG = {
   stroke: BLUE,
   strokeWidth: 1.5,
   pointFill: BLUE,
-  pointSize: 10,
-  pointRadius: 5, // round handles, like Fabric's cornerStyle 'circle'
-  circle: { fill: '#ffffff', stroke: BLUE, strokeWidth: 1.5, width: 12, height: 12, cornerRadius: 6 }, // the turn handle, off the top edge
+  pointSize: COARSE ? 26 : 10,
+  pointRadius: COARSE ? 13 : 5, // round handles, like Fabric's cornerStyle 'circle'
+  circle: { fill: '#ffffff', stroke: BLUE, strokeWidth: 1.5, width: COARSE ? 24 : 12, height: COARSE ? 24 : 12, cornerRadius: COARSE ? 12 : 6 }, // the turn handle, off the top edge
   circleDirection: 'top', // like Fabric's turn handle
-  circleMargin: 22,
+  circleMargin: COARSE ? 30 : 22,
   rotateGap: 0, // turn freely, as Fabric does
   area: { fill: 'rgba(28, 112, 168, 0.08)', stroke: BLUE },
   hover: true,

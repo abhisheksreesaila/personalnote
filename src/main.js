@@ -218,6 +218,8 @@ document.querySelector('#app').innerHTML = `
           </div>
         </div>
         <div class="mobile-capture-controls" aria-label="Canvas capture controls">
+          <button class="mobile-tool-button" id="mobile-select" title="Select, move and resize" aria-label="Select, move and resize" aria-pressed="false"><i data-lucide="mouse-pointer-2"></i></button>
+          <button class="mobile-tool-button" id="mobile-sticky" title="Sticky note" aria-label="Sticky note" aria-pressed="false"><i data-lucide="sticky-note"></i></button>
           <button class="mobile-connect-button" id="mobile-connect" title="Connect two objects" aria-label="Connect two objects" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
           <button class="mobile-draw-button" id="mobile-draw" aria-label="Enable drawing"><i data-lucide="pencil"></i><span>Draw</span></button>
           <button class="mobile-speak-button" id="mobile-speak" data-keeps-text-editing title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
@@ -1761,6 +1763,11 @@ function setTool(tool) {
     canvas.freeDrawingBrush.decimate = 0.8
   }
   canvas.setCursor(canvas.isDrawingMode ? canvas.freeDrawingCursor : canvas.defaultCursor)
+  for (const [id, name] of [['mobile-select', 'select'], ['mobile-sticky', 'sticky'], ['mobile-draw', 'pen']]) {
+    const button = document.getElementById(id)
+    button?.classList.toggle('active', tool === name)
+    button?.setAttribute('aria-pressed', String(tool === name))
+  }
   elements.mobileConnect.classList.toggle('active', tool === 'connect')
   elements.mobileConnect.setAttribute('aria-pressed', String(tool === 'connect'))
   updateInkOptions()
@@ -1787,12 +1794,13 @@ function finishPlacing(object) {
   recordHistory()
 }
 
-function placeObject(kind, point) {
-  if (useLeafer) { // F-029: a sticky on Leafer. (The overlay opens on the next tick: the press that placed it must finish first, or it takes the focus back.)
+function placeObject(kind, point, { now = false } = {}) {
+  if (useLeafer) { // F-029: a sticky on Leafer. (A mouse press opens the overlay on the next tick: the press must finish first, or it takes the focus back. A tap's click is the end already.)
     if (kind !== 'sticky') return null
     const at = { x: point.x, y: point.y }
     setTool('select')
-    setTimeout(() => leaferCanvas.createSticky(at), 0)
+    if (now) leaferCanvas.createSticky(at)
+    else setTimeout(() => leaferCanvas.createSticky(at), 0)
     return null
   }
   const color = currentObjectPalette()[state.objectColor]
@@ -3671,8 +3679,25 @@ function updateCanvasPinch() {
   return true
 }
 
+// What pointer put down last, and whether a pen has touched this window (F-035). An Apple Pencil (pointerType 'pen') draws; once one has
+// been used, a finger is for panning and pinching, never for drawing, so a resting palm leaves no marks.
+let lastPointerType = 'mouse'
+let penSeen = false
+window.addEventListener('pointerdown', (event) => { lastPointerType = event.pointerType || 'mouse' }, true)
+for (const type of ['pointerdown', 'pointermove', 'pointerover']) window.addEventListener(type, (event) => { if (event.pointerType === 'pen') penSeen = true }, true) // (a hovering pencil counts)
+
+// Does a finger put down here pan the view, or is it for the tool? Off the pages, with the Hand, or (palm rejection) with a drawing tool
+// while a pen is in use: it pans. On Leafer with the Select, Text or Sticky tool, a finger on paper (not on an object or the handles of
+// the selection) pans too, as on every phone canvas; there is no marquee by finger.
+function fingerPans(event) {
+  if (state.tool === 'hand' || isOutsidePages(event)) return true
+  if (penSeen && (state.tool === 'pen' || state.tool === 'highlight' || state.tool === 'eraser')) return true
+  if (useLeafer && (state.tool === 'select' || state.tool === 'text' || state.tool === 'sticky')) return leaferCanvas.touchHit(event.clientX, event.clientY) === 'empty'
+  return false
+}
+
 onCanvasInput('pointerdown', (event) => {
-  if (event.pointerType !== 'touch' || window.innerWidth > 800) return
+  if (event.pointerType !== 'touch') return
   canvasTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
   if (canvasTouchPointers.size === 2) {
     beginCanvasPinch()
@@ -3681,7 +3706,7 @@ onCanvasInput('pointerdown', (event) => {
     event.stopImmediatePropagation()
     return
   }
-  if (state.tool !== 'hand' && !isOutsidePages(event)) return
+  if (!fingerPans(event)) return
   canvasPanGesture = {
     pointerId: event.pointerId,
     startX: event.clientX,
@@ -3832,10 +3857,10 @@ canvas.on('mouse:down', (event) => {
     state.eraserLastPoint = { x: event.scenePoint.x, y: event.scenePoint.y }
     state.eraserChanged = eraseAt(state.eraserLastPoint)
   } else if (state.tool === 'sticky' || state.tool === 'shape') {
-    if (event.e.button > 0) return
+    if (event.e.button > 0 || (useLeafer && lastPointerType !== 'mouse')) return // (a finger or pen places on the click that ends the tap, below)
     placeObject(state.tool, event.scenePoint)
   } else if (state.tool === 'text' && useLeafer) {
-    if (event.e.button > 0) return
+    if (event.e.button > 0 || lastPointerType !== 'mouse') return
     const at = { x: event.scenePoint.x, y: event.scenePoint.y }
     setTimeout(() => { if (!leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false }) }, 0)
   } else if (state.tool === 'text') {
@@ -3849,6 +3874,22 @@ canvas.on('mouse:down', (event) => {
     }
   }
 })
+
+// A tap by a finger or a pen places text or a sticky when the tap ends (the lift), not when it begins: a phone only raises its keyboard for
+// focus given at the end of a gesture, and the compatibility mouse events a tap sends are not relied on (Fabric cancels them, so there is no click).
+let tapStart = null
+window.addEventListener('pointerdown', (event) => {
+  tapStart = event.pointerType !== 'mouse' && event.isPrimary && event.target === canvas.upperCanvasEl ? { id: event.pointerId, x: event.clientX, y: event.clientY, time: performance.now() } : null
+}, true)
+window.addEventListener('pointerup', (event) => {
+  const start = tapStart
+  tapStart = null
+  if (!useLeafer || !start || start.id !== event.pointerId || state.activeNoteType !== 'canvas' || canvasPinchGesture) return
+  if (performance.now() - start.time > 600 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) return
+  const at = leaferCanvas.pageAt(event.clientX, event.clientY)
+  if (state.tool === 'sticky') placeObject('sticky', at, { now: true })
+  else if (state.tool === 'text' && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
+}, true)
 
 canvas.on('mouse:dblclick', (event) => {
   if (state.tool === 'select' && !event.target) addText(event.scenePoint)
@@ -4164,7 +4205,10 @@ elements.mobileSpeak.addEventListener('pointerup', async (event) => {
 })
 elements.mobileSpeak.addEventListener('pointercancel', async () => mobileHoldController.cancel())
 elements.mobileSpeak.addEventListener('contextmenu', (event) => event.preventDefault())
-document.querySelector('#mobile-draw').addEventListener('click', () => setTool('pen'))
+document.querySelector('#mobile-draw').addEventListener('click', () => setTool(state.tool === 'pen' ? 'text' : 'pen'))
+// Phones have no dock: Select (to move and resize by finger; the default Text tool edits what a finger taps) and Sticky sit beside Draw.
+document.querySelector('#mobile-select').addEventListener('click', () => setTool(state.tool === 'select' ? 'text' : 'select'))
+document.querySelector('#mobile-sticky').addEventListener('click', () => setTool(state.tool === 'sticky' ? 'text' : 'sticky'))
 // Phones have no dock, so the Connect tool sits beside Draw: tap to arm it, tap again to go back to typing.
 elements.mobileConnect.addEventListener('click', () => setTool(state.tool === 'connect' ? 'text' : 'connect'))
 const searchButton = elements.searchButton

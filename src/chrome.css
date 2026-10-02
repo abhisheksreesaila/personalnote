@@ -429,7 +429,9 @@
     .app-shell .scroll-indicator-x { display: none; }
     .app-shell .mobile-capture-controls button { border-radius: 16px; border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); transition: transform 140ms var(--ease-out); }
     .app-shell .mobile-capture-controls button:active { transform: scale(.96); }
-    .app-shell .mobile-draw-button, .app-shell .mobile-connect-button { background: var(--glass-solid); color: var(--sk-ink); }
+    .app-shell .mobile-draw-button, .app-shell .mobile-connect-button, .app-shell .mobile-tool-button { background: var(--glass-solid); color: var(--sk-ink); }
+    .app-shell .mobile-tool-button { min-width: 54px; min-height: 54px; padding: 0; }
+    .app-shell .mobile-tool-button.active, .app-shell .mobile-draw-button.active { background: var(--sk-accent-soft); color: var(--sk-accent); border-color: var(--sk-accent); }
     .app-shell .mobile-connect-button { min-width: 54px; min-height: 54px; padding: 0; }
     .app-shell .mobile-connect-button.active { background: var(--sk-accent-soft); color: var(--sk-accent); border-color: var(--sk-accent); }
     .app-shell .mobile-speak-button { background: var(--accent-fill); color: var(--sk-accent-ink); border-color: var(--accent-fill) !important; white-space: nowrap; }
@@ -496,6 +498,8 @@
 @media screen {
   #leafer-host { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
   #leafer-host canvas { display: block; }
+  /* F-035: the browser never takes a finger on the canvas for its own scroll, zoom or long-press menu (it would cancel the drag the editor was following). */
+  #leafer-host, #leafer-host canvas { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .app-shell.engine-leafer .tool-dock { opacity: .35; pointer-events: none; }
   /* F-030: Undo and Redo work in Leafer mode; the rest of the dock stays dimmed and inert until F-028 and later tickets bring its tools. */
   .app-shell.engine-leafer .tool-dock { opacity: 1; }
@@ -512,7 +516,7 @@
   .app-shell.engine-leafer .tool-dock [data-tool="select"], .app-shell.engine-leafer .tool-dock [data-tool="hand"], .app-shell.engine-leafer .tool-dock [data-tool="text"], .app-shell.engine-leafer .tool-dock [data-tool="sticky"] { pointer-events: auto; }
   /* F-029: text and stickies work on Leafer, so the Text and Sticky tools and the colour swatches (text colour, sticky colour) are live. */
   .app-shell.engine-leafer .tool-dock .ink-swatches { pointer-events: auto; opacity: 1; }
-  .leafer-text-editor { z-index: 5; }
+  .leafer-text-editor { z-index: 5; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; } /* (the host is not selectable; the words being typed are) */
   /* F-031: the pen, the highlighter and the eraser work on Leafer. Their surface takes the pointer; the stroke being drawn is on its own canvas. */
   .app-shell.engine-leafer .tool-dock .tool-button:is([data-tool="pen"], [data-tool="highlight"], [data-tool="eraser"]) { opacity: 1; pointer-events: auto; }
   /* F-032: the connect tool works on Leafer too; its surface takes the pointer while it is on. */

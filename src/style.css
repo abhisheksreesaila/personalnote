@@ -580,7 +580,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 @media (max-width: 560px) {
   .mobile-capture-controls { position: fixed; z-index: 22; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 8px; }
   .mobile-capture-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; font: 600 12px/1 var(--ui-font, "IBM Plex Mono", monospace); cursor: pointer; }
-  .mobile-draw-button { min-width: 54px; min-height: 54px; color: var(--ink); background: var(--surface); }
+  .mobile-draw-button, .mobile-tool-button { min-width: 54px; min-height: 54px; color: var(--ink); background: var(--surface); }
+  .mobile-tool-button.active, .mobile-draw-button.active { background: var(--accent-soft, #e5eef5); border-color: var(--accent) !important; }
+  @media (max-width: 440px) { .mobile-capture-controls { gap: 6px; } .mobile-capture-controls button { padding: 0 10px; } .mobile-draw-button, .mobile-tool-button, .mobile-connect-button { min-width: 46px !important; min-height: 46px !important; padding: 0 !important; } .mobile-draw-button span { display: none; } }
   .mobile-speak-button { min-height: 56px; color: var(--rail); background: var(--accent); border-color: var(--accent) !important; touch-action: none; }
   .mobile-speak-button.active { background: var(--focus); }
   .mobile-capture-controls svg { width: 18px; height: 18px; }
