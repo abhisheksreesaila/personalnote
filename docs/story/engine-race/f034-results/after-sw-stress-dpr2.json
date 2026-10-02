@@ -1,5 +1,5 @@
 {
- "when": "2026-10-02T13:13:51.105Z",
+ "when": "2026-10-02T14:07:01.215Z",
  "browser": "151.0.7922.34",
  "results": [
   {
@@ -16,7 +16,7 @@
    "rows": [
     {
      "scenario": "open (to first settled frame, cold)",
-     "p50": 1930,
+     "p50": 1881,
      "p95": null,
      "max": null,
      "n": 1
@@ -24,100 +24,100 @@
     {
      "scenario": "pan, zoomed out to 30%",
      "p50": 16.7,
-     "p95": 316.7,
-     "max": 383.4,
-     "n": 485,
-     "slow": 192
+     "p95": 83.4,
+     "max": 383.3,
+     "n": 479,
+     "slow": 153
     },
     {
      "scenario": "zoom (ctrl+wheel) from 30%",
-     "p50": 33.4,
-     "p95": 350,
-     "max": 433.3,
-     "n": 472,
-     "slow": 285
+     "p50": 33.3,
+     "p95": 349.9,
+     "max": 466.6,
+     "n": 470,
+     "slow": 270
     },
     {
      "scenario": "pan at 100%",
-     "p50": 16.8,
+     "p50": 16.7,
      "p95": 283.4,
      "max": 316.7,
-     "n": 482,
-     "slow": 237
+     "n": 486,
+     "slow": 224
     },
     {
      "scenario": "drag one object (100%)",
      "p50": 16.7,
      "p95": 66.7,
-     "max": 299.9,
-     "n": 286,
-     "slow": 101
+     "max": 366.7,
+     "n": 284,
+     "slow": 115
     },
     {
      "scenario": "drag 40 selected objects (100%)",
      "p50": 16.7,
      "p95": 550.1,
-     "max": 616.6,
+     "max": 616.7,
      "n": 196,
-     "slow": 88
+     "slow": 84
     },
     {
      "scenario": "undo (25 steps, the call)",
-     "p50": 17.4,
-     "p95": 21.6,
-     "max": 23.1,
+     "p50": 17.2,
+     "p95": 21,
+     "max": 25.2,
      "n": 25
     },
     {
      "scenario": "undo (25 steps, to the frame after)",
-     "p50": 280.7,
-     "p95": 287.9,
-     "max": 288.5,
+     "p50": 288.7,
+     "p95": 297.2,
+     "max": 302,
      "n": 25
     },
     {
      "scenario": "redo (25 steps, the call)",
-     "p50": 16.7,
-     "p95": 24,
-     "max": 38.9,
+     "p50": 17.6,
+     "p95": 21.4,
+     "max": 25,
      "n": 25
     },
     {
      "scenario": "redo (25 steps, to the frame after)",
-     "p50": 282.5,
-     "p95": 289.9,
-     "max": 304,
+     "p50": 285.8,
+     "p95": 299.8,
+     "max": 301.1,
      "n": 25
     },
     {
      "scenario": "pen strokes (100%): frame gaps",
      "p50": 16.7,
      "p95": 16.8,
-     "max": 66.8,
-     "n": 582,
+     "max": 99.9,
+     "n": 584,
      "slow": 18
     },
     {
      "scenario": "pen strokes (100%): input to frame",
-     "p50": 18.4,
-     "p95": 42.5,
-     "max": 99,
+     "p50": 18.5,
+     "p95": 41.3,
+     "max": 102.2,
      "n": 244,
-     "slow": 15
+     "slow": 14
     },
     {
      "scenario": "typing 80 characters: frame gaps",
-     "p50": 33.3,
-     "p95": 66.8,
+     "p50": 49.9,
+     "p95": 83.3,
      "max": 266.6,
-     "n": 177,
-     "slow": 96
+     "n": 166,
+     "slow": 92
     },
     {
      "scenario": "typing 80 characters: key to paint",
-     "p50": 104,
-     "p95": 168,
-     "max": 216,
+     "p50": 120,
+     "p95": 176,
+     "max": 224,
      "n": 82,
      "slow": 82
     }

@@ -1,5 +1,5 @@
 {
- "when": "2026-10-02T12:37:06.137Z",
+ "when": "2026-10-02T14:09:03.917Z",
  "browser": "151.0.7922.34",
  "results": [
   {
@@ -18,7 +18,7 @@
    "rows": [
     {
      "scenario": "open (to first settled frame, cold)",
-     "p50": 1258,
+     "p50": 1265,
      "p95": null,
      "max": null,
      "n": 1
@@ -27,16 +27,16 @@
      "scenario": "pan, zoomed out to 30%",
      "p50": 16.7,
      "p95": 16.7,
-     "max": 50,
-     "n": 363,
+     "max": 66.7,
+     "n": 364,
      "slow": 1
     },
     {
      "scenario": "zoom (ctrl+wheel) from 30%",
      "p50": 16.7,
      "p95": 33.4,
-     "max": 66.8,
-     "n": 391,
+     "max": 83.3,
+     "n": 390,
      "slow": 33
     },
     {
@@ -51,17 +51,17 @@
      "scenario": "drag one object (100%)",
      "p50": 16.7,
      "p95": 16.8,
-     "max": 100.1,
-     "n": 184,
-     "slow": 4
+     "max": 100,
+     "n": 187,
+     "slow": 5
     },
     {
      "scenario": "drag 40 selected objects (100%)",
      "p50": 16.7,
-     "p95": 133.4,
-     "max": 183.3,
-     "n": 203,
-     "slow": 62
+     "p95": 150,
+     "max": 199.9,
+     "n": 206,
+     "slow": 63
     }
    ],
    "errors": []

@@ -1,5 +1,5 @@
 {
- "when": "2026-10-02T13:05:09.160Z",
+ "when": "2026-10-02T13:58:22.422Z",
  "browser": "151.0.7922.34",
  "results": [
   {
@@ -16,7 +16,7 @@
    "rows": [
     {
      "scenario": "open (to first settled frame, cold)",
-     "p50": 655,
+     "p50": 664,
      "p95": null,
      "max": null,
      "n": 1
@@ -24,9 +24,9 @@
     {
      "scenario": "pan, zoomed out to 30%",
      "p50": 16.7,
-     "p95": 16.8,
+     "p95": 16.7,
      "max": 16.8,
-     "n": 362,
+     "n": 363,
      "slow": 0
     },
     {
@@ -34,7 +34,7 @@
      "p50": 16.7,
      "p95": 16.8,
      "max": 16.8,
-     "n": 362,
+     "n": 363,
      "slow": 0
     },
     {
@@ -48,9 +48,9 @@
     {
      "scenario": "drag one object (100%)",
      "p50": 16.7,
-     "p95": 16.8,
+     "p95": 16.7,
      "max": 33.3,
-     "n": 184,
+     "n": 189,
      "slow": 1
     },
     {
@@ -58,50 +58,50 @@
      "p50": 16.7,
      "p95": 33.4,
      "max": 50,
-     "n": 186,
+     "n": 181,
      "slow": 60
     },
     {
      "scenario": "undo (25 steps, the call)",
-     "p50": 4,
-     "p95": 6.4,
-     "max": 7.8,
+     "p50": 4.2,
+     "p95": 5.2,
+     "max": 25.2,
      "n": 25
     },
     {
      "scenario": "undo (25 steps, to the frame after)",
-     "p50": 31.2,
-     "p95": 42.6,
-     "max": 44.1,
+     "p50": 21,
+     "p95": 24.1,
+     "max": 42.7,
      "n": 25
     },
     {
      "scenario": "redo (25 steps, the call)",
-     "p50": 4.3,
-     "p95": 5.9,
-     "max": 6,
+     "p50": 4,
+     "p95": 5.2,
+     "max": 24.4,
      "n": 25
     },
     {
      "scenario": "redo (25 steps, to the frame after)",
-     "p50": 30.9,
-     "p95": 41.8,
-     "max": 47.2,
+     "p50": 20.6,
+     "p95": 22.8,
+     "max": 42,
      "n": 25
     },
     {
      "scenario": "pen strokes (100%): frame gaps",
      "p50": 16.7,
-     "p95": 16.7,
+     "p95": 16.8,
      "max": 16.8,
-     "n": 502,
+     "n": 506,
      "slow": 0
     },
     {
      "scenario": "pen strokes (100%): input to frame",
      "p50": 16.8,
-     "p95": 17.1,
-     "max": 36,
+     "p95": 17.6,
+     "max": 56,
      "n": 244,
      "slow": 3
     },
@@ -110,16 +110,16 @@
      "p50": 16.7,
      "p95": 16.7,
      "max": 16.8,
-     "n": 86,
+     "n": 87,
      "slow": 0
     },
     {
      "scenario": "typing 80 characters: key to paint",
-     "p50": 40,
+     "p50": 32,
      "p95": 48,
-     "max": 48,
+     "max": 56,
      "n": 82,
-     "slow": 45
+     "slow": 40
     }
    ],
    "errors": []

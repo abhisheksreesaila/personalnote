@@ -1,5 +1,5 @@
 {
- "when": "2026-10-02T12:42:12.082Z",
+ "when": "2026-10-02T14:14:13.664Z",
  "browser": "151.0.7922.34",
  "results": [
   {
@@ -18,7 +18,7 @@
    "rows": [
     {
      "scenario": "open (to first settled frame, cold)",
-     "p50": 2600,
+     "p50": 2715,
      "p95": null,
      "max": null,
      "n": 1
@@ -26,26 +26,26 @@
     {
      "scenario": "pan, zoomed out to 30%",
      "p50": 16.7,
-     "p95": 16.8,
-     "max": 166.7,
-     "n": 362,
-     "slow": 3
+     "p95": 16.7,
+     "max": 200,
+     "n": 361,
+     "slow": 2
     },
     {
      "scenario": "zoom (ctrl+wheel) from 30%",
      "p50": 16.7,
      "p95": 116.7,
-     "max": 216.6,
-     "n": 436,
-     "slow": 107
+     "max": 216.7,
+     "n": 435,
+     "slow": 99
     },
     {
      "scenario": "pan at 100%",
      "p50": 16.7,
      "p95": 116.7,
-     "max": 133.3,
-     "n": 477,
-     "slow": 157
+     "max": 133.4,
+     "n": 481,
+     "slow": 159
     }
    ],
    "errors": []

@@ -1,5 +1,5 @@
 {
- "when": "2026-10-02T13:09:03.400Z",
+ "when": "2026-10-02T14:02:16.161Z",
  "browser": "151.0.7922.34",
  "results": [
   {
@@ -16,7 +16,7 @@
    "rows": [
     {
      "scenario": "open (to first settled frame, cold)",
-     "p50": 1369,
+     "p50": 1298,
      "p95": null,
      "max": null,
      "n": 1
@@ -26,82 +26,82 @@
      "p50": 16.7,
      "p95": 16.7,
      "max": 100.1,
-     "n": 363,
+     "n": 362,
      "slow": 3
     },
     {
      "scenario": "zoom (ctrl+wheel) from 30%",
      "p50": 16.7,
      "p95": 83.3,
-     "max": 100,
+     "max": 100.1,
      "n": 425,
-     "slow": 100
+     "slow": 109
     },
     {
      "scenario": "pan at 100%",
      "p50": 16.7,
-     "p95": 100,
-     "max": 116.7,
-     "n": 481,
+     "p95": 83.4,
+     "max": 100.1,
+     "n": 477,
      "slow": 143
     },
     {
      "scenario": "drag one object (100%)",
      "p50": 16.7,
      "p95": 16.8,
-     "max": 133.2,
-     "n": 184,
-     "slow": 3
+     "max": 150.1,
+     "n": 183,
+     "slow": 2
     },
     {
      "scenario": "drag 40 selected objects (100%)",
      "p50": 16.7,
      "p95": 166.7,
      "max": 200,
-     "n": 205,
-     "slow": 62
+     "n": 207,
+     "slow": 61
     },
     {
      "scenario": "undo (25 steps, the call)",
      "p50": 12.1,
-     "p95": 16.8,
-     "max": 19.2,
+     "p95": 18.2,
+     "max": 18.9,
      "n": 25
     },
     {
      "scenario": "undo (25 steps, to the frame after)",
-     "p50": 83.3,
-     "p95": 95.6,
-     "max": 111.3,
+     "p50": 80.9,
+     "p95": 92.8,
+     "max": 106.3,
      "n": 25
     },
     {
      "scenario": "redo (25 steps, the call)",
-     "p50": 12.8,
-     "p95": 15,
-     "max": 17.5,
+     "p50": 11.9,
+     "p95": 13.4,
+     "max": 16,
      "n": 25
     },
     {
      "scenario": "redo (25 steps, to the frame after)",
-     "p50": 83.3,
-     "p95": 87.8,
-     "max": 92.3,
+     "p50": 79.3,
+     "p95": 83,
+     "max": 88.6,
      "n": 25
     },
     {
      "scenario": "pen strokes (100%): frame gaps",
      "p50": 16.7,
-     "p95": 16.7,
+     "p95": 16.8,
      "max": 16.8,
-     "n": 563,
+     "n": 569,
      "slow": 0
     },
     {
      "scenario": "pen strokes (100%): input to frame",
-     "p50": 16.8,
-     "p95": 17.2,
-     "max": 40.5,
+     "p50": 17,
+     "p95": 17.6,
+     "max": 41.4,
      "n": 244,
      "slow": 3
     },
@@ -117,9 +117,9 @@
      "scenario": "typing 80 characters: key to paint",
      "p50": 48,
      "p95": 48,
-     "max": 48,
+     "max": 56,
      "n": 82,
-     "slow": 77
+     "slow": 78
     }
    ],
    "errors": []
