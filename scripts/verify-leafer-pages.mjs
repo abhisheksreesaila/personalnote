@@ -280,6 +280,13 @@ try {
     check('and a later pan or zoom does not move it', Math.abs(cFoldSettled.x - cFold.x) < 0.01 && Math.abs(cFoldSettled.y - cFold.y) < 0.01, `${JSON.stringify(cFold)} -> ${JSON.stringify(cFoldSettled)}`)
     while ((await steps(page)) > 0) await page.evaluate(() => window.__personalNote.leaferEdits.undo())
     check('undone to the start', (await doc(page)).page.columns === 1)
+    // a view that no longer overlaps any page goes at once to the nearest page edge (it is otherwise never moved)
+    await page.evaluate(() => window.__personalNote.setCanvasViewportOffset(-5000, 104, true))
+    const lost = await scene(page, 'view')
+    await page.evaluate(() => window.__personalNote.setCanvasViewportOffset())
+    const found = await page.evaluate(() => { const v = window.__personalNote.leaferCanvas().view(); const g = window.__personalNote.state.pages; return { x: v.x, y: v.y, right: v.x + g.columns * 860 * v.scale, width: window.__personalNote.canvas.getWidth() } })
+    check('a view that left every page behind (after an undo or a fold-back) comes back at once, to the nearest page edge', lost.x < -4000 && found.right > 0 && found.x < found.width, JSON.stringify([lost, found]))
+    await page.evaluate(() => { window.__personalNote.setCanvasViewportOffset(300, 104, true) })
   }
 
   // ---------------------------------------------------------------- an arrow follows an end that is resized or turned

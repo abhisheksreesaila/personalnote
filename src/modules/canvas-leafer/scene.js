@@ -1091,6 +1091,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // For checks: what a drag in progress has put on screen.
     dragState: () => ({ active: live.active, lifted: live.lifted.filter((item) => item.lifted).map((item) => item.entry.id), tilt: live.lifted.filter((item) => item.lifted).map((item) => item.entry.node.rotation - item.rotation), layer: live.lifted.map((item) => item.entry.id), ghost: live.ghost ? JSON.parse(live.ghost) : null, shift: { ...live.shift } }),
     gridNow: () => ({ ...pages }),
+    sizeOf,
     overlayState: () => overlays.state(),
     // What Leafer has for an object now (checks): its place, turn and, for an arrow, its drawing.
     nodeInfo(id) {

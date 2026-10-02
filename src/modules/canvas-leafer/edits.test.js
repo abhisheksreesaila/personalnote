@@ -79,3 +79,15 @@ test('undoing a growth on the top and left after an agent wrote moves the agent\
   assert.deepEqual([edits.doc.page.columns, edits.doc.page.rows], [1, 1])
   assert.equal(edits.doc.objects.find((o) => o.id === 'c').geometry.x, 300)
 })
+
+test('a text with no stored height keeps the last row it crosses into when a page change is undone (the settle uses the engine\'s measured size)', () => {
+  const UPRIGHT = { rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
+  const a = { id: 'a', type: 'image', z: 0, geometry: { x: 100, y: 100, width: 100, height: 60, ...UPRIGHT } }
+  const text = { id: 't', type: 'text', mode: 'box', z: 1, content: 'long', geometry: { x: 100, y: 1900, width: 200, ...UPRIGHT } }
+  const base = { schemaVersion: 1, page: { columns: 1, rows: 1 }, objects: [a, text], extras: {} }
+  const edits = createLeaferEdits({ sizeOf: (object) => (object.id === 't' ? { width: 200, height: 400 } : {}) })
+  edits.open('n', base)
+  edits.record({ label: 'Move', changes: [{ id: 'a', before: a, after: { ...a, geometry: { ...a.geometry, x: 120 } } }], page: { before: { columns: 1, rows: 1 }, after: { columns: 1, rows: 3 }, shift: { x: 0, y: 0 } } })
+  edits.undo()
+  assert.equal(edits.doc.page.rows, 3, 'the text reaches into the third row (1900 + 400), so it stays')
+})

@@ -196,8 +196,15 @@ function applyOp(doc, op, direction, force = false) {
   if (pageShift) {
     // The page frame moved: it is a move of the frame, applied to every object that exists NOW (an agent's included) except the ones this
     // step itself put back (they are in the right frame already).
-    const handled = new Set([...removed, ...replaced.keys(), ...added.map(({ object }) => object.id)])
-    objects = objects.map((object) => (object && !handled.has(object.id) ? shiftedObject(object, pageShift.x, pageShift.y) : object))
+    const handled = new Set([...removed, ...added.map(({ object }) => object.id)])
+    const wanted = new Map(op.changes.map((change) => [change.id, direction === 'undo' ? change.before : change.after]))
+    objects = objects.map((object) => {
+      if (!object || handled.has(object.id)) return object
+      if (!replaced.has(object.id)) return shiftedObject(object, pageShift.x, pageShift.y)
+      // A replaced object whose geometry was kept as it is now (someone moved it since) is still in the old frame: it moves with the rest.
+      const target = wanted.get(object.id)
+      return target && object.geometry !== target.geometry && !deepEqual(object.geometry, target.geometry) ? shiftedObject(object, pageShift.x, pageShift.y) : object
+    })
   }
   return { doc: { ...doc, objects, page }, changed, page: pageChanged, skipped, pageShift }
 }
@@ -211,7 +218,11 @@ function combine(first, second) {
   const byId = new Map(first.changes.map((change) => [change.id, change]))
   for (const change of second.changes) {
     const earlier = byId.get(change.id)
-    if (!earlier) byId.set(change.id, { ...change })
+    if (!earlier) {
+      // An object first touched by the later op is in the frame the earlier op's page shift made; its `before` for the combined step is in the old one.
+      const back = first.page?.shift
+      byId.set(change.id, back && change.before && (back.x || back.y) ? { ...change, before: shiftedObject(change.before, -back.x, -back.y) } : { ...change })
+    }
     else byId.set(change.id, { id: change.id, before: earlier.before, after: change.after, anchor: change.anchor ?? earlier.anchor })
   }
   const changes = [...byId.values()].filter((change) => !(change.before === null && change.after === null) && change.before !== change.after && !(change.before && change.after && deepEqual(change.before, change.after)))

@@ -161,3 +161,32 @@ test('shifting a document moves every object that has a geometry', () => {
   assert.equal(shifted.objects[0].geometry.y, 17)
   assert.equal(shifted.objects[1].raw !== undefined, true)
 })
+
+test('a later edit folded into a step that moved the frame undoes into the old frame (reviewer repro: move A with a prepended column, then move C)', () => {
+  const a = box('a', 100, 100)
+  const c = box('c', 300, 600)
+  const before = doc([a, c])
+  const history = createHistory({ doc: before })
+  const first = finalizeOp(before, { label: 'Move', changes: [{ id: 'a', before: a, after: { ...a, geometry: { ...a.geometry, x: -50 } } }] }).op
+  history.record(first, { coalesce: 'k' })
+  const cNow = objectOf(history.doc, 'c')
+  history.record({ label: 'Move', changes: [{ id: 'c', before: cNow, after: { ...cNow, geometry: { ...cNow.geometry, y: cNow.geometry.y + 50 } } }] }, { coalesce: 'k' })
+  assert.equal(history.stats().undoSteps, 1, 'one step')
+  history.undo()
+  assert.equal(objectOf(history.doc, 'c').geometry.x, 300)
+  assert.equal(objectOf(history.doc, 'c').geometry.y, 600)
+  assert.equal(objectOf(history.doc, 'a').geometry.x, 100)
+})
+
+test('an object an agent moved since keeps its position on undo but still moves back with the frame', () => {
+  const a = box('a', 100, 100)
+  const before = doc([a, box('b', 400, 300)])
+  const history = createHistory({ doc: before })
+  history.record(finalizeOp(before, { label: 'Move', changes: [{ id: 'a', before: a, after: { ...a, geometry: { ...a.geometry, x: -50 } } }] }).op)
+  const aNow = objectOf(history.doc, 'a')
+  history.mergeRemote({ ...history.doc, objects: history.doc.objects.map((o) => (o.id === 'a' ? { ...aNow, geometry: { ...aNow.geometry, y: 700 } } : o)) })
+  history.undo()
+  assert.equal(objectOf(history.doc, 'a').geometry.y, 700, 'the agent\'s move is kept')
+  assert.equal(objectOf(history.doc, 'a').geometry.x, -50, 'and it moved back a page with the frame (the agent kept it where the user had put it)')
+  assert.equal(objectOf(history.doc, 'b').geometry.x, 400)
+})

@@ -983,12 +983,20 @@ function clampedViewOffset(offsetX, offsetY, keep = false, scale = getCanvasScal
     scale,
     margins: viewMargins(window.innerWidth),
     keep,
-    previous: { x: viewportOffsetX, y: viewportOffsetY },
+    previous: useLeafer ? { x: viewportOffsetX, y: viewportOffsetY } : null,
+    legacy: !useLeafer, // the Fabric engine keeps centring a page that fits
   })
 }
 
 function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY, keep = false) {
-  const next = clampedViewOffset(offsetX, offsetY, keep)
+  let next = clampedViewOffset(offsetX, offsetY, keep)
+  // A view that no longer overlaps any page (after an undo or a fold-back) goes at once, not animated, to the nearest page edge.
+  if (useLeafer && !keep) {
+    const scale0 = getCanvasScale()
+    const target = pageExtentsTarget()
+    const apart = next.x + target.right * scale0 <= 0 || next.x >= canvas.getWidth() || next.y + target.bottom * scale0 <= 0 || next.y >= canvas.getHeight()
+    if (apart) next = clampView({ x: next.x, y: next.y }, { viewW: canvas.getWidth(), viewH: canvas.getHeight(), contentW: target.right, contentH: target.bottom, scale: scale0, margins: viewMargins(window.innerWidth) })
+  }
   const previousX = viewportOffsetX
   const moved = next.y !== viewportOffsetY
   viewportOffsetX = next.x
@@ -2296,6 +2304,7 @@ function leaferSourceOf(noteId, doc) {
   return { noteId, editedDoc: doc, shift: { ...leaferFrameShift }, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
 }
 const leaferEdits = createLeaferEdits({
+  sizeOf: (object) => leaferCanvas?.sizeOf(object) ?? {},
   onChange(doc, { kind, page, pageShift, viewShift, selection }) {
     if (leaferSource.noteId !== state.activeNoteId) return
     if (pageShift) leaferFrameShift = { x: leaferFrameShift.x + pageShift.x, y: leaferFrameShift.y + pageShift.y }

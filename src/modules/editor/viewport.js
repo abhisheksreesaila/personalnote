@@ -12,9 +12,13 @@ export function viewMargins(windowWidth) {
 // pannable from its leading margin to its trailing margin; one that fits may sit anywhere between the two margins.
 // `previous` is where the view was a moment ago: when pages were added on the top or left the view followed the content, which can leave it
 // outside the range. It then stays where it is (nothing snaps) and may only move back toward the range, never further out.
-function clampAxis(offset, viewSize, contentSize, before, after, keep, previous) {
+function clampAxis(offset, viewSize, contentSize, before, after, keep, previous, legacy) {
   if (keep) return offset
   const far = viewSize - after - contentSize
+  if (legacy) { // the Fabric engine: a page that fits is centred (or pinned to the leading margin)
+    if (contentSize + before + after <= viewSize) return before === after ? (viewSize - contentSize) / 2 : before
+    return Math.min(before, Math.max(far, offset))
+  }
   let low = Math.min(before, far)
   let high = Math.max(before, far)
   if (Number.isFinite(previous)) { low = Math.min(low, previous); high = Math.max(high, previous) }
@@ -22,10 +26,10 @@ function clampAxis(offset, viewSize, contentSize, before, after, keep, previous)
 }
 
 // `keep` skips the clamp so page growth never moves what is on screen.
-export function clampView(view, { viewW, viewH, contentW, contentH, scale, margins, keep = false, previous = null }) {
+export function clampView(view, { viewW, viewH, contentW, contentH, scale, margins, keep = false, previous = null, legacy = false }) {
   return {
-    x: clampAxis(view.x, viewW, contentW * scale, margins.left, margins.right, keep, previous?.x),
-    y: clampAxis(view.y, viewH, contentH * scale, margins.top, margins.bottom, keep, previous?.y),
+    x: clampAxis(view.x, viewW, contentW * scale, margins.left, margins.right, keep, previous?.x, legacy),
+    y: clampAxis(view.y, viewH, contentH * scale, margins.top, margins.bottom, keep, previous?.y, legacy),
   }
 }
 

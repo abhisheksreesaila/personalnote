@@ -17,7 +17,8 @@ import { shiftedDocument } from '../../core/document/frame.js'
 import { contentBounds } from './bounds.js'
 import { settlePages } from './pages.js'
 
-export function createLeaferEdits({ onChange = () => {} } = {}) {
+// `sizeOf(object)` is the engine's measured size of a text the model stores no height for (the pages are settled around it).
+export function createLeaferEdits({ onChange = () => {}, sizeOf = () => ({}) } = {}) {
   let history = null
   let noteId = null
 
@@ -32,7 +33,7 @@ export function createLeaferEdits({ onChange = () => {} } = {}) {
     let page = result.page
     if (!result.page && !pageShift) return { page, pageShift }
     const doc = history.doc
-    const settled = settlePages(doc.page, contentBounds(doc.objects))
+    const settled = settlePages(doc.page, contentBounds(doc.objects, sizeOf))
     if (settled.columns !== doc.page.columns || settled.rows !== doc.page.rows || settled.shiftX || settled.shiftY) {
       history.mergeRemote({ ...shiftedDocument(doc, settled.shiftX, settled.shiftY), page: { ...doc.page, columns: settled.columns, rows: settled.rows } })
       pageShift = { x: (pageShift?.x ?? 0) + settled.shiftX, y: (pageShift?.y ?? 0) + settled.shiftY }

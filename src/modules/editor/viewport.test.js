@@ -100,3 +100,7 @@ test('shadow bands stack from the outside in and reach the full shadow strength'
 test('an unblurred shadow is one solid band', () => {
   assert.deepEqual(shadowBands({ blur: 0, spread: 2, alpha: 0.5 }), [{ grow: 2, alpha: 0.5 }])
 })
+
+test('the legacy (Fabric) clamp still centres a page that fits', () => {
+  assert.equal(clampView({ x: 300, y: 104 }, { ...desktop, contentW: 860, contentH: 1080, scale: 1, legacy: true }).x, (1400 - 860) / 2)
+})
