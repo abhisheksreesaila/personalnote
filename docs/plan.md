@@ -245,8 +245,8 @@ Includes a speed test in the Mac app before shipping.
 Merged into `leafer` at f40cc31, except the default flip.
 - [ ] the default flip to Leafer, after the captain's Mac speed test (F-034)
 - [ ] check the Pencil palm behaviour and on-screen keyboard on a real iPad/iPhone
-## F-036 Remove Fabric (P-12) [doing]
-Built on `leafer`; merges only after the captain's Mac speed test of v0.4.0-preview.1.
+## F-036 Remove Fabric (P-12) [done]
+Merged into `leafer` at 686aefe: Fabric gone (JS gzip 364.7 → 189.9 KiB, under budget), legacy notes still read and convert. Restored on Leafer after a full feature inventory against main: shape tool, Clear all, dictation placement, agent flag, listening outline, Text tool on open. Undo no longer switches to Text (deliberate). Leafer → main waits on the captain's Mac speed test.
 ## F-037 Blog post: how we made it fast [todo]
 Captain: the 500/1,000/100,000-object engine test "shows the care… make it a story… publish it in the blog… the test is not a throwaway."
 - [ ] the engine race (docs/story/engine-race/) stays runnable and is kept up to date as Leafer lands
