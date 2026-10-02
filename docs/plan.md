@@ -205,8 +205,11 @@ Decision: docs/adr/0002-note-format-json-canvas.md. Captain: "let's use that Obs
 - [ ] SQLite stores the JSON Canvas per note; search, the agent CLI read/append and Markdown export use the Markdown projection (reading order by top edge)
 - [ ] existing notes convert once; the old database file is kept aside untouched
 - [ ] backup/import and an Obsidian vault export/import round-trip
-## F-027 Leafer renders notes (P-03) [review]
+## F-027 Leafer renders notes (P-03) [done]
 Direction change: no dual engine; Leafer work accumulates on the `leafer` integration branch until parity, then replaces Fabric on main (F-035/F-036). Main stays usable meanwhile.
+Merged into `leafer` at d6683b1.
+- [ ] follow-up: parity script matches both directions and catches a missing thin stroke at dpr 1 (limit ~15-20% or a corrected comment)
+- [ ] follow-up: a headless test that uniform strokes double in width at view scale 2; check Leafer strokeScaleFixed on non-uniform x/y scale
 ## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [todo]
 ## F-029 Text and stickies editing on Leafer, IME fix (P-05) [todo]
 ## F-030 Undo/redo on the document model (P-06) [todo]
