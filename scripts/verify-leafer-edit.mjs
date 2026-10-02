@@ -32,7 +32,9 @@ async function mock(page) {
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     const summary = { id: 1, resourceId: 'r1', revision: stored.revision, noteType: 'canvas', title: 'Edit', notebookId: 1, createdAt: now, updatedAt: now }
     if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'N', color: '#76669a', noteCount: 1 }])
-    if (p === '/notes' && req.method() === 'GET') return json([summary])
+    const second = { ...summary, id: 2, resourceId: 'r2', title: 'Other', revision: 1 }
+    if (p === '/notes' && req.method() === 'GET') return json([summary, second])
+    if (p === '/notes/2' && req.method() === 'GET') { await new Promise((resolve) => setTimeout(resolve, 1200)); return json({ ...second, content: { version: '7.4.0', objects: [] }, pageState: { columns: 1, rows: 1 } }) }
     if (p === '/notes/1' && req.method() === 'GET') return json({ ...summary, content: stored.content, pageState: stored.pageState })
     if (p === '/notes/1' && req.method() === 'PUT') {
       const body = JSON.parse(req.postData())
@@ -276,6 +278,24 @@ try {
   check('a drag is one undo step', await act(() => page.keyboard.press('Control+z')) && JSON.stringify(objectOf(savedDoc(), A).geometry) === JSON.stringify(objectOf(before, A).geometry), JSON.stringify(objectOf(savedDoc(), A).geometry))
   await sameGeometryAsOracle(A, 'undo of a move')
   check('undo selects what it restored', (await call(page, 'selection')).includes(A))
+
+  // ---- a switch to another note has started: the old note takes no more input
+  await page.waitForTimeout(1000) // earlier edits are saved
+  await selectOnly(A)
+  const beforeSwitch = await live()
+  const putsAtSwitch = puts.length
+  await page.evaluate(() => document.querySelector('[data-note-id="2"]').click())
+  await page.waitForTimeout(200)
+  check('a note switch clears the selection', (await call(page, 'selection')).length === 0)
+  c = await centre(page, A)
+  await drag(c, { x: c.x + 50, y: c.y + 50 })
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Delete')
+  await page.waitForFunction(() => window.__personalNote.state.activeNoteId === 2, null, { timeout: 5000 })
+  await page.evaluate(() => document.querySelector('[data-note-id="1"]').click())
+  await page.waitForFunction(() => window.__personalNote.state.activeNoteId === 1, null, { timeout: 5000 })
+  await page.waitForTimeout(600)
+  check('the old note comes back exactly as it was and nothing was saved meanwhile', puts.length === putsAtSwitch && JSON.stringify(objectOf(await live(), A).geometry) === JSON.stringify(objectOf(beforeSwitch, A).geometry) && JSON.stringify((await live()).objects.map((o) => o.id)) === JSON.stringify(beforeSwitch.objects.map((o) => o.id)), `puts ${puts.length - putsAtSwitch}`)
 
   // ---- reload shows the same result
   const all = (await live()).objects.filter((o) => o.type !== 'unknown').map((o) => o.id)

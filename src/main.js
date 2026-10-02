@@ -2287,8 +2287,19 @@ elements.selectionBar.addEventListener('click', (event) => {
 })
 
 let selectSequence = 0
+// From the moment a switch to another note starts until it has landed, the old note takes no more input on the Leafer canvas: an edit
+// made then would land on a note that is being left (and be dropped).
+let leaferSwitching = 0
 async function selectNote(id) {
   if (id === state.activeNoteId) return
+  leaferSwitching += 1
+  leaferCanvas.clearSelection()
+  elements.shell.classList.add('leafer-switching')
+  try { await selectNoteNow(id) } finally {
+    if (!--leaferSwitching) elements.shell.classList.remove('leafer-switching')
+  }
+}
+async function selectNoteNow(id) {
   hideToast()
   const sequence = ++selectSequence
   // Stay on the current note rather than drop its edits when they cannot be saved in time.
@@ -4174,7 +4185,7 @@ function panWithKeyboard(event) {
 // Keys for the selection on the Leafer canvas (F-028). Returns true when the key was used. Only called when nothing is being typed.
 const NUDGE_KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 function handleLeaferKey(event) {
-  if (state.activeNoteType !== 'canvas' || state.tool === 'hand') return false
+  if (state.activeNoteType !== 'canvas' || state.tool === 'hand' || leaferSwitching) return false
   const mod = event.ctrlKey || event.metaKey
   if (mod && !event.shiftKey && !event.altKey && event.code === 'KeyA') {
     leaferCanvas.selectAll()
