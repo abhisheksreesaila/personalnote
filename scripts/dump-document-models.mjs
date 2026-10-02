@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
-import { fromFabric, toFabric, toJsonCanvas, validateDocument } from '../src/core/document/index.js'
+import { fromFabric, toJsonCanvas, validateDocument } from '../src/core/document/index.js'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
 
 const fixtureDir = fileURLToPath(new URL('../tests/fixtures/documents/', import.meta.url))
@@ -28,7 +28,6 @@ for (const { name, content, pageState } of entries) {
     model,
     validation: validateDocument(model),
     validationWithoutIds: validateDocument(model, { requireIds: false }),
-    fabric: toFabric(model),
     canvas: toJsonCanvas(model),
     canvasStored: toJsonCanvas(model, { media: store }),
     canvasOmit: toJsonCanvas(model, { derived: 'omit' }),
@@ -37,9 +36,7 @@ for (const { name, content, pageState } of entries) {
 
 const invalid = JSON.parse(fs.readFileSync(fileURLToPath(new URL('../tests/fixtures/invalid-documents.json', import.meta.url)), 'utf8'))
 const invalidResults = invalid.map(({ name, document }) => {
-  let fabricError = null
-  try { toFabric(document) } catch (error) { fabricError = error.message }
-  return { name, validation: validateDocument(document), structural: validateDocument(document, { requireIds: false, strict: false }), fabricError }
+  return { name, validation: validateDocument(document), structural: validateDocument(document, { requireIds: false, strict: false }) }
 })
 
 process.stdout.write(JSON.stringify({ fixtures, invalid: invalidResults }))

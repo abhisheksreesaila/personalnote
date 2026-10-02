@@ -130,9 +130,9 @@ async function runDpr(browser, dpr, content) {
   const rows = []
   rows.push(...await scenarios(page, 'opening view'))
   await page.evaluate(() => {
-    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+    const { viewSize, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
     state.canvasZoom = 1
-    setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104)
+    setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104)
   })
   await page.waitForTimeout(400)
   rows.push(...await scenarios(page, '100%'))

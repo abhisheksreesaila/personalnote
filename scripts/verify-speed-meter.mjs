@@ -52,17 +52,16 @@ async function open(width = 1440, height = 900, skin = 'crayon', query = '') {
     return json([])
   })
   await page.goto(new URL('notes' + query, baseUrl).href)
-  await page.waitForFunction(() => window.__personalNote?.canvas && document.querySelector('.note-list-item.active'), null, { timeout: 30000 })
+  await page.waitForFunction(() => window.__personalNote?.leaferCanvas() && document.querySelector('.note-list-item.active'), null, { timeout: 30000 })
   await page.waitForTimeout(900)
   return { context, page }
 }
 
 
 const toClient = (page, x, y) => page.evaluate(([px, py]) => {
-  const { canvas } = window.__personalNote
-  const v = canvas.viewportTransform
-  const r = canvas.upperCanvasEl.getBoundingClientRect()
-  return { x: r.left + px * v[0] + v[4], y: r.top + py * v[3] + v[5] }
+  const v = window.__personalNote.leaferCanvas().view()
+  const r = document.querySelector('#leafer-host').getBoundingClientRect()
+  return { x: r.left + px * v.scale + v.x, y: r.top + py * v.scale + v.y }
 }, [x, y])
 const pill = (page) => page.locator('.speed-meter')
 const rafOver = async (page, ms) => { const a = await page.evaluate(() => window.__raf); await page.waitForTimeout(ms); return (await page.evaluate(() => window.__raf)) - a }
@@ -80,7 +79,7 @@ const rafOver = async (page, ms) => { const a = await page.evaluate(() => window
   check('frames are measured only while visible', running > idle + 20, `idle ${idle}, on ${running}`)
   await page.screenshot({ path: path.join(shots, 'meter-desktop.png') })
   await page.reload()
-  await page.waitForFunction(() => window.__personalNote?.canvas, null, { timeout: 30000 })
+  await page.waitForFunction(() => window.__personalNote?.leaferCanvas(), null, { timeout: 30000 })
   await page.waitForTimeout(600)
   check('choice is remembered across reload', await pill(page).isVisible())
   await page.click('#top-properties')

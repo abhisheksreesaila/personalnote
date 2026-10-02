@@ -1,6 +1,6 @@
-// Leafer pan/zoom frame times on the 600-object, 12-page benchmark note, measured the way scripts/benchmark-canvas.mjs measures
-// Fabric: wheel events in the real app (Vite dev server, mocked /api), frame time = gap between requestAnimationFrame callbacks
-// (about 16.7 ms is 60 fps). Same note, same scenarios and names, so the rows can be read against benchmark-canvas.
+// Pan/zoom frame times on the 600-object, 12-page benchmark note: wheel events in the real app (Vite dev server, mocked /api), frame time
+// = the gap between requestAnimationFrame callbacks (about 16.7 ms is 60 fps). (The old Fabric engine was measured the same way, with the
+// same note and scenarios, by a script that went with it; its numbers are in docs/story/engine-race/.)
 //
 //   node scripts/benchmark-leafer.mjs [--dpr=1]      # default: dpr 1 and dpr 2
 //
@@ -67,9 +67,9 @@ async function runDpr(browser, baseUrl, dpr, content) {
   const rows = []
   rows.push(await measure(page, 'pan at the opening view (dense note)', () => wheelPan(page)))
   await page.evaluate(() => {
-    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+    const { viewSize, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
     state.canvasZoom = 1
-    setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104)
+    setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104)
   })
   await page.waitForTimeout(300)
   rows.push(await measure(page, 'pan (wheel) at 100%', () => wheelPan(page)))

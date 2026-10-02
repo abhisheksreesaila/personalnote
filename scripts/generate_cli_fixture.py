@@ -1,6 +1,7 @@
 """Builds the CLI-written document fixtures (F-025) with the same code the agent CLI uses.
 
-A temporary database, never the real one. Run after scripts/generate-document-fixtures.mjs:
+A temporary database, never the real one. The Fabric-format fixtures it builds on were generated once with Fabric 7.4.0 and are frozen
+(see tests/fixtures/documents/README.md):
 
     .venv/bin/python scripts/generate_cli_fixture.py
 """

@@ -138,7 +138,6 @@ try {
   check('the strip of the page used for drawing is empty', empty)
   const baseInk = (await inkObjects(page)).length
   const baseSteps = await steps(page)
-  const fabricObjects = () => page.evaluate(() => window.__personalNote.canvas.getObjects().length)
 
   await tool(page, 'pen')
   check('the pen tool is on and its surface takes the pointer', await page.evaluate(() => window.__personalNote.state.tool === 'pen' && getComputedStyle(document.querySelector('.ink-surface')).display !== 'none'))
@@ -149,7 +148,6 @@ try {
   const penState = await api(page, `() => ({ color: window.__personalNote.state.color, width: window.__personalNote.state.penWidth })`)
   check('it has the pen colour and width', pen.color === penState.color && pen.width === penState.width, `${pen.color} ${pen.width} vs ${JSON.stringify(penState)}`)
   check('it is one undo step and the picture has a node for it', (await steps(page)) === baseSteps + 1 && await api(page, `() => window.__personalNote.leaferCanvas().hasNode(${JSON.stringify(pen.id)})`))
-  check('the Fabric canvas stays empty', (await fabricObjects()) === 0)
   const near = pen.points.length > 3 && pen.geometry.width > 200 && pen.geometry.x > 130 && pen.geometry.x < 150
   check('its geometry follows the pointer', near, JSON.stringify(pen.geometry))
 
@@ -457,9 +455,9 @@ try {
     await open(bigPage)
     const bigCdp = await ctx.newCDPSession(bigPage)
     await bigPage.evaluate(() => {
-      const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+      const { viewSize, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
       state.canvasZoom = 1
-      setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104)
+      setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104)
     })
     await bigPage.waitForTimeout(500)
     await tool(bigPage, 'pen')

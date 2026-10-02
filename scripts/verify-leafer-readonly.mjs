@@ -1,6 +1,6 @@
 // F-027 read-only checks, in the real app (Vite dev server on port 4535, mocked in-memory /api, headless Chromium):
 //   - renaming a note saves that note's own content and page state back untouched, to its own id
-//   - a brand-new note holds no Fabric object (no ghost text box), typing saves no text, and the next note switch is clean
+//   - a brand-new note holds no ghost text box, typing saves no text, and the next note switch is clean
 //   - a save is refused when the content on hand belongs to another note
 //   - Print is off (preview does not open, a short notice shows)
 //   - refreshText re-places text that was measured before fonts loaded
@@ -80,25 +80,24 @@ try {
   await page.waitForTimeout(2000)
   puts.length = 0
 
-  // 3. a new note: no Fabric object, typing saves no text
+  // 3. a new note: typing saves no text
   await page.evaluate(() => window.__personalNote.createNote())
   await page.waitForTimeout(1200)
-  const fresh = await page.evaluate(() => ({ active: window.__personalNote.state.activeNoteId, fabric: window.__personalNote.canvas.getObjects().map((o) => `${o.type}:${o.isEditing ? 'editing' : ''}`) }))
-  check('a new note opens with no Fabric object over Leafer', fresh.fabric.length === 0, JSON.stringify(fresh))
+  const fresh = await page.evaluate(() => ({ active: window.__personalNote.state.activeNoteId, objects: window.__personalNote.leaferEdits.doc.objects.length, editing: window.__personalNote.leaferCanvas().isEditingText() }))
+  check('a new note opens empty, with no text box being edited', fresh.objects === 0 && !fresh.editing, JSON.stringify(fresh))
   await page.keyboard.type('hello typed')
   await page.mouse.click(600, 400)
   await page.keyboard.type('more typed')
   await page.waitForTimeout(1500)
-  const typedFabric = await page.evaluate(() => window.__personalNote.canvas.getObjects().length)
   const textSaved = puts.some((put) => JSON.stringify(put.body.content ?? '').includes('typed'))
-  check('typing on a new note creates and saves nothing', typedFabric === 0 && !textSaved, JSON.stringify({ typedFabric, textSaved }))
+  check('typing on a new note saves no text', !textSaved, JSON.stringify({ textSaved }))
   puts.length = 0
 
-  // 4. switching back leaves Fabric empty and Leafer drawing note one
+  // 4. switching back draws note one
   await page.evaluate(() => document.querySelector('[data-note-id="1"]')?.click())
   await page.waitForTimeout(1500)
-  const back = await page.evaluate(() => ({ active: window.__personalNote.state.activeNoteId, fabric: window.__personalNote.canvas.getObjects().length, accounted: (({ drawn, skipped, unknown }) => drawn + skipped + unknown)(window.__personalNote.leaferCanvas().stats()) }))
-  check('switching notes leaves the Fabric canvas empty and Leafer drawing the note', back.active === 1 && back.fabric === 0 && back.accounted === one.content.objects.length, JSON.stringify(back))
+  const back = await page.evaluate(() => ({ active: window.__personalNote.state.activeNoteId, accounted: (({ drawn, skipped, unknown }) => drawn + skipped + unknown)(window.__personalNote.leaferCanvas().stats()) }))
+  check('switching notes leaves Leafer drawing the note', back.active === 1 && back.accounted === one.content.objects.length, JSON.stringify(back))
   check('every save made meanwhile carries its own note content and nothing else', puts.every((put) => JSON.stringify(put.body.content) === JSON.stringify(notesDb[put.id].content)), JSON.stringify(puts.map((p) => p.id)))
 
   // 5. Print is off

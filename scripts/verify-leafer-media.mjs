@@ -1,7 +1,7 @@
 // F-033 checks, in the real app: the real Python server on a temporary database and media folder (port 4790), the Vite dev server in
 // front of it (port 4791, /api proxied to that server), headless Chromium. Pictures dropped, pasted and picked on the Leafer canvas are
 // stored in the media library (a media reference in the saved JSON Canvas, never a data URL), reload to the same picture, undo and
-// redo, move and resize; transparent PNGs stay PNG; the print sheets and the note picture match the Fabric render of the same note;
+// redo, move and resize; transparent PNGs stay PNG; the print sheets carry the pictures at twice size on white paper and the note picture is those sheets side by side;
 // the print preview prints without app chrome; the vault, Markdown and backup exports carry the pictures; and a 12-megapixel drop
 // keeps frames under budget.
 //
@@ -254,7 +254,7 @@ try {
   check('move and resize undo one step each, back to where the picture was placed', Math.abs(gBack.x - g0.x) < 0.5 && Math.abs(gBack.width * gBack.scaleX - g0.width * g0.scaleX) < 0.5, JSON.stringify(gBack))
 
 
-  // ---------------------------------------------------------------- export and print against the Fabric render of the same note
+  // ---------------------------------------------------------------- export and print
   const fixture = JSON.parse(fs.readFileSync(new URL('../tests/fixtures/documents/app-all-tools.json', import.meta.url), 'utf8'))
   const note2 = await (await api('/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Export', notebookId: notebooks[0].id }) })).json()
   const put2 = await api(`/notes/${note2.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Export', notebookId: notebooks[0].id, revision: note2.revision, content: fixture.content, pageState: { columns: 2, rows: 1 } }) })
@@ -280,32 +280,28 @@ try {
     for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
     return btoa(text)
   }, column).then((b64) => Buffer.from(b64, 'base64'))
-  const fabricSheet = (column) => page.evaluate(async (c) => {
-    const { toFabricUnchecked } = await import('/src/core/document/fabric.js')
-    const document_ = window.__personalNote.leaferEdits.doc
-    const urls = new Map()
-    const collect = async (list) => { for (const o of list) { if (o.type === 'image' && o.mediaRef.kind === 'media') { const blob = await (await fetch(`/api/media/${o.mediaRef.id}`)).blob(); urls.set(o.mediaRef.id, await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(blob) })) } } }
-    await collect(document_.objects)
-    const json = toFabricUnchecked(document_, { resolveMedia: (ref) => urls.get(ref.id) })
-    return (await window.__personalNote.renderFabricPrintSheet(c, 0, json)).split(',')[1]
-  }, column).then((b64) => Buffer.from(b64, 'base64'))
+  // How much of a rectangle of a sheet is not white (a picture drawn there is), and the sheet's size.
+  const sheetInk = (png, regions) => page.evaluate(async ([b64, boxes]) => {
+    const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob()); const c = new OffscreenCanvas(image.width, image.height); const x = c.getContext('2d'); x.drawImage(image, 0, 0)
+    const { data, width, height } = x.getImageData(0, 0, image.width, image.height)
+    return { size: [width, height], regions: boxes.map(([x0, y0, x1, y1]) => { let off = 0; let total = 0; for (let y = y0; y < y1; y += 1) for (let xx = x0; xx < x1; xx += 1) { const i = (y * width + xx) * 4; total += 1; if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) off += 1 } return total ? off / total : 0 }) }
+  }, [png.toString('base64'), regions])
 
   const sheets = []
   for (const column of [0, 1]) {
     const leafer = await leaferSheet(column)
-    const fabric = await fabricSheet(column)
-    sheets.push({ leafer, fabric })
-    if (process.env.SAVE_DIR) { fs.mkdirSync(process.env.SAVE_DIR, { recursive: true }); fs.writeFileSync(path.join(process.env.SAVE_DIR, `leafer-${column}.png`), leafer); fs.writeFileSync(path.join(process.env.SAVE_DIR, `fabric-${column}.png`), fabric) }
-    const whole = await diff(page, fabric, leafer)
-    const regions = []
+    sheets.push({ leafer })
+    if (process.env.SAVE_DIR) { fs.mkdirSync(process.env.SAVE_DIR, { recursive: true }); fs.writeFileSync(path.join(process.env.SAVE_DIR, `leafer-${column}.png`), leafer) }
+    const boxes = []
     for (const box of imageBoxes) {
       const x0 = Math.round((box.x - column * 860) * 2) + 6; const y0 = Math.round(box.y * 2) + 6
       const x1 = Math.round((box.x + box.w - column * 860) * 2) - 6; const y1 = Math.round((box.y + box.h) * 2) - 6
-      if (x1 > x0 + 10 && y1 > y0 + 10 && x0 >= 0 && x1 <= 1720 && y1 <= 2160) regions.push({ box, ...(await diff(page, fabric, leafer, [x0, y0, x1, y1])) })
+      if (x1 > x0 + 10 && y1 > y0 + 10 && x0 >= 0 && x1 <= 1720 && y1 <= 2160) boxes.push([x0, y0, x1, y1])
     }
-    console.log(`INFO  sheet ${column + 1} vs Fabric: ${whole.size?.join('x')} ${whole.over40Pct?.toFixed(3)}% of pixels differ by > 40/255, mean level ${whole.meanLevel?.toFixed(3)}; picture interiors: ${regions.map((r) => `${r.over40Pct.toFixed(2)}%/${r.meanLevel.toFixed(2)}`).join(', ') || 'none inside the sheet'}`)
-    check(`export: print sheet ${column + 1} is ${1720}x${2160} like the Fabric sheet and matches it (<= 3% of pixels differ by more than 40/255: glyph edges)`, whole.size?.[0] === 1720 && whole.size?.[1] === 2160 && whole.over40Pct <= 3, JSON.stringify(whole))
-    check(`export: sheet ${column + 1} pictures match the Fabric pictures (interior mean level <= 4/255)`, regions.every((r) => r.meanLevel <= 4 && r.over40Pct <= 1), JSON.stringify(regions))
+    const info = await sheetInk(leafer, boxes)
+    console.log(`INFO  sheet ${column + 1}: ${info.size.join('x')}, picture interiors not white: ${info.regions.map((r) => `${(100 * r).toFixed(1)}%`).join(', ')}`)
+    check(`export: print sheet ${column + 1} is ${1720}x${2160} (one page at twice size)`, info.size[0] === 1720 && info.size[1] === 2160, JSON.stringify(info.size))
+    check(`export: sheet ${column + 1} has its pictures drawn (every picture on this page is more than 2% not white inside)`, info.regions.every((share) => share > 0.02), JSON.stringify(info.regions))
     // no screen-only chrome: the strips along the sheet's edges (where page furniture such as fold lines, shadows and edges would be) are white
     const edge = await page.evaluate(async (b64) => {
       const bmp = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob()); const c = new OffscreenCanvas(bmp.width, bmp.height); const g = c.getContext('2d'); g.drawImage(bmp, 0, 0)
@@ -386,7 +382,7 @@ try {
   const fresh = [await leaferSheet(0), await leaferSheet(1)] // the note has since gained a stroke and a picture
   check('print preview: the sheets are the same pictures as a fresh export of the note (same bytes)', previewSame[0] === fresh[0].length && previewSame[1] === fresh[1].length, `${previewSame} vs ${fresh.map((x) => x.length)}`)
   await page.emulateMedia({ media: 'print' })
-  const chrome = await page.evaluate(() => ['.topbar', '.tool-dock', '.sidebar', '#leafer-host', '.zoom-control', '.engine-pill', '.speed-meter'].map((q) => { const el = document.querySelector(q); return el ? getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0 && !el.closest('[hidden]') : false }))
+  const chrome = await page.evaluate(() => ['.topbar', '.tool-dock', '.sidebar', '#leafer-host', '.zoom-control', '.speed-meter'].map((q) => { const el = document.querySelector(q); return el ? getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0 && !el.closest('[hidden]') : false }))
   check('print: no app chrome is on the printed page (toolbar, dock, sidebar, canvas, zoom)', chrome.every((visible) => visible === false), JSON.stringify(chrome))
   const pdfFile = path.join(work, 'note.pdf')
   fs.writeFileSync(pdfFile, await page.pdf({ format: 'Letter', printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } }))

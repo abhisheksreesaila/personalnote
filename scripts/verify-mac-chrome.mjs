@@ -52,7 +52,7 @@ async function open(width = 1440, height = 900, skin = 'crayon', query = '') {
     return json([])
   })
   await page.goto(new URL('notes' + query, baseUrl).href)
-  await page.waitForFunction(() => window.__personalNote?.canvas && document.querySelector('.note-list-item.active'), null, { timeout: 30000 })
+  await page.waitForFunction(() => window.__personalNote?.leaferCanvas() && document.querySelector('.note-list-item.active'), null, { timeout: 30000 })
   await page.waitForTimeout(900)
   return { context, page }
 }

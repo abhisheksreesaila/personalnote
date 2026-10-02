@@ -132,7 +132,7 @@ try {
   // ---------------------------------------------------------------- the note opens with its arrows in line
   let d = await doc(page)
   check('opening a note brings a stale arrow in line with the two objects it joins', consistent(d), JSON.stringify(d.objects.filter((o) => o.type === 'connector').map((o) => o.geometry)))
-  check('both arrows are on screen, and the Fabric canvas holds nothing', await scene(page, 'hasNode', 'c1') && await scene(page, 'hasNode', 'c2') && (await page.evaluate(() => window.__personalNote.canvas.getObjects().length)) === 0)
+  check('both arrows are on screen', await scene(page, 'hasNode', 'c1') && await scene(page, 'hasNode', 'c2'))
   const c1Line = await page.evaluate(() => { const o = window.__personalNote.leaferEdits.doc.objects.find((x) => x.id === 'c1'); return o.geometry })
   check('the arrow between A and B runs between their facing edges', c1Line.x > 300 && c1Line.x < 320 && c1Line.x + c1Line.width < 500 && c1Line.x + c1Line.width > 480, JSON.stringify(c1Line))
 
@@ -285,7 +285,7 @@ try {
     await page.evaluate(() => window.__personalNote.setCanvasViewportOffset(-5000, 104, true))
     const lost = await scene(page, 'view')
     await page.evaluate(() => window.__personalNote.setCanvasViewportOffset())
-    const found = await page.evaluate(() => { const v = window.__personalNote.leaferCanvas().view(); const g = window.__personalNote.state.pages; return { x: v.x, y: v.y, right: v.x + g.columns * 860 * v.scale, width: window.__personalNote.canvas.getWidth() } })
+    const found = await page.evaluate(() => { const v = window.__personalNote.leaferCanvas().view(); const g = window.__personalNote.state.pages; return { x: v.x, y: v.y, right: v.x + g.columns * 860 * v.scale, width: window.__personalNote.viewSize.width } })
     check('a view that left every page behind (after an undo or a fold-back) comes back at once, to the nearest page edge', lost.x < -4000 && found.right > 0 && found.x < found.width, JSON.stringify([lost, found]))
     await page.evaluate(() => { window.__personalNote.setCanvasViewportOffset(300, 104, true) })
   }
@@ -605,9 +605,9 @@ try {
     const arrows = await bigPage.evaluate(() => window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'connector' && (o.fromId === 'res_rect_3' || o.toId === 'res_rect_3')).length)
     const objects = await bigPage.evaluate(() => window.__personalNote.leaferEdits.doc.objects.length)
     await bigPage.evaluate(([gx, gy]) => {
-      const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+      const { viewSize, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
       state.canvasZoom = 1
-      setCanvasViewportOffset(canvas.getWidth() / 2 - gx * getCanvasScale(), canvas.getHeight() / 2 - gy * getCanvasScale(), true)
+      setCanvasViewportOffset(viewSize.width / 2 - gx * getCanvasScale(), viewSize.height / 2 - gy * getCanvasScale(), true)
     }, [hub.geometry.x + hub.geometry.width / 2, hub.geometry.y + hub.geometry.height / 2])
     await bigPage.waitForTimeout(600)
     await bigPage.evaluate(() => { window.__personalNote.leaferCanvas().clearSelection() })

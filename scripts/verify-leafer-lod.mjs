@@ -45,9 +45,9 @@ async function open(perf) {
   return { context, page, errors }
 }
 const zoomTo = (page, zoom) => page.evaluate((z) => {
-  const { state, getCanvasScale, setCanvasViewportOffset, canvas } = window.__personalNote
+  const { state, getCanvasScale, setCanvasViewportOffset, viewSize } = window.__personalNote
   state.canvasZoom = z === 1 ? 1 : z / state.displayScale
-  setCanvasViewportOffset(z === 1 ? canvas.getWidth() / 2 - 430 * getCanvasScale() : 24, z === 1 ? 104 : 24)
+  setCanvasViewportOffset(z === 1 ? viewSize.width / 2 - 430 * getCanvasScale() : 24, z === 1 ? 104 : 24)
   return getCanvasScale()
 }, zoom)
 const lod = (page) => page.evaluate(() => window.__personalNote.leaferCanvas().lodState())

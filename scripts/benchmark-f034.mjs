@@ -143,15 +143,15 @@ async function runNote(browser, note, dpr) {
   const cdp = await context.newCDPSession(page)
 
   const zoomedOut = () => page.evaluate(() => {
-    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+    const { viewSize, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
     state.canvasZoom = 0.3 / state.displayScale // 30%: below the 60% the page bitmaps are for
     setCanvasViewportOffset(24, 24)
     return getCanvasScale()
   })
   const at100 = () => page.evaluate(() => {
-    const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+    const { viewSize, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
     state.canvasZoom = 1
-    setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104)
+    setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104)
   })
   if (run('pan') || run('zoom')) {
     await zoomedOut()
