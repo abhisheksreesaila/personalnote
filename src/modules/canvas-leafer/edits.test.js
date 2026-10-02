@@ -50,3 +50,14 @@ test('a remote merge of the same note keeps the history; another note starts a n
   assert.equal(edits.canUndo, false)
   assert.equal(edits.noteId, 2)
 })
+
+test('delete leaves a locked object alone and removes the others', () => {
+  const edits = createLeaferEdits()
+  const start = doc()
+  start.objects[0].locked = true
+  edits.open(7, start)
+  assert.equal(edits.deleteObjects(['a']), null)
+  assert.deepEqual(edits.doc.objects.map((o) => o.id), ['a', 'b', 'c', 'd'])
+  edits.deleteObjects(['a', 'd'])
+  assert.deepEqual(edits.doc.objects.map((o) => o.id), ['a', 'b', 'c'])
+})

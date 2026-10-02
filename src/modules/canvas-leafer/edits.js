@@ -10,6 +10,7 @@
 // `onChange(doc, { kind, changed, page, selection })` runs after every edit, undo and redo with the new document. `selection` is
 // the object ids that should be selected afterwards (undo: what the step restored or the selection it began with).
 import { createHistory } from '../../core/document/history.js'
+import { planRemove } from '../../core/document/operations.js'
 
 export function createLeaferEdits({ onChange = () => {} } = {}) {
   let history = null
@@ -48,13 +49,14 @@ export function createLeaferEdits({ onChange = () => {} } = {}) {
     },
     begin: (label) => history?.begin(label),
     end(options) { history?.end(options) },
-    // Deletes top-level objects, and the connectors that point at them, as one undoable step.
+    // Deletes top-level objects, and the connectors that point at them, as one undoable step. The rule (a locked object stays) is
+    // core/document/operations.js planRemove; this only records it.
     deleteObjects(ids) {
       if (!history) return null
-      const wanted = new Set(ids)
-      const gone = history.doc.objects.filter((object) => object && (wanted.has(object.id) || (object.type === 'connector' && (wanted.has(object.fromId) || wanted.has(object.toId)))))
-      if (!gone.length) return null
-      return this.record({ label: 'Delete', changes: gone.map((object) => ({ id: object.id, before: object, after: null })), selection: { before: ids.filter((id) => wanted.has(id)), after: [] } })
+      const { op } = planRemove(history.doc, { ids })
+      if (!op.changes.length) return null
+      const deleted = ids.filter((id) => op.changes.some((change) => change.id === id))
+      return this.record({ ...op, selection: { before: deleted, after: [] } })
     },
     undo: () => wrap('undo'),
     redo: () => wrap('redo'),

@@ -2257,7 +2257,7 @@ function mountLeaferCanvas() {
   leaferHost = host
   host.id = 'leafer-host'
   elements.paper.prepend(host)
-  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options) })
+  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options), onDelete: (ids) => { leaferEdits.deleteObjects(ids); return leaferEdits.doc } })
   elements.shell.classList.add('engine-leafer')
   const pill = document.createElement('div')
   pill.className = 'engine-pill'

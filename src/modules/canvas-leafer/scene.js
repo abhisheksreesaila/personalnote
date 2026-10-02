@@ -70,7 +70,8 @@ function textProps(object, { width, padding = 0, offsetY = 0 }) {
 const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y2}`).join(' ')
 
 // `onOperation(op, { coalesce })` is how an edit leaves the scene: the host records it (undo history, save) and returns the new document.
-export function createScene({ host, width, height, onOperation = () => null }) {
+// `onDelete(ids)` records a delete the same way (the host's one owner of the rule) and returns the new document.
+export function createScene({ host, width, height, onOperation = () => null, onDelete = null }) {
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
   const app = new App({ view: host, width, height, pixelRatio: Math.min(2, globalThis.devicePixelRatio || 1), tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
   const leafer = app.tree
@@ -301,7 +302,6 @@ export function createScene({ host, width, height, onOperation = () => null }) {
     if (built.text && object.mode === 'point') built.text.hittable = true
   }
 
-  const newId = () => `res_${globalThis.crypto.randomUUID().replaceAll('-', '')}`
   const selectionListeners = new Set()
 
   function refreshBox(entry) {
@@ -489,7 +489,10 @@ export function createScene({ host, width, height, onOperation = () => null }) {
       const ids = selectedIds()
       const plan = planRemove(doc, { ids })
       if (!plan.op.changes.length) return false
-      commit(plan.op, { selection: { before: ids, after: [] } })
+      if (onDelete) {
+        committing = true
+        try { doc = onDelete(ids) ?? doc } finally { committing = false }
+      } else commit(plan.op, { selection: { before: ids, after: [] } })
       editing.clear()
       for (const change of plan.op.changes) { const entry = entries.get(change.id); if (entry) dropEntry(entry) }
       return true
