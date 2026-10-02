@@ -155,6 +155,26 @@ try {
     }
     await page.screenshot({ path: `${SHOTS}/${tag}-select.png` })
 
+    // two finger resizes and a move in a row on one sticky: every lift reaches the editor, so nothing sticks and nothing throws
+    {
+      await page.evaluate(() => { window.__personalNote.leaferCanvas().clearSelection(); window.__personalNote.setTool('select') })
+      await tap(page, touch, await centre(page, A))
+      const errorsBefore = errors.length
+      for (const [dx, dy] of [[24, 18], [20, 14]]) {
+        const b = await centre(page, A)
+        const before = objectOf(await live(page), A).geometry
+        await drag(page, touch, { x: b.left + b.width + 4, y: b.top + b.height + 4 }, { x: b.left + b.width + 4 + dx, y: b.top + b.height + 4 + dy })
+        const after = objectOf(await live(page), A).geometry
+        check(`${tag}: consecutive finger resize grows by about the drag (${dx},${dy})`, Math.abs(after.width - before.width - dx / v.scale) < 4, JSON.stringify([before.width, after.width, dx / v.scale]))
+      }
+      const b = await centre(page, A)
+      const g = objectOf(await live(page), A).geometry
+      await drag(page, touch, { x: b.x, y: b.y }, { x: b.x - 20, y: b.y - 16 })
+      const g2 = objectOf(await live(page), A).geometry
+      check(`${tag}: and a move after them moves by the drag`, Math.abs(g2.x - g.x + 20 / v.scale) < 3 && Math.abs(g2.y - g.y + 16 / v.scale) < 3, JSON.stringify([g.x, g2.x]))
+      check(`${tag}: with no errors from the editor`, errors.length === errorsBefore, errors.slice(errorsBefore).join(' | ').slice(0, 300))
+    }
+
     // ---- pan and pinch
     await page.evaluate(() => { window.__personalNote.leaferCanvas().clearSelection(); window.__personalNote.setTool('select') })
     {
@@ -197,7 +217,7 @@ try {
       check(`${tag}: the sticky holds what was typed`, (await live(page)).objects.some((o) => o.type === 'sticky' && o.content === 'by finger'))
       await page.evaluate(() => window.__personalNote.setTool('text'))
       await page.evaluate(() => window.__personalNote.leaferCanvas().clearSelection())
-      const spot2 = (await bareSpot(page, 40)) ?? { x: spot.x, y: spot.y + 90 }
+      const spot2 = (await bareSpot(page, 40)) ?? (await bareSpot(page, 25)) ?? (await bareSpot(page, 12))
       await tap(page, touch, spot2)
       await page.waitForTimeout(150)
       check(`${tag}: a tap with the Text tool opens the editor`, await page.evaluate(() => document.activeElement?.classList.contains('leafer-text-editor')))

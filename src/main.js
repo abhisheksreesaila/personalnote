@@ -3735,12 +3735,15 @@ onCanvasInput('pointermove', (event) => {
 
 onCanvasInput('pointerup', (event) => {
   if (!canvasTouchPointers.has(event.pointerId)) return
+  // Only a lift that ends a pan or a pinch of ours is swallowed; any other finger's lift belongs to the tool (the editor must see it end).
+  const owned = canvasPanGesture?.pointerId === event.pointerId || Boolean(canvasPinchGesture)
   canvasTouchPointers.delete(event.pointerId)
   if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
   if (canvasPinchGesture && !canvasTouchPointers.size) {
     canvasPinchGesture = null
     canvas.isDrawingMode = !useLeafer && (state.tool === 'pen' || state.tool === 'highlight')
   }
+  if (!owned) return
   event.preventDefault()
   event.stopImmediatePropagation()
 }, { capture: true })
