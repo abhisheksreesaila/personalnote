@@ -224,7 +224,8 @@ Merged into `leafer` at ea54a5f. Patch-based history (~1.5 KB/step on 600 object
 ## F-031 Pen, highlighter, eraser on Leafer (P-07) [done]
 Merged into `leafer` at 79aa1c2. Live stroke on its own layer; one stroke or erase pass = one undo step; eraser takes ink only and leaves locked strokes (differs from Fabric, captain may overrule); an agent merge cancels an erase pass in progress. Up/left page growth and fold-back are F-032.
 ## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [doing]
-## F-033 Images (media library, F-023), export, print on Leafer (P-09) [doing]
+## F-033 Images (media library, F-023), export, print on Leafer (P-09) [done]
+Merged into `leafer` at 14ea4a1. Pictures stored as content-addressed media (POST /api/media, streamed 20 MB cap, no SVG); export/print rendered offscreen by Leafer and pixel-matched to Fabric; print keeps app chrome out (fixed a blank extra PDF page). Zoom control and minimap step aside from selection handles. F-023 non-image file cards still to build.
 ## F-034 Performance pass and agent sync on Leafer (P-10) [todo]
 - [ ] pen at dpr 2: pointer-to-frame p95 ~40 ms with 33-83 ms frames after pointer-down/mid-stroke in headless; confirm on the Mac and fix if real
 - [ ] an agent change arriving mid-erase or mid-stroke can't commit against a doc it wasn't planned on (test)
