@@ -213,14 +213,17 @@ Direction change: no dual engine; Leafer work accumulates on the `leafer` integr
 Merged into `leafer` at d6683b1.
 - [ ] follow-up: parity script matches both directions and catches a missing thin stroke at dpr 1 (limit ~15-20% or a corrected comment)
 - [ ] follow-up: a headless test that uniform strokes double in width at view scale 2; check Leafer strokeScaleFixed on non-uniform x/y scale
-## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [doing]
-## F-029 Text and stickies editing on Leafer, IME fix (P-05) [todo]
+## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [done]
+Merged into `leafer` at e43fffc. Select/move/resize/turn/nudge/delete/z-order/lock, routed through undo. Save after an edit no longer freezes (per-object encode cache, Blob body): max frame 16.8 ms on 645 objects. Connectors following a moved object is F-032.
+## F-029 Text and stickies editing on Leafer, IME fix (P-05) [doing]
 ## F-030 Undo/redo on the document model (P-06) [done]
 Merged into `leafer` at ea54a5f. Patch-based history (~1.5 KB/step on 600 objects, undo ~9 ms in app); undo never reverts or corrupts an agent's write (three-way per field, steps never span a merge).
-## F-031 Pen, highlighter, eraser on Leafer (P-07) [todo]
+## F-031 Pen, highlighter, eraser on Leafer (P-07) [doing]
 ## F-032 Pages, connectors, drag lift and ghost on Leafer (P-08) [todo]
 ## F-033 Images (media library, F-023), export, print on Leafer (P-09) [todo]
 ## F-034 Performance pass and agent sync on Leafer (P-10) [todo]
+- [ ] undo/redo redraws only changed objects instead of reloading the scene (now ~21 ms median on 616 objects vs 9 ms before F-028)
+- [ ] Leafer first draw vs redraw differs by 12 px at a sticky edge (Leafer-internal); recheck after upgrades
 - [ ] an agent change arriving while you edit in Leafer mode merges in without discarding unsaved local edits (today the remote redraw replaces them; fine only while Leafer was read-only)
 Includes a speed test in the Mac app before shipping.
 ## F-035 Phones and pencil, Leafer becomes default (P-11) [todo]
