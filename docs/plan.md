@@ -228,3 +228,8 @@ Captain: the 500/1,000/100,000-object engine test "shows the care… make it a s
 - [ ] the engine race (docs/story/engine-race/) stays runnable and is kept up to date as Leafer lands
 - [ ] before/after numbers from the real app on Fabric vs Leafer (same notes, same machine, Mac and Linux)
 - [ ] a published post telling the story: Fabric limits, the race, why Leafer, the open note format, with the interactive race embedded
+## F-038 WebGPU rendering: research for later [todo]
+Captain: "explore the idea of using WebGPU… if Leafer JS supports something, to consider in the future." Not before Leafer parity (F-036).
+- [ ] what Leafer offers or plans for WebGPU/WebGL, and what else could use it (e.g. bitmap tiles, ink, minimap)
+- [ ] WebGPU availability in our windows: Chromium app window (Linux) and WKWebView (Mac)
+- [ ] the engine race gains a WebGPU lane if a candidate exists, with numbers vs today's Leafer
