@@ -2218,7 +2218,8 @@ const leaferEdits = createLeaferEdits({
       leaferCanvas.load(doc)
       leaferCanvas.select(selection)
     }
-    leaferSource = { noteId: leaferSource.noteId, content: encodeDocument(compactStacking(doc)), pageState: { ...doc.page } }
+    // The stored form is made when a save asks for it (a held arrow key makes many edits for one save).
+    leaferSource = { noteId: leaferSource.noteId, get content() { const content = encodeDocument(compactStacking(doc)); Object.defineProperty(this, 'content', { value: content }); return content }, pageState: { ...doc.page } }
     queueSave()
   },
 })
