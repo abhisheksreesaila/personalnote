@@ -4,6 +4,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { COLUMNS, ROWS, generateNote } from '../../../scripts/benchmark-note.mjs'
 import { fabricPoints, modelPoints, withoutPlacement } from './oracle.js'
+import { placedPoints } from './placement.js'
 import {
   DocumentError,
   OBJECT_TYPES,
@@ -84,11 +85,12 @@ function mutationNote() {
     (index, extra) => base('Sticky', { text: `sticky ${index}`, stickyColor: '#ffd60a', ...extra }, index),
     (index, extra) => base('Circle', { radius: 35, width: 70, height: 70, isInk: index % 2 === 0, fill: '#33336655', ...extra }, index),
     (index, extra) => base('Image', { src: 'data:image/png;base64,AAAA', ...extra }, index),
+    (index, extra) => base('Connector', { fromId: 'a', toId: 'b', reverseX: index % 2 === 0, ...extra }, index),
     (index, extra) => base('Path', { path, isInk: true, stroke: '#20201e', strokeWidth: 3, inkPoints: [{ x: 400, y: 300 }, { x: 470, y: 310 }], ...extra, width: 120, height: 70 }, index),
   ]
   const objects = []
   placements.forEach((extra, i) => kinds.forEach((make, k) => objects.push(make(i * kinds.length + k, extra))))
-  const inner = { type: 'Group', semanticId: 'res_inner', left: 30, top: -20, width: 200, height: 120, angle: 25, scaleX: 1.2, objects: [make(kinds[0], 0, { angle: 10, left: -50, top: -20 }), make(kinds[5], 1, { scaleX: 0.8, left: 40, top: 10 })] }
+  const inner = { type: 'Group', semanticId: 'res_inner', left: 30, top: -20, width: 200, height: 120, angle: 25, scaleX: 1.2, objects: [make(kinds[0], 0, { angle: 10, left: -50, top: -20 }), make(kinds[kinds.length - 1], 1, { scaleX: 0.8, left: 40, top: 10 })] }
   const outer = { type: 'Group', semanticId: 'res_outer', left: 700, top: 500, width: 400, height: 300, angle: -15, skewX: 10, flipX: true, originX: 'left', originY: 'top', objects: [inner, make(kinds[1], 2, { left: 100, top: 90 })] }
   objects.push(outer)
   return { version: '7.4.0', objects }
@@ -453,4 +455,32 @@ test('the placement check really notices a moved, rotated or rescaled object', (
     change(doc.objects[3].geometry)
     assert.throws(() => assertRenderEquivalent(content, toFabric(doc), 'changed'))
   }
+})
+
+// The documented formula (schema.js), written without Fabric or its matrix helpers, must put every point where Fabric puts it.
+test('the documented transform order places every fixture and every mutation like Fabric does', () => {
+  const notes = [...fixtures.map((entry) => [entry.name, entry.content, entry.pageState]), ['mutation set', mutationNote(), { columns: 3, rows: 3 }]]
+  for (const [name, content, pageState] of notes) {
+    const expected = fabricPoints(content.objects)
+    const actual = placedPoints(fromFabric(content, pageState).objects)
+    assert.equal(actual.length, expected.length, name)
+    for (let i = 0; i < expected.length; i += 1) assert.ok(Math.abs(actual[i] - expected[i]) <= 1e-6, `${name}: point ${i}: ${actual[i]} vs ${expected[i]}`)
+  }
+})
+
+test('skew order matters: SkewY acts first, so swapping the two skews would move the points', () => {
+  const doc = fromFabric({ objects: [{ type: 'Rect', semanticId: 'a', left: 100, top: 100, width: 80, height: 50, strokeWidth: 0, skewX: 30, skewY: 20, angle: 10 }] })
+  const expected = fabricPoints([{ type: 'Rect', left: 100, top: 100, width: 80, height: 50, strokeWidth: 0, skewX: 30, skewY: 20, angle: 10 }])
+  const swapped = structuredClone(doc)
+  swapped.objects[0].geometry.skewX = 20
+  swapped.objects[0].geometry.skewY = 30
+  assert.ok(placedPoints(doc.objects).every((value, i) => Math.abs(value - expected[i]) <= 1e-6))
+  assert.ok(placedPoints(swapped.objects).some((value, i) => Math.abs(value - expected[i]) > 1))
+})
+
+test('a Group, a picture and a connector default to no stroke, everything else to 1, as Fabric does', () => {
+  // The placement oracle takes these defaults from the real classes, so a wrong default would move the points in the mutation set.
+  const bare = (type, extra = {}) => ({ type, semanticId: type, left: 50, top: 60, width: 100, height: 40, originX: 'left', originY: 'top', ...extra })
+  const doc = fromFabric({ objects: [bare('Group', { objects: [] }), bare('Image', { src: 'data:,' }), bare('Connector'), bare('Rect'), bare('Textbox', { text: 'x' })] })
+  assert.deepEqual(doc.objects.map((object) => object.geometry.x), [50, 50, 50, 50.5, 50.5])
 })

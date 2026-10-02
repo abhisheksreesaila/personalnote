@@ -12,10 +12,15 @@
 //                 the note is `page.columns` x `page.rows` pages.
 //   geometry      { x, y, width, height, rotation, scaleX, scaleY, flipX, flipY, skewX, skewY }
 //                 The box is `width` x `height` with its top-left corner at (x, y) in the parent frame, before any transform. It does
-//                 not include the stroke. Scale, flip, skew and then rotation (degrees, clockwise) are applied about the BOX CENTRE,
-//                 in that order: p' = centre + Rotate(rotation) * Skew * Scale(flip) * (p - centre). There are no origins. Every
-//                 modelled object has all of x, y, rotation, scale*, flip*, skew*; width and height are absent only when the saved
-//                 note had no size for a text block (an agent-written Textbox: the engine measures it), and then count as 0.
+//                 not include the stroke. With centre c = (x + width/2, y + height/2), a point p of the box is placed at
+//                   p' = c + Rotate(rotation) * Scale * SkewX * SkewY * (p - c)
+//                 where Scale = diag(+-scaleX, +-scaleY) (negative on a flipped axis), SkewX = [[1, tan(skewX)], [0, 1]],
+//                 SkewY = [[1, 0], [tan(skewY), 1]] with the skews in degrees, and Rotate turns clockwise by `rotation` degrees
+//                 (y points down). Matrices apply right to left, so SkewY acts first, then SkewX, then scale and flip, then
+//                 rotation. There are no origins. Every modelled object has all of x, y, rotation, scale*, flip*, skew*. width and
+//                 height are absent only when the saved note had no size for a text block (an agent-written Textbox: the engine
+//                 measures it) and then count as 0; for such a block rotation, scale and skew are only meaningful once the engine
+//                 has measured the height, so an adapter must measure the text first and place it from the measured box.
 //   parent frame  the page frame for top-level objects; for a group's children, the group's own box frame: (0, 0) is the group
 //                 box's top-left corner, before the group's own transform.
 //   ink frame     an ink stroke's `path` commands and `points` are in the object's box frame: relative to the box's top-left corner

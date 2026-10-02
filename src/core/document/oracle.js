@@ -1,10 +1,15 @@
 // Test support: where things end up on the page, worked out with real Fabric's own matrix maths, for Fabric JSON and for
 // document-model objects. Two objects that put the same points in the same places render the same. Not imported by the app.
-import { FabricObject, Path, util } from 'fabric'
+import { Circle, FabricImage, FabricObject, Group, IText, Path, Rect, Textbox, util } from 'fabric'
+import { Connector } from '../../modules/editor/connector-object.js'
+import { Sticky } from '../../modules/editor/sticky-object.js'
 
 const IDENTITY = [1, 0, 0, 1, 0, 0]
 const PLACEMENT = ['left', 'top', 'width', 'height', 'angle', 'scaleX', 'scaleY', 'flipX', 'flipY', 'skewX', 'skewY', 'originX', 'originY', 'strokeWidth', 'strokeUniform']
-const placement = (raw) => Object.fromEntries(PLACEMENT.filter((key) => Object.hasOwn(raw, key)).map((key) => [key, raw[key]]))
+// What each saved type really defaults to is read from the real Fabric (and app) classes, not restated here.
+const CLASSES = { IText, Textbox, Sticky, Rect, Circle, Path, Group, Image: FabricImage, Connector }
+const defaultStrokeWidth = (type) => (CLASSES[type] ?? FabricObject).getDefaults().strokeWidth
+const placement = (raw) => ({ strokeWidth: defaultStrokeWidth(raw.type), ...Object.fromEntries(PLACEMENT.filter((key) => Object.hasOwn(raw, key)).map((key) => [key, raw[key]])) })
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
 
 function coordinatePairs(path) {

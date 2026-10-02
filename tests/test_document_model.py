@@ -275,6 +275,13 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(ink["points"], [{"x": 0, "y": 0}, {"x": 60, "y": 30}])
         self.assertEqual((ink["geometry"]["x"], ink["geometry"]["y"], ink["geometry"]["width"], ink["geometry"]["height"]), (470, 385, 60, 30))
 
+    def test_group_picture_and_connector_default_to_no_stroke(self):
+        def bare(kind, **extra):
+            return {"type": kind, "semanticId": kind, "left": 50, "top": 60, "width": 100, "height": 40, "originX": "left", "originY": "top", **extra}
+
+        doc = dm.from_fabric({"objects": [bare("Group", objects=[]), bare("Image", src="data:,"), bare("Connector"), bare("Rect"), bare("Textbox", text="x")]})
+        self.assertEqual([obj["geometry"]["x"] for obj in doc["objects"]], [50, 50, 50, 50.5, 50.5])
+
     def test_a_q_curve_is_measured_the_way_fabric_measures_it(self):
         bounds = dm._path_bounds([["M", 10, 10], ["Q", 20, 30, 40, 10]])
         self.assertEqual((bounds["width"], bounds["height"]), (30, 15))

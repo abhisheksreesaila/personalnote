@@ -326,8 +326,9 @@ def _classify(raw: dict) -> str | None:
     return None
 
 
-def _stroke_width_of_raw(raw: dict) -> float:
-    return raw["strokeWidth"] if _is_number(raw.get("strokeWidth")) else 0 if raw.get("type") == "Connector" else 1
+def _stroke_width_of_raw(raw: dict, fabric_type: str) -> float:
+    """Fabric's stroke width when a note does not say: none for a group, a picture and the app's connector, 1 for the rest."""
+    return raw["strokeWidth"] if _is_number(raw.get("strokeWidth")) else 0 if fabric_type in ("Group", "Image", "Connector") else 1
 
 
 def _stroke_width_of_model(obj: dict) -> float:
@@ -337,14 +338,14 @@ def _stroke_width_of_model(obj: dict) -> float:
         stored = obj.get("width")
     else:
         stored = (obj.get("extras") or {}).get("strokeWidth")
-    return stored if _is_number(stored) else 0 if obj["type"] == "connector" else 1
+    return stored if _is_number(stored) else 0 if obj["type"] in ("group", "image", "connector") else 1
 
 
 _FLAT = {"dx": 0, "dy": 0}
 _PLACEMENT_KEYS = ("left", "top", "width", "height", "angle", "scaleX", "scaleY", "flipX", "flipY", "skewX", "skewY", "originX", "originY")
 
 
-def _geometry_from_fabric(rest: dict, frame: dict, size: dict | None) -> dict:
+def _geometry_from_fabric(rest: dict, frame: dict, size: dict | None, fabric_type: str) -> dict:
     """Fabric placement to neutral geometry: top-left of the box in the parent frame, size, and rotation/scale/flip/skew about its centre."""
     geometry = {
         "rotation": rest.get("angle", 0), "scaleX": rest.get("scaleX", 1), "scaleY": rest.get("scaleY", 1),
@@ -353,7 +354,7 @@ def _geometry_from_fabric(rest: dict, frame: dict, size: dict | None) -> dict:
     width = size["width"] if size else rest.get("width")
     height = size["height"] if size else rest.get("height")
     dimensions = _transformed_dimensions(
-        width or 0, height or 0, _stroke_width_of_raw(rest), rest.get("strokeUniform") is True,
+        width or 0, height or 0, _stroke_width_of_raw(rest, fabric_type), rest.get("strokeUniform") is True,
         geometry["scaleX"], geometry["scaleY"], geometry["skewX"], geometry["skewY"],
     )
     center = _center_from_origin(rest.get("left", 0), rest.get("top", 0), rest.get("originX", "center"), rest.get("originY", "center"), geometry["rotation"], dimensions)
@@ -420,7 +421,7 @@ def _object_from_fabric(raw: Any, index: int, frame: dict = _FLAT) -> dict:
         obj["id"] = rest.pop("semanticId")
 
     bounds = _path_bounds(rest["path"]) if kind == "stroke" else None
-    obj["geometry"] = _geometry_from_fabric(rest, frame, bounds)
+    obj["geometry"] = _geometry_from_fabric(rest, frame, bounds, raw["type"])
     _take(rest, obj, (("opacity", "opacity"), ("visible", "visible"), ("strokeUniform", "strokeUniform")))
     shadow = _shadow_from_fabric(rest)
     if shadow is not None:

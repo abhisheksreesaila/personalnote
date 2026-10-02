@@ -101,19 +101,21 @@ function classify(raw) {
   }
 }
 
-const strokeWidthOfRaw = (raw) => (isNumber(raw.strokeWidth) ? raw.strokeWidth : raw.type === 'Connector' ? 0 : 1)
+// Fabric's stroke width when a note does not say: none for a group, a picture and the app's connector, 1 for the rest.
+const NO_STROKE_BY_DEFAULT = new Set(['Group', 'Image', 'Connector'])
+const strokeWidthOfRaw = (raw, type) => (isNumber(raw.strokeWidth) ? raw.strokeWidth : NO_STROKE_BY_DEFAULT.has(type) ? 0 : 1)
 
 // The model's own stroke width (it lives under a different name per type), with Fabric's default when the note had none.
 function strokeWidthOfModel(object) {
   const stored = object.type === 'shape' ? object.strokeWidth : object.type === 'ink' && object.kind === 'stroke' ? object.width : object.extras?.strokeWidth
-  return isNumber(stored) ? stored : object.type === 'connector' ? 0 : 1
+  return isNumber(stored) ? stored : ['group', 'image', 'connector'].includes(object.type) ? 0 : 1
 }
 
 const FLAT = { dx: 0, dy: 0 }
 
 // Fabric placement -> neutral geometry: the box's top-left in the parent frame, size, and rotation/scale/flip/skew about the
 // box centre. `frame` shifts a group child from Fabric's group-centred coordinates to the group's top-left.
-function geometryFromFabric(rest, frame, size) {
+function geometryFromFabric(rest, frame, size, fabricType) {
   const number = (key, fallback) => (has(rest, key) ? rest[key] : fallback)
   const geometry = {
     rotation: number('angle', 0), scaleX: number('scaleX', 1), scaleY: number('scaleY', 1),
@@ -122,7 +124,7 @@ function geometryFromFabric(rest, frame, size) {
   const width = size ? size.width : has(rest, 'width') ? rest.width : undefined
   const height = size ? size.height : has(rest, 'height') ? rest.height : undefined
   const dimensions = transformedDimensions({
-    width: width ?? 0, height: height ?? 0, strokeWidth: strokeWidthOfRaw(rest), strokeUniform: rest.strokeUniform === true,
+    width: width ?? 0, height: height ?? 0, strokeWidth: strokeWidthOfRaw(rest, fabricType), strokeUniform: rest.strokeUniform === true,
     scaleX: geometry.scaleX, scaleY: geometry.scaleY, skewX: geometry.skewX, skewY: geometry.skewY,
   })
   const center = centerFromOrigin({
@@ -193,7 +195,7 @@ function objectFromFabric(raw, index, frame = FLAT) {
   if (typeof rest.semanticId === 'string') { object.id = rest.semanticId; delete rest.semanticId }
 
   const bounds = kind === 'stroke' ? pathBounds(rest.path) : null
-  object.geometry = geometryFromFabric(rest, frame, bounds)
+  object.geometry = geometryFromFabric(rest, frame, bounds, raw.type)
   take(rest, object, [['opacity', 'opacity'], ['visible', 'visible'], ['strokeUniform', 'strokeUniform']])
   const shadow = shadowFromFabric(rest)
   if (shadow) object.shadow = shadow
