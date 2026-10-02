@@ -20,6 +20,7 @@ const fixture = JSON.parse(fs.readFileSync(new URL('../tests/fixtures/documents/
 const stored = { 1: { content: fixture.content, pageState: fixture.pageState, revision: 1 }, 2: { content: { objects: [] }, pageState: { columns: 1, rows: 1 }, revision: 1 } }
 const puts = []
 let agents = []
+let feed = { sequence: 1, changes: [] }
 
 const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4829' } }, logLevel: 'error' })
 await server.listen()
@@ -44,7 +45,7 @@ try {
       stored[m[1]] = { content: body.content, pageState: body.pageState, revision: stored[m[1]].revision + 1 }
       return json({ revision: stored[m[1]].revision, resourceId: `r${m[1]}` })
     }
-    if (p.startsWith('/changes')) return json({ sequence: 1, changes: [], agents })
+    if (p.startsWith('/changes')) return json({ ...feed, changes: feed.changes.filter((c) => c.sequence > Number(new URL(req.url()).searchParams.get('since') ?? 0)), agents })
     return json({})
   })
   const scene = (fn, ...args) => page.evaluate(([name, a]) => window.__personalNote.leaferCanvas()[name](...a), [fn, args])
@@ -56,6 +57,16 @@ try {
   await page.waitForTimeout(500)
   const box = await page.evaluate(() => { const r = document.querySelector('#note-input').getBoundingClientRect(); return { x: r.x, y: r.y } })
   const toClient = (point) => page.evaluate(([px, py]) => { const v = window.__personalNote.leaferCanvas().view(); const r = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: r.left + v.x + px * v.scale, y: r.top + v.y + py * v.scale } }, [point.x, point.y])
+
+  // ---- a note opens with the Text tool, and one click starts typing
+  check('opening a note selects the Text tool', await page.evaluate(() => window.__personalNote.state.tool) === 'text')
+  const open = await toClient({ x: 600, y: 900 })
+  await page.mouse.click(open.x, open.y)
+  await page.waitForFunction(() => document.activeElement?.classList?.contains('leafer-text-editor'), null, { timeout: 5000 })
+  await page.keyboard.type('hi')
+  check('one click then starts typing', await page.evaluate(() => document.activeElement.value ?? document.activeElement.textContent).then((v) => /hi/.test(v)))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
 
   // ---- the Shape tool
   const before = (await doc()).objects.length
@@ -169,6 +180,20 @@ try {
   const v1 = await page.evaluate(() => window.__personalNote.leaferCanvas().view())
   const moved = await page.evaluate(() => document.querySelector('.agent-flag').getBoundingClientRect().x)
   check('the flag follows the view', v1.x !== v0.x && Math.abs(moved - flag.x - (v1.x - v0.x)) < 2, `${flag.x} -> ${moved}, view ${v0.x} -> ${v1.x}`)
+
+  // an agent moves that block: the flag is placed again at once
+  const lastId = texts.at(-1).id
+  const moved1 = JSON.parse(JSON.stringify(stored[1].content))
+  const node = moved1.nodes.find((n) => n.id === lastId)
+  node.y += 120
+  if (node.pn?.geometry) node.pn.geometry.y += 120
+  stored[1] = { ...stored[1], content: moved1, revision: stored[1].revision + 1 }
+  feed = { sequence: 2, changes: [{ sequence: 2, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: stored[1].revision }] }
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await page.waitForTimeout(600)
+  await page.evaluate(() => window.__personalNote.leaferCanvas().view())
+  const after = await page.evaluate(() => document.querySelector('.agent-flag').getBoundingClientRect().bottom)
+  check('after an agent moves the block the flag is placed again', Math.abs(after - (flag.y + 120 * v1.scale)) < 6 && !(await page.evaluate(() => document.querySelector('.agent-flag').hidden)), `${flag.y} -> ${after}`)
 
   check('no console errors', errors.length === 0, JSON.stringify(errors))
 } finally {

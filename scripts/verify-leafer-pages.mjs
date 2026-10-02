@@ -79,6 +79,7 @@ async function open(page) {
   await page.goto(`http://127.0.0.1:${PORT}/notes`)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   await page.waitForTimeout(500)
+  await page.evaluate(() => window.__personalNote.setTool('select')) // a note opens with the Text tool; these checks select and drag
 }
 const scene = (page, name, ...args) => page.evaluate(([n, a]) => window.__personalNote.leaferCanvas()[n](...a), [name, args])
 const doc = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__personalNote.leaferEdits.doc)))
@@ -468,6 +469,7 @@ try {
     await page.reload()
     await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
     await page.waitForTimeout(500)
+    await page.evaluate(() => window.__personalNote.setTool('select'))
     const again = await doc(page)
     check('after a reload the note has the same objects, arrows and pages', JSON.stringify(shape(again)) === JSON.stringify(shape(live)) && again.page.columns === 2 && again.page.rows === 1 && consistent(again))
     await page.evaluate(() => { const { state, setCanvasViewportOffset } = window.__personalNote; state.canvasZoom = 1; setCanvasViewportOffset(20, 104) })

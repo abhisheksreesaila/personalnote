@@ -1637,7 +1637,7 @@ async function selectNoteNow(id) {
       mindmapSnapshot = JSON.stringify({ content: mindmapEditor?.getDocument() }) // what the map was when it was loaded: leaving it unchanged sends nothing
     } else {
       if (!(await showLeaferNote(note)) || sequence !== selectSequence) return
-      setTool('select')
+      setTool('text') // a note opens ready for typing
     }
     setSaveState('Saved')
     renderNoteList()
@@ -1673,6 +1673,7 @@ async function applyRemoteNote(note) {
   if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
   setSaveState('Saved')
   renderNoteList()
+  layoutChanged() // the agent's flag sits over text that may have moved
 }
 
 let mergeCount = 0
@@ -1726,6 +1727,7 @@ async function mergeLeaferNote(note) {
     leaferSource = leaferSourceOf(note.id, leaferEdits.doc)
   }
   queueSave()
+  layoutChanged()
   return added.length
 }
 const samePageGrid = (a, b) => a.columns === b.columns && a.rows === b.rows
@@ -3075,6 +3077,7 @@ async function startSpeedTest() {
         state.notes.unshift(summary)
         renderNoteList()
         await selectNote(id)
+        setTool('select') // the speed test selects and drags
         await leaferCanvas.whenSettled()
       },
       restore: async () => {

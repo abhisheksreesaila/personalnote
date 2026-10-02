@@ -42,6 +42,7 @@ async function open(perf) {
   await page.goto('http://127.0.0.1:4805/notes')
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 120000 })
   await page.waitForTimeout(1500)
+  await page.evaluate(() => window.__personalNote.setTool('select')) // a note opens with the Text tool; these checks select and drag
   return { context, page, errors }
 }
 const zoomTo = (page, zoom) => page.evaluate((z) => {

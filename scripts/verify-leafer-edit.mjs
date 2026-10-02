@@ -51,6 +51,7 @@ async function open(page) {
   await page.goto(`http://127.0.0.1:${PORT}/notes`)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   await page.waitForTimeout(400)
+  await page.evaluate(() => window.__personalNote.setTool('select')) // a note opens with the Text tool; these checks select and drag
 }
 async function centre(page, id) {
   const { box, host, scale } = await page.evaluate((target) => {
