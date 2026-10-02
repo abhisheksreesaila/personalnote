@@ -43,21 +43,19 @@ async function copyText(text) {
 // env: { api, notebookId, engine, hostName, openNote(id) (resolves when the note is on screen), restore() (back to what was open),
 //        pause(on) (no saves while on), forgetNote(id), host (the driver's host, see driver.js), pageCount() }
 export async function runSpeedTest(env) {
-  // A popover (the browser's own top-layer box and styling; nothing of ours to style). It is inert while the test runs, so the test's
-  // mouse events reach the note under it, and live again when the results are shown.
+  // A popover (top layer) in a corner while the test runs; only its Stop button takes clicks, the rest is inert so the test's events reach the note.
   const panel = document.createElement('section')
   panel.className = 'speedtest-panel'
   panel.setAttribute('popover', 'manual')
-  panel.inert = true
   panel.setAttribute('role', 'status')
   panel.setAttribute('aria-live', 'polite')
   document.body.append(panel)
-  panel.showPopover()
+  if (typeof panel.showPopover === 'function') panel.showPopover() // (a browser without popovers shows it as a plain fixed box: the same styles)
   let test = null
   let noteId = null
 
   const header = (lead) => `<h2>Speed test</h2><p>${lead}</p>`
-  panel.innerHTML = `${header('Making a stress note of 5,000+ objects. Your notes are not touched. Please leave the mouse and keyboard alone for about a minute.')}<progress max="9" value="0"></progress><div class="speedtest-step">Starting</div><div class="portability-actions"><button data-act="stop">Stop</button></div>`
+  panel.innerHTML = `${header('Making a stress note of 5,000+ objects. Your notes are not touched. Please leave the mouse and keyboard alone for about a minute.')}<div inert><progress max="9" value="0"></progress><div class="speedtest-step">Starting</div></div><div class="portability-actions"><button data-act="stop">Stop</button></div>`
   panel.querySelector('[data-act="stop"]').addEventListener('click', () => test?.stop())
 
   let report = null
@@ -111,7 +109,7 @@ export async function runSpeedTest(env) {
     const bad = row.unit !== 'ms' && row.p95 > 34
     return `<tr><td>${escape(row.name)}</td><td>${row.p50 ?? '-'}</td><td>${row.p95 ?? '-'}</td><td>${row.max ?? '-'}</td><td>${bad ? '! ' : ''}${escape(row.verdict ?? '')}</td></tr>`
   }).join('')
-  panel.inert = false
+  panel.classList.add('is-done')
   panel.innerHTML = `${header('Milliseconds per frame, so 16.7 is 60 frames a second. Lower is better.')}
     <p class="portability-help">${escape(report.run.engine)} on ${escape(report.run.platform)}, ${escape(report.run.host)}, ${escape(report.run.dpr)}x screen (${escape(report.run.screen)}), ${escape(report.run.cores)} cores${report.run.gpu ? `, ${escape(report.run.gpu)}` : ''}. Stress note: ${report.run.note.objects} objects on ${escape(report.run.note.pages)} pages.</p>
     <table><thead><tr><th></th><th>p50</th><th>p95</th><th>max</th><th></th></tr></thead><tbody>${rows}</tbody></table>

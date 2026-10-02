@@ -88,6 +88,8 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
       if (!box) continue
       const left = rect.left + box.x
       const top = rect.top + box.y
+      const under = document.elementFromPoint(left + box.width / 2, top + box.height / 2)
+      if (under && !host.canvasHost.contains(under)) continue // something (the speed test's own panel) is over it
       if (left > rect.left + 120 && top > rect.top + 80 && left + box.width < rect.right - 120 && top + box.height < rect.bottom - 120 && box.width > 14 && box.height > 14) {
         out.push({ id: object.id, x: left + box.width / 2, y: top + box.height / 2, width: box.width, height: box.height })
       }

@@ -71,13 +71,31 @@ def speedtest_folder() -> Path:
 MAX_SPEEDTEST_REPORT_BYTES = 1024 * 1024
 
 
-def launch_speedtest_instance() -> None:
-    """Start the speed test as a separate app instance (temporary notebook, own window profile, own port): it never runs in the person's notebook."""
+SPEEDTEST_SETTLE_SECONDS = 1.5
+
+
+def speedtest_command() -> list[str]:
     if getattr(sys, "frozen", False):
-        command = [sys.executable, "--speedtest"]
-    else:
-        command = [sys.executable, str(Path(__file__).resolve().parent / "desktop.py"), "--speedtest", "--no-build"]
-    subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        return [sys.executable, "--speedtest"]
+    return [sys.executable, str(Path(__file__).resolve().parent / "desktop.py"), "--speedtest", "--no-build"]
+
+
+def launch_speedtest_instance(settle: float = SPEEDTEST_SETTLE_SECONDS):
+    """Start the speed test as a separate app instance (temporary notebook, own window profile, own port): it never runs in the person's notebook.
+
+    Its output goes to launch.log in the speed test's results folder. Raises OSError when it cannot start or has already exited after `settle` seconds
+    (a missing window engine, say); otherwise returns the running process.
+    """
+    folder = speedtest_folder()
+    folder.mkdir(parents=True, exist_ok=True)
+    log_path = folder / "launch.log"
+    with open(log_path, "ab") as log:
+        process = subprocess.Popen(speedtest_command(), stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+    try:
+        code = process.wait(timeout=settle)
+    except subprocess.TimeoutExpired:
+        return process
+    raise OSError(f"The speed test window closed at once (exit code {code}); see {log_path}")
 
 
 LOOPBACK_NAMES = {"127.0.0.1", "localhost", "::1"}
@@ -115,9 +133,11 @@ def create_app(
     bound_host: str | None = None,
     speedtest_instance: bool = False,
     speedtest_launcher=None,
+    desktop_host: bool = False,
 ) -> FastHTML:
     """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
     data_path = Path(database_path or default_database_path())
+    speedtest_process: dict = {}  # the speed test this app started: one at a time
     service = NoteService(data_path)
     # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
@@ -195,7 +215,8 @@ def create_app(
     @app.get("/api/speedtest/status")
     def speedtest_status():
         """True only in the separate instance the speed test runs in (a temporary notebook): the page runs the test there and nowhere else."""
-        return JSONResponse({"instance": speedtest_instance})
+        # canLaunch: only the desktop app starts the test (it has a window to open it in); the speed test instance itself runs it.
+        return JSONResponse({"instance": speedtest_instance, "canLaunch": bool(desktop_host and not speedtest_instance)})
 
     @app.post("/api/speedtest/launch")
     def speedtest_launch(request):
@@ -204,11 +225,16 @@ def create_app(
             return forbidden()
         if speedtest_instance:
             return JSONResponse({"error": "This is the speed test"}, status_code=409)
+        if not desktop_host:
+            return JSONResponse({"error": "The speed test starts from the desktop app"}, status_code=409)
+        running = speedtest_process.get("process")
+        if running is not None and running.poll() is None:
+            return JSONResponse({"error": "A speed test is already running"}, status_code=409)
         try:
-            (speedtest_launcher or launch_speedtest_instance)()
-        except OSError:
+            speedtest_process["process"] = (speedtest_launcher or launch_speedtest_instance)()
+        except OSError as error:
             logger.exception("event=speedtest.launch outcome=failed")
-            return JSONResponse({"error": "The speed test could not be started"}, status_code=500)
+            return JSONResponse({"error": f"The speed test could not be started: {error}"}, status_code=500)
         return JSONResponse({"started": True}, status_code=202)
 
     @app.post("/api/speedtest/report")

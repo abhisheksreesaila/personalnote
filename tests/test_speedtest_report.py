@@ -69,19 +69,20 @@ class SpeedTestInstanceTests(unittest.TestCase):
         return TestClient(create_app(self.root / "n.db", **options))
 
     def test_only_the_speed_test_instance_says_it_is_one(self):
-        self.assertEqual(self.client().get("/api/speedtest/status").json(), {"instance": False})
-        self.assertEqual(self.client(speedtest_instance=True).get("/api/speedtest/status").json(), {"instance": True})
+        self.assertEqual(self.client().get("/api/speedtest/status").json(), {"instance": False, "canLaunch": False})
+        self.assertEqual(self.client(speedtest_instance=True, desktop_host=True).get("/api/speedtest/status").json(), {"instance": True, "canLaunch": False})
+        self.assertEqual(self.client(desktop_host=True).get("/api/speedtest/status").json(), {"instance": False, "canLaunch": True})
 
     def test_the_persons_app_launches_a_separate_instance_and_never_runs_the_test_itself(self):
         launched = []
-        client = self.client(speedtest_launcher=lambda: launched.append(1))
+        client = self.client(desktop_host=True, speedtest_launcher=lambda: launched.append(1) or mock.Mock(poll=lambda: 0))
         self.assertEqual(client.post("/api/speedtest/launch").status_code, 403)
         self.assertEqual(client.post("/api/speedtest/launch", headers=HEADERS).status_code, 202)
         self.assertEqual(launched, [1])
 
     def test_the_speed_test_instance_does_not_launch_another(self):
         launched = []
-        client = self.client(speedtest_instance=True, speedtest_launcher=lambda: launched.append(1))
+        client = self.client(speedtest_instance=True, desktop_host=True, speedtest_launcher=lambda: launched.append(1))
         self.assertEqual(client.post("/api/speedtest/launch", headers=HEADERS).status_code, 409)
         self.assertEqual(launched, [])
 
@@ -89,14 +90,52 @@ class SpeedTestInstanceTests(unittest.TestCase):
         def broken():
             raise OSError("no")
 
-        self.assertEqual(self.client(speedtest_launcher=broken).post("/api/speedtest/launch", headers=HEADERS).status_code, 500)
+        self.assertEqual(self.client(desktop_host=True, speedtest_launcher=broken).post("/api/speedtest/launch", headers=HEADERS).status_code, 500)
+
+    def test_only_the_desktop_app_launches_it(self):
+        launched = []
+        client = self.client(speedtest_launcher=lambda: launched.append(1))
+        self.assertEqual(client.post("/api/speedtest/launch", headers=HEADERS).status_code, 409)
+        self.assertEqual(launched, [])
+
+    def test_a_second_launch_while_the_first_still_runs_is_refused_and_allowed_once_it_ended(self):
+        running = mock.Mock(poll=mock.Mock(return_value=None))
+        launched = []
+
+        def launcher():
+            launched.append(1)
+            return running
+
+        client = self.client(desktop_host=True, speedtest_launcher=launcher)
+        self.assertEqual(client.post("/api/speedtest/launch", headers=HEADERS).status_code, 202)
+        again = client.post("/api/speedtest/launch", headers=HEADERS)
+        self.assertEqual(again.status_code, 409)
+        self.assertIn("already running", again.json()["error"])
+        self.assertEqual(launched, [1])
+        running.poll.return_value = 0
+        self.assertEqual(client.post("/api/speedtest/launch", headers=HEADERS).status_code, 202)
+        self.assertEqual(launched, [1, 1])
 
     def test_the_command_the_app_runs_is_the_desktop_script_with_the_speedtest_flag(self):
-        with mock.patch("routes.subprocess.Popen") as popen:
-            routes.launch_speedtest_instance()
-        command = popen.call_args.args[0]
+        command = routes.speedtest_command()
         self.assertIn("--speedtest", command)
         self.assertTrue(any(str(part).endswith("desktop.py") for part in command))
+
+    def test_the_packaged_app_runs_itself_with_the_speedtest_flag(self):
+        with mock.patch.object(routes.sys, "frozen", True, create=True), mock.patch.object(routes.sys, "executable", "/Apps/Personal Note"):
+            self.assertEqual(routes.speedtest_command(), ["/Apps/Personal Note", "--speedtest"])
+
+    def test_the_child_s_output_goes_to_a_log_and_a_child_that_dies_at_once_is_reported(self):
+        results = self.root / "results"
+        with mock.patch.dict(os.environ, {"PERSONAL_NOTE_SPEEDTEST_DIR": str(results)}), mock.patch("routes.subprocess.Popen") as popen:
+            popen.return_value.wait.return_value = 3  # gone within the settle time
+            with self.assertRaisesRegex(OSError, "exit code 3"):
+                routes.launch_speedtest_instance(settle=0.01)
+            kwargs = popen.call_args.kwargs
+            self.assertNotEqual(kwargs["stdout"], routes.subprocess.DEVNULL)
+            self.assertTrue((results / "launch.log").exists())
+            popen.return_value.wait.side_effect = routes.subprocess.TimeoutExpired("x", 0.01)
+            self.assertIs(routes.launch_speedtest_instance(settle=0.01), popen.return_value)
 
 
 def run_main(arguments, voice):

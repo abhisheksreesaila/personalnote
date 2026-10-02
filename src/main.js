@@ -308,8 +308,8 @@ document.querySelector('#app').innerHTML = `
       <section class="settings-section">
         <p class="settings-section-label">Performance</p>
         <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
-        <p class="portability-help">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
-        <div class="portability-actions"><button type="button" id="settings-speed-test"><i data-lucide="gauge"></i><span>Run speed test…</span></button></div>
+        <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
+        <div class="portability-actions speedtest-offer"><button type="button" id="settings-speed-test"><i data-lucide="gauge"></i><span>Run speed test…</span></button></div>
       </section>
       <section class="settings-section">
         <p class="settings-section-label">Built-in modules</p>
@@ -4396,7 +4396,13 @@ if (state.speedMeter) setSpeedMeter(true)
 // the page that runs it is that instance, which says so itself (/speedtest/status).
 let speedTestRunning = false
 let speedTestInstance = false
-const speedTestStatus = api('/speedtest/status').then((status) => { speedTestInstance = Boolean(status?.instance) }).catch(() => {})
+let speedTestCanLaunch = false
+const speedTestStatus = api('/speedtest/status').then((status) => {
+  speedTestInstance = Boolean(status?.instance)
+  speedTestCanLaunch = Boolean(status?.canLaunch)
+  // Only the desktop app starts the test (it has a window to open it in); elsewhere the button is not offered.
+  if (!speedTestCanLaunch && !speedTestInstance) document.querySelectorAll('.speedtest-offer').forEach((node) => { node.hidden = true })
+}).catch(() => {})
 async function startSpeedTest() {
   if (speedTestRunning) return
   await speedTestStatus
@@ -4407,7 +4413,7 @@ async function startSpeedTest() {
       showToast('The speed test opens in a window of its own and leaves your notes alone. Its results show there.')
     } catch (error) {
       console.error('The speed test could not be started', error)
-      showToast('The speed test could not be started.')
+      showToast(error?.message || 'The speed test could not be started.') // (the server says why: already running, or what stopped it)
     }
     return
   }

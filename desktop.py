@@ -557,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
             ensure_frontend_built()
         from routes import create_app
 
-        app = create_app(database, bound_host=HOST, speedtest_instance=bool(speedtest_dir))
+        app = create_app(database, bound_host=HOST, speedtest_instance=bool(speedtest_dir), desktop_host=engine != "serve")
         server = LocalServer(app, preferred_port=(args.port or 0) if args.serve else 0 if speedtest_dir else PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:

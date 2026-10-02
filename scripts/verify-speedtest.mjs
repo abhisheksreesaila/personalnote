@@ -45,7 +45,7 @@ try {
       const { content, pageState, ...summary } = notesDb[id]
       return json(summary, 201)
     }
-    if (p === '/speedtest/status') return json({ instance })
+    if (p === '/speedtest/status') return json({ instance, canLaunch: !instance })
     if (p === '/speedtest/launch') { calls.push(['POST', p]); return json({ started: true }, 202) }
     if (p === '/speedtest/report') { report = JSON.parse(req.postData()); calls.push(['POST', p]); return json({ path: '/tmp/speedtest-example.txt', jsonPath: '/tmp/speedtest-example.json' }, 201) }
     const m = /^\/notes\/(\d+)$/.exec(p)
@@ -83,6 +83,19 @@ try {
   const copied = await page.evaluate(async () => { document.querySelector('[data-act="copy"]').click(); await new Promise((r) => setTimeout(r, 200)); return navigator.clipboard.readText() })
   check('Copy results puts the report text on the clipboard', copied === report.text, copied.slice(0, 80))
   console.log(report.text)
+
+  // Stop works during the run (only the rest of the panel is inert) and the panel is a corner box that does not cover the middle of the note
+  await page.evaluate(() => { delete document.documentElement.dataset.speedtestDone })
+  report = null
+  await page.click('[data-act="again"]')
+  await page.waitForSelector('.speedtest-panel [data-act="stop"]', { timeout: 60000 })
+  await page.waitForTimeout(6000)
+  const panelBox = await page.evaluate(() => { const r = document.querySelector('.speedtest-panel').getBoundingClientRect(); return { right: r.right, left: r.left, width: innerWidth } })
+  check('while it runs the panel is in the corner (the middle of the note is free)', panelBox.left > panelBox.width / 2, JSON.stringify(panelBox))
+  await page.click('.speedtest-panel [data-act="stop"]')
+  await page.waitForFunction(() => document.documentElement.dataset.speedtestDone, null, { timeout: 120000 })
+  check('Stop ends the run early and the results say so', Boolean(report?.data?.failed?.some((entry) => /stopped/.test(entry))), JSON.stringify(report?.data?.failed))
+  check('and the test note was removed again', Object.keys(notesDb).length === 1)
 
   // the person's own app: nothing runs here, a separate instance is asked for
   instance = false
