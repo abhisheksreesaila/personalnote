@@ -201,12 +201,13 @@ Captain: "it should be snappier, faster, savable through a SQLite database, the 
 - [x] plain JS document types (text, sticky, shape, ink, image, connector, group), page state, schemaVersion; images reference media by id (prepares F-023)
 - [x] lossless fromFabric/toFabric round-trip on fixtures covering every object type and real-shaped notes; Python mirror with the same fixtures
 Decided: reading order for plain text is by box top edge; F-026 moves note_text/CLI read to the same rule.
-## F-026 Notes stored as JSON Canvas (Obsidian) + Markdown (P-02) [doing]
+## F-026 Notes stored as JSON Canvas (Obsidian) + Markdown (P-02) [done]
 Decision: docs/adr/0002-note-format-json-canvas.md. Captain: "let's use that Obsidian format… get the feature parity… and we'll do the same thing for the plugins."
-- [ ] the document model serializes to and from JSON Canvas 1.0 with `pn` extensions, render-equivalent round trip; the files open in Obsidian (text, images, arrows, ink/shape SVGs visible)
-- [ ] SQLite stores the JSON Canvas per note; search, the agent CLI read/append and Markdown export use the Markdown projection (reading order by top edge)
-- [ ] existing notes convert once; the old database file is kept aside untouched
-- [ ] backup/import and an Obsidian vault export/import round-trip
+- [x] the document model serializes to and from JSON Canvas 1.0 with `pn` extensions, render-equivalent round trip; the files pass the JSON Canvas spec check (opening in Obsidian itself not yet tried) (text, images, arrows, ink/shape SVGs visible)
+- [x] SQLite stores the JSON Canvas per note; search, the agent CLI read/append and Markdown export use the Markdown projection (reading order by top edge)
+- [x] existing notes convert once; the old database file is kept aside untouched
+- [x] backup/import and an Obsidian vault export/import round-trip
+Merged into `leafer` at ea09499. Mind maps still stored as before (follow-up per ADR 0002); vault import is CLI/API only.
 ## F-027 Leafer renders notes (P-03) [done]
 Direction change: no dual engine; Leafer work accumulates on the `leafer` integration branch until parity, then replaces Fabric on main (F-035/F-036). Main stays usable meanwhile.
 Merged into `leafer` at d6683b1.
