@@ -2900,7 +2900,11 @@ async function renderLeaferPrintSheet(column, row) {
 }
 
 async function renderPrintSheet(column, row) {
-  if (useLeafer) return renderLeaferPrintSheet(column, row)
+  return useLeafer ? renderLeaferPrintSheet(column, row) : renderFabricPrintSheet(column, row)
+}
+
+// The Fabric sheet: kept as the reference the Leafer sheets are checked against (and the path Fabric mode prints with until F-036).
+async function renderFabricPrintSheet(column, row, json = canvas.toJSON()) {
   const element = document.createElement('canvas')
   const printCanvas = new StaticCanvas(element, {
     width: PAGE_WIDTH,
@@ -2909,7 +2913,7 @@ async function renderPrintSheet(column, row) {
     enableRetinaScaling: false,
     renderOnAddRemove: false,
   })
-  await printCanvas.loadFromJSON(canvas.toJSON())
+  await printCanvas.loadFromJSON(json)
   printCanvas.backgroundColor = '#ffffff'
   printCanvas.setViewportTransform([1, 0, 0, 1, -column * PAGE_WIDTH, -row * PAGE_HEIGHT])
   printCanvas.renderAll()
@@ -4639,5 +4643,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { selectNote, leaferBase: () => leaferBase, canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { renderFabricPrintSheet, selectNote, leaferBase: () => leaferBase, canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()

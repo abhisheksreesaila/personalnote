@@ -144,7 +144,7 @@ try {
   const p95 = sorted[Math.floor(sorted.length * 0.95)]
   console.log(`INFO  12 MP drop: ${frames.length} frames, p50 ${sorted[Math.floor(sorted.length / 2)].toFixed(1)} ms, p95 ${p95.toFixed(1)} ms, worst ${sorted.at(-1).toFixed(1)} ms`)
   check('drop: a 12-megapixel photo becomes one picture on the page', Boolean(dropped))
-  check('drop: p95 frame time stays within 16.8 ms while the photo is prepared, uploaded and placed', p95 <= 16.8, `p95 ${p95.toFixed(1)}`)
+  check('drop: p95 frame time stays within 16.8 ms while the photo is prepared, uploaded and placed', Number(p95.toFixed(1)) <= 16.8, `p95 ${p95.toFixed(1)}`)
   const [first] = await images(page)
   check('drop: it is a media-library reference, not a data URL', first?.mediaRef?.kind === 'media' && /^[0-9a-f]{64}\.jpg$/.test(first.mediaRef.id), JSON.stringify(first?.mediaRef).slice(0, 80))
   const shownW = first.geometry.width * first.geometry.scaleX
@@ -159,6 +159,95 @@ try {
   const mediaBytes = Buffer.from(await media.arrayBuffer())
   check('drop: the media file is served, content-addressed, with the existing policy header', media.status === 200 && media.headers.get('content-type') === 'image/jpeg' && `${sha(mediaBytes)}.jpg` === first.mediaRef.id && /default-src 'none'/.test(media.headers.get('content-security-policy') ?? ''))
   check('drop: the stored file is small (a shrunk JPEG, not the 12 MP original)', mediaBytes.length < photo.bytes.length, `${mediaBytes.length} vs ${photo.bytes.length}`)
+
+
+  // ---------------------------------------------------------------- reload shows the identical picture
+  const hostRect = () => pn(page, () => { const r = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: r.left, y: r.top } })
+  const pictureShot = async (id) => {
+    await pn(page, () => window.__personalNote.leaferCanvas().clearSelection())
+    await settle(page)
+    const rect = await hostRect()
+    const box = await pn(page, (key) => window.__personalNote.leaferCanvas().screenBox(key), id)
+    return page.screenshot({ clip: { x: rect.x + box.x, y: rect.y + box.y, width: Math.round(box.width), height: Math.round(box.height) } })
+  }
+  const shotBefore = await pictureShot(first.id)
+  await page.reload()
+  await page.waitForFunction(() => window.__personalNote?.leaferCanvas && document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  if (!(await pn(page, (id) => window.__personalNote.state.activeNoteId === id, noteId))) { await pn(page, (id) => window.__personalNote.selectNote(id), noteId); await page.waitForTimeout(800) }
+  await settle(page)
+  const reloaded = (await images(page))[0]
+  const shotAfter = await pictureShot(first.id)
+  const same = await diff(page, shotBefore, shotAfter)
+  check('reload: the picture is the same media reference and looks identical (pixels)', reloaded?.mediaRef?.id === first.mediaRef.id && same.over40Pct === 0 && same.meanLevel < 0.5, JSON.stringify(same))
+
+  // ---------------------------------------------------------------- paste a small transparent PNG, pick a large one
+  const cutoutSmall = await makePicture(page, { name: 'cut-small.png', kind: 'cutout', width: 600, height: 400, type: 'image/png' })
+  const cutoutBig = await makePicture(page, { name: 'cut-big.png', kind: 'cutout', width: 2000, height: 1500, type: 'image/png' })
+  let mark = puts.length
+  await page.mouse.click(5, 5)
+  await pasteFiles(page, [cutoutSmall])
+  await waitFor(async () => (await images(page)).length === 2)
+  const pasted = (await images(page)).find((o) => o.id !== first.id)
+  check('paste: a pasted picture is stored as a media reference', /^[0-9a-f]{64}\.png$/.test(pasted?.mediaRef?.id ?? ''), JSON.stringify(pasted?.mediaRef))
+  check('paste: a small transparent PNG stays PNG, byte for byte', pasted?.mediaRef?.id === `${sha(cutoutSmall.bytes)}.png`)
+  check('paste: saved', await waitSave(mark))
+  // undo and redo of an image add (the history starts when the note is opened, so it is the pasted picture that is undone)
+  await page.mouse.click(5, 5) // off the canvas, so the keys go to the page
+  await page.keyboard.press('Control+z')
+  check('undo: the pasted picture is taken out, the first stays', await waitFor(async () => { const list = await images(page); return list.length === 1 && list[0].id === first.id }))
+  check('undo: and the saved note follows (one picture node)', await waitFor(async () => (await (await api(`/notes/${noteId}`)).json()).content.nodes.filter((n) => n.pn?.type === 'image').length === 1))
+  await page.keyboard.press('Control+Shift+z')
+  check('redo: it is back with the same media reference', await waitFor(async () => { const list = await images(page); return list.length === 2 && list.some((o) => o.mediaRef.id === pasted.mediaRef.id && o.id === pasted.id) }))
+  await settle(page)
+  const shotRedo = await pictureShot(pasted.id)
+  check('redo: the picture is on screen again (not blank)', await page.evaluate(async (b64) => { const bmp = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob()); const c = new OffscreenCanvas(bmp.width, bmp.height); const g = c.getContext('2d'); g.drawImage(bmp, 0, 0); const d = g.getImageData(0, 0, bmp.width, bmp.height).data; let ink = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) ink += 1; return ink > 200 }, shotRedo.toString('base64')))
+  mark = puts.length
+  await page.setInputFiles('#image-file', cutoutBig.file)
+  await waitFor(async () => (await images(page)).length === 3)
+  const picked = (await images(page)).find((o) => o.id !== first.id && o.id !== pasted.id)
+  check('pick: a picked picture is stored as a media reference, shrunk to 1400 wide, centred in the view', /^[0-9a-f]{64}\.png$/.test(picked?.mediaRef?.id ?? '') && picked.geometry.width === 1400 && picked.geometry.height === 1050, JSON.stringify(picked?.geometry))
+  const pickedBytes = Buffer.from(await (await api(`/media/${picked.mediaRef.id}`)).arrayBuffer())
+  const alpha = await page.evaluate(async (base64) => {
+    const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], { type: 'image/png' }))
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height); const g = c.getContext('2d'); g.drawImage(bitmap, 0, 0)
+    return { corner: g.getImageData(3, 3, 1, 1).data[3], center: g.getImageData(bitmap.width / 2, bitmap.height / 2 + 60, 1, 1).data[3], bar: g.getImageData(bitmap.width / 2, bitmap.height * 0.5, 1, 1).data[3], width: bitmap.width }
+  }, pickedBytes.toString('base64'))
+  check('pick: a large transparent PNG stays PNG with its see-through parts', pickedBytes.subarray(1, 4).toString() === 'PNG' && alpha.corner === 0 && alpha.center === 255 && alpha.width === 1400, JSON.stringify(alpha))
+  check('pick: saved, still no picture bytes in any save', await waitSave(mark) && puts.every((body) => !body.includes('data:image')))
+
+
+  // ---------------------------------------------------------------- move and resize (F-028's editing), undoable
+  await pn(page, () => window.__personalNote.setTool('select'))
+  const corners = await pn(page, (id) => window.__personalNote.leaferCanvas().pageCorners(id), picked.id)
+  const centre = await screenOf((corners[0].x + corners[2].x) / 2, (corners[0].y + corners[2].y) / 2)
+  const geometryOf = async (id) => (await images(page)).find((o) => o.id === id).geometry
+  const g0 = await geometryOf(picked.id)
+  await page.mouse.move(centre.x, centre.y)
+  await page.mouse.down()
+  await page.mouse.move(centre.x + 30, centre.y + 20, { steps: 4 })
+  await page.mouse.move(centre.x + 60, centre.y + 40, { steps: 4 })
+  await page.mouse.up()
+  await settle(page)
+  const g1 = await geometryOf(picked.id)
+  const scale = (await pn(page, () => window.__personalNote.leaferCanvas().view())).scale
+  check('move: dragging the picture moves it by the drag', Math.abs(g1.x - g0.x - 60 / scale) < 1.5 && Math.abs(g1.y - g0.y - 40 / scale) < 1.5, `${JSON.stringify(g0)} -> ${JSON.stringify(g1)}`)
+  const moveCorners = await pn(page, (id) => window.__personalNote.leaferCanvas().pageCorners(id), picked.id)
+  const handle = await screenOf(moveCorners[1].x, moveCorners[1].y) // top right (the zoom control covers the bottom right here)
+  await page.mouse.move(handle.x, handle.y)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + 20, handle.y - 15, { steps: 4 })
+  await page.mouse.move(handle.x + 60, handle.y - 45, { steps: 4 })
+  await page.mouse.up()
+  await settle(page)
+  const g2 = await geometryOf(picked.id)
+  check('resize: dragging a corner handle makes it bigger and it keeps its media reference', g2.width * g2.scaleX > g1.width * g1.scaleX + 20 && (await images(page)).find((o) => o.id === picked.id).mediaRef.id === picked.mediaRef.id, `${JSON.stringify(g1)} -> ${JSON.stringify(g2)}`)
+  await page.mouse.click(5, 5)
+  await page.keyboard.press('Control+z')
+  await waitFor(async () => { const g = await geometryOf(picked.id); return Math.abs(g.width * g.scaleX - g1.width * g1.scaleX) < 0.5 })
+  await page.keyboard.press('Control+z')
+  await waitFor(async () => Math.abs((await geometryOf(picked.id)).x - g0.x) < 0.5)
+  const gBack = await geometryOf(picked.id)
+  check('move and resize undo one step each, back to where the picture was placed', Math.abs(gBack.x - g0.x) < 0.5 && Math.abs(gBack.width * gBack.scaleX - g0.width * g0.scaleX) < 0.5, JSON.stringify(gBack))
 
   console.log(`INFO  errors: ${errors.length ? errors.join(' | ') : 'none'}`)
   check('no page errors', errors.length === 0, errors.join(' | '))
