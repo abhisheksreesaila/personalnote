@@ -32,6 +32,8 @@
     "vite": "^8.1.1"
   },
   "dependencies": {
+    "@leafer-in/editor": "2.3.0",
+    "@leafer-in/resize": "2.3.0",
     "fabric": "^7.4.0",
     "leafer-ui": "2.3.0",
     "lucide": "^1.24.0"

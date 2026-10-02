@@ -42,3 +42,51 @@ export function multiplyMatrices(outer, inner) {
     e: outer.a * inner.e + outer.c * inner.f + outer.e, f: outer.b * inner.e + outer.d * inner.f + outer.f,
   }
 }
+
+// ---- the inverse (F-028) ----------------------------------------------------------------------------------------------------
+// A matrix an editor produced (move, resize, turn) back into model geometry, by the same documented rule. `size` is the box the
+// matrix is for; `previous` is the geometry before the edit, so what the edit did not change (turn, scale, skew, flips) is kept
+// exactly instead of being re-derived with rounding noise. SkewY is not recovered (the editor never makes one).
+// `bake` folds a change of scale into the box size and keeps the old scale: the way a text block or sticky resizes (wider box,
+// same letters) when the editor scaled it instead of resizing it.
+const EPSILON = 1e-9
+const toDegrees = (radians) => radians * (180 / Math.PI)
+
+export function geometryFromMatrix(matrix, size, previous = {}, { bake = false } = {}) {
+  const { a, b, c, d } = matrix
+  const width = size.width ?? previous.width ?? 0
+  const height = size.height ?? previous.height ?? 0
+  const centre = applyMatrix(matrix, { x: width / 2, y: height / 2 })
+  const was = placementMatrix(previous, { width, height })
+  const unchanged = Math.abs(a - was.a) < EPSILON && Math.abs(b - was.b) < EPSILON && Math.abs(c - was.c) < EPSILON && Math.abs(d - was.d) < EPSILON
+  if (unchanged) return { ...previous, x: centre.x - width / 2, y: centre.y - height / 2, width, height }
+
+  const flipX = previous.flipX === true
+  const length = Math.hypot(a, b)
+  if (length < EPSILON) return { ...previous, x: centre.x - width / 2, y: centre.y - height / 2, width, height }
+  const sign = flipX ? -1 : 1
+  const radians = Math.atan2(sign * b, sign * a)
+  const cos = Math.cos(radians)
+  const sin = Math.sin(radians)
+  const scaleXSigned = sign * length
+  const skewed = c * cos + d * sin // = scaleX * tan(skewX)
+  const scaleYSigned = -c * sin + d * cos
+  const next = {
+    ...previous,
+    rotation: toDegrees(radians),
+    scaleX: length,
+    scaleY: Math.abs(scaleYSigned),
+    flipX,
+    flipY: scaleYSigned < 0,
+    skewX: toDegrees(Math.atan(skewed / scaleXSigned)),
+  }
+  let w = width
+  let h = height
+  if (bake) {
+    w = width * (next.scaleX / (previous.scaleX ?? 1))
+    h = height * (next.scaleY / (previous.scaleY ?? 1))
+    next.scaleX = previous.scaleX ?? 1
+    next.scaleY = previous.scaleY ?? 1
+  }
+  return { ...next, x: centre.x - w / 2, y: centre.y - h / 2, width: w, height: h }
+}
