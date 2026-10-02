@@ -46,7 +46,7 @@ export function multiplyMatrices(outer, inner) {
 // ---- the inverse (F-028) ----------------------------------------------------------------------------------------------------
 // A matrix an editor produced (move, resize, turn) back into model geometry, by the same documented rule. `size` is the box the
 // matrix is for; `previous` is the geometry before the edit, so what the edit did not change (turn, scale, skew, flips) is kept
-// exactly instead of being re-derived with rounding noise. SkewY is not recovered (the editor never makes one).
+// exactly instead of being re-derived with rounding noise. SkewY is kept as it was (the editor never changes it).
 // `bake` folds a change of scale into the box size and keeps the old scale: the way a text block or sticky resizes (wider box,
 // same letters) when the editor scaled it instead of resizing it.
 const EPSILON = 1e-9
@@ -62,10 +62,15 @@ export function geometryFromMatrix(matrix, size, previous = {}, { bake = false }
   if (unchanged) return { ...previous, x: centre.x - width / 2, y: centre.y - height / 2, width, height }
 
   const flipX = previous.flipX === true
-  const length = Math.hypot(a, b)
+  // SkewY is kept as it was: take it out of the matrix (L = R S SkewX SkewY, so L SkewY^-1 = R S SkewX), then read turn, scale and
+  // SkewX from what is left.
+  const tanY = Math.tan(toRadians(previous.skewY ?? 0))
+  const pa = a - c * tanY
+  const pb = b - d * tanY
+  const length = Math.hypot(pa, pb)
   if (length < EPSILON) return { ...previous, x: centre.x - width / 2, y: centre.y - height / 2, width, height }
   const sign = flipX ? -1 : 1
-  const radians = Math.atan2(sign * b, sign * a)
+  const radians = Math.atan2(sign * pb, sign * pa)
   const cos = Math.cos(radians)
   const sin = Math.sin(radians)
   const scaleXSigned = sign * length
