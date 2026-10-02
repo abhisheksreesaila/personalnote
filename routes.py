@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -66,7 +68,16 @@ def speedtest_folder() -> Path:
     return Path(folder) if folder else app_data_dir() / "speedtest"
 
 
-MAX_SPEEDTEST_REPORT_CHARS = 200_000
+MAX_SPEEDTEST_REPORT_BYTES = 1024 * 1024
+
+
+def launch_speedtest_instance() -> None:
+    """Start the speed test as a separate app instance (temporary notebook, own window profile, own port): it never runs in the person's notebook."""
+    if getattr(sys, "frozen", False):
+        command = [sys.executable, "--speedtest"]
+    else:
+        command = [sys.executable, str(Path(__file__).resolve().parent / "desktop.py"), "--speedtest", "--no-build"]
+    subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 LOOPBACK_NAMES = {"127.0.0.1", "localhost", "::1"}
@@ -102,6 +113,8 @@ def create_app(
     database_path: Path | str | None = None,
     voice: VoiceRuntime | None = None,
     bound_host: str | None = None,
+    speedtest_instance: bool = False,
+    speedtest_launcher=None,
 ) -> FastHTML:
     """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
     data_path = Path(database_path or default_database_path())
@@ -179,15 +192,41 @@ def create_app(
             return forbidden()
         return voice_response(lambda: app.state.voice.remove())
 
+    @app.get("/api/speedtest/status")
+    def speedtest_status():
+        """True only in the separate instance the speed test runs in (a temporary notebook): the page runs the test there and nowhere else."""
+        return JSONResponse({"instance": speedtest_instance})
+
+    @app.post("/api/speedtest/launch")
+    def speedtest_launch(request):
+        """The person's own app starts the speed test as a separate instance; it never runs the test in this notebook."""
+        if not from_this_app(request):
+            return forbidden()
+        if speedtest_instance:
+            return JSONResponse({"error": "This is the speed test"}, status_code=409)
+        try:
+            (speedtest_launcher or launch_speedtest_instance)()
+        except OSError:
+            logger.exception("event=speedtest.launch outcome=failed")
+            return JSONResponse({"error": "The speed test could not be started"}, status_code=500)
+        return JSONResponse({"started": True}, status_code=202)
+
     @app.post("/api/speedtest/report")
     async def speedtest_report(request):
         """Saves the speed test's results as a text file and a JSON file the person can find again (and send along)."""
         if not from_this_app(request):
             return forbidden()
-        body = await payload(request)
+        raw = await request.body()
+        if len(raw) > MAX_SPEEDTEST_REPORT_BYTES:
+            return JSONResponse({"error": "The report is too large"}, status_code=413)
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            body = {}
+        body = body if isinstance(body, dict) else {}
         text = body.get("text")
         data = body.get("data")
-        if not isinstance(text, str) or not text.strip() or len(text) > MAX_SPEEDTEST_REPORT_CHARS or not isinstance(data, dict):
+        if not isinstance(text, str) or not text.strip() or not isinstance(data, dict):
             return JSONResponse({"error": "A speed test report needs text and data"}, status_code=400)
         folder = speedtest_folder()
         try:

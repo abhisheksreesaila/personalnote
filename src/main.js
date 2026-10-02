@@ -308,7 +308,8 @@ document.querySelector('#app').innerHTML = `
       <section class="settings-section">
         <p class="settings-section-label">Performance</p>
         <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
-        <div class="setting-row"><span><i data-lucide="gauge"></i>Speed test</span><button type="button" id="settings-speed-test" class="settings-inline-button" title="Measures this computer on a generated note of 5,000+ objects; your notes are not touched">Run…</button></div>
+        <p class="portability-help">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
+        <div class="portability-actions"><button type="button" id="settings-speed-test"><i data-lucide="gauge"></i><span>Run speed test…</span></button></div>
       </section>
       <section class="settings-section">
         <p class="settings-section-label">Built-in modules</p>
@@ -2106,6 +2107,8 @@ let saveTimer
 let saveInFlight = false
 let speedTestPaused = false // the speed test edits a note of its own and saves nothing while it runs
 let saveSettled = Promise.resolve() // resolves when the save in flight has been answered (or has failed)
+const MERGE_WAIT_MS = 4000 // how long a merge waits for a save that moved the page frame
+const MERGE_RETRY_MS = 3000
 let saveFrame = null // the page frame the save in flight was written in
 let saveDone = () => {}
 let saveQueued = false
@@ -2678,7 +2681,12 @@ async function mergeLeaferNote(note) {
   // answers), so a merge waits for the answer; what was fetched meanwhile is the user's own save, or older, and there is nothing in it to merge.
   // A save that left the frame as it was (the usual one) changes nothing about how the server's copy is read: the merge goes ahead.
   if (saveInFlight && saveFrame && (saveFrame.x !== leaferServerShift.x || saveFrame.y !== leaferServerShift.y)) {
-    while (saveInFlight) await saveSettled
+    // Not for ever: a save that gets no answer must not hold the changes feed. The merge is dropped and tried again a little later.
+    const gaveUp = Symbol('gave up')
+    let timer
+    const outcome = await Promise.race([(async () => { while (saveInFlight) await saveSettled })(), new Promise((resolve) => { timer = setTimeout(() => resolve(gaveUp), MERGE_WAIT_MS) })])
+    clearTimeout(timer)
+    if (outcome === gaveUp) { setTimeout(() => agentSync?.syncActiveNote().catch(console.error), MERGE_RETRY_MS); return 0 }
     if (note.id !== state.activeNoteId) return 0
     const known = state.notes.find((item) => item.id === note.id)
     if (known && note.revision <= known.revision) return 0
@@ -4384,11 +4392,27 @@ elements.settingsSpeedMeter.addEventListener('change', () => {
 if (state.speedMeter) setSpeedMeter(true)
 
 // The speed test (F-034): Settings, the View menu of the desktop app, or the page opened with ?speedtest=1. The code is loaded when it runs.
+// The test never runs in the person's own notebook: from the app it starts a separate instance (temporary notebook, own profile, own port);
+// the page that runs it is that instance, which says so itself (/speedtest/status).
 let speedTestRunning = false
+let speedTestInstance = false
+const speedTestStatus = api('/speedtest/status').then((status) => { speedTestInstance = Boolean(status?.instance) }).catch(() => {})
 async function startSpeedTest() {
-  if (speedTestRunning || !leaferCanvas || state.loading) return
-  speedTestRunning = true
+  if (speedTestRunning) return
+  await speedTestStatus
   setPropertiesOpen(false)
+  if (!speedTestInstance) {
+    try {
+      await api('/speedtest/launch', { method: 'POST', headers: { 'x-personal-note': '1' } })
+      showToast('The speed test opens in a window of its own and leaves your notes alone. Its results show there.')
+    } catch (error) {
+      console.error('The speed test could not be started', error)
+      showToast('The speed test could not be started.')
+    }
+    return
+  }
+  if (!leaferCanvas || state.loading) return
+  speedTestRunning = true
   const previous = state.activeNoteId
   try {
     const { runSpeedTest } = await import('./modules/speedtest/index.js')
@@ -4400,6 +4424,7 @@ async function startSpeedTest() {
       hostName: detectHost({ pywebview: window.pywebview, hostFlag, standalone, menubarVisible: window.menubar?.visible }),
       pageCount: () => `${state.pages.columns}x${state.pages.rows}`,
       pause: (on) => { speedTestPaused = on },
+      activeNoteId: () => state.activeNoteId,
       openNote: async (id) => {
         const { content, pageState, ...summary } = await api(`/notes/${id}`)
         state.notes.unshift(summary)
@@ -4949,4 +4974,4 @@ setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
 if (import.meta.env.DEV) window.__personalNote = { renderFabricPrintSheet, selectNote, leaferBase: () => leaferBase, canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
-initialize().then(() => { if (new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way
+initialize().then(async () => { await speedTestStatus; if (speedTestInstance && new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way

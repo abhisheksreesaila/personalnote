@@ -4,7 +4,6 @@
 // The test runs on a note of its own (a generated stress note of 5,000+ objects in a notebook the person already has, named "Speed test (safe to
 // delete)", removed when the test ends) and saves nothing while it runs, so no note of the person's is touched. The results are shown, can be
 // copied as text, and are saved to a file in the app's data folder.
-import './speedtest.css'
 import { createSpeedTest } from './driver.js'
 import { formatReport, verdict } from './report.js'
 import { generateStressNote } from './stress-note.js'
@@ -44,17 +43,21 @@ async function copyText(text) {
 // env: { api, notebookId, engine, hostName, openNote(id) (resolves when the note is on screen), restore() (back to what was open),
 //        pause(on) (no saves while on), forgetNote(id), host (the driver's host, see driver.js), pageCount() }
 export async function runSpeedTest(env) {
+  // A popover (the browser's own top-layer box and styling; nothing of ours to style). It is inert while the test runs, so the test's
+  // mouse events reach the note under it, and live again when the results are shown.
   const panel = document.createElement('section')
   panel.className = 'speedtest-panel'
+  panel.setAttribute('popover', 'manual')
+  panel.inert = true
   panel.setAttribute('role', 'status')
   panel.setAttribute('aria-live', 'polite')
   document.body.append(panel)
+  panel.showPopover()
   let test = null
   let noteId = null
-  let finished = false
 
   const header = (lead) => `<h2>Speed test</h2><p>${lead}</p>`
-  panel.innerHTML = `${header('Making a stress note of 5,000+ objects. Your notes are not touched. Please leave the mouse and keyboard alone for about a minute.')}<progress max="9" value="0"></progress><div class="speedtest-step">Starting</div><div class="speedtest-actions"><button data-act="stop">Stop</button></div>`
+  panel.innerHTML = `${header('Making a stress note of 5,000+ objects. Your notes are not touched. Please leave the mouse and keyboard alone for about a minute.')}<progress max="9" value="0"></progress><div class="speedtest-step">Starting</div><div class="portability-actions"><button data-act="stop">Stop</button></div>`
   panel.querySelector('[data-act="stop"]').addEventListener('click', () => test?.stop())
 
   let report = null
@@ -63,13 +66,14 @@ export async function runSpeedTest(env) {
     const note = await env.api('/notes', { method: 'POST', body: JSON.stringify({ title: NOTE_TITLE, notebookId: env.notebookId, noteType: 'canvas' }) })
     noteId = note.id
     await env.api(`/notes/${note.id}`, { method: 'PUT', body: JSON.stringify({ title: NOTE_TITLE, notebookId: env.notebookId, revision: note.revision, pageState: stress.pageState, content: stress.content }) })
-    env.pause(true)
+    env.pause(true) // before anything is opened: nothing is saved while the test runs
     const t0 = performance.now()
     await env.openNote(note.id)
+    if (env.activeNoteId() !== note.id) throw new Error('the stress note did not open')
     const openMs = performance.now() - t0
     const objects = env.host.edits.doc.objects.length
     test = createSpeedTest({
-      host: env.host,
+      host: { ...env.host, guard: () => { if (env.activeNoteId() !== note.id) throw Object.assign(new Error('the open note is not the stress note'), { aborted: true }) } },
       onProgress: ({ name, done, total }) => {
         const bar = panel.querySelector('progress')
         if (bar) { bar.max = total; bar.value = done }
@@ -87,7 +91,7 @@ export async function runSpeedTest(env) {
     report = { run, text: formatReport(run) }
   } catch (error) {
     console.error('Speed test failed', error)
-    panel.innerHTML = `${header(`The speed test could not run: ${escape(error.message || error)}`)}<div class="speedtest-actions"><button data-act="close">Close</button></div>`
+    panel.innerHTML = `${header(`The speed test could not run: ${escape(error.message || error)}`)}<div class="portability-actions"><button data-act="close">Close</button></div>`
     panel.querySelector('[data-act="close"]').addEventListener('click', () => panel.remove())
   } finally {
     env.pause(false)
@@ -98,7 +102,6 @@ export async function runSpeedTest(env) {
     }
   }
   if (!report) return null
-  finished = true
   let saved = ''
   try {
     const result = await env.api('/speedtest/report', { method: 'POST', headers: { 'x-personal-note': '1' }, body: JSON.stringify({ text: report.text, data: report.run }) })
@@ -106,20 +109,19 @@ export async function runSpeedTest(env) {
   } catch (error) { console.error('The results could not be saved', error) }
   const rows = report.run.results.map((row) => {
     const bad = row.unit !== 'ms' && row.p95 > 34
-    return `<tr><td>${escape(row.name)}</td><td>${row.p50 ?? '-'}</td><td>${row.p95 ?? '-'}</td><td>${row.max ?? '-'}</td><td class="speedtest-verdict${bad ? ' speedtest-bad' : ''}">${escape(row.verdict ?? '')}</td></tr>`
+    return `<tr><td>${escape(row.name)}</td><td>${row.p50 ?? '-'}</td><td>${row.p95 ?? '-'}</td><td>${row.max ?? '-'}</td><td>${bad ? '! ' : ''}${escape(row.verdict ?? '')}</td></tr>`
   }).join('')
-  panel.classList.add('is-done')
+  panel.inert = false
   panel.innerHTML = `${header('Milliseconds per frame, so 16.7 is 60 frames a second. Lower is better.')}
-    <div class="speedtest-where">${escape(report.run.engine)} on ${escape(report.run.platform)}, ${escape(report.run.host)}, ${escape(report.run.dpr)}x screen (${escape(report.run.screen)}), ${escape(report.run.cores)} cores${report.run.gpu ? `, ${escape(report.run.gpu)}` : ''}. Stress note: ${report.run.note.objects} objects on ${escape(report.run.note.pages)} pages.</div>
+    <p class="portability-help">${escape(report.run.engine)} on ${escape(report.run.platform)}, ${escape(report.run.host)}, ${escape(report.run.dpr)}x screen (${escape(report.run.screen)}), ${escape(report.run.cores)} cores${report.run.gpu ? `, ${escape(report.run.gpu)}` : ''}. Stress note: ${report.run.note.objects} objects on ${escape(report.run.note.pages)} pages.</p>
     <table><thead><tr><th></th><th>p50</th><th>p95</th><th>max</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-    ${report.run.failed.length ? `<p class="speedtest-bad">Could not measure: ${escape(report.run.failed.join('; '))}</p>` : ''}
-    <div class="speedtest-actions"><button class="primary" data-act="copy">Copy results</button><button data-act="again">Run again</button><button data-act="close">Close</button></div>
-    <div class="speedtest-saved">${saved ? `Saved to ${escape(saved)}` : 'The results could not be saved to a file; use Copy results.'}</div>`
+    ${report.run.failed.length ? `<p class="portability-help">Could not measure: ${escape(report.run.failed.join('; '))}</p>` : ''}
+    <div class="portability-actions"><button data-act="copy">Copy results</button><button data-act="again">Run again</button><button data-act="close">Close</button></div>
+    <p class="portability-help">${saved ? `Saved to ${escape(saved)}` : 'The results could not be saved to a file; use Copy results.'}</p>`
   const copy = panel.querySelector('[data-act="copy"]')
   copy.addEventListener('click', async () => { copy.textContent = (await copyText(report.text)) ? 'Copied' : 'Could not copy' })
   panel.querySelector('[data-act="close"]').addEventListener('click', () => panel.remove())
   panel.querySelector('[data-act="again"]').addEventListener('click', () => { panel.remove(); void runSpeedTest(env) })
   document.documentElement.dataset.speedtestDone = '1'
-  void finished
   return report
 }

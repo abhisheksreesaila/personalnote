@@ -22,7 +22,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export function createSpeedTest({ host, onProgress = () => {}, now = () => performance.now() }) {
   let stopped = false
-  const check = () => { if (stopped) throw Object.assign(new Error('stopped'), { stopped: true }) }
+  // Before every step: stopped by the person, and (the host's guard) still on the stress note. Edits never land in any other note.
+  const check = () => { if (stopped) throw Object.assign(new Error('stopped'), { stopped: true }); host.guard?.() }
 
   // Frame gaps while `run` goes on.
   async function gaps(run) {
@@ -96,6 +97,7 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
   const find = (id, types) => visible(types).find((entry) => entry.id === id)
 
   async function press(point) {
+    check()
     const target = document.elementFromPoint(point.x, point.y) ?? host.canvasHost
     pointer(target, 'pointerdown', point)
     await frame()

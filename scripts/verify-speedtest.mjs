@@ -1,6 +1,7 @@
 // F-034: the speed test in the real app (Vite dev server on port 4806, mocked in-memory /api, headless Chromium), opened the way `npm run speedtest`
 // opens it (?speedtest=1):
-//   - it makes a stress note of 5,000+ objects in a note of its own, runs every scenario (open, pan, zoom, drag, undo and redo, pen, typing)
+//   - in the app itself (not the speed-test instance) Settings > Run… only asks for a separate instance and ?speedtest=1 does nothing
+//   - in the speed-test instance it makes a stress note of 5,000+ objects in a note of its own, runs every scenario (open, pan, zoom, drag, undo and redo, pen, typing)
 //     and shows the results; each scenario has p50, p95 and max
 //   - the person's own notes are not touched (no save of them), the test note is removed at the end and the person's note is open again
 //   - the report can be copied as text, and was saved through the app's /speedtest/report route
@@ -15,6 +16,7 @@ const load = (name) => JSON.parse(fs.readFileSync(new URL(`../tests/fixtures/doc
 const mine = load('app-all-tools')
 const notesDb = { 1: { id: 1, resourceId: 'r1', revision: 1, noteType: 'canvas', title: 'My note', notebookId: 1, createdAt: now, updatedAt: now, content: mine.content, pageState: mine.pageState } }
 const calls = []
+let instance = true // what /speedtest/status says: only the separate speed-test instance runs the test
 let report = null
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
@@ -28,7 +30,7 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.route('**/api/**', async (route) => {
+  await context.route('**/api/**', async (route) => {
     const req = route.request()
     const p = new URL(req.url()).pathname.replace(/^\/api/, '')
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
@@ -43,6 +45,8 @@ try {
       const { content, pageState, ...summary } = notesDb[id]
       return json(summary, 201)
     }
+    if (p === '/speedtest/status') return json({ instance })
+    if (p === '/speedtest/launch') { calls.push(['POST', p]); return json({ started: true }, 202) }
     if (p === '/speedtest/report') { report = JSON.parse(req.postData()); calls.push(['POST', p]); return json({ path: '/tmp/speedtest-example.txt', jsonPath: '/tmp/speedtest-example.json' }, 201) }
     const m = /^\/notes\/(\d+)$/.exec(p)
     if (m) {
@@ -79,6 +83,19 @@ try {
   const copied = await page.evaluate(async () => { document.querySelector('[data-act="copy"]').click(); await new Promise((r) => setTimeout(r, 200)); return navigator.clipboard.readText() })
   check('Copy results puts the report text on the clipboard', copied === report.text, copied.slice(0, 80))
   console.log(report.text)
+
+  // the person's own app: nothing runs here, a separate instance is asked for
+  instance = false
+  calls.length = 0
+  const own = await context.newPage()
+  await own.goto('http://127.0.0.1:4806/notes?speedtest=1')
+  await own.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  await own.waitForTimeout(2500)
+  check('?speedtest=1 in the person\'s own app does not run the test', !await own.evaluate(() => document.querySelector('.speedtest-panel')) && !calls.some((call) => call[0] === 'POST' && call[1] === '/notes'), JSON.stringify(calls))
+  await own.evaluate(() => document.querySelector('#settings-speed-test').click())
+  await own.waitForTimeout(1000)
+  check('Settings > Run… asks for a separate instance and makes no note here', calls.some((call) => call[1] === '/speedtest/launch') && !calls.some((call) => call[1] === '/notes') && Object.keys(notesDb).length === 1, JSON.stringify(calls))
+  check('and tells the person where the results will show', /window of its own/.test(await own.evaluate(() => document.body.innerText)))
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
   await browser.close()

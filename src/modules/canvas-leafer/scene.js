@@ -490,7 +490,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const { node } = item.entry
       if (item.lifted) {
         node.rotation = node.rotation + LIFT_TILT_DEGREES
-        if (globalThis.__noLiftShadow !== true) node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
+        node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
       }
       overlays.dragLayer.add(node)
     }

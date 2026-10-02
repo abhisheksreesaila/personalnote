@@ -22,6 +22,8 @@ const stored = { content: store(baseDoc()), pageState: { columns: 1, rows: 1 }, 
 const puts = []
 let changeSeq = 1
 let responseGate = null
+let hung = false // the server applies a save and never answers
+const changePolls = []
 const changeLog = []
 const holdResponses = () => { let open; responseGate = new Promise((resolve) => { open = () => { responseGate = null; resolve() } }); return open }
 const agentWrite = (change) => {
@@ -46,7 +48,7 @@ try {
     const p = new URL(req.url()).pathname.replace(/^\/api/, '')
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     const summary = { id: 1, resourceId: 'r1', revision: stored.revision, noteType: 'canvas', title: 'Sync', notebookId: 1, createdAt: now, updatedAt: now }
-    if (p === '/changes') { const since = Number(new URL(req.url()).searchParams.get('since') ?? changeSeq); return json({ sequence: changeSeq, changes: changeLog.filter((c) => c.sequence > since), agents: [] }) }
+    if (p === '/changes') { changePolls.push(Date.now()); const since = Number(new URL(req.url()).searchParams.get('since') ?? changeSeq); return json({ sequence: changeSeq, changes: changeLog.filter((c) => c.sequence > since), agents: [] }) }
     if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'N', color: '#76669a', noteCount: 1 }])
     if (p === '/notes' && req.method() === 'GET') return json([summary])
     if (p === '/notes/1' && req.method() === 'GET') return json({ ...summary, content: stored.content, pageState: stored.pageState })
@@ -57,6 +59,7 @@ try {
       const revision = stored.revision
       changeSeq += 1
       changeLog.push({ sequence: changeSeq, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision })
+      if (hung) await new Promise(() => {})
       if (responseGate) await responseGate // applied on the server; the answer has not come back
       return json({ revision, resourceId: 'r1' })
     }
@@ -109,6 +112,24 @@ try {
   check('the agent\'s text is where the agent put it, next to C', Boolean(objectOf(merged, 'AG')) && near(objectOf(merged, 'AG').geometry.x - objectOf(merged, 'C').geometry.x, 300, 1e-6) && near(objectOf(merged, 'AG').geometry.y - objectOf(merged, 'C').geometry.y, 0, 1e-6))
   const final = readJsonCanvas(stored.content)
   check('the server\'s note and the screen agree at the end, in the user\'s frame', ['A', 'B', 'C', 'AG'].every((id) => near(objectOf(final, id).geometry.x, objectOf(merged, id).geometry.x) && near(objectOf(final, id).geometry.y, objectOf(merged, id).geometry.y)) && near(objectOf(final, 'C').geometry.x, objectOf(user, 'C').geometry.x))
+
+  // a save that never gets an answer: the merge is given up after a few seconds and the changes feed carries on
+  hung = true
+  const a2 = await centre('B')
+  await page.mouse.click(a2.x, a2.y)
+  const to2 = await screenOf(-40 + 101, -60 + 61)
+  await page.mouse.move(a2.x, a2.y)
+  await page.mouse.down()
+  for (let i = 1; i <= 12; i += 1) { await page.mouse.move(a2.x + ((to2.x - a2.x) * i) / 12, a2.y + ((to2.y - a2.y) * i) / 12); await nextFrame() }
+  await page.mouse.up()
+  await page.waitForTimeout(1500)
+  agentWrite((d) => { d.objects.push({ id: 'AG3', type: 'text', mode: 'box', z: 60, content: 'while hung', geometry: { x: 10, y: 10, width: 200, height: 60, ...UPRIGHT } }) })
+  const polledBefore = changePolls.length
+  const mark = Date.now()
+  await page.waitForTimeout(12000)
+  const lastPolls = changePolls.filter((at) => at > mark + 6000).length
+  check('with a save that never answers, the changes feed keeps polling (a merge never stalls it)', lastPolls >= 2 && changePolls.length > polledBefore, `${lastPolls} polls in the last 6 s`)
+  check('and the page is still usable: the editor answers', await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.length > 0))
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
   await browser.close()

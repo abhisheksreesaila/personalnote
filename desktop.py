@@ -341,7 +341,7 @@ def setup_mac_window(window, actions: "desktop_menu.MenuActions", menus=None) ->
     window.events.restored += sync_full_screen
 
 
-def run_window(base_url: str, database: Path, server: LocalServer, timing: bool, query: str = "") -> None:
+def run_window(base_url: str, database: Path, server: LocalServer, timing: bool, query: str = "", storage: Path | None = None) -> None:
     if sys.platform.startswith("linux"):
         # WebKitGTK's DMABUF renderer crashes some Wayland sessions with a protocol error.
         os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
@@ -401,7 +401,7 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool,
             report_timing(window)
 
     # A persistent web context: the page keeps localStorage (display preferences) between runs.
-    storage = app_data_dir() / "webview"
+    storage = storage or app_data_dir() / "webview"
     storage.mkdir(parents=True, exist_ok=True)
     start_options = {"menu": menus} if menus else {}
     webview.start(on_started, private_mode=False, storage_path=str(storage), **start_options)
@@ -538,6 +538,7 @@ def main(argv: list[str] | None = None) -> int:
         # The speed test runs in a notebook of its own and its own browser profile, so it never touches the notes (or a running app).
         speedtest_dir = Path(tempfile.mkdtemp(prefix="personal-note-speedtest-"))
         os.environ["PERSONAL_NOTE_DB"] = str(speedtest_dir / "speedtest.db")
+        os.environ["PERSONAL_NOTE_VOICE_DIR"] = str(speedtest_dir / "voice")  # a folder of its own, not the real voice install
     started = time.time()
     database = default_database_path()
     chromium_profile = (speedtest_dir or app_data_dir()) / "chromium-profile"
@@ -556,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
             ensure_frontend_built()
         from routes import create_app
 
-        app = create_app(database, bound_host=HOST)
+        app = create_app(database, bound_host=HOST, speedtest_instance=bool(speedtest_dir))
         server = LocalServer(app, preferred_port=(args.port or 0) if args.serve else 0 if speedtest_dir else PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:
@@ -573,7 +574,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.timing:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
     record_instance(database, base_url, server.nonce)
-    app.state.voice.autostart()  # when voice is installed, its engine starts with the window (in the background)
+    if not speedtest_dir:
+        app.state.voice.autostart()  # when voice is installed, its engine starts with the window (in the background)
     try:
         if engine == "serve":
             wait_for_stop(base_url)
@@ -583,7 +585,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"The Chromium window exited with an error (code {code}). Try `--engine webview`.", file=sys.stderr)
                 return 1
         else:
-            run_window(base_url, database, server, args.timing, **({"query": SPEEDTEST_QUERY} if speedtest_dir else {}))
+            run_window(base_url, database, server, args.timing, **({"query": SPEEDTEST_QUERY, "storage": speedtest_dir / "webview"} if speedtest_dir else {}))
     except OSError as error:
         if engine != "chromium":
             raise
@@ -601,7 +603,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         clear_instance(database)
-        app.state.voice.shutdown()
+        if not speedtest_dir:
+            app.state.voice.shutdown()  # (the speed test never started the voice engine)
         server.stop()
         if speedtest_dir is not None:
             finish_speedtest(speedtest_dir, started)
