@@ -224,6 +224,41 @@ try {
   check('two undos bring the erased stroke back exactly', restored.some((o) => JSON.stringify(o) === JSON.stringify(line)) && restored.length === countBefore, String(restored.length))
   await page.evaluate(() => window.__personalNote.leaferEdits.redo())
   check('redo erases it again', !(await inkObjects(page)).some((o) => o.id === line.id))
+  // a redraw from the document keeps the pictures the note was opened with (undo and redo redraw it)
+  const images = await page.evaluate(() => {
+    const scene = window.__personalNote.leaferCanvas()
+    const doc = window.__personalNote.leaferEdits.doc
+    const picture = { type: 'image', id: 'media-picture', z: 9999, geometry: { x: 10, y: 10, width: 50, height: 50, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }, mediaRef: { kind: 'media', id: 'abc' } }
+    const withPicture = { ...doc, objects: [...doc.objects, picture] }
+    const resolve = () => 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
+    scene.load(doc, { resolveMedia: resolve })
+    const base = scene.stats().images
+    scene.load(withPicture, { resolveMedia: resolve })
+    const first = scene.stats().images - base
+    scene.load(withPicture) // what an undo or a redo does
+    return [first, scene.stats().images - base]
+  })
+  check('a redraw after undo or redo still draws a library picture', images[0] === 1 && images[1] === 1, JSON.stringify(images))
+  await page.evaluate(() => window.__personalNote.leaferCanvas().load(window.__personalNote.leaferEdits.doc))
+
+  // a stroke that grew the page grid and is then given up puts the grid back, and the next step does not carry the growth
+  await tool(page, 'pen')
+  const grid = await api(page, `() => ({ ...window.__personalNote.state.pages, doc: window.__personalNote.leaferEdits.doc.page.columns })`)
+  await page.evaluate(() => { window.addEventListener('pointerdown', (e) => { window.__lastPointer = e.pointerId }, true) })
+  const edge = await screenOf(page, grid.columns * 860 - 40, 500)
+  const beyond = await screenOf(page, grid.columns * 860 + 30, 520)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: edge.x, y: edge.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'pen', force: 0.5 })
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: beyond.x, y: beyond.y, button: 'none', buttons: 1, pointerType: 'pen', force: 0.5 })
+  await nextFrame(page)
+  const grown = await api(page, `() => window.__personalNote.state.pages.columns`)
+  await page.evaluate(() => document.querySelector('.ink-surface').dispatchEvent(new PointerEvent('pointercancel', { pointerId: window.__lastPointer, bubbles: true })))
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: beyond.x, y: beyond.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'pen', force: 0 })
+  check('the pen going past the edge grows the page grid', grown === grid.columns + 1, `${grown} vs ${grid.columns}`)
+  check('giving that stroke up puts the page grid back', (await api(page, `() => window.__personalNote.state.pages.columns`)) === grid.columns)
+  const stepsNow = await steps(page)
+  await stroke(page, cdp, wave(200, 520, 100, 10, 5))
+  const lastStep = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page.columns)
+  check('the next stroke is an ordinary step with no page growth in it', lastStep === grid.doc && (await steps(page)) === stepsNow + 1)
   check('no page errors', errors.length === 0, errors.join(' | '))
   await context.close()
 
@@ -307,7 +342,7 @@ try {
     const objects = await bigPage.evaluate(() => window.__personalNote.leaferEdits.doc.objects.length)
     console.log(`INFO  600-object note (${objects} objects incl. 5 new strokes), devicePixelRatio ${dpr}: frame gap median ${at(frames, 0.5).toFixed(1)} ms, p95 ${at(frames, 0.95).toFixed(1)} ms, max ${Math.max(...frames).toFixed(1)} ms over ${frames.length} frames; time inside the pointer handler median ${at(proc, 0.5).toFixed(1)} ms, p95 ${at(proc, 0.95).toFixed(1)} ms, max ${Math.max(...proc).toFixed(1)} ms; pointer to the frame after it median ${at(latency, 0.5).toFixed(1)} ms, p95 ${at(latency, 0.95).toFixed(1)} ms over ${latency.length} moves`)
     check(`dpr ${dpr}: p95 frame while drawing on the 600-object note is within 16.8 ms`, at(frames, 0.95) <= 16.85, `${at(frames, 0.95)}`)
-    check(`dpr ${dpr}: p95 time to draw a pointer move on the live layer is within 16.8 ms`, at(proc, 0.95) <= 16.8, `${at(proc, 0.95)}`)
+    check(`dpr ${dpr}: p95 time inside our pointer handler (it draws the move on the live layer; not present-to-glass latency) is within 16.8 ms`, at(proc, 0.95) <= 16.8, `${at(proc, 0.95)}`)
     check(`dpr ${dpr}: five strokes, five undo steps`, marks.at(-1) === 5)
     await ctx.close()
   }

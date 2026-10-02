@@ -5,12 +5,13 @@
 //
 //   createInk({ host, scene, getDoc, getBrush, getPages, growPages, restore, cursor })
 //     getBrush()    -> { tool: 'pen' | 'highlight', color: '#rrggbb', width }
+//     setPages(pages) -> put the page grid back (a stroke that grew it was given up)
 //     getPages()    -> the page grid now ({ columns, rows }); growPages(point) adds a page when the pen goes past the edge, true if it did
 //     restore()     -> draw the note again from the document (an erase pass that was cancelled)
 //   ink.setTool(tool)   shows the surface for 'pen', 'highlight' and 'eraser', hides it for anything else
 import { createEraser, drawOp, HIGHLIGHT_ALPHA, inkObject, topZ } from './ink-model.js'
 
-export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, restore, cursor }) {
+export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, setPages, restore, cursor }) {
   const surface = document.createElement('div')
   surface.className = 'ink-surface'
   surface.hidden = true
@@ -111,7 +112,7 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
 
   function begin(event) {
     const brush = getBrush()
-    gesture = { pointerId: event.pointerId, tool, brush: { ...brush, tool }, rect: surface.getBoundingClientRect(), points: [] }
+    gesture = { pointerId: event.pointerId, tool, brush: { ...brush, tool }, rect: surface.getBoundingClientRect(), points: [], pages: { ...getPages() } }
     const point = toPage(event)
     if (tool === 'eraser') {
       gesture.eraser = createEraser(getDoc())
@@ -165,6 +166,8 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
     gesture = null
     hideLive()
     if (done.tool === 'eraser' && done.eraser.changed) restore()
+    const now = getPages()
+    if (now.columns !== done.pages.columns || now.rows !== done.pages.rows) setPages(done.pages) // growth made for a stroke that is not kept
   }
 
   surface.addEventListener('pointerdown', (event) => {

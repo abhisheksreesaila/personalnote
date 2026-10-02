@@ -2276,7 +2276,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
   if (showing !== leaferShowSequence || note.id !== state.activeNoteId) return false
   leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.doc.page }
   canvas.remove(...canvas.getObjects()) // the Fabric canvas holds nothing in this mode, whatever happened before
-  state.pages = decoded.doc.page
+  state.pages = { ...decoded.doc.page } // a copy: the document the history holds is never edited through the paper state
   resizePaper()
   const shown = leaferCanvas.showDocument(decoded.doc, { resolveMedia: decoded.resolveMedia })
   if (openView) leaferEdits.open(note.id, shown) // a newly opened note starts a new undo history; an agent's newer content does not (undo never reverts it)
@@ -2345,6 +2345,7 @@ leaferInk = createInk({
     resizePaper()
     return true
   },
+  setPages(pages) { state.pages = { ...pages }; resizePaper() },
   restore: () => leaferCanvas.load(leaferEdits.doc),
   cursor: elements.eraserCursor,
 })

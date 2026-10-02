@@ -644,7 +644,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     ...textApi,
     // Draws a note. `next` is a document model (fromFabric output); `options.resolveMedia` turns a media-library picture into a URL.
     load(next, options = {}) {
-      resolveMedia = options.resolveMedia ?? null
+      if ('resolveMedia' in options) resolveMedia = options.resolveMedia ?? null // a redraw from the document (undo, redo, an erase pass given up) keeps the pictures the note was opened with
       if (overlay.isOpen) overlay.commit() // words being typed are kept
       lastEdited = null
       doc = next
