@@ -6,7 +6,7 @@ test('the defaults are what ships, and a benchmark can switch any of them off', 
   assert.deepEqual(readPerf(undefined), PERF_DEFAULTS)
   assert.equal(PERF_DEFAULTS.bakedShadow, true)
   assert.equal(PERF_DEFAULTS.dprCap, 2)
-  assert.deepEqual(readPerf({ pageBitmaps: 'off', cull: false }), { ...PERF_DEFAULTS, pageBitmaps: 'off', cull: false })
+  assert.deepEqual(readPerf({ pageBitmaps: 'off', lodZoom: 0.5 }), { ...PERF_DEFAULTS, pageBitmaps: 'off', lodZoom: 0.5 })
   assert.deepEqual(readPerf('nonsense'), PERF_DEFAULTS)
 })
 

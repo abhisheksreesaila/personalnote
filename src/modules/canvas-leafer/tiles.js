@@ -9,8 +9,7 @@
 // the frames of such a pan are seen to be slow (a computer without a graphics card, a very dense desk), they are built in idle time, one
 // page at a time, and used from then on. 'off' never.
 //
-// Pages that are off screen are not put on the stage (`perf.cull`). A bitmap is made with the page's margin (BLEED) so an object across a
-// page edge shows whole.
+// A bitmap is made with the page's margin (BLEED) so an object across a page edge shows whole.
 import { Bounds, Canvas, Group, Matrix } from 'leafer-ui'
 
 const BLEED = 40
@@ -99,7 +98,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
   // Idle time: the pages on screen first, then the rest, one page at a time.
   function buildNext() {
     buildTimer = null
-    if (active || (mode === 'off') || !slow) return
+    if (active || (mode === 'off') || !slow || latest.scale >= perf.lodZoom) return // not while the view is zoomed in: nothing would use them
     const { columns, rows } = getPages()
     const box = visible(latest)
     const order = []
@@ -117,14 +116,6 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
 
   function place(view) {
     layer.set({ x: view.x, y: view.y, scaleX: view.scale, scaleY: view.scale })
-    if (!perf.cull) return
-    const box = visible(view)
-    for (const [id, tile] of tiles) {
-      const [c, r] = id.split(',').map(Number)
-      const inside = c >= box.c0 && c <= box.c1 && r >= box.r0 && r <= box.r1
-      if (inside && !tile.node.parent) layer.add(tile.node)
-      else if (!inside && tile.node.parent) tile.node.remove()
-    }
   }
 
   function enter(view) {
@@ -135,8 +126,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
     world.remove()
     layer.set({ x: view.x, y: view.y, scaleX: view.scale, scaleY: view.scale })
     for (const tile of tiles.values()) if (tile.node.parent) tile.node.remove()
-    if (perf.cull) each(box, (c, r) => layer.add(tiles.get(key(c, r)).node))
-    else for (const tile of tiles.values()) if (tile.built === version) layer.add(tile.node)
+    for (const tile of tiles.values()) if (tile.built === version) layer.add(tile.node)
     stage.addAt(layer, at)
     active = true
     counters.enters += 1
@@ -173,6 +163,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
         if (gaps.length > WINDOW) gaps.shift()
         if (gaps.filter((value) => value > SLOW_FRAME).length >= SLOW_COUNT) { slow = true; wantBuild(60) }
       }
+      if (slow) wantBuild(400) // (a no-op once they are all made)
       if (!slow || !moving) return false
       if (!enter(next)) return false
     } else place(next)

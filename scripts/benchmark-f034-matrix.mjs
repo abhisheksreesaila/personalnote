@@ -40,7 +40,6 @@ if (command === 'run') {
     'baked-shadow-off': { bakedShadow: false },
     'bitmaps-off': { pageBitmaps: 'off' },
     'bitmaps-always': { pageBitmaps: 'always' },
-    'bitmaps-always-cull-off': { pageBitmaps: 'always', cull: false },
     'bitmaps-off-baked-off': { pageBitmaps: 'off', bakedShadow: false },
   }
   for (const [name, flags] of Object.entries(sets)) {
@@ -49,7 +48,7 @@ if (command === 'run') {
     bench(file, ['--note=stress', `--dpr=${dpr}`, `--flags=${JSON.stringify(flags)}`, '--only=pan,zoom,drag', ...(mode === 'gpu' ? ['--gpu'] : [])])
   }
   // the dense desk where culling can matter: 16,000 objects on 6x6 pages
-  for (const [name, flags] of Object.entries({ 'big-bitmaps-off': { pageBitmaps: 'off' }, 'big-bitmaps-always': { pageBitmaps: 'always' }, 'big-bitmaps-always-cull-off': { pageBitmaps: 'always', cull: false } })) {
+  for (const [name, flags] of Object.entries({ 'big-bitmaps-off': { pageBitmaps: 'off' }, 'big-bitmaps-always': { pageBitmaps: 'always' }, 'big-dpr-cap-off': { pageBitmaps: 'off', dprCap: 0 } })) {
     const file = path.join(out, `flag-${mode}-${name}-dpr${dpr}.json`)
     console.log(`flags ${mode} ${name} dpr ${dpr}`)
     bench(file, ['--note=stress', '--count=16000', '--grid=6x6', `--dpr=${dpr}`, `--flags=${JSON.stringify(flags)}`, '--only=pan,zoom', ...(mode === 'gpu' ? ['--gpu'] : [])])

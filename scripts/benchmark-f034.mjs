@@ -233,8 +233,13 @@ async function runNote(browser, note, dpr) {
     await page.evaluate((target) => window.__personalNote.leaferCanvas().editText(target), id)
     await page.waitForSelector('.leafer-text-editor', { timeout: 10000 }).catch(() => {})
     await page.keyboard.press('Control+End')
-    const out = await latency(page, 'typing 80 characters', ['keydown'], async () => { for (let i = 0; i < 80; i += 1) { await page.keyboard.type(TEXT[i % TEXT.length]); await nextFrame(page) } })
-    rows.push(out.frame, out.toFrame)
+    // The browser's own event timing (keydown to the next paint, in 8 ms steps; under 16 ms is not reported and counts as 16): a probe of ours
+    // that waits for a timer after the frame reads late in a busy test browser and says nothing about the page.
+    await page.evaluate(() => { window.__keys = []; new PerformanceObserver((list) => { for (const e of list.getEntries()) if (e.name === 'keydown') window.__keys.push(e.duration) }).observe({ type: 'event', durationThreshold: 16 }) })
+    const typed = await frames(page, 'typing 80 characters: frame gaps', async () => { for (let i = 0; i < 80; i += 1) { await page.keyboard.type(TEXT[i % TEXT.length]); await nextFrame(page) } })
+    await page.waitForTimeout(300)
+    const keys = await page.evaluate(() => window.__keys)
+    rows.push(typed, { scenario: 'typing 80 characters: key to paint', ...stat([...keys, ...Array(Math.max(0, 80 - keys.length)).fill(16)]), slow: keys.filter((d) => d > 32).length })
     await page.keyboard.press('Escape')
   }
   await context.close()

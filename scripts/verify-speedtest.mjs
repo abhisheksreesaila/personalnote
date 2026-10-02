@@ -63,7 +63,7 @@ try {
   const text = await page.evaluate(() => document.querySelector('.speedtest-panel').innerText)
   const rows = await page.evaluate(() => [...document.querySelectorAll('.speedtest-panel tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent)))
   const names = rows.map((row) => row[0])
-  for (const expected of ['Open the note', 'Pan (opening view)', 'Zoom', 'Pan (100%)', 'Drag one object', 'Drag 40 objects', 'Undo (the call', 'Redo (to the next frame', 'Pen (frames)', 'Pen (input to frame)', 'Typing (frames)', 'Typing (key to frame)']) {
+  for (const expected of ['Open the note', 'Pan (whole desk, zoomed out)', 'Zoom', 'Pan (100%)', 'Drag one object', 'Drag 40 objects', 'Undo (the call', 'Redo (to the next frame', 'Pen (frames)', 'Pen (input to frame)', 'Typing (frames)', 'Typing (key to frame)']) {
     check(`the results have a row for "${expected}"`, names.some((name) => name.startsWith(expected)), JSON.stringify(names))
   }
   const numeric = rows.filter((row) => !row[0].startsWith('Open'))

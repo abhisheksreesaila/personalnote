@@ -4,7 +4,6 @@
 //   - the vectors come back by themselves when the movement stops, and at once when the note is touched (and the touch picks what is under it)
 //   - an edit makes every bitmap out of date, and a bitmap is never shown out of date
 //   - at 60% and above (and with the bitmaps off) nothing changes: the picture is pixel-identical
-//   - only the pages on screen are on the stage while the bitmaps show
 //
 //   TMPDIR=/var/tmp/x node scripts/verify-leafer-lod.mjs
 import fs from 'node:fs'
@@ -97,10 +96,6 @@ try {
     const same = await compare(page, vector, bitmap)
     console.log(`INFO  bitmap picture vs vector picture at 30%: mean difference ${same.mean.toFixed(2)} of 255, ${(same.strong * 100).toFixed(2)}% of pixels differ by more than 64 levels, ${(same.any * 100).toFixed(1)}% differ at all`)
     check('the bitmap picture is close to the vector picture (measured tolerance: mean under 9 of 255, under 3% of pixels far off: this note is a dense stress note)', same.mean < 9 && same.strong < 0.03, JSON.stringify(same))
-
-    // cull: only the pages on screen are on the stage
-    const staged = await page.evaluate(() => { const layer = window.__personalNote.leaferCanvas().leafer.children[1]; return layer.children.length })
-    check('only the pages that are on screen are on the stage (of 16)', staged > 0 && staged < 16, String(staged))
 
     // a touch of the note brings the vectors back and picks what is under it
     const target = await page.evaluate(() => {

@@ -217,13 +217,13 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     const results = []
     const failed = []
     const add = (name, values, extra = {}) => results.push({ name, ...summarize(values), ...extra })
-    const steps = ['Pan (opening view)', 'Zoom', 'Pan (100%)', 'Drag one object', 'Drag 40 objects', 'Undo and redo', 'Pen (frames)', 'Pen (input to frame)', 'Typing (frames)', 'Typing (key to frame)']
+    const steps = ['Pan (whole desk, zoomed out)', 'Zoom', 'Pan (100%)', 'Drag one object', 'Drag 40 objects', 'Undo and redo', 'Pen (frames)', 'Pen (input to frame)', 'Typing (frames)', 'Typing (key to frame)']
     let done = 0
     const step = (name) => { check(); onProgress({ name, done, total: 8 }); done += 1 }
     try {
       await host.setView({ zoom: 'fit' })
       await sleep(400)
-      step('Pan at the opening view')
+      step('Pan, whole desk zoomed out')
       add(steps[0], await pan())
       step('Zoom in and out')
       add(steps[1], await zoom())
