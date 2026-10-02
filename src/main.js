@@ -2397,7 +2397,7 @@ function scheduleHandleClearance() {
   if (clearanceFrame) return
   clearanceFrame = requestAnimationFrame(() => {
     clearanceFrame = 0
-    const controls = [...document.querySelectorAll('.zoom-control, .page-minimap, .tool-dock')]
+    const controls = [...document.querySelectorAll('.zoom-control, .page-minimap')]
     const ids = leaferCanvas?.selection() ?? []
     const host = leaferHost?.getBoundingClientRect()
     let handles = []

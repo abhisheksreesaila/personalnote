@@ -109,6 +109,7 @@ export async function prepareImage(file) {
   try { bitmap = await decode(file) } catch { throw new Error('Could not read that picture') }
   try {
     const plan = imageStorage({ width: bitmap.width, height: bitmap.height, bytes: file.size, type: file.type })
+    if (plan.tooBig) throw new Error(`That picture is too large (over ${MAX_MEGAPIXELS} megapixels)`) // what the header did not say (unreadable header, a GIF frame bigger than the screen)
     if (plan.keep) return { blob: file, width: bitmap.width, height: bitmap.height }
     const { width, height } = plan.target
     const surface = scratch(width, height)

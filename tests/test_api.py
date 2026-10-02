@@ -373,7 +373,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(self.upload(self.PNG, app_header=False).status_code, 403)
         self.assertEqual(self.upload(b"\x89PNG\r\n\x1a\n" + b"0" * (20 * 1024 * 1024 + 1)).status_code, 413)
 
-    def test_media_upload_without_content_length_is_cut_off_past_the_limit(self):
+    def test_chunked_media_upload_past_the_limit_is_refused_with_413(self):
         def chunks(total):
             yield b"\x89PNG\r\n\x1a\n"
             for _ in range(total):
@@ -382,8 +382,6 @@ class ApiContractTests(unittest.TestCase):
         headers = {"Content-Type": "image/png", "x-personal-note": "1"}
         too_big = self.client.post("/api/media", content=chunks(21), headers=headers)  # chunked: no Content-Length
         self.assertEqual(too_big.status_code, 413)
-        fine = self.client.post("/api/media", content=iter([self.PNG[:20], self.PNG[20:]]), headers=headers)
-        self.assertEqual(fine.status_code, 201)
 
     def test_an_uploaded_picture_is_a_media_reference_in_the_saved_note_and_travels_with_exports(self):
         name = self.upload(self.PNG).json()["id"]

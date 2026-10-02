@@ -437,6 +437,21 @@ try {
   const backup = await (await api('/export/workspace')).text()
   check('backup: the pictures are inside the backup as data (lossless), so a restore needs no media folder', (backup.match(/data:image\/(png|jpeg)/g) || []).length >= 3)
 
+
+  // ---------------------------------------------------------------- narrow width (dock shown, 561-800 px): the dock stays clickable under a selection's bottom handle
+  await page.setViewportSize({ width: 600, height: 800 })
+  await page.waitForTimeout(500)
+  const phoneImage = (await images(page))[0]
+  await pn(page, (id) => window.__personalNote.leaferCanvas().select([id]), phoneImage.id)
+  const dockBox = await page.evaluate(() => { const r = document.querySelector('.tool-dock').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })
+  await pn(page, ([id, target]) => { const c = window.__personalNote.leaferCanvas(); const host = document.querySelector('#leafer-host').getBoundingClientRect(); const v = c.view(); const bottom = c.pageCorners(id)[2]; c.setView({ x: target.x - host.left - bottom.x * v.scale, y: target.y - host.top - bottom.y * v.scale, scale: v.scale }); c.select([id]) }, [phoneImage.id, dockBox])
+  await page.waitForTimeout(300)
+  const dock = await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const d = document.querySelector('.tool-dock'); return { onDock: Boolean(el?.closest('.tool-dock')), faint: d.classList.contains('is-clear-of-handles'), opacity: getComputedStyle(d).opacity } }, [dockBox.x, dockBox.y])
+  check("narrow width (dock shown, 561-800 px): with the selection's bottom handle under the dock, the dock is still on top and clickable", dock.onDock && !dock.faint && Number(dock.opacity) > 0.9, JSON.stringify(dock))
+  await page.click('[data-tool="hand"]')
+  check('narrow width (dock shown, 561-800 px): and a tool can be switched there', await pn(page, () => window.__personalNote.state.tool === 'hand'))
+  await page.setViewportSize({ width: 1280, height: 800 })
+
   console.log(`INFO  errors: ${errors.length ? errors.join(' | ') : 'none'}`)
   check('no page errors', errors.length === 0, errors.join(' | '))
 } catch (error) {
