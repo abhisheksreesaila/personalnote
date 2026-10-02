@@ -82,6 +82,7 @@ Needs: F-002
 - [ ] JS bundle is near its 230 KiB budget: trim or split before adding features
 - [ ] landing button hover uses the new softer blue (#2459B8), not #0059D6
 - [ ] startup error: check notify-send exit status; avoid stacking zenity then kdialog
+- [ ] verify-leafer-text's base-after-switch check can't reach its guard (switch waits for the save); drive the unload-save path instead
 - [ ] today's app (Fabric): an agent's rewrite or deletion arriving while you have unsaved edits is overwritten by the local version (mergeRemoteAppends keeps local, appends only new). Use the three-way merge F-029 adds for Leafer.
 - [ ] media/ files no note references are cleaned up (every ink/shape save writes new SVGs)
 - [ ] saving doesn't parse every other note to reserve block ids (ids table or revision-keyed cache)
@@ -216,7 +217,8 @@ Merged into `leafer` at d6683b1.
 - [ ] follow-up: a headless test that uniform strokes double in width at view scale 2; check Leafer strokeScaleFixed on non-uniform x/y scale
 ## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [done]
 Merged into `leafer` at e43fffc. Select/move/resize/turn/nudge/delete/z-order/lock, routed through undo. Save after an edit no longer freezes (per-object encode cache, Blob body): max frame 16.8 ms on 645 objects. Connectors following a moved object is F-032.
-## F-029 Text and stickies editing on Leafer, IME fix (P-05) [doing]
+## F-029 Text and stickies editing on Leafer, IME fix (P-05) [done]
+Merged into `leafer` at 39992fc. Textarea overlay (native IME), words saved as you type (one undo step per session; a mid-session agent merge splits it in two, accepted). Three-way agent merge (src/core/document/merge.js): agent rewrites/deletions/appends and the user's typing all survive. Prettify and voice-into-text disabled on Leafer until F-035.
 ## F-030 Undo/redo on the document model (P-06) [done]
 Merged into `leafer` at ea54a5f. Patch-based history (~1.5 KB/step on 600 objects, undo ~9 ms in app); undo never reverts or corrupts an agent's write (three-way per field, steps never span a merge).
 ## F-031 Pen, highlighter, eraser on Leafer (P-07) [doing]
