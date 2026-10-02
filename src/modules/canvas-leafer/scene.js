@@ -451,26 +451,40 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     return boundingRect({ ...object, geometry: g }, size)
   }
 
-  function startLift(list) {
+  // The dragged objects (lifted: tilted, with a deeper shadow) and the arrows on them move to a layer of their own for the gesture, so the
+  // note's 600 other objects are not painted again at every step; they go back to their place in the stack when it ends.
+  function startLift(list, { lift }) {
     const scale = view.scale
-    for (const entry of list) {
-      if (isLocked(entry.object)) continue
+    const items = []
+    const seen = new Set()
+    const take = (entry, lifted) => {
+      if (seen.has(entry.id)) return
+      seen.add(entry.id)
       const { node } = entry
-      const item = { entry, rotation: node.rotation, shadow: node.shadow, index: world.children.indexOf(node) }
-      node.rotation = node.rotation + LIFT_TILT_DEGREES
-      node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
-      live.lifted.push(item)
+      items.push({ entry, lifted, rotation: node.rotation, shadow: node.shadow, index: world.children.indexOf(node) })
     }
-    live.lifted.sort((a, b) => a.index - b.index)
-    for (const item of live.lifted) overlays.dragLayer.add(item.entry.node) // out of the note's layer: a drag repaints only what moves
+    if (lift) for (const entry of list) if (!isLocked(entry.object)) take(entry, true)
+    for (const entry of list) for (const id of linked.get(entry.id) ?? []) { const arrow = entries.get(id); if (arrow) take(arrow, false) }
+    items.sort((x, y) => x.index - y.index)
+    for (const item of items) {
+      const { node } = item.entry
+      if (item.lifted) {
+        node.rotation = node.rotation + LIFT_TILT_DEGREES
+        node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
+      }
+      overlays.dragLayer.add(node)
+    }
+    live.lifted = items
   }
 
   function endLift() {
     for (const item of live.lifted) {
       const { node } = item.entry
       if (entries.get(item.entry.id) !== item.entry) continue // the object went while it was lifted (a merge, a delete): nothing to put down
-      node.rotation = item.rotation
-      node.shadow = item.shadow ?? undefined
+      if (item.lifted) {
+        node.rotation = item.rotation
+        node.shadow = item.shadow ?? undefined
+      }
       world.addAt(node, Math.min(item.index, world.children.length))
     }
     live.lifted = []
@@ -488,7 +502,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     }
     live.rest = rest
     for (const entry of list) entry.liveBase = { x: entry.node.x, y: entry.node.y }
-    if (kind === 'move') startLift(list)
+    startLift(list, { lift: kind === 'move' })
   }
 
   const unionOf = (a, b) => (a && b ? { left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom) } : a ?? b)
@@ -1073,7 +1087,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
     connectorAt: (point) => connectorAt(doc?.objects ?? [], point, CONNECTOR_HIT / view.scale)?.id ?? null,
     selectedConnector: () => connectorSelected,
     // For checks: what a drag in progress has put on screen.
-    dragState: () => ({ active: live.active, lifted: live.lifted.map((item) => item.entry.id), tilt: live.lifted.map((item) => item.entry.node.rotation - item.rotation), ghost: live.ghost ? JSON.parse(live.ghost) : null, shift: { ...live.shift } }),
+    dragState: () => ({ active: live.active, lifted: live.lifted.filter((item) => item.lifted).map((item) => item.entry.id), tilt: live.lifted.filter((item) => item.lifted).map((item) => item.entry.node.rotation - item.rotation), layer: live.lifted.map((item) => item.entry.id), ghost: live.ghost ? JSON.parse(live.ghost) : null, shift: { ...live.shift } }),
     gridNow: () => ({ ...pages }),
     overlayState: () => overlays.state(),
     // What Leafer has for an object now (checks): its place, turn and, for an arrow, its drawing.
