@@ -36,8 +36,18 @@ const LEGACY_TEXT_PLACEHOLDER = 'Start typing'
 const isPlaceholderText = (value) => { const trimmed = String(value ?? '').trim(); return !trimmed || trimmed === LEGACY_TEXT_PLACEHOLDER }
 const isColor = (value) => typeof value === 'string' && value.length > 0
 
-function pathString(commands) {
-  return commands.map((command) => command.join(' ')).join(' ')
+// A pen line's commands in the engine's own number form ([1, x, y, 7, cx, cy, x, y, ...]), so it is not made into text for the engine to read
+// again (F-034: 55 ms of the 900 ms it takes to open 5,000 objects). The model holds absolute M, L, Q, C and Z only; anything else goes as text.
+const COMMAND_CODES = { M: 1, L: 2, C: 5, Q: 7, Z: 11 }
+function pathData(commands) {
+  const data = []
+  for (const command of commands) {
+    const code = COMMAND_CODES[command[0]]
+    if (code === undefined) return commands.map((item) => item.join(' ')).join(' ')
+    data.push(code)
+    for (let at = 1; at < command.length; at += 1) data.push(command[at])
+  }
+  return data
 }
 
 // An elliptical-cornered rectangle (Fabric's rx differs from ry); Leafer's cornerRadius is circular only.
@@ -245,7 +255,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
           const radius = object.radius ?? g.width / 2
           return { node: new Ellipse({ ...base, ...blend, width: radius * 2, height: radius * 2, fill: color }), size: {} }
         }
-        return { node: new Path({ ...base, ...blend, hitRadius: INK_HIT_RADIUS, path: pathString(object.path), fill: undefined, ...strokeProps(color, object.width ?? 1, object.strokeUniform, object.cap, object.join) }), size: {} }
+        return { node: new Path({ ...base, ...blend, hitRadius: INK_HIT_RADIUS, path: pathData(object.path), fill: undefined, ...strokeProps(color, object.width ?? 1, object.strokeUniform, object.cap, object.join) }), size: {} }
       }
       case 'image': {
         const ref = object.mediaRef

@@ -1,0 +1,26 @@
+/* The speed test panel (F-034). Loaded with the speed test, which is itself loaded only when it is run. Screen only. */
+.speedtest-panel {
+  position: fixed; z-index: 60; right: 16px; bottom: 16px; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+  padding: 14px 16px 12px; border-radius: var(--sk-radius, 14px); border: 1px solid var(--sk-edge, #ddd); background: var(--sk-panel, #fff);
+  color: var(--sk-ink, #222); box-shadow: var(--sk-shadow, 0 8px 30px rgba(0, 0, 0, .2)); font: 12px/1.45 var(--ui-font, system-ui, sans-serif);
+}
+.speedtest-panel[hidden] { display: none; }
+.speedtest-panel.is-done { left: 50%; right: auto; bottom: auto; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100vw - 32px)); }
+.speedtest-panel h2 { margin: 0 0 4px; font-family: var(--sk-display, inherit); font-weight: var(--sk-display-weight, 600); font-size: 18px; letter-spacing: var(--sk-title-track, 0); }
+.speedtest-panel p { margin: 0 0 8px; color: var(--sk-muted, #777); }
+.speedtest-panel progress { width: 100%; height: 6px; accent-color: var(--sk-accent, #2f6fe0); }
+.speedtest-panel .speedtest-step { margin: 6px 0 8px; color: var(--sk-ink-soft, #444); }
+.speedtest-panel table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin: 8px 0; }
+.speedtest-panel th, .speedtest-panel td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--sk-line, #eee); white-space: nowrap; }
+.speedtest-panel th:first-child, .speedtest-panel td:first-child { text-align: left; white-space: normal; }
+.speedtest-panel th { color: var(--sk-muted, #777); font-weight: 500; font-size: 11px; }
+.speedtest-panel td.speedtest-verdict { text-align: left; color: var(--sk-muted, #777); }
+.speedtest-panel .speedtest-bad { color: var(--sk-danger, #c33); }
+.speedtest-panel .speedtest-where { font-size: 11px; color: var(--sk-muted, #777); margin: 4px 0; }
+.speedtest-panel .speedtest-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.speedtest-panel button {
+  font: inherit; padding: 6px 12px; border-radius: var(--sk-radius-control, 8px); border: 1px solid var(--sk-edge, #ccc); background: transparent; color: inherit; cursor: pointer;
+}
+.speedtest-panel button.primary { background: var(--sk-accent, #2f6fe0); color: var(--sk-accent-ink, #fff); border-color: transparent; }
+.speedtest-panel .speedtest-saved { margin-top: 8px; font-size: 11px; color: var(--sk-muted, #777); word-break: break-all; }
+@media print { .speedtest-panel { display: none !important; } }

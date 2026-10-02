@@ -220,7 +220,7 @@ class NativeMenuTests(unittest.TestCase):
         self.assertEqual(self.titles(edit)[:3], ["Undo", "Redo", "---"])
         self.assertEqual(self.titles(edit)[3:], ["Cut", "Copy", "Paste", "Select All"])
         view = main.items[3].submenu()
-        self.assertEqual(self.titles(view), ["Zoom In", "Zoom In (plus key)", "Zoom Out", "Fit", "---", "Skins", "Speed meter", "---", "Enter Fullscreen"])
+        self.assertEqual(self.titles(view), ["Zoom In", "Zoom In (plus key)", "Zoom Out", "Fit", "---", "Skins", "Speed meter", "Speed test…", "---", "Enter Fullscreen"])
         self.assertEqual(self.titles(view.items[5].submenu()), ["Crayon", "Paper", "Night"])
 
     def test_native_items_run_their_command_and_carry_shortcuts(self):

@@ -80,6 +80,22 @@ npm run desktop                         # or: .venv/bin/python desktop.py
 - macOS app: on a Mac, `npm run desktop:mac-app` builds `dist-app/Personal Note.app` and a zip of it with PyInstaller (microphone usage text included). Not yet verified on a Mac.
 - Microphone: the Chromium window asks once per origin (the fixed port keeps the origin stable, so it is not asked again on each launch); the Linux pywebview window grants audio (never video) itself. On macOS the web view shows the system prompt (pywebview 6.2.1 has no media-permission hook, so WebKit's default prompt is what appears; not yet verified on a Mac). If access is refused the app says so and the note stays untouched. Voice itself is a separate one-click download, see Voice capture and privacy.
 
+### Speed test
+
+Measure how fast Personal Note is on your own machine, in the real app, at your screen's own resolution:
+
+```bash
+npm run speedtest          # Linux or Mac, from a checkout: opens the app on a temporary notebook and runs the test
+```
+
+In an installed app (the Mac app, the Linux bundle) use **View > Speed test…** in the menu bar, or **Settings > Performance > Speed test > Run…** in any window. The page `?speedtest=1` starts it by itself.
+
+It builds a generated note of 5,000+ objects (text, stickies, shapes, pen lines and arrows over 16 pages) in a notebook you already have, named "Speed test (safe to delete)", and drives it the way you do: pan, zoom, drag one object and 40, undo and redo, pen strokes, typing. Leave the mouse and keyboard alone for about a minute. It saves nothing while it runs, and removes its note at the end; with `npm run speedtest` it runs in a temporary notebook and its own window profile, so your notes and a running app are not touched at all.
+
+The results panel shows, for each scenario, the p50 (typical), p95 (the slow end) and max frame time in milliseconds (16.7 is 60 frames a second; lower is better), plus a plain verdict, the screen, the cores and the graphics card. **Copy results** puts the same table on the clipboard as text. The results are also saved as `speedtest-<date>.txt` and `.json` in the app-data folder (`speedtest/` beside the notebook folder: `~/Library/Application Support/Personal Note/speedtest` on a Mac, `~/.local/share/personal-note/speedtest` on Linux; `PERSONAL_NOTE_SPEEDTEST_DIR` overrides it), and `npm run speedtest` prints the path when the window closes.
+
+For the same numbers in a test browser (headless Chromium, any machine): `npm run benchmark:speed -- --gpu` (see `scripts/benchmark-f034.mjs` for the options).
+
 ### Where the notebook lives
 
 The app, `bin/personal-note` and `python main.py` share one database:
@@ -210,6 +226,7 @@ npm run test:ui
 python -m unittest tests.test_api tests.test_cli tests.test_agent_access tests.test_startup -v
 npm run benchmark:bundle
 npm run benchmark:canvas   # first run: npx playwright install chromium
+npm run benchmark:speed    # the Leafer performance pass: 600 and 5,400-object notes at dpr 1 and 2 (add -- --gpu)
 ```
 
 The bundle benchmark enforces gzip and largest-chunk budgets. Mind-map and desktop voice implementations are split into on-demand chunks so the ordinary canvas path stays small. The canvas benchmark drives the real app in headless Chromium (run `npx playwright install chromium` once) and fails if the dpr 1 p95 frame time exceeds 25ms or if objects move on screen when pages are added or removed.

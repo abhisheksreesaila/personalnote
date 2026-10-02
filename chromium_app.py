@@ -174,12 +174,13 @@ def run_chromium_window(
     idle_wait: Callable = wait_for_idle,
     release_wait: Callable = wait_for_profile_release,
     owner: Callable[[Path], int | None] = profile_owner_pid,
+    query: str = "",
 ) -> int:
     """Open the window, block until it is really gone, then let the closing save land.
 
     The caller stops the server afterwards. Returns Chromium's exit code.
     """
-    url = base_url + "/notes?host=desktop&engine=chromium"  # host flag as in the pywebview window; engine selects the save timing
+    url = base_url + "/notes?host=desktop&engine=chromium" + query  # host flag as in the pywebview window; engine selects the save timing
     profile_dir.mkdir(parents=True, exist_ok=True)
     command = chromium_command(binary, url, profile_dir)
     server.on_focus = lambda: focus_window(owner(profile_dir), run=run, which=which)

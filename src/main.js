@@ -308,6 +308,7 @@ document.querySelector('#app').innerHTML = `
       <section class="settings-section">
         <p class="settings-section-label">Performance</p>
         <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
+        <div class="setting-row"><span><i data-lucide="gauge"></i>Speed test</span><button type="button" id="settings-speed-test" class="settings-inline-button" title="Measures this computer on a generated note of 5,000+ objects; your notes are not touched">Run…</button></div>
       </section>
       <section class="settings-section">
         <p class="settings-section-label">Built-in modules</p>
@@ -2103,7 +2104,9 @@ function drawConnectOverlay(ctx) {
 
 let saveTimer
 let saveInFlight = false
+let speedTestPaused = false // the speed test edits a note of its own and saves nothing while it runs
 let saveSettled = Promise.resolve() // resolves when the save in flight has been answered (or has failed)
+let saveFrame = null // the page frame the save in flight was written in
 let saveDone = () => {}
 let saveQueued = false
 // Agent sync: edits not yet saved, and the object ids the server last agreed on.
@@ -2124,7 +2127,7 @@ function ensureCanvasObjectIds() {
 }
 
 async function saveActiveNote({ unloading = false } = {}) {
-  if (!state.activeNoteId || state.loading) return
+  if (!state.activeNoteId || state.loading || speedTestPaused) return
   if (saveInFlight && !unloading) {
     saveQueued = true
     return
@@ -2147,6 +2150,7 @@ async function saveActiveNote({ unloading = false } = {}) {
     // it, JSON Canvas) goes back untouched. The Fabric editor saves its working copy converted to JSON Canvas (F-026).
     const editedLeafer = useLeafer && state.activeNoteType === 'canvas' && leaferSource.editedDoc
     const savedShift = leaferSource.shift
+    saveFrame = editedLeafer && savedShift ? savedShift : null
     const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : useLeafer ? leaferSource.content : canvas.toJSON()
     const fields = {
       title,
@@ -2182,7 +2186,7 @@ async function saveActiveNote({ unloading = false } = {}) {
       agentSync?.syncActiveNote().catch(console.error).finally(() => { if (mergeCount === mark) setSaveState('Could not save', true) })
     } else setSaveState('Could not save', true)
   } finally {
-    if (!parallelUnload) { saveInFlight = false; saveDone() }
+    if (!parallelUnload) { saveInFlight = false; saveFrame = null; saveDone() }
     if (saveQueued && !parallelUnload) {
       const unloadingNext = saveQueued === 'unloading'
       saveQueued = false
@@ -2192,7 +2196,7 @@ async function saveActiveNote({ unloading = false } = {}) {
 }
 
 function queueSave() {
-  if (state.loading) return
+  if (state.loading || speedTestPaused) return
   unsavedEdits = true
   // Any edit after Clear all ends its Undo, so Ctrl/Cmd+Z goes back to ordinary undo.
   if (pendingClearUndo) hideToast()
@@ -2670,12 +2674,16 @@ let mergeCount = 0
 // note is then saved on the agent's revision.
 async function mergeLeaferNote(note) {
   const decoded = await decodeNoteDocument(note)
-  // A save in flight has not told us yet which frame the server's copy is in (the server applies it before it answers), so a merge
-  // waits for the answer; what was fetched meanwhile is the user's own save, or older, and there is nothing in it to merge.
-  while (saveInFlight) await saveSettled
+  // A save in flight that moved the page frame has not told us yet which frame the server's copy is in (the server applies it before it
+  // answers), so a merge waits for the answer; what was fetched meanwhile is the user's own save, or older, and there is nothing in it to merge.
+  // A save that left the frame as it was (the usual one) changes nothing about how the server's copy is read: the merge goes ahead.
+  if (saveInFlight && saveFrame && (saveFrame.x !== leaferServerShift.x || saveFrame.y !== leaferServerShift.y)) {
+    while (saveInFlight) await saveSettled
+    if (note.id !== state.activeNoteId) return 0
+    const known = state.notes.find((item) => item.id === note.id)
+    if (known && note.revision <= known.revision) return 0
+  }
   if (note.id !== state.activeNoteId) return 0
-  const known = state.notes.find((item) => item.id === note.id)
-  if (known && note.revision <= known.revision) return 0
   mergeCount += 1
   leaferInk.documentChanged() // an erase pass was planned on the document as it was; it is dropped rather than committed against the merged one (a pen stroke only adds, so it carries on)
   const typing = leaferCanvas.flushText() // words typed so far are in the document now; that text counts as the user's whatever the agent did to it
@@ -4375,6 +4383,55 @@ elements.settingsSpeedMeter.addEventListener('change', () => {
 })
 if (state.speedMeter) setSpeedMeter(true)
 
+// The speed test (F-034): Settings, the View menu of the desktop app, or the page opened with ?speedtest=1. The code is loaded when it runs.
+let speedTestRunning = false
+async function startSpeedTest() {
+  if (speedTestRunning || !leaferCanvas || state.loading) return
+  speedTestRunning = true
+  setPropertiesOpen(false)
+  const previous = state.activeNoteId
+  try {
+    const { runSpeedTest } = await import('./modules/speedtest/index.js')
+    const standalone = typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches
+    await runSpeedTest({
+      api,
+      notebookId: state.selectedNotebookId || state.notebooks[0]?.id,
+      engine: detectEngine({ userAgentData: navigator.userAgentData, userAgent: navigator.userAgent }),
+      hostName: detectHost({ pywebview: window.pywebview, hostFlag, standalone, menubarVisible: window.menubar?.visible }),
+      pageCount: () => `${state.pages.columns}x${state.pages.rows}`,
+      pause: (on) => { speedTestPaused = on },
+      openNote: async (id) => {
+        const { content, pageState, ...summary } = await api(`/notes/${id}`)
+        state.notes.unshift(summary)
+        renderNoteList()
+        await selectNote(id)
+        await leaferCanvas.whenSettled()
+      },
+      restore: async () => {
+        const back = state.notes.find((note) => note.id === previous) ?? state.notes.find((note) => note.title !== 'Speed test (safe to delete)')
+        if (back) await selectNote(back.id)
+      },
+      forgetNote: (id) => { state.notes = state.notes.filter((note) => note.id !== id); renderNoteList() },
+      host: {
+        workspace: elements.workspace,
+        canvasHost: leaferHost,
+        scene: leaferCanvas,
+        edits: leaferEdits,
+        get inkSurface() { return leaferInk.surface },
+        setTool: (name) => setTool(name),
+        setView: async ({ zoom }) => {
+          if (zoom === 'fit') fitAllPages()
+          else { state.canvasZoom = zoom; setCanvasViewportOffset(canvas.getWidth() / 2 - 430 * getCanvasScale(), 104) }
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        },
+      },
+    })
+  } catch (error) {
+    console.error('Speed test failed to start', error)
+  } finally { speedTestRunning = false }
+}
+document.querySelector('#settings-speed-test')?.addEventListener('click', () => void startSpeedTest())
+
 elements.settingsFontSize.addEventListener('input', () => {
   state.fontSize = Number(elements.settingsFontSize.value)
   savePreferences()
@@ -4746,6 +4803,7 @@ if (hostFlag === 'desktop') {
       },
       skin: (id) => { startSkins().select(id); skinSwitcher.sync() },
       speedMeter: () => { setSpeedMeter(!state.speedMeter); savePreferences() },
+      speedTest: () => void startSpeedTest(),
     },
   }))
 }
@@ -4891,4 +4949,4 @@ setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
 if (import.meta.env.DEV) window.__personalNote = { renderFabricPrintSheet, selectNote, leaferBase: () => leaferBase, canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
-initialize()
+initialize().then(() => { if (new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way

@@ -16,6 +16,7 @@ import secrets
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -33,6 +34,7 @@ HOST = "127.0.0.1"
 # A fixed preferred port keeps the page's origin stable, so localStorage (skin, speed meter, preferences)
 # and the microphone permission survive restarts. Another port is used only when this one is taken.
 PREFERRED_PORT = 3138
+SPEEDTEST_QUERY = "&speedtest=1"  # the page runs the speed test as soon as it is open
 WINDOW_TITLE = "Personal Note"
 WINDOW_SIZE = (1280, 860)
 WINDOW_MIN_SIZE = (900, 600)
@@ -274,10 +276,10 @@ def show_notice(window, message: str) -> None:
     window.evaluate_js(script)
 
 
-def window_url(base_url: str, platform: str = sys.platform) -> str:
+def window_url(base_url: str, platform: str = sys.platform, query: str = "") -> str:
     # window.pywebview is injected after page load; the flags let the page know it is the desktop app at once
     # and, on macOS, that its content runs under a transparent title bar (desktop_menu.py).
-    return desktop_menu.window_url(base_url, platform)
+    return desktop_menu.window_url(base_url, platform, query)
 
 
 class DesktopApi:
@@ -339,7 +341,7 @@ def setup_mac_window(window, actions: "desktop_menu.MenuActions", menus=None) ->
     window.events.restored += sync_full_screen
 
 
-def run_window(base_url: str, database: Path, server: LocalServer, timing: bool) -> None:
+def run_window(base_url: str, database: Path, server: LocalServer, timing: bool, query: str = "") -> None:
     if sys.platform.startswith("linux"):
         # WebKitGTK's DMABUF renderer crashes some Wayland sessions with a protocol error.
         os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
@@ -351,7 +353,7 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool)
     window_options = {"js_api": DesktopApi(lambda: mac_zoom[0]())} if mac else {}
     window = webview.create_window(
         WINDOW_TITLE,
-        window_url(base_url),
+        window_url(base_url, query=query),
         width=WINDOW_SIZE[0],
         height=WINDOW_SIZE[1],
         min_size=WINDOW_MIN_SIZE,
@@ -495,6 +497,22 @@ def wait_for_stop(base_url: str) -> None:
     stop.wait()
 
 
+def finish_speedtest(folder: Path, started: float) -> None:
+    """Remove the speed test's temporary notebook and say where its results were saved."""
+    if folder.name.startswith("personal-note-speedtest-") and folder.parent == Path(tempfile.gettempdir()):
+        shutil.rmtree(folder, ignore_errors=True)
+    results = os.environ.get("PERSONAL_NOTE_SPEEDTEST_DIR")
+    results_dir = Path(results) if results else app_data_dir() / "speedtest"
+    try:
+        fresh = sorted(path for path in results_dir.glob("speedtest-*.txt") if path.stat().st_mtime >= started)
+    except OSError:
+        fresh = []
+    if fresh:
+        print(f"Speed test results saved to {fresh[-1]}")
+    else:
+        print("The speed test did not finish, so no results were saved.")
+
+
 # ---- entry point ----------------------------------------------------------------------------
 
 
@@ -508,10 +526,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timing", action="store_true", help="Print cold-start timings")
     parser.add_argument("--serve", action="store_true", help="Run only the local server, with no window, until interrupted")
     parser.add_argument("--port", type=int, default=None, help="Port for --serve (default: any free port)")
+    parser.add_argument(
+        "--speedtest", action="store_true",
+        help="Open a window that measures this machine on a generated stress note, in a temporary notebook (your notes are not touched)",
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "WARNING"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
+    speedtest_dir: Path | None = None
+    if args.speedtest:
+        # The speed test runs in a notebook of its own and its own browser profile, so it never touches the notes (or a running app).
+        speedtest_dir = Path(tempfile.mkdtemp(prefix="personal-note-speedtest-"))
+        os.environ["PERSONAL_NOTE_DB"] = str(speedtest_dir / "speedtest.db")
+    started = time.time()
     database = default_database_path()
+    chromium_profile = (speedtest_dir or app_data_dir()) / "chromium-profile"
     try:
         running = focus_running_instance(database)
         if running:
@@ -522,13 +551,13 @@ def main(argv: list[str] | None = None) -> int:
             report_startup_error(MISSING_CHROMIUM)  # the Linux bundle has no pywebview to fall back to
             return 1
         if engine == "chromium":
-            check_profile_free(app_data_dir() / "chromium-profile")
+            check_profile_free(chromium_profile)
         if not args.no_build and not getattr(sys, "frozen", False):
             ensure_frontend_built()
         from routes import create_app
 
         app = create_app(database, bound_host=HOST)
-        server = LocalServer(app, preferred_port=(args.port or 0) if args.serve else PREFERRED_PORT)
+        server = LocalServer(app, preferred_port=(args.port or 0) if args.serve else 0 if speedtest_dir else PREFERRED_PORT)
         base_url = server.start()
     except DesktopError as error:
         print(error, file=sys.stderr)
@@ -549,12 +578,12 @@ def main(argv: list[str] | None = None) -> int:
         if engine == "serve":
             wait_for_stop(base_url)
         elif engine == "chromium":
-            code = run_chromium_window(base_url, chromium, app_data_dir() / "chromium-profile", server)
+            code = run_chromium_window(base_url, chromium, chromium_profile, server, **({"query": SPEEDTEST_QUERY} if speedtest_dir else {}))
             if code != 0:
                 print(f"The Chromium window exited with an error (code {code}). Try `--engine webview`.", file=sys.stderr)
                 return 1
         else:
-            run_window(base_url, database, server, args.timing)
+            run_window(base_url, database, server, args.timing, **({"query": SPEEDTEST_QUERY} if speedtest_dir else {}))
     except OSError as error:
         if engine != "chromium":
             raise
@@ -574,6 +603,8 @@ def main(argv: list[str] | None = None) -> int:
         clear_instance(database)
         app.state.voice.shutdown()
         server.stop()
+        if speedtest_dir is not None:
+            finish_speedtest(speedtest_dir, started)
     return 0
 
 

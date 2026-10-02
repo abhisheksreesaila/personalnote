@@ -88,6 +88,7 @@ VIEW_ITEMS = (
         Item("Night", command="skin-night", mods=()),
     )),
     Item("Speed meter", command="speed-meter", key="f", mods=("command", "shift")),
+    Item("Speed test…", command="speed-test", mods=()),
     SEPARATOR,
 )
 
@@ -125,11 +126,11 @@ def modifier_mask(mods: tuple[str, ...]) -> int:
     return mask
 
 
-def window_url(base_url: str, platform: str = sys.platform) -> str:
+def window_url(base_url: str, platform: str = sys.platform, query: str = "") -> str:
     # window.pywebview is injected after page load; the flags let the page know at once that it is the
-    # desktop app and, on macOS, that its content runs under a transparent title bar.
+    # desktop app and, on macOS, that its content runs under a transparent title bar. `query` is more flags ("&speedtest=1").
     flags = "?host=desktop&chrome=mac" if platform == "darwin" else "?host=desktop"
-    return f"{base_url}/notes{flags}"
+    return f"{base_url}/notes{flags}{query}"
 
 
 class MenuActions:

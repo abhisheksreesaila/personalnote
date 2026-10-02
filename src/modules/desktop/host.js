@@ -22,6 +22,7 @@ export function menuHandlers(h, runHistory = runHistoryCommand) {
     'skin-paper': skin('paper'),
     'skin-night': skin('night'),
     'speed-meter': h.speedMeter,
+    'speed-test': h.speedTest,
   }
 }
 

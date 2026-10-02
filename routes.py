@@ -1,5 +1,7 @@
+import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 
 from fasthtml.common import FastHTML
@@ -56,6 +58,15 @@ def default_voice_runtime() -> VoiceRuntime:
     """Voice lives in the app-data folder (PERSONAL_NOTE_VOICE_DIR overrides it), never beside the notes."""
     folder = os.environ.get("PERSONAL_NOTE_VOICE_DIR")
     return VoiceRuntime(root=Path(folder) if folder else app_data_dir() / "voice", version=app_version(ROOT))
+
+
+def speedtest_folder() -> Path:
+    """The speed test's results (F-034) live in the app-data folder (PERSONAL_NOTE_SPEEDTEST_DIR overrides it), never beside the notes."""
+    folder = os.environ.get("PERSONAL_NOTE_SPEEDTEST_DIR")
+    return Path(folder) if folder else app_data_dir() / "speedtest"
+
+
+MAX_SPEEDTEST_REPORT_CHARS = 200_000
 
 
 LOOPBACK_NAMES = {"127.0.0.1", "localhost", "::1"}
@@ -167,6 +178,34 @@ def create_app(
         if not from_this_app(request):
             return forbidden()
         return voice_response(lambda: app.state.voice.remove())
+
+    @app.post("/api/speedtest/report")
+    async def speedtest_report(request):
+        """Saves the speed test's results as a text file and a JSON file the person can find again (and send along)."""
+        if not from_this_app(request):
+            return forbidden()
+        body = await payload(request)
+        text = body.get("text")
+        data = body.get("data")
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_SPEEDTEST_REPORT_CHARS or not isinstance(data, dict):
+            return JSONResponse({"error": "A speed test report needs text and data"}, status_code=400)
+        folder = speedtest_folder()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            name = f"speedtest-{stamp}"
+            number = 1
+            while (folder / f"{name}.txt").exists() or (folder / f"{name}.json").exists():
+                number += 1
+                name = f"speedtest-{stamp}-{number}"
+            text_path = folder / f"{name}.txt"
+            json_path = folder / f"{name}.json"
+            text_path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+            json_path.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        except OSError:
+            logger.exception("event=speedtest.report outcome=failed")
+            return JSONResponse({"error": "The results could not be saved"}, status_code=500)
+        return JSONResponse({"path": str(text_path), "jsonPath": str(json_path)}, status_code=201)
 
     @app.get("/api/changes")
     def changes(request):
