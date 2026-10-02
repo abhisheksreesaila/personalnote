@@ -107,7 +107,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   leafer.add(chrome)
   leafer.add(world)
   // Page bitmaps for a view that is moving while zoomed out (tiles.js); `pages` and `size` are declared just below.
-  const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio: pixelRatioFor(globalThis.devicePixelRatio, perf), getPages: () => pages, getSize: () => size })
+  const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio: pixelRatioFor(globalThis.devicePixelRatio, perf), getPages: () => pages, getSize: () => size,
+    onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale }, // (not done while the bitmaps showed)
+    pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
+  })
 
   let view = { x: 0, y: 0, scale: 1 }
   let size = { width, height }
@@ -1202,7 +1205,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // What Leafer has for an object now (checks): its place, turn and, for an arrow, its drawing.
     nodeInfo(id) {
       const node = entries.get(id)?.node
-      return node ? { x: node.x, y: node.y, rotation: node.rotation, visible: node.visible, path: node.path, width: node.width, height: node.height } : null
+      return node ? { x: node.x, y: node.y, rotation: node.rotation, visible: node.visible, path: node.path, width: node.width, height: node.height, strokeWidth: node.strokeWidth } : null
     },
 
     // Arrow keys: move the selection by (dx, dy) page pixels. Locked objects stay. Repeated nudges are one undo step.

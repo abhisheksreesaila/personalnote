@@ -19,8 +19,13 @@ const SLOW_FRAME = 26 // ms
 const SLOW_COUNT = 6 // slow frames within the last WINDOW gesture frames mean the machine needs the bitmaps
 const WINDOW = 24
 
-export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, getPages, getSize, now = () => performance.now(), schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id) }) {
-  const mode = perf.pageBitmaps
+const FREE_AFTER = 30000 // ms zoomed in before the bitmaps (megabytes) are let go
+const SAMPLE_QUIET = 300 // ms without a view change: the frame sampler stops
+
+// `onExit()` runs when the vectors are back (the scene puts back what it did not do while they were off the stage); `pending()` is true while a
+// picture is still loading (a bitmap made now would show it empty); `raf` times rendered frames.
+export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, getPages, getSize, onExit = () => {}, pending = () => false, now = () => performance.now(), schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), raf = (fn) => requestAnimationFrame(fn) }) {
+  let mode = perf.pageBitmaps
   const layer = new Group({ hittable: false, hitChildren: false })
   const tiles = new Map() // 'c,r' -> { node, built }
   let version = 0
@@ -28,6 +33,8 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
   let slow = mode === 'always'
   let gaps = []
   let lastView = 0
+  let sampling = false
+  let freeTimer = null
   let quietTimer = null
   let buildTimer = null
   let at = 0 // where the vectors sit in the stage's stack
@@ -70,6 +77,17 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
 
   // One page's bitmap: the note drawn into a canvas of its own, from the live nodes (only the objects that touch the page are drawn).
   function build(c, r) {
+    try { buildTile(c, r) } catch (error) {
+      // Something in the engine did not take it: no bitmaps from now on, the vectors carry on as before.
+      console.warn('page bitmaps are off:', error)
+      mode = 'off'
+      exit()
+      for (const tile of tiles.values()) tile.node.destroy?.()
+      tiles.clear()
+    }
+  }
+
+  function buildTile(c, r) {
     const t0 = now()
     const scale = tileScale(latest)
     const width = pageW + 2 * BLEED
@@ -95,10 +113,21 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
     counters.buildMs += now() - t0
   }
 
+  // Bitmaps of pages that are not in the note any more (the grid folded back) are let go.
+  function prune() {
+    const { columns, rows } = getPages()
+    for (const [id, tile] of tiles) {
+      const [c, r] = id.split(',').map(Number)
+      if (c >= columns || r >= rows) { tile.node.remove(); tile.node.destroy?.(); tiles.delete(id) }
+    }
+  }
+
   // Idle time: the pages on screen first, then the rest, one page at a time.
   function buildNext() {
     buildTimer = null
     if (active || (mode === 'off') || !slow || latest.scale >= perf.lodZoom) return // not while the view is zoomed in: nothing would use them
+    prune()
+    if (pending()) { buildTimer = schedule(buildNext, 500); return } // a picture is still loading
     const { columns, rows } = getPages()
     const box = visible(latest)
     const order = []
@@ -142,8 +171,26 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
     stage.addAt(world, Math.min(at, stage.children.length))
     active = false
     counters.exits += 1
+    onExit()
     wantBuild()
     return true
+  }
+
+  // Times the frames that really get drawn while the view moves (animation-frame gaps), until the movement stops.
+  function sample() {
+    if (sampling) return
+    sampling = true
+    let last = now()
+    const tick = () => {
+      const t = now()
+      gaps.push(t - last)
+      last = t
+      if (gaps.length > WINDOW) gaps.shift()
+      if (gaps.filter((value) => value > SLOW_FRAME).length >= SLOW_COUNT) { slow = true; sampling = false; gaps = []; wantBuild(60); return }
+      if (t - lastView > SAMPLE_QUIET || active) { sampling = false; gaps = []; return }
+      raf(tick)
+    }
+    raf(tick)
   }
 
   // Called with every view change, before the note's layer is moved. Returns true while the bitmaps are on the stage.
@@ -153,16 +200,17 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
     if (mode === 'off') return false
     const t = now()
     const moving = t - lastView < GESTURE_GAP
-    const gap = t - lastView
     lastView = t
-    if (next.scale >= zoomedOutLimit) { if (active) exit(); gaps = []; return false }
+    if (next.scale >= zoomedOutLimit) {
+      if (active) exit()
+      gaps = []
+      if (slow && !freeTimer && tiles.size) freeTimer = schedule(() => { freeTimer = null; if (latest.scale >= perf.lodZoom) { for (const tile of tiles.values()) tile.node.destroy?.(); tiles.clear(); version += 1 } }, FREE_AFTER)
+      return false
+    }
+    if (freeTimer) { cancel(freeTimer); freeTimer = null }
     if (!active) {
-      // Is this machine slow at it? The gaps between the steps of a pan or zoom are its frame times.
-      if (mode === 'adaptive' && !slow && moving) {
-        gaps.push(gap)
-        if (gaps.length > WINDOW) gaps.shift()
-        if (gaps.filter((value) => value > SLOW_FRAME).length >= SLOW_COUNT) { slow = true; wantBuild(60) }
-      }
+      // Is this machine slow at it? The frames the screen really shows while the view moves tell (the steps of a pan come at the pace of the frames).
+      if (mode === 'adaptive' && !slow) sample()
       if (slow) wantBuild(400) // (a no-op once they are all made)
       if (!slow || !moving) return false
       if (!enter(next)) return false
@@ -191,7 +239,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
       wantBuild(900)
     },
     get active() { return active },
-    stats: () => ({ active, slow, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, ...counters }),
+    stats: () => ({ mode, active, slow, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, ...counters }),
     // For checks: build every page now.
     buildAll() {
       const { columns, rows } = getPages()
@@ -201,6 +249,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
     destroy() {
       exit()
       if (buildTimer) cancel(buildTimer)
+      if (freeTimer) cancel(freeTimer)
       for (const tile of tiles.values()) tile.node.destroy?.()
       tiles.clear()
       layer.destroy?.()

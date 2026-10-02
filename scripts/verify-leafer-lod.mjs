@@ -9,10 +9,14 @@
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
-import { generateStressNote } from '../src/modules/speedtest/stress-note.js'
+import { generateStressDocument } from '../src/modules/speedtest/stress-note.js'
+import { writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
 
 const now = new Date().toISOString()
-const stress = generateStressNote(1500, { columns: 4, rows: 4 })
+const stressDoc = generateStressDocument(1500, { columns: 4, rows: 4 })
+// one shape whose stroke keeps its screen width at every zoom (it is the one the bitmaps must not leave at a stale width)
+stressDoc.objects.push({ id: 'uniform', type: 'shape', kind: 'rect', z: stressDoc.objects.length, fill: '#ffffff', stroke: '#cc0000', strokeWidth: 6, strokeUniform: true, geometry: { x: 300, y: 300, width: 200, height: 120, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 } })
+const stress = { content: writeJsonCanvas(stressDoc, { derived: 'omit' }), pageState: { columns: stressDoc.page.columns, rows: stressDoc.page.rows } }
 const summary = { id: 1, resourceId: 'r1', revision: 1, noteType: 'canvas', title: 'Stress', notebookId: 1, createdAt: now, updatedAt: now }
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
@@ -136,6 +140,80 @@ try {
     await context.close()
   }
 
+  // ---------------------------------------------------------------- zooming through the bitmaps and back, a merge while they show, a failure
+  {
+    const { context, page, errors } = await open({ pageBitmaps: 'always', lodQuiet: 60000 })
+    // the same gestures with the bitmaps off and on: the picture at the end must be the same
+    const runs = []
+    for (const perf of [{ pageBitmaps: 'off' }, { pageBitmaps: 'always', lodQuiet: 60000 }]) {
+      const { context: c, page: pg } = await open(perf)
+      await zoomTo(pg, 0.3)
+      await pg.waitForTimeout(500)
+      await pg.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll?.())
+      await wheel(pg, 6, 40)
+      await pg.keyboard.down('Control')
+      await wheel(pg, 10, -40) // zoom in through the bitmaps
+      await wheel(pg, 10, 40)
+      await pg.keyboard.up('Control')
+      const during = await lod(pg)
+      await zoomTo(pg, 1)
+      await pg.waitForTimeout(900)
+      runs.push({ state: await lod(pg), image: await shot(pg), during, stroke: await pg.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth })) })
+      await c.close()
+    }
+    check('(setup) the gestures went through the bitmaps', runs[1].during.enters >= 1, JSON.stringify(runs[1].during))
+    const same = await compare(page, runs[0].image, runs[1].image)
+    check('after zooming through the bitmaps, the vectors are back and the picture at 100% is the same as after the same gestures without them (mean under 0.05 of 255, nothing far off)', !runs[1].state.active && same.strong === 0 && same.mean < 0.05, JSON.stringify([runs[1].state.active, same])) // (the engine's first draw and a later redraw differ by a few anti-aliasing levels on 0.2% of the pixels)
+    check('a stroke that keeps its screen width has the width of the zoom it ends at (not one left from while the bitmaps showed)', Math.abs(runs[1].stroke.width - 6 * runs[1].stroke.scale) < 1e-6, JSON.stringify(runs[1].stroke))
+    await zoomTo(page, 0.3)
+    await page.waitForTimeout(500)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    await wheel(page, 6, 40)
+    await page.evaluate(() => { window.__personalNote.leaferCanvas().setView({ ...window.__personalNote.leaferCanvas().view(), scale: 0.45 }) })
+    await page.evaluate(() => window.__personalNote.leaferCanvas().setView({ ...window.__personalNote.leaferCanvas().view(), scale: 0.4 }))
+    await page.evaluate(() => window.__personalNote.leaferCanvas().setView({ ...window.__personalNote.leaferCanvas().view(), scale: 0.7 })) // out of the bitmap range: the vectors come back
+    await page.waitForTimeout(300)
+    const widened = await page.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth, active: window.__personalNote.leaferCanvas().lodState().active }))
+    check('coming out of the bitmaps by zooming past 60% puts the stroke width right at once', !widened.active && Math.abs(widened.width - 6 * widened.scale) < 1e-6, JSON.stringify(widened))
+
+    // an agent's merge while the bitmaps show: they are out of date at once, and the picture is the merged note
+    await zoomTo(page, 0.3)
+    await page.waitForTimeout(500)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    await wheel(page, 6, 40)
+    await wheel(page, 6, -40)
+    const showing = await lod(page)
+    const vectorsBefore = await shot(page)
+    await page.evaluate(() => {
+      const scene = window.__personalNote.leaferCanvas()
+      const doc = window.__personalNote.leaferEdits.doc
+      const target = doc.objects.find((o) => o.type === 'sticky')
+      const moved = { ...target, geometry: { ...target.geometry, x: target.geometry.x + 400, y: target.geometry.y + 200 } }
+      scene.applyMerged({ ...doc, objects: doc.objects.map((o) => (o.id === target.id ? moved : o)) })
+    })
+    const merged = await lod(page)
+    check('(setup) the bitmaps were showing when the agent\'s merge arrived', showing.active, JSON.stringify(showing))
+    check('a merge while the bitmaps show puts the vectors back and makes the bitmaps out of date', !merged.active && merged.current === 0 && (await stage(page)).some((entry) => /Group\(\d{3,}\)/.test(entry)), JSON.stringify(merged))
+    await page.waitForTimeout(400)
+    await wheel(page, 4, 40)
+    check('and an out-of-date bitmap is not shown by the next pan', !(await lod(page)).active)
+    const mergedPicture = await shot(page)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    await wheel(page, 4, -40)
+    await wheel(page, 4, 40)
+    const rebuiltBitmap = await shot(page)
+    const afterMerge = await compare(page, mergedPicture, rebuiltBitmap)
+    check('rebuilt bitmaps show the merged note, not the old one', afterMerge.mean < 9 && afterMerge.strong < 0.03 && (await compare(page, vectorsBefore, rebuiltBitmap)).mean > afterMerge.mean, JSON.stringify(afterMerge))
+
+    // a failure inside the engine turns the bitmaps off for good and leaves the vectors
+    await page.mouse.click(900, 700) // a touch: the vectors are on the stage again
+    await page.evaluate(() => { const world = window.__personalNote.leaferCanvas().leafer.children[1]; const real = world.__render.bind(world); world.__render = (canvas, options) => { if (options?.bounds) throw new Error('engine said no'); return real(canvas, options) } })
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    const failed = await lod(page)
+    check('a bitmap that cannot be made turns the bitmaps off, with no error shown', failed.mode === 'off' && !failed.active && failed.tiles === 0 && errors.length === 0, JSON.stringify([failed, errors]))
+    await context.close()
+  }
+
   // ---------------------------------------------------------------- by itself: the vectors come back when the movement stops
   {
     const { context, page, errors } = await open({ pageBitmaps: 'always', lodQuiet: 250 })
@@ -149,6 +227,28 @@ try {
     check('the bitmaps go by themselves when the movement stops', during.active && !after.active && (await stage(page)).some((entry) => /Group\(\d{3,}\)/.test(entry)), JSON.stringify([during, after]))
     check('page errors', errors.length === 0, errors.join(' | '))
     await context.close()
+  }
+
+  // ---------------------------------------------------------------- the baked shadow against the live blur it replaces
+  {
+    const shots = []
+    for (const perf of [{ pageBitmaps: 'off', bakedShadow: true }, { pageBitmaps: 'off', bakedShadow: false }]) {
+      const { context, page } = await open(perf)
+      const pair = []
+      for (const zoom of [1, 0.5]) {
+        await zoomTo(page, zoom)
+        await page.waitForTimeout(700)
+        pair.push(await shot(page))
+      }
+      shots.push(pair)
+      await context.close()
+    }
+    const probe = await browser.newContext().then((c) => c.newPage())
+    for (const [index, zoom] of [[0, '100%'], [1, '50%']]) {
+      const d = await compare(probe, shots[0][index], shots[1][index])
+      console.log(`INFO  baked sticky shadow vs live blur at ${zoom}: mean difference ${d.mean.toFixed(3)} of 255, ${(d.strong * 100).toFixed(3)}% of pixels differ by more than 64 levels, ${(d.any * 100).toFixed(2)}% differ at all`)
+      check(`the baked shadow is imperceptibly different from the live blur at ${zoom} (mean under 1.0 of 255, under 0.2% of pixels far off)`, d.mean < 1.0 && d.strong < 0.002, JSON.stringify(d))
+    }
   }
 
   // ---------------------------------------------------------------- at 60% and above: the same pixels, with the bitmaps on or off
