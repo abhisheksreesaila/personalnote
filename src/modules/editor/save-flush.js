@@ -66,3 +66,9 @@ export function createSaveTiming({ fast }) {
     saveDelay: () => (useFast() ? 150 : 650),
   }
 }
+
+/** The body of a note save: `contentJson` is the note's text, already JSON, joined in without being parsed or searched for. */
+export function joinSaveBody(contentJson, fields) {
+  const rest = JSON.stringify(fields)
+  return `{"content":${contentJson}${rest === '{}' ? '}' : `,${rest.slice(1)}`}`
+}

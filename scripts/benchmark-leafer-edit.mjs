@@ -94,14 +94,23 @@ async function scenarios(page, label) {
   await nextFrame(page)
   const lead = (await visibleObjects(page, ['shape', 'sticky', 'text', 'image'])).find((entry) => entry.id === crowd[0].id) ?? crowd[0]
   rows.push(await measure(page, `${label}: drag ${crowd.length} selected objects`, () => dragPath(page, { x: lead.x, y: lead.y }, { x: lead.x + 120, y: lead.y + 70 }, 60)))
+  // Delete one object first (it leaves a gap in the stacking numbers, which used to make every later save write the whole note again).
+  const doomed = (await visibleObjects(page, ['shape', 'sticky'])).find((entry) => entry.id !== target.id)
+  if (doomed) {
+    await page.evaluate(() => window.__personalNote.leaferCanvas().clearSelection())
+    await page.mouse.click(doomed.x, doomed.y)
+    await page.keyboard.press('Delete')
+    await page.waitForTimeout(1200) // its save has landed
+  }
   // A save 650 ms after an edit lands in the middle of the next drag: this is the frame that must not stall.
   const second = (await visibleObjects(page, ['shape', 'sticky'])).find((entry) => entry.id !== target.id) ?? target
   await page.mouse.click(second.x, second.y)
-  rows.push(await measure(page, `${label}: drag while the save of the last edit runs`, async () => {
+  rows.push(await measure(page, `${label}: drag while the save of the last edit runs (after a delete)`, async () => {
     await dragPath(page, { x: second.x, y: second.y }, { x: second.x + 20, y: second.y + 10 }, 6) // the edit that is saved
     const now = (await visibleObjects(page, ['shape', 'sticky'])).find((entry) => entry.id === second.id) ?? second
     await dragPath(page, { x: now.x, y: now.y }, { x: now.x + 150, y: now.y + 80 }, 90) // 1.5 s of dragging: the save fires in the middle
   }))
+  await page.evaluate((ids) => window.__personalNote.leaferCanvas().select(ids), crowd.map((entry) => entry.id).filter((id) => id !== doomed?.id))
   rows.push(await measure(page, `${label}: nudge (held arrow key)`, async () => {
     for (let i = 0; i < 60; i += 1) { await page.keyboard.press('ArrowRight'); await nextFrame(page) }
   }))

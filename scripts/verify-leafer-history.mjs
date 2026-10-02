@@ -47,20 +47,21 @@ try {
   const hostShot = () => page.screenshot({ clip: { x: 300, y: 90, width: 460, height: 540 } }) // the sheet only: no status text or toasts
   const jsonCanvas = () => page.evaluate(() => JSON.stringify(window.__personalNote.encodeDocument(window.__personalNote.leaferEdits.doc)))
   const drawn = () => page.evaluate(() => { const s = window.__personalNote.leaferCanvas().stats(); return s.drawn + s.skipped + s.unknown })
-  const pixelDiff = (one, two) => page.evaluate(async ([a, b]) => {
+  const pixelDiff = (one, two, exact = false) => page.evaluate(async ([a, b, exact]) => {
     const read = async (b64) => { const img = new Image(); img.src = `data:image/png;base64,${b64}`; await img.decode(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return x.getImageData(0, 0, c.width, c.height) }
     const [one, two] = [await read(a), await read(b)]
     let count = 0, minX = 1e9, minY = 1e9, maxX = -1, maxY = -1
     for (let i = 0; i < one.data.length; i += 4) {
       const px = (i / 4) % one.width, py = Math.floor(i / 4 / one.width)
       const level = Math.max(Math.abs(one.data[i] - two.data[i]), Math.abs(one.data[i + 1] - two.data[i + 1]), Math.abs(one.data[i + 2] - two.data[i + 2]))
-      // Exact, except one measured noise strip: when undo selects the restored object (F-028), the edge of the purple sticky and its connector
-      // (x 448-454, y 41-224 in this clip) come out 1-4 levels off; a plain redraw of the document is exact.
-      const noise = px >= 446 && px <= 456 && py >= 39 && py <= 226 && level <= 4
+      // Exact, except one strip that is Leafer's own: the first draw of a note differs from a later draw there (12 pixels, 1-4 levels, at the
+      // purple sticky's edge and its connector; the INFO line below prints it, and it is the same on the base at 3e0f9d4). A load that the
+      // selection layer repaints right after (undo selects what it restored, F-028) ends in the first-draw look instead of the redraw look.
+      const noise = !exact && px >= 446 && px <= 456 && py >= 39 && py <= 226 && level <= 4
       if (level > 0 && !noise) { count++; minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py) }
     }
     return { count, box: [minX, minY, maxX, maxY] }
-  }, [one.toString('base64'), two.toString('base64')])
+  }, [one.toString('base64'), two.toString('base64'), exact])
   const lastSaved = async () => { await page.waitForTimeout(1200); return JSON.stringify(puts.at(-1)?.body.content) }
 
   const ids = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.map((o) => o.id))
@@ -71,7 +72,7 @@ try {
 
   await page.evaluate(() => window.__personalNote.leaferCanvas().load(window.__personalNote.leaferEdits.doc))
   await page.evaluate(() => window.__personalNote.leaferCanvas().whenSettled())
-  const reload = await pixelDiff(shotBefore, await hostShot())
+  const reload = await pixelDiff(shotBefore, await hostShot(), true)
   // F-027 quirk, not undo: the first draw of a note differs from every later draw by a few edge pixels, so the baseline is a redraw.
   console.log(`INFO  drawing the same document again changes ${reload.count} pixels vs the first draw (${JSON.stringify(reload.box)})`)
   shotBefore = await hostShot()

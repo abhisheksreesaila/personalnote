@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { KEEPALIVE_LIMIT, bindPageLifecycle, bodyBytes, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './save-flush.js'
+import { KEEPALIVE_LIMIT, bindPageLifecycle, bodyBytes, joinSaveBody, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './save-flush.js'
 
 function targets() {
   const listeners = new Map()
@@ -106,4 +106,12 @@ test('bodyBytes counts a small body exactly and never calls a big one small', ()
   assert.equal(bodyBytes('é'), 2)
   assert.ok(bodyBytes('é'.repeat(KEEPALIVE_LIMIT)) > KEEPALIVE_LIMIT)
   assert.equal(canKeepAlive('é'.repeat(KEEPALIVE_LIMIT)), false)
+})
+
+test('joinSaveBody puts the kept note text in whatever the other fields say, even a title that looks like a placeholder', () => {
+  const content = '{"nodes":[],"edges":[],"pn":{}}'
+  for (const title of ['__content__', '"__content__"', 'a "quoted" $& title']) {
+    const body = joinSaveBody(content, { title, pageState: { columns: 1, rows: 1 }, notebookId: undefined, revision: 3 })
+    assert.deepEqual(JSON.parse(body), { content: JSON.parse(content), title, pageState: { columns: 1, rows: 1 }, revision: 3 })
+  }
 })
