@@ -8,6 +8,7 @@ import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, ITex
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { decodeNote, encodeDocument, encodeNote } from './core/note-codec.js'
+import { compactStacking, nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
@@ -166,6 +167,12 @@ document.querySelector('#app').innerHTML = `
       </header>
 
       <section class="workspace" id="workspace">
+        <div class="selection-bar" id="selection-bar" role="toolbar" aria-label="Selected objects" hidden>
+          <button type="button" data-selection-action="backward" title="Send backward (Ctrl+[)">Back</button>
+          <button type="button" data-selection-action="forward" title="Bring forward (Ctrl+])">Forward</button>
+          <button type="button" data-selection-action="lock" title="Lock or unlock (Ctrl+Shift+L)">Lock</button>
+          <button type="button" data-selection-action="delete" title="Delete (Delete key)">Delete</button>
+        </div>
         <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
           <div class="dock-canvas" id="dock-canvas">
             <div class="tool-group dock-tools">
@@ -430,6 +437,7 @@ if (readHostChrome(location.search).chrome === 'mac') document.documentElement.c
 
 const elements = {
   shell: document.querySelector('.app-shell'),
+  selectionBar: document.querySelector('#selection-bar'),
   workspace: document.querySelector('#workspace'),
   paper: document.querySelector('#paper'),
   mindmapHost: document.querySelector('#mindmap-host'),
@@ -589,8 +597,8 @@ loadPreferences()
 
 // ADR 0001: Leafer is the canvas. F-027 draws the open note read-only from the document model; the Fabric canvas below stays empty
 // and transparent on top of it only because it still hosts the pan, zoom and touch gestures until the editing tickets port them
-// (F-028 onward) and F-036 removes Fabric. With no editing yet, a canvas note is never rewritten: a save (a new title, say) sends
-// the note's own content back untouched, and only for the note that content was loaded from.
+// (F-028 onward) and F-036 removes Fabric. A note that was not edited is never rewritten: a save (a new title, say) sends the note's
+// own content back untouched, and only for the note that content was loaded from. An edited note is saved from the document model.
 const useLeafer = true
 let leaferCanvas = null
 let leaferSource = { noteId: null, content: { objects: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
@@ -1705,12 +1713,13 @@ const temporaryHand = createTemporaryHand()
 let applyingTemporaryHand = false
 
 function setTool(tool) {
-  if (useLeafer) tool = 'hand' // read-only: the hand is the only tool
+  if (useLeafer && tool !== 'hand') tool = 'select' // select and hand are the Leafer tools so far (F-028); the others come with F-029 onward
   if (!applyingTemporaryHand) temporaryHand.cancel()
   state.tool = tool
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
   canvas.isDrawingMode = tool === 'pen' || tool === 'highlight'
   canvas.selection = tool === 'select'
+  elements.shell.classList.toggle('leafer-picking', useLeafer && tool === 'select') // Leafer takes the pointer to select and move; the hand gives it to the pan
   canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : tool === 'connect' || tool === 'sticky' || tool === 'shape' ? 'crosshair' : 'default'
   canvas.forEachObject((object) => {
     const textEditable = tool === 'text' && isEditableText(object)
@@ -2199,11 +2208,15 @@ async function settleOutgoingNote() {
 
 // Leafer mode undo/redo (F-030): the history lives in modules/canvas-leafer/edits.js; this puts each new document on screen and saves it.
 const leaferEdits = createLeaferEdits({
-  onChange(doc, { page }) {
+  onChange(doc, { kind, changed, page, selection }) {
     if (leaferSource.noteId !== state.activeNoteId) return
     if (page) { state.pages = { ...doc.page }; resizePaper() }
-    leaferCanvas.load(doc)
-    leaferSource = { noteId: leaferSource.noteId, content: encodeDocument(doc), pageState: { ...doc.page } }
+    // An edit made on the canvas is already on screen (the scene recorded it); an undo or redo changes only the objects it names.
+    if (kind !== 'edit') {
+      leaferCanvas.sync(doc, changed)
+      leaferCanvas.select(selection)
+    }
+    leaferSource = { noteId: leaferSource.noteId, content: encodeDocument(compactStacking(doc)), pageState: { ...doc.page } }
     queueSave()
   },
 })
@@ -2229,6 +2242,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
   const shown = leaferCanvas.showNote(decoded.content, state.pages)
   if (openView) leaferEdits.open(note.id, shown) // a newly opened note starts a new undo history; an agent's newer content does not (undo never reverts it)
   else leaferEdits.remote(note.id, shown)
+  leaferCanvas.adopt(leaferEdits.doc) // the scene edits the document the history holds
   if (openView) openCanvasView()
   leaferCanvas.setColors(pageColors)
   leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
@@ -2239,15 +2253,34 @@ function mountLeaferCanvas() {
   const host = document.createElement('div')
   host.id = 'leafer-host'
   elements.paper.prepend(host)
-  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight() })
+  leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight(), onOperation: (op, options) => leaferEdits.record(op, options) })
   elements.shell.classList.add('engine-leafer')
   const pill = document.createElement('div')
   pill.className = 'engine-pill'
   pill.setAttribute('role', 'status')
-  pill.textContent = 'Read-only preview'
+  pill.textContent = 'Preview: select and arrange'
   document.body.append(pill)
 }
 mountLeaferCanvas()
+
+// The bar over the canvas that does with the mouse what the keys do (Back, Forward, Lock, Delete); it shows while something is selected.
+leaferCanvas.onSelection(() => updateSelectionBar())
+function updateSelectionBar() {
+  const selection = leaferCanvas.selection()
+  elements.selectionBar.hidden = !selection.length
+  const locked = selection.some((id) => leaferCanvas.isLocked(id))
+  const lockButton = elements.selectionBar.querySelector('[data-selection-action="lock"]')
+  lockButton.textContent = locked ? 'Unlock' : 'Lock'
+  elements.selectionBar.classList.toggle('is-locked', locked)
+}
+elements.selectionBar.addEventListener('pointerdown', (event) => event.stopPropagation())
+elements.selectionBar.addEventListener('click', (event) => {
+  const action = event.target.closest('[data-selection-action]')?.dataset.selectionAction
+  if (action === 'forward' || action === 'backward') leaferCanvas.reorderSelection(action)
+  else if (action === 'lock') toggleLeaferLock()
+  else if (action === 'delete') leaferCanvas.deleteSelection()
+  updateSelectionBar()
+})
 
 let selectSequence = 0
 async function selectNote(id) {
@@ -2288,7 +2321,7 @@ async function selectNote(id) {
       state.history = []
       state.historyIndex = -1
       syncedIds = canvasObjectIds(note.content)
-      setTool('hand')
+      setTool('select')
     } else {
       const decoded = await decodeNote(note)
       if (sequence !== selectSequence) return
@@ -4129,6 +4162,48 @@ function panWithKeyboard(event) {
   return true
 }
 
+// Keys for the selection on the Leafer canvas (F-028). Returns true when the key was used. Only called when nothing is being typed.
+const NUDGE_KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+function handleLeaferKey(event) {
+  if (state.activeNoteType !== 'canvas' || state.tool === 'hand') return false
+  const mod = event.ctrlKey || event.metaKey
+  if (mod && !event.shiftKey && !event.altKey && event.code === 'KeyA') {
+    leaferCanvas.selectAll()
+    return true
+  }
+  const selection = leaferCanvas.selection()
+  if (!selection.length) return false
+  if (!mod && !event.altKey && NUDGE_KEYS[event.key]) {
+    const step = nudgeDistance(event)
+    leaferCanvas.nudge(NUDGE_KEYS[event.key][0] * step, NUDGE_KEYS[event.key][1] * step)
+    return true
+  }
+  if (!mod && !event.altKey && (event.key === 'Delete' || event.key === 'Backspace')) {
+    leaferCanvas.deleteSelection()
+    return true
+  }
+  if (!mod && event.key === 'Escape') {
+    leaferCanvas.clearSelection()
+    return true
+  }
+  if (mod && !event.altKey && (event.code === 'BracketRight' || event.code === 'BracketLeft')) {
+    const forward = event.code === 'BracketRight'
+    leaferCanvas.reorderSelection(event.shiftKey ? (forward ? 'front' : 'back') : (forward ? 'forward' : 'backward'))
+    return true
+  }
+  if (mod && event.shiftKey && !event.altKey && event.code === 'KeyL') {
+    toggleLeaferLock()
+    return true
+  }
+  return false
+}
+
+// Lock the selection, or unlock it when anything in it is locked.
+function toggleLeaferLock() {
+  const selection = leaferCanvas.selection()
+  if (selection.length) leaferCanvas.lockSelection(!selection.some((id) => leaferCanvas.isLocked(id)))
+}
+
 document.addEventListener('keydown', (event) => {
   const activeElement = document.activeElement
   const activeText = isEditableText(canvas.getActiveObject()) ? canvas.getActiveObject() : null
@@ -4175,6 +4250,8 @@ document.addEventListener('keydown', (event) => {
     undoClear()
   } else if (state.activeNoteType === 'mindmap') {
     return
+  } else if (useLeafer && !isTyping && canPanFromKeyboard(activeElement) && handleLeaferKey(event)) {
+    event.preventDefault()
   } else if (event.key === 'Escape' && activeText?.isEditing) {
     event.preventDefault()
     activeText.exitEditing()

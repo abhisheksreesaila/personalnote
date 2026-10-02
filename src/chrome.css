@@ -502,4 +502,16 @@
   .app-shell.engine-leafer .dock-history #undo, .app-shell.engine-leafer .dock-history #redo { pointer-events: auto; }
   .engine-pill { position: fixed; z-index: 40; right: 16px; bottom: 66px; padding: 4px 10px; border-radius: 999px; font: 500 11px/1.4 "Geist Mono", ui-monospace, monospace; color: var(--ui-muted, #6e6e78); background: color-mix(in srgb, var(--paper, #fbfaf5) 86%, transparent); border: 1px solid var(--line, #d4cec3); pointer-events: none; }
   @media (max-width: 800px) { .engine-pill { bottom: 92px; right: 12px; } }
+  /* F-028: select, move, resize, turn, lock and arrange work on Leafer. While the Select tool is on, Leafer takes the pointer; the Hand
+     (or held Space) gives it back to the Fabric layer that still does the panning. Select and Hand stay usable in the dimmed dock. */
+  .app-shell.engine-leafer.leafer-picking .canvas-container { pointer-events: none; }
+  .app-shell.engine-leafer.leafer-picking #leafer-host { pointer-events: auto; }
+  .app-shell.engine-leafer .tool-dock { opacity: 1; }
+  .app-shell.engine-leafer .tool-dock .dock-canvas > :not(.dock-tools), .app-shell.engine-leafer .tool-dock .tool-button:not([data-tool="select"]):not([data-tool="hand"]) { opacity: .35; }
+  .app-shell.engine-leafer .tool-dock [data-tool="select"], .app-shell.engine-leafer .tool-dock [data-tool="hand"] { pointer-events: auto; }
+  .selection-bar { position: absolute; z-index: 15; top: 64px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--paper, #fbfaf5) 92%, transparent); border: 1px solid var(--line, #d4cec3); box-shadow: 0 6px 18px rgba(20, 20, 30, .12); }
+  .selection-bar[hidden] { display: none; }
+  .selection-bar button { font: 500 12px/1 "IBM Plex Sans", system-ui, sans-serif; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted, #50505a); cursor: pointer; }
+  .selection-bar button:hover { background: color-mix(in srgb, var(--ink, #20201e) 8%, transparent); color: inherit; }
+  .selection-bar.is-locked [data-selection-action="lock"] { color: #1c70a8; }
 }
