@@ -9,7 +9,7 @@ import { STICKY_PADDING } from '../editor/objects.js'
 import { FOLD_COLOR, FOLD_DASH, FOLD_WIDTH, LABEL_FONT_FAMILY, LABEL_FONT_SIZE, pageChrome } from './chrome.js'
 import { applyMatrix, placementMatrix } from './placement.js'
 import { bakedStickyShadow, STICKY_CORNERS } from './sticky-shadow.js'
-import { fabricLineMetrics, withAlpha } from './style.js'
+import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
 const TEXT_DEFAULTS = { fontFamily: 'Times New Roman', fontSize: 40, fontWeight: 'normal', fontStyle: 'normal', lineHeight: 1.16, textAlign: 'left', color: 'rgb(0,0,0)' }
@@ -44,7 +44,7 @@ function textProps(object, { width, padding = 0, offsetY = 0 }) {
   const { pitch, firstBaselineShift } = fabricLineMetrics(fontSize, style.lineHeight ?? TEXT_DEFAULTS.lineHeight)
   const props = {
     text: object.content ?? '',
-    fontFamily: !style.fontFamily ? TEXT_DEFAULTS.fontFamily : style.fontFamily === 'Georgia' ? 'Source Serif 4' : style.fontFamily, // the Fabric path renames the legacy Georgia
+    fontFamily: canvasFamily(!style.fontFamily ? TEXT_DEFAULTS.fontFamily : style.fontFamily === 'Georgia' ? 'Source Serif 4' : style.fontFamily), // the Fabric path renames the legacy Georgia
     fontSize,
     fontWeight: style.fontWeight ?? TEXT_DEFAULTS.fontWeight,
     italic: (style.fontStyle ?? TEXT_DEFAULTS.fontStyle) === 'italic',

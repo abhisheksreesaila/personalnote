@@ -24,3 +24,11 @@ export function withAlpha(color, alpha) {
   const [r, g, b] = match.slice(1).map((part) => Number.parseInt(part, 16))
   return `rgba(${r}, ${g}, ${b}, ${Math.round(alpha * 1000) / 1000})`
 }
+
+// Fabric quotes a font family for the canvas unless it is a list, already quoted, or a generic name. An unquoted "Source Serif 4"
+// is not a valid canvas font (a bare 4), so without this the context silently keeps its previous font.
+const GENERIC_FONTS = ['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'ui-rounded', 'math', 'emoji', 'fangsong']
+export function canvasFamily(family) {
+  if (family.includes("'") || family.includes('"') || family.includes(',') || GENERIC_FONTS.includes(family.toLowerCase())) return family
+  return `"${family}"`
+}

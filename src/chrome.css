@@ -497,4 +497,5 @@
   #leafer-host canvas { display: block; }
   .app-shell.engine-leafer .tool-dock, .app-shell.engine-leafer #voice-button, .app-shell.engine-leafer #mobile-speak, .app-shell.engine-leafer #mobile-connect { opacity: .35; pointer-events: none; }
   .engine-pill { position: fixed; z-index: 40; right: 16px; bottom: 66px; padding: 4px 10px; border-radius: 999px; font: 500 11px/1.4 "Geist Mono", ui-monospace, monospace; color: var(--ui-muted, #6e6e78); background: color-mix(in srgb, var(--paper, #fbfaf5) 86%, transparent); border: 1px solid var(--line, #d4cec3); pointer-events: none; }
+  @media (max-width: 800px) { .engine-pill { bottom: 92px; right: 12px; } }
 }
