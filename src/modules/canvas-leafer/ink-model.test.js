@@ -67,6 +67,17 @@ test('erasing through the middle of a stroke leaves two fragments, as one undoab
   assert.equal(history.canUndo, true)
 })
 
+test('a pass given up puts back what it took, and plans nothing', () => {
+  const base = inkObject({ points: line({ x: 0, y: 100 }, { x: 300, y: 100 }), tool: 'pen', color: '#20201e', width: 3, z: 0, id: 'a' })
+  const eraser = createEraser(doc([base]))
+  const change = eraser.at({ x: 150, y: 100 })
+  const back = eraser.revert()
+  assert.deepEqual(back.removed.sort(), change.added.map((object) => object.id).sort())
+  assert.deepEqual(back.added, [base])
+  assert.equal(eraser.plan(), null)
+  assert.equal(eraser.changed, false)
+})
+
 test('one sweep that erases fragments it made earlier changes the original only', () => {
   const base = inkObject({ points: line({ x: 0, y: 100 }, { x: 300, y: 100 }), tool: 'pen', color: '#20201e', width: 3, z: 0, id: 'a' })
   const eraser = createEraser(doc([base]))

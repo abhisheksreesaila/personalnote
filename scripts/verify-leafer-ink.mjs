@@ -7,7 +7,7 @@
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
-import { readJsonCanvas } from '../src/core/document/jsoncanvas.js'
+import { readJsonCanvas, writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
 
 const PORT = 4771
@@ -18,6 +18,19 @@ const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ?
 
 let stored = { content: fixture.content, pageState: fixture.pageState, revision: 1 }
 const puts = []
+let changeSeq = 1
+const changeLog = []
+// An agent writes the note: it deletes some objects and appends text blocks. The server stores what it is given.
+const agentWrite = ({ remove = [], append = [] }) => {
+  const doc = readJsonCanvas(stored.content)
+  const g = { x: 600, y: 800, width: 200, height: 60, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
+  doc.objects = doc.objects.filter((o) => !remove.includes(o.id))
+  for (const { id, content } of append) doc.objects.push({ id, type: 'text', mode: 'box', z: doc.objects.length + 50, content, geometry: { ...g } })
+  stored.content = writeJsonCanvas(doc, { derived: 'omit' })
+  stored.revision += 1
+  changeSeq += 1
+  changeLog.push({ sequence: changeSeq, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: stored.revision })
+}
 const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4779' } }, logLevel: 'error' })
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
@@ -29,6 +42,7 @@ async function mock(page, getNote) {
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     const note = getNote()
     const summary = { id: 1, resourceId: 'r1', revision: note.revision, noteType: 'canvas', title: 'Ink', notebookId: 1, createdAt: now, updatedAt: now }
+    if (p === '/changes') { const since = Number(new URL(req.url()).searchParams.get('since') ?? changeSeq); return json({ sequence: changeSeq, changes: changeLog.filter((c) => c.sequence > since), agents: [] }) }
     if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'N', color: '#76669a', noteCount: 1 }])
     if (p === '/notes' && req.method() === 'GET') return json([summary])
     if (p === '/notes/1' && req.method() === 'GET') return json({ ...summary, content: note.content, pageState: note.pageState })
@@ -239,6 +253,77 @@ try {
     return [first, scene.stats().images - base]
   })
   check('a redraw after undo or redo still draws a library picture', images[0] === 1 && images[1] === 1, JSON.stringify(images))
+  await page.evaluate(() => window.__personalNote.leaferCanvas().load(window.__personalNote.leaferEdits.doc))
+
+  // ---- an agent writes the note while a pass or a stroke is under way
+  {
+    await tool(page, 'pen')
+    await page.evaluate(() => { const { state } = window.__personalNote; state.color = '#20201e'; state.penWidth = 3 })
+    const row = (y) => Array.from({ length: 31 }, (_, k) => ({ x: 140 + k * 20, y }))
+    await stroke(page, cdp, row(1050))
+    await stroke(page, cdp, row(1020))
+    const [lower, upper] = (await inkObjects(page)).slice(-2)
+    await page.waitForTimeout(1500) // saved: the base for the merge
+    const stepsBefore = await steps(page)
+    await tool(page, 'eraser')
+    const down = await screenOf(page, 300, 1050)
+    const across = await screenOf(page, 450, 1050)
+    const past = await screenOf(page, 600, 1050)
+    const press = (p, kind, buttons) => cdp.send('Input.dispatchMouseEvent', { type: kind, x: p.x, y: p.y, button: kind === 'mouseMoved' ? 'none' : 'left', buttons, clickCount: kind === 'mouseMoved' ? 0 : 1, pointerType: 'mouse' })
+    await press(down, 'mouseMoved', 0)
+    await press(down, 'mousePressed', 1)
+    await press(across, 'mouseMoved', 1)
+    await nextFrame(page)
+    check('mid-erase: the pass has cut the stroke on screen', !(await api(page, `() => window.__personalNote.leaferCanvas().hasNode(${JSON.stringify(lower.id)})`)))
+    agentWrite({ remove: [upper.id], append: [{ id: 'agent_during_erase', content: 'agent was here' }] })
+    await page.waitForTimeout(5000) // the changes feed delivers it
+    const merged = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.map((o) => o.id))
+    check('mid-erase: the agent\'s changes arrive (its text, and the stroke it deleted is gone)', merged.includes('agent_during_erase') && !merged.includes(upper.id))
+    check('mid-erase: the pass is dropped, the stroke it was cutting is whole on screen again', await api(page, `() => window.__personalNote.leaferCanvas().hasNode(${JSON.stringify(lower.id)}) && !window.__personalNote.leaferCanvas().hasNode(${JSON.stringify(upper.id)})`))
+    await press(past, 'mouseMoved', 1)
+    await press(past, 'mouseReleased', 0)
+    await nextFrame(page)
+    const afterErase = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.map((o) => o.id))
+    check('mid-erase: releasing commits nothing against the merged document', (await steps(page)) === stepsBefore && afterErase.includes(lower.id) && !afterErase.includes(upper.id) && afterErase.includes('agent_during_erase'), `${await steps(page)} vs ${stepsBefore}`)
+    await stroke(page, cdp, [{ x: 450, y: 1030 }, { x: 450, y: 1050 }, { x: 450, y: 1070 }], { type: 'mouse' })
+    check('a pass after the merge erases as usual (one step)', (await steps(page)) === stepsBefore + 1 && !(await inkObjects(page)).some((o) => o.id === lower.id))
+
+    // a pen stroke under way when the agent writes carries on and keeps the agent's text
+    await tool(page, 'pen')
+    const pts = Array.from({ length: 20 }, (_, k) => ({ x: 150 + k * 25, y: 980 + Math.sin(k / 3) * 8 }))
+    const screen = []
+    for (const point of pts) screen.push(await screenOf(page, point.x, point.y))
+    const pen = (p, kind, buttons) => cdp.send('Input.dispatchMouseEvent', { type: kind, x: p.x, y: p.y, button: kind === 'mouseMoved' ? 'none' : 'left', buttons, clickCount: kind === 'mouseMoved' ? 0 : 1, pointerType: 'pen', force: 0.5 })
+    await page.waitForTimeout(1500)
+    const stepsPen = await steps(page)
+    await pen(screen[0], 'mousePressed', 1)
+    for (const p of screen.slice(1, 10)) { await pen(p, 'mouseMoved', 1); await nextFrame(page) }
+    agentWrite({ append: [{ id: 'agent_during_pen', content: 'second write' }] })
+    await page.waitForTimeout(5000)
+    for (const p of screen.slice(10)) { await pen(p, 'mouseMoved', 1); await nextFrame(page) }
+    await pen(screen.at(-1), 'mouseReleased', 0)
+    await nextFrame(page)
+    const final = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects)
+    const mine = final.at(-1)
+    check('mid-stroke: the stroke carries on and is one step beside the agent\'s text', (await steps(page)) === stepsPen + 1 && final.some((o) => o.id === 'agent_during_pen') && final.some((o) => o.type === 'ink' && o.geometry.width > 400), `${await steps(page)} vs ${stepsPen} ${mine?.type}`)
+    await page.evaluate(() => window.__personalNote.leaferEdits.undo())
+    check('mid-stroke: undoing it leaves the agent\'s text', (await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.some((o) => o.id === 'agent_during_pen'))))
+    await page.evaluate(() => window.__personalNote.leaferEdits.redo())
+  }
+
+  // a merge keeps the note's library pictures
+  const pictures = await page.evaluate(() => {
+    const scene = window.__personalNote.leaferCanvas()
+    const doc = window.__personalNote.leaferEdits.doc
+    const picture = { type: 'image', id: 'media-picture-2', z: 9998, geometry: { x: 10, y: 10, width: 50, height: 50, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }, mediaRef: { kind: 'media', id: 'abc' } }
+    const withPicture = { ...doc, objects: [...doc.objects, picture] }
+    scene.load(withPicture, { resolveMedia: () => 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' })
+    const before = scene.stats().images
+    const moved = { ...withPicture, objects: withPicture.objects.map((o) => (o.id === picture.id ? { ...o, geometry: { ...o.geometry, x: 80 } } : o)) }
+    scene.applyMerged(moved) // an agent moved it: no resolver is passed, the one the note was opened with stays
+    return [before, scene.stats().images]
+  })
+  check('a merge that changes a library picture draws it again', pictures[1] === pictures[0] + 1, JSON.stringify(pictures))
   await page.evaluate(() => window.__personalNote.leaferCanvas().load(window.__personalNote.leaferEdits.doc))
 
   // a stroke that grew the page grid and is then given up puts the grid back, and the next step does not carry the growth

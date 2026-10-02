@@ -254,6 +254,13 @@ export function createEraser(doc, { radius = ERASER_RADIUS } = {}) {
     at: eraseAt,
     between,
     get changed() { return originals.size > 0 || added.size > 0 },
+    // The pass given up: the fragments on screen to take away and the original objects to put back (as the document had them).
+    revert() {
+      const result = { removed: [...added.keys()], added: [...originals.values()] }
+      added.clear()
+      originals.clear()
+      return result
+    },
     // The gesture as one op, or null when nothing was erased.
     plan(pages) {
       const changes = [

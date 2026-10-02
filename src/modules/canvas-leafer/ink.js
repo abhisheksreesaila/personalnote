@@ -3,15 +3,14 @@
 // the stroke becomes a model object, a Leafer node and one undo step. The eraser changes nodes as it passes and records the whole
 // pass as one step. No Leafer import: the scene (scene.js) is reached through the few ink* methods it offers.
 //
-//   createInk({ host, scene, getDoc, getBrush, getPages, growPages, restore, cursor })
+//   createInk({ host, scene, getDoc, getBrush, getPages, growPages, setPages, cursor })
 //     getBrush()    -> { tool: 'pen' | 'highlight', color: '#rrggbb', width }
 //     setPages(pages) -> put the page grid back (a stroke that grew it was given up)
 //     getPages()    -> the page grid now ({ columns, rows }); growPages(point) adds a page when the pen goes past the edge, true if it did
-//     restore()     -> draw the note again from the document (an erase pass that was cancelled)
 //   ink.setTool(tool)   shows the surface for 'pen', 'highlight' and 'eraser', hides it for anything else
 import { createEraser, drawOp, HIGHLIGHT_ALPHA, inkObject, topZ } from './ink-model.js'
 
-export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, setPages, restore, cursor }) {
+export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, setPages, cursor }) {
   const surface = document.createElement('div')
   surface.className = 'ink-surface'
   surface.hidden = true
@@ -165,7 +164,7 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
     const done = gesture
     gesture = null
     hideLive()
-    if (done.tool === 'eraser' && done.eraser.changed) restore()
+    if (done.tool === 'eraser' && done.eraser.changed) applyErase(done.eraser.revert()) // the pieces go, the strokes it split come back
     const now = getPages()
     if (now.columns !== done.pages.columns || now.rows !== done.pages.rows) setPages(done.pages) // growth made for a stroke that is not kept
   }
@@ -204,6 +203,8 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
       if (tool !== 'eraser') hideCursor()
     },
     cancel,
+    // The document changed under a gesture (an agent's merge): an erase pass was planned on the old one and is dropped; a stroke only adds.
+    documentChanged() { if (gesture?.tool === 'eraser') cancel() },
     get active() { return Boolean(gesture) },
   }
 }

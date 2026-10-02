@@ -2274,6 +2274,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
   const showing = ++leaferShowSequence
   const decoded = await decodeNoteDocument(note)
   if (showing !== leaferShowSequence || note.id !== state.activeNoteId) return false
+  leaferInk?.documentChanged() // the document is replaced: an erase pass planned on the old one is dropped
   leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.doc.page }
   canvas.remove(...canvas.getObjects()) // the Fabric canvas holds nothing in this mode, whatever happened before
   state.pages = { ...decoded.doc.page } // a copy: the document the history holds is never edited through the paper state
@@ -2346,7 +2347,6 @@ leaferInk = createInk({
     return true
   },
   setPages(pages) { state.pages = { ...pages }; resizePaper() },
-  restore: () => leaferCanvas.load(leaferEdits.doc),
   cursor: elements.eraserCursor,
 })
 
@@ -2513,6 +2513,7 @@ async function mergeLeaferNote(note) {
   const decoded = await decodeNoteDocument(note)
   if (note.id !== state.activeNoteId) return 0
   mergeCount += 1
+  leaferInk.documentChanged() // an erase pass was planned on the document as it was; it is dropped rather than committed against the merged one (a pen stroke only adds, so it carries on)
   const typing = leaferCanvas.flushText() // words typed so far are in the document now; that text counts as the user's whatever the agent did to it
   const local = leaferEdits.doc
   const { doc: merged, added } = mergeDocuments({ base: leaferBase ?? local, local, remote: decoded.doc, touched: typing ? [typing] : [] })
