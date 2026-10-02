@@ -11,7 +11,7 @@ Personal Note is a local, desktop-first spatial notebook. The required product p
 
 ## Core boundaries
 
-- `src/main.js` owns the browser shell and Fabric canvas lifecycle.
+- `src/main.js` owns the browser shell and hosts the Leafer canvas (view, input, save, note lifecycle). `src/modules/canvas-leafer/` is the engine adapter and the only code that imports `leafer-ui`.
 - `src/core/api.js` is the browser API boundary.
 - `routes.py` owns core HTTP routes.
 - `services.py::NoteService` is the only owner of canonical SQLite reads and writes.
@@ -24,7 +24,7 @@ These are internal contracts, not a public plugin SDK.
 ## Invariants
 
 1. Capture must not wait on an optional service.
-2. JSON Canvas 1.0 plus the namespaced `pn` extensions (`json_canvas.py`, `src/core/document/jsoncanvas.js`) is canonical for `canvas`; normalized map JSON is canonical for `mindmap`. Fabric JSON is only the interim editor's working copy on main (`src/core/note-codec.js` converts at load and save) until F-036 removes Fabric. A note's `content_format` says which one a row holds; old `fabric` rows convert once at startup.
+2. JSON Canvas 1.0 plus the namespaced `pn` extensions (`json_canvas.py`, `src/core/document/jsoncanvas.js`) is canonical for `canvas`; normalized map JSON is canonical for `mindmap`. The editor reads and writes that document model directly (`src/core/note-codec.js`); there is no second engine format. Fabric JSON is a legacy input only: `fromFabric` (`src/core/document/legacy-fabric.js`, mirrored by `document_model.py`) reads notes the old engine saved, and a version 1 backup. A note's `content_format` says which one a row holds; old `fabric` rows convert once at startup.
 3. A note's `noteType` is immutable after creation.
 4. Voice may persist final editable transcript text only. Do not add IndexedDB, SQLite, filesystem, backup, or export storage for PCM/audio.
 5. Local transcription failure must be visible and must leave the note intact.

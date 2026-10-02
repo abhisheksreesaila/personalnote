@@ -10,7 +10,7 @@ Desktop core ships first. Small-screen responsiveness protects access to existin
 
 ### Core notebook
 
-- Spatial Fabric canvas with text, pen, highlighter, erasing, selection, undo/redo, printing, and responsive page growth.
+- Spatial canvas (Fabric.js at first, LeaferJS since ADR 0001; Fabric was removed in F-036) with text, pen, highlighter, erasing, selection, undo/redo, printing, and responsive page growth.
 - Notebook and note organization with immutable `canvas` and `mindmap` note types.
 - Fast SQLite persistence with revision-checked updates.
 - Local FTS5 search across canvas text and mind-map labels.

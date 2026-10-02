@@ -116,7 +116,7 @@ It copies the database (SQLite backup; if the app-data database already has note
 
 ## V1 capabilities
 
-- Spatial Fabric.js canvas for editable text, pen, highlighter, eraser, selection, undo, and redo
+- Spatial LeaferJS canvas for editable text, sticky notes, pictures, pen, highlighter, eraser, arrows, selection, undo, and redo
 - Automatic page growth and shrink around canvas content
 - Notebooks, note titles, drag-to-move organization, and SQLite FTS5 search
 - Optional built-in mind-map note type with SVG editing and JSON/PNG export
@@ -229,7 +229,7 @@ npm run benchmark:canvas   # first run: npx playwright install chromium
 npm run benchmark:speed    # the Leafer performance pass: 600 and 5,400-object notes at dpr 1 and 2 (add -- --gpu)
 ```
 
-The bundle benchmark enforces gzip and largest-chunk budgets. Mind-map and desktop voice implementations are split into on-demand chunks so the ordinary canvas path stays small. The canvas benchmark drives the real app in headless Chromium (run `npx playwright install chromium` once) and fails if the dpr 1 p95 frame time exceeds 25ms or if objects move on screen when pages are added or removed.
+The bundle benchmark enforces gzip and largest-chunk budgets. Mind-map and desktop voice implementations are split into on-demand chunks so the ordinary canvas path stays small. The canvas benchmark drives the real app in headless Chromium (run `npx playwright install chromium` once) and prints pan and zoom frame times (median, p95, max) on the 600-object note.
 
 ## Current scope
 
