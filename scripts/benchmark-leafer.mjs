@@ -91,7 +91,7 @@ const content = generateNote()
 try {
   for (const dpr of dprs) {
     const result = await runDpr(browser, baseUrl, dpr, content)
-    console.log(`\n== Leafer, devicePixelRatio ${dpr}: ${result.setup.objects} objects drawn (${result.setup.unknown} unknown), ${result.setup.pages} pages, opens at ${result.setup.openingZoom}x ==`)
+    console.log(`\n== Leafer, devicePixelRatio ${dpr}: ${result.setup.drawn} objects drawn (${result.setup.unknown} unknown), ${result.setup.pages} pages, opens at ${result.setup.openingZoom}x ==`)
     console.table(result.rows)
   }
 } finally {

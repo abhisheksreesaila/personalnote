@@ -1,7 +1,6 @@
 // The Leafer adapter (F-027): draws a document-model note read-only. Everything about WHERE an object goes comes from the
 // documented model rules (placement.js: the one matrix per object; schema.js: frames, ink frame, group frames); this file only
-// knows how to make each model type look like the Fabric render. Leafer is imported here and nowhere else, so the whole
-// engine lands in one lazy chunk that loads only when the switch is on.
+// knows how to make each model type look like the Fabric render. Leafer is imported here and nowhere else.
 import { Group, Ellipse, Image, Leafer, MatrixHelper, Path, Rect, Text } from 'leafer-ui'
 import { PAGE } from '../../core/document/index.js'
 import { arrowHeadPoints, endpointsFromBox } from '../editor/connectors.js'
@@ -78,8 +77,9 @@ export function createScene({ host, width, height }) {
   let pages = { columns: 1, rows: 1 }
   let colors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', shadows: [] }
   let boxes = []
-  let stats = { objects: 0, unknown: 0, images: 0 }
+  let stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
   const textNodes = []
+  const measuredText = []
   let resolveMedia = null
 
   // ---- page furniture (screen space), stacked: shadow bands, edge, paper, fold lines, labels
@@ -152,7 +152,7 @@ export function createScene({ host, width, height }) {
         const measured = g.width === undefined || g.height === undefined ? measure(text) : null
         const holder = new Group(base)
         holder.add(text)
-        return { node: holder, size: measured ? { width: g.width ?? measured.width, height: g.height ?? measured.height } : {} }
+        return { node: holder, text, size: measured ? { width: g.width ?? measured.width, height: g.height ?? measured.height } : {}, measured: Boolean(measured) }
       }
       case 'sticky': {
         const w = g.width ?? 240
@@ -210,23 +210,30 @@ export function createScene({ host, width, height }) {
     }
   }
 
+  const boxOf = (matrix, w, h) => {
+    const corners = [[0, 0], [w, 0], [w, h], [0, h]].map(([x, y]) => applyMatrix(matrix, { x, y }))
+    const xs = corners.map((p) => p.x)
+    const ys = corners.map((p) => p.y)
+    return { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
+  }
+
+  // `top` is true for the note's own objects (those that get a placement box); group children are placed but not boxed.
   function addObject(parent, object, boxList) {
-    if (object.type === 'unknown') { stats.unknown += 1; return }
-    stats.objects += 1
+    if (object.type === 'unknown') { if (boxList) stats.unknown += 1; return }
     const built = build(object)
-    if (!built) return
+    if (!built) { if (boxList) stats.skipped += 1; return }
+    if (boxList) stats.drawn += 1
     const g = object.geometry
     const matrix = placementMatrix(g, built.size)
     place(built.node, matrix)
     parent.add(built.node)
+    let box = null
     if (boxList && object.type !== 'connector') {
-      const w = built.size.width ?? g.width ?? 0
-      const h = built.size.height ?? g.height ?? 0
-      const corners = [[0, 0], [w, 0], [w, h], [0, h]].map(([x, y]) => applyMatrix(matrix, { x, y }))
-      const xs = corners.map((p) => p.x)
-      const ys = corners.map((p) => p.y)
-      boxList.push({ left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) })
+      box = boxOf(matrix, built.size.width ?? g.width ?? 0, built.size.height ?? g.height ?? 0)
+      boxList.push(box)
     }
+    // Text laid out by the engine (no stored size) is placed from what was measured, so it is placed again when fonts change.
+    if (built.measured) measuredText.push({ object, built, box })
   }
 
   function applyView() {
@@ -241,8 +248,9 @@ export function createScene({ host, width, height }) {
       resolveMedia = options.resolveMedia ?? null
       world.clear()
       textNodes.length = 0
+      measuredText.length = 0
       boxes = []
-      stats = { objects: 0, unknown: 0, images: 0 }
+      stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
       const ordered = [...doc.objects].map((object, index) => [object, index]).sort(([a, i], [b, j]) => ((a.z ?? i) - (b.z ?? j)) || (i - j)).map(([object]) => object)
       for (const object of ordered) addObject(world, object, boxes)
       pages = { columns: doc.page?.columns ?? 1, rows: doc.page?.rows ?? 1 }
@@ -256,8 +264,19 @@ export function createScene({ host, width, height }) {
       leafer.resize({ width: nextWidth, height: nextHeight })
       drawChrome()
     },
-    // Text layout is cached per element; call after web fonts finish loading.
-    refreshText() { textNodes.forEach((node) => node.forceUpdate?.()) },
+    // Text layout is cached per element and text without a stored size was measured with whatever font was loaded then. Call after
+    // web fonts finish loading: layout is redone, such text is measured and placed again, and its placement box follows.
+    refreshText() {
+      textNodes.forEach((node) => node.forceUpdate?.())
+      for (const entry of measuredText) {
+        const g = entry.object.geometry
+        const measured = measure(entry.built.text)
+        const size = { width: g.width ?? measured.width, height: g.height ?? measured.height }
+        const matrix = placementMatrix(g, size)
+        place(entry.built.node, matrix)
+        if (entry.box) Object.assign(entry.box, boxOf(matrix, size.width, size.height))
+      }
+    },
     boxes: () => boxes,
     stats: () => ({ ...stats }),
     // Resolves when pictures have decoded and the frame is on screen.

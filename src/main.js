@@ -586,10 +586,11 @@ loadPreferences()
 
 // ADR 0001: Leafer is the canvas. F-027 draws the open note read-only from the document model; the Fabric canvas below stays empty
 // and transparent on top of it only because it still hosts the pan, zoom and touch gestures until the editing tickets port them
-// (F-028 onward) and F-036 removes Fabric. With no editing yet, this branch never saves a canvas note.
+// (F-028 onward) and F-036 removes Fabric. With no editing yet, a canvas note is never rewritten: a save (a new title, say) sends
+// the note's own content back untouched, and only for the note that content was loaded from.
 const useLeafer = true
 let leaferCanvas = null
-let leaferSource = { content: { objects: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
+let leaferSource = { noteId: null, content: { objects: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
 
 const canvas = new Canvas('note-canvas', {
   width: elements.workspace.clientWidth || PAGE_WIDTH,
@@ -601,6 +602,9 @@ const canvas = new Canvas('note-canvas', {
   selectionColor: 'rgba(28, 112, 168, 0.08)',
   selectionBorderColor: '#1c70a8',
 })
+
+// Backstop: nothing may land on the Fabric canvas while Leafer owns the picture (it would sit editable over Leafer and never be saved).
+if (useLeafer) canvas.add = () => canvas.getObjects().length
 
 const CANVAS_FONT_SPECS = [
   '400 24px "Source Serif 4"',
@@ -1483,6 +1487,7 @@ function expandPagesDuringTransform({ target } = {}) {
 }
 
 function addText(point, value = '', beginEditing = true) {
+  if (useLeafer) return null // read-only: no editable text box over the Leafer picture
   const text = new IText(value, {
     left: point.x,
     top: point.y,
@@ -2023,6 +2028,7 @@ async function saveActiveNote({ unloading = false } = {}) {
   const noteId = state.activeNoteId
   const note = state.notes.find((item) => item.id === noteId)
   try {
+    if (useLeafer && state.activeNoteType === 'canvas' && leaferSource.noteId !== noteId) throw new Error('the content on hand belongs to another note')
     if (state.activeNoteType === 'canvas') ensureCanvasObjectIds()
     const title = elements.title.value.trim() || 'Untitled note'
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
@@ -2185,7 +2191,8 @@ async function settleOutgoingNote() {
 
 // Leafer mode: note JSON -> document model -> Leafer nodes. The view and page grid are set the way the Fabric path sets them.
 function showLeaferNote(note, { openView = true } = {}) {
-  leaferSource = { content: note.content || { objects: [] }, pageState: note.pageState || { columns: 1, rows: 1 } }
+  leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: note.pageState || { columns: 1, rows: 1 } }
+  canvas.remove(...canvas.getObjects()) // the Fabric canvas holds nothing in this mode, whatever happened before
   state.pages = note.pageState || { columns: 1, rows: 1 }
   resizePaper()
   leaferCanvas.showNote(note.content, state.pages)
@@ -2380,7 +2387,7 @@ async function createNote(notebookId, noteType = 'canvas') {
     state.activeNoteId = null
     await selectNote(note.id)
     setSidebarOpen(false)
-    if (noteType === 'canvas') addText({ x: 72, y: 72 })
+    if (noteType === 'canvas' && !useLeafer) addText({ x: 72, y: 72 })
   } finally {
     state.creatingNote = false
   }
@@ -2709,6 +2716,10 @@ async function renderPrintPreview(sequence) {
 
 async function openPrintPreview() {
   if (state.activeNoteType !== 'canvas') return
+  if (useLeafer) { // the print sheets are rendered from Fabric objects; they return with F-033
+    showToast('Print returns soon')
+    return
+  }
   const sequence = ++printRenderSequence
   setSidebarOpen(false)
   setPropertiesOpen(false)
@@ -4311,5 +4322,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, useLeafer, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, useLeafer, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()
