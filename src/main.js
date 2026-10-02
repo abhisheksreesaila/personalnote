@@ -7,7 +7,7 @@ import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/de
 import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
 import { createIcons, icons } from 'lucide'
 import { api, downloadWorkspaceFile } from './core/api.js'
-import { decodeNote, encodeNote } from './core/note-codec.js'
+import { decodeNote, encodeDocument, encodeNote } from './core/note-codec.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
@@ -36,6 +36,7 @@ import {
 } from './modules/editor/connectors.js'
 import { readPreferences, writePreferences } from './preferences.js'
 import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
+import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
@@ -2149,6 +2150,7 @@ function recordHistory() {
 
 async function restoreHistory(index) {
   if (state.activeNoteType === 'mindmap') return
+  if (useLeafer) return leaferHistoryStep(index < state.historyIndex ? -1 : 1)
   if (state.loading || index < 0 || index >= state.history.length) return
   state.loading = true
   state.historyIndex = index
@@ -2195,6 +2197,23 @@ async function settleOutgoingNote() {
   return landed
 }
 
+// Leafer mode undo/redo (F-030): the history lives in modules/canvas-leafer/edits.js; this puts each new document on screen and saves it.
+const leaferEdits = createLeaferEdits({
+  onChange(doc, { page }) {
+    if (leaferSource.noteId !== state.activeNoteId) return
+    if (page) { state.pages = { ...doc.page }; resizePaper() }
+    leaferCanvas.load(doc)
+    leaferSource = { noteId: leaferSource.noteId, content: encodeDocument(doc), pageState: { ...doc.page } }
+    queueSave()
+  },
+})
+// Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, Ctrl+Y, the dock buttons and the desktop menu all arrive at restoreHistory(); in Leafer mode it comes here.
+function leaferHistoryStep(direction) {
+  if (state.loading) return
+  if (direction < 0) leaferEdits.undo()
+  else leaferEdits.redo()
+}
+
 // Leafer mode: note JSON -> document model -> Leafer nodes. The view and page grid are set the way the Fabric path sets them.
 let leaferShowSequence = 0
 // Returns false when a later selection or refresh superseded this one while the note was being converted: nothing is drawn then.
@@ -2207,7 +2226,9 @@ async function showLeaferNote(note, { openView = true } = {}) {
   canvas.remove(...canvas.getObjects()) // the Fabric canvas holds nothing in this mode, whatever happened before
   state.pages = decoded.pageState
   resizePaper()
-  leaferCanvas.showNote(decoded.content, state.pages)
+  const shown = leaferCanvas.showNote(decoded.content, state.pages)
+  if (openView) leaferEdits.open(note.id, shown) // a newly opened note starts a new undo history; an agent's newer content does not (undo never reverts it)
+  else leaferEdits.remote(note.id, shown)
   if (openView) openCanvasView()
   leaferCanvas.setColors(pageColors)
   leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
@@ -4343,5 +4364,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, useLeafer, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { canvas, state, useLeafer, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize()

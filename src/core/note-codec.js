@@ -67,6 +67,11 @@ export function encodeNote(fabricContent, pageState) {
   return writeJsonCanvas(doc, { derived: 'omit', media: { putDataUrl: (url) => pathByDataUrl.get(url) ?? url } })
 }
 
+// A document model (what the Leafer editor holds) -> JSON Canvas, the same way encodeNote writes it, without the Fabric detour.
+export function encodeDocument(doc) {
+  return writeJsonCanvas(doc, { derived: 'omit', media: { putDataUrl: (url) => pathByDataUrl.get(url) ?? url } })
+}
+
 // Test support.
 export function forgetMedia() {
   dataUrlByName.clear()
