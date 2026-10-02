@@ -227,7 +227,8 @@ Merged into `leafer` at 79aa1c2. Live stroke on its own layer; one stroke or era
 Merged into `leafer` at dbc8cbc. Instant growth on all four sides and fold-back, in the edit's undo step; page shift is a frame op so undo after an agent merge stays on the grid; connectors follow live and saved; lift and ghost. View never snaps; it jumps (instantly) only when no page is in view.
 ## F-033 Images (media library, F-023), export, print on Leafer (P-09) [done]
 Merged into `leafer` at 14ea4a1. Pictures stored as content-addressed media (POST /api/media, streamed 20 MB cap, no SVG); export/print rendered offscreen by Leafer and pixel-matched to Fabric; print keeps app chrome out (fixed a blank extra PDF page). Zoom control and minimap step aside from selection handles. F-023 non-image file cards still to build.
-## F-034 Performance pass and agent sync on Leafer (P-10) [doing]
+## F-034 Performance pass and agent sync on Leafer (P-10) [review]
+Merged into `leafer` at c5f1305. Undo redraws only changes; zoomed-out page bitmaps, DPR cap 2, baked shadows; save/sync hardening; speed test runs as a separate instance (View > Speed test…, `npm run speedtest`). Numbers in docs/story/engine-race/leafer-optimizations.md. Waiting on the captain's Mac run.
 - [ ] leaving a note doesn't re-send its unchanged content (an extra write per switch; can show a false "Could not save" after an agent edits a note you only viewed)
 - [ ] history combine(): a later op's page shift must also shift earlier ops' `after` for objects it doesn't name (two prepends in one step; unit test from F-032 review)
 - [ ] merge arriving before our PUT response updates leaferServerShift uses the old server frame (narrow race)
