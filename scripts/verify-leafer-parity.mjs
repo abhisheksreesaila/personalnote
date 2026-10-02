@@ -54,8 +54,23 @@ async function mockApi(page, fixture) {
 
 const HIDE_CHROME = '.tool-dock, .page-minimap, .zoom-control, .topbar, .sidebar, .properties-panel, .engine-pill, .speed-meter, #scroll-x, #scroll-y, #toast, .save-state, .agent-chip { visibility: hidden !important; }'
 
-// engine: 'fabric' is the reference checkout, 'leafer' is this one.
-async function render(browser, baseUrl, fixture, skin, engine) {
+// engine: 'fabric' is the reference checkout, 'leafer' is this one. A fresh browser per render, retried: headless Chromium
+// now and then loses a page while two full-window canvases are alive.
+async function render(_unused, baseUrl, fixture, skin, engine) {
+  for (let attempt = 1; ; attempt += 1) {
+    const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
+    try {
+      return await renderOnce(browser, baseUrl, fixture, skin, engine)
+    } catch (error) {
+      if (attempt >= 3) throw error
+      console.error(`${fixture.name}/${skin}/${engine}: attempt ${attempt} failed (${error.message.split('\n')[0]}), retrying`)
+    } finally {
+      await browser.close().catch(() => {})
+    }
+  }
+}
+
+async function renderOnce(browser, baseUrl, fixture, skin, engine) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: dpr })
   const page = await context.newPage()
   const problems = []
@@ -85,8 +100,11 @@ async function render(browser, baseUrl, fixture, skin, engine) {
     }
     shots[view] = await page.locator('#workspace').screenshot()
   }
+  // What the Fabric app holds once it has opened the note (it grows and shifts the page grid on open, as it always has): the Leafer
+  // side is given this, so both draw the same note.
+  const normalized = engine === 'fabric' ? await page.evaluate(() => ({ content: window.__personalNote.canvas.toJSON(), pageState: { ...window.__personalNote.state.pages } })) : null
   await context.close()
-  return { shots, problems, opening }
+  return { shots, problems, opening, normalized }
 }
 
 // Compares two PNGs in the browser (no image library needed).
@@ -162,21 +180,32 @@ try {
   const comparePage = await (await browser.newContext()).newPage()
   for (const name of names) {
     for (const skin of skins) {
-      const fabric = await render(browser, referenceUrl, fixtures[name], skin, 'fabric')
-      const leafer = await render(browser, leaferUrl, fixtures[name], skin, 'leafer')
+      // Headless Chromium now and then paints a blank canvas after losing its GPU process; a pair whose worst block is wildly
+      // off is drawn again (up to three times) before it is believed. `tries` in the table shows when that happened.
+      let attempt = 0
+      let results
+      let fabric
+      let leafer
+      do {
+        attempt += 1
+        fabric = await render(browser, referenceUrl, fixtures[name], skin, 'fabric')
+        leafer = await render(browser, leaferUrl, { name, ...fabric.normalized }, skin, 'leafer')
+        results = []
+        for (const view of views) results.push(await compare(comparePage, fabric.shots[view], leafer.shots[view]))
+      } while (attempt < 3 && results.some((result) => result.error || result.blockMax > 150))
       for (const problem of [...fabric.problems, ...leafer.problems]) console.error(`${name}/${skin}: ${problem}`)
-      for (const view of views) {
+      views.forEach((view, index) => {
+        const result = results[index]
         const base = `${name}-${skin}-${view}`
         fs.writeFileSync(path.join(outDir, `${base}-fabric.png`), fabric.shots[view])
         fs.writeFileSync(path.join(outDir, `${base}-leafer.png`), leafer.shots[view])
-        const result = await compare(comparePage, fabric.shots[view], leafer.shots[view])
-        if (result.error) { rows.push({ fixture: name, skin, view, error: result.error }); continue }
+        if (result.error) { rows.push({ fixture: name, skin, view, error: result.error }); return }
         fs.writeFileSync(path.join(outDir, `${base}-diff.png`), Buffer.from(result.diffPng, 'base64'))
         rows.push({
           fixture: name, skin, view, 'differing%': +result.differingPct.toFixed(3), 'within1px%': +result.within1pxPct.toFixed(3), blockMax: +result.blockMax.toFixed(2),
-          openZoom: view === 'open' ? `${fabric.opening.zoom.toFixed(3)} / ${leafer.opening.zoom.toFixed(3)}` : '',
+          openZoom: view === 'open' ? `${fabric.opening.zoom.toFixed(3)} / ${leafer.opening.zoom.toFixed(3)}` : '', tries: attempt,
         })
-      }
+      })
     }
   }
 } finally {

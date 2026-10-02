@@ -136,6 +136,16 @@ Notes still persist as Fabric JSON; invariant 2 is unchanged. `src/core/document
 - `search_text` in `document_model.py` returns exactly what `NoteService.canvas_text` returns now. `plain_text` has the same blocks as `note_text.py` but reads them by the box's top edge rather than Fabric's origin point (the centre for app-made objects, the corner for agent-written ones); the order is identical when text blocks share an origin and differs when a tall object and a short one are centred on the same line. F-026 decides whether `note_text.py` moves to the same rule.
 - Shared fixtures live in `tests/fixtures/documents/` (real-app gestures, the agent CLI, Fabric-built transform and edge cases, deliberately damaged notes); `scripts/generate-document-fixtures.mjs` and `scripts/generate_cli_fixture.py` rebuild them reproducibly. The seeded 600-object benchmark note is built at test time from `scripts/benchmark-note.mjs`. `tests/test_document_model.py` runs the JS build through `scripts/dump-document-models.mjs` and requires the same model, validation messages and Fabric output from both (on CI it fails rather than skips when node is missing). The app does not import the model yet, so the bundle is unchanged.
 
+### Leafer canvas (F-027, read-only)
+
+ADR 0001 makes LeaferJS the canvas. This slice draws the open note read-only; editing returns ticket by ticket (F-028 onward) and F-036 removes Fabric. Until then the Fabric canvas stays in the page, empty and transparent on top, only because it still hosts the pan, zoom, hand, Space, middle-drag and touch-pinch gestures; the Leafer view sits under it.
+
+- `src/modules/canvas-leafer/` is the adapter. `index.js` turns a stored note into the document model with `fromFabric` and hands it to `scene.js`, the only file that imports `leafer-ui` (pinned to an exact version). The note is read exactly as stored; nothing is converted back and nothing about serialization changed.
+- Placement uses only the documented model rules: `placement.js` builds one matrix per object from `geometry` (the formula in `src/core/document/schema.js`), checked against the model oracle on every fixture. A text block without a height is measured first and placed from the measured box. An ink stroke's path is already in its box frame; a group's children are placed in the group's frame.
+- `chrome.js` computes the page tiles, shadow, edge, fold lines and "Page N" labels in screen pixels from the view, the page grid and the skin tokens (`refreshPageColors` in `main.js` supplies them); the dotted desk is still the CSS background. `style.js` holds the Fabric text metrics (line pitch, first baseline) and the highlighter alpha. `sticky-shadow.js` bakes the sticky shadow into one image per size instead of blurring live (F-024 section 2).
+- The view is `main.js`'s own: `setCanvasViewportOffset` and `setViewTo` push `{x, y, scale}` to `scene.setView`, so `viewport.js`, the opening view, the minimap and the zoom pill are unchanged.
+- Read-only means: the dock is dimmed and the hand is the only tool; a canvas note's save sends the content it was loaded with untouched (only the title can change); an agent's newer content is redrawn.
+
 ## API surface
 
 | Method | Path | Responsibility |
@@ -157,7 +167,7 @@ There are no v1 model, suggestion, or remote workspace endpoints. Agents reach t
 
 ## Performance shape
 
-The default canvas route statically loads Fabric and the shell. Voice capture and mind-map implementation code are separate dynamic chunks. `npm run benchmark:bundle` enforces aggregate JavaScript gzip, aggregate CSS gzip, and largest JavaScript chunk budgets. The screen theme is isolated in `src/workspace-theme.css` under `@media screen`, so print output continues to use the established print rules.
+The canvas route statically loads Fabric, Leafer (F-027; about 77 KiB gzip) and the shell. Voice capture and mind-map implementation code are separate dynamic chunks. `npm run benchmark:bundle` enforces aggregate JavaScript gzip, aggregate CSS gzip, and largest JavaScript chunk budgets. The screen theme is isolated in `src/workspace-theme.css` under `@media screen`, so print output continues to use the established print rules.
 
 ## Security and deployment boundaries
 
@@ -185,6 +195,7 @@ The default canvas route statically loads Fabric and the shell. Voice capture an
 | `app_paths.py` | Default database location shared by the app, CLI and server |
 | `scripts/build-mac-app.sh`, `packaging/` | macOS app bundle build and Linux launcher |
 | `personal_note_cli.py`, `bin/personal-note` | Machine-readable local CLI for agents, using the same service and portability contracts |
+| `src/modules/canvas-leafer/` | Leafer adapter: draws a document-model note read-only (placement, page chrome, sticky shadow, text metrics) |
 | `src/core/document/`, `document_model.py` | Engine-independent document model with render-equivalent Fabric conversion (JS and Python mirrors; not yet used by the app) |
 | `note_text.py` | Plain-text projections of notes for agents (reading-order canvas text, mind-map outline) |
 | `src/modules/sync/` | Change-feed polling, safe merge of agent writes, and the agent presence chip |

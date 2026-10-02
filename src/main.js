@@ -589,6 +589,7 @@ loadPreferences()
 // (F-028 onward) and F-036 removes Fabric. With no editing yet, this branch never saves a canvas note.
 const useLeafer = true
 let leaferCanvas = null
+let leaferSource = { content: { objects: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
 
 const canvas = new Canvas('note-canvas', {
   width: elements.workspace.clientWidth || PAGE_WIDTH,
@@ -2007,7 +2008,7 @@ function ensureCanvasObjectIds() {
 }
 
 async function saveActiveNote({ unloading = false } = {}) {
-  if (useLeafer || !state.activeNoteId || state.loading) return
+  if (!state.activeNoteId || state.loading) return
   if (saveInFlight && !unloading) {
     saveQueued = true
     return
@@ -2025,11 +2026,12 @@ async function saveActiveNote({ unloading = false } = {}) {
     if (state.activeNoteType === 'canvas') ensureCanvasObjectIds()
     const title = elements.title.value.trim() || 'Untitled note'
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
-    const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : canvas.toJSON()
+    // Leafer shows the note read-only: the empty Fabric canvas must never be saved, so the note's own content goes back untouched.
+    const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : useLeafer ? leaferSource.content : canvas.toJSON()
     const body = JSON.stringify({
       title,
       content: savedContent,
-      pageState: state.pages,
+      pageState: useLeafer && state.activeNoteType === 'canvas' ? leaferSource.pageState : state.pages,
       notebookId: note?.notebookId,
       revision: note?.revision,
     })
@@ -2057,7 +2059,7 @@ async function saveActiveNote({ unloading = false } = {}) {
 }
 
 function queueSave() {
-  if (useLeafer || state.loading) return
+  if (state.loading) return
   unsavedEdits = true
   // Any edit after Clear all ends its Undo, so Ctrl/Cmd+Z goes back to ordinary undo.
   if (pendingClearUndo) hideToast()
@@ -2182,11 +2184,12 @@ async function settleOutgoingNote() {
 }
 
 // Leafer mode: note JSON -> document model -> Leafer nodes. The view and page grid are set the way the Fabric path sets them.
-function showLeaferNote(note) {
+function showLeaferNote(note, { openView = true } = {}) {
+  leaferSource = { content: note.content || { objects: [] }, pageState: note.pageState || { columns: 1, rows: 1 } }
   state.pages = note.pageState || { columns: 1, rows: 1 }
   resizePaper()
   leaferCanvas.showNote(note.content, state.pages)
-  openCanvasView()
+  if (openView) openCanvasView()
   leaferCanvas.setColors(pageColors)
   leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
 }
@@ -2197,7 +2200,6 @@ function mountLeaferCanvas() {
   elements.paper.prepend(host)
   leaferCanvas = createLeaferCanvas({ host, width: canvas.getWidth(), height: canvas.getHeight() })
   elements.shell.classList.add('engine-leafer')
-  elements.title.readOnly = true
   const pill = document.createElement('div')
   pill.className = 'engine-pill'
   pill.setAttribute('role', 'status')
@@ -2244,6 +2246,7 @@ async function selectNote(id) {
       showLeaferNote(note)
       state.history = []
       state.historyIndex = -1
+      syncedIds = canvasObjectIds(note.content)
       setTool('hand')
     } else {
       state.pages = note.pageState || { columns: 1, rows: 1 }
@@ -2290,7 +2293,8 @@ async function applyRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
   if (useLeafer) {
     elements.title.value = note.title
-    showLeaferNote(note)
+    showLeaferNote(note, { openView: false })
+    syncedIds = canvasObjectIds(note.content)
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
     setSaveState('Saved')
@@ -2324,7 +2328,17 @@ async function applyRemoteNote(note) {
 
 // Unsaved local edits win: add only the objects an agent appended, then save on top of the newer revision.
 async function mergeRemoteNote(note) {
-  if (useLeafer || note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
+  if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
+  if (useLeafer) {
+    // Only the title can be unsaved here: draw the agent's newer content and save the title on top of the new revision.
+    const added = (note.content?.objects || []).filter((object) => object?.semanticId && !syncedIds.has(object.semanticId)).length
+    showLeaferNote(note, { openView: false })
+    const summary = state.notes.find((item) => item.id === note.id)
+    if (summary) summary.revision = note.revision
+    syncedIds = canvasObjectIds(note.content)
+    queueSave()
+    return added
+  }
   const remoteObjects = note.content?.objects || []
   const added = mergeRemoteAppends({ syncedIds, localObjects: canvas.getObjects(), remoteObjects })
   const enlivened = added.length ? await util.enlivenObjects(added) : []
@@ -4235,8 +4249,8 @@ async function initialize() {
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
       },
       // Also true while typing is not yet in history or a text object is being edited.
-      hasUnsavedEdits: () => !useLeafer && (unsavedEdits || saveInFlight || canvas.getObjects().some((object) => object.isEditing)
-        || (state.activeNoteType === 'canvas' && snapshot() !== state.history[state.historyIndex])),
+      hasUnsavedEdits: () => unsavedEdits || saveInFlight || (!useLeafer && (canvas.getObjects().some((object) => object.isEditing)
+        || (state.activeNoteType === 'canvas' && snapshot() !== state.history[state.historyIndex]))),
       locateFlagBlock: (action) => {
         const block = pickFlagBlock(action, canvas.getObjects())
         if (!block) return null
