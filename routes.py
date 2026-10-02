@@ -14,7 +14,9 @@ from portability import (
     utc_timestamp,
     workspace_backup,
 )
-from services import ConflictError, NoteService, NotFoundError, WorkspaceImportError
+from media_store import MEDIA_NAME
+from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, WorkspaceImportError
+from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
 
@@ -101,11 +103,11 @@ def create_app(
         app.add_middleware(LoopbackHostMiddleware)
 
     def json_error(error: Exception) -> JSONResponse:
-        status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 500
+        status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 400 if isinstance(error, InvalidNoteContentError) else 500
         if status == 500:
             logger.exception("event=api.request outcome=failed error_class=%s", type(error).__name__)
         return JSONResponse(
-            {"error": str(error) if status in {404, 409} else "Request failed"},
+            {"error": str(error) if status in {400, 404, 409} else "Request failed"},
             status_code=status,
         )
 
@@ -254,6 +256,36 @@ def create_app(
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="personal-note-markdown-{date}.zip"'},
         )
+
+    @app.get("/api/media/{name}")
+    def get_media(name: str):
+        # Content-addressed files only: a name that is not `<sha256>.<ext>` never reaches the file system.
+        path = service.media.file(name) if MEDIA_NAME.match(name) else None
+        if path is None or not path.is_file():
+            return JSONResponse({"error": "Not found"}, status_code=404)
+        return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"})
+
+    @app.get("/api/export/vault")
+    def export_vault():
+        date = utc_timestamp()[:10]
+        return Response(
+            export_vault_archive(service),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="personal-note-obsidian-vault-{date}.zip"'},
+        )
+
+    @app.post("/api/import/vault")
+    async def import_vault(request):
+        if not from_this_app(request):  # a raw body can be sent cross-site without a preflight, unlike JSON
+            return forbidden()
+        try:
+            result = import_vault_archive(service, await request.body())
+            return JSONResponse(result, status_code=201)
+        except (PortabilityVaultError, WorkspaceImportError) as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
+        except Exception as error:
+            logger.exception("event=vault.import outcome=failed error_class=%s", type(error).__name__)
+            return JSONResponse({"error": "Import failed; the existing workspace was not changed"}, status_code=500)
 
     @app.post("/api/import/workspace")
     async def import_workspace(request):

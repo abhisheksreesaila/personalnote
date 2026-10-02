@@ -244,10 +244,10 @@ export function toJsonCanvas(doc, { media, derived = 'file' } = {}) {
 // ---- JSON Canvas -> document -------------------------------------------------------------------------------------------------
 
 export function isJsonCanvas(value) {
-  return isObject(value) && !Array.isArray(value.objects) && (Array.isArray(value.nodes) || Array.isArray(value.edges) || isObject(value.pn))
+  return isObject(value) && !Array.isArray(value.objects) && ('nodes' in value || 'edges' in value || 'pn' in value)
 }
 
-const imageExtension = (path) => IMAGE_EXTENSIONS.has(String(path).split(/[?#]/)[0].split('.').pop().toLowerCase())
+const imageExtension = (path) => (isDataUrl(path) ? path.toLowerCase().startsWith('data:image/') : IMAGE_EXTENSIONS.has(String(path).split(/[?#]/)[0].split('.').pop().toLowerCase()))
 
 function mediaRefOf(file) {
   if (isDataUrl(file)) return { kind: 'inline', dataUrl: file }

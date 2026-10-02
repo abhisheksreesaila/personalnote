@@ -48,7 +48,8 @@ class CliContractTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(note["revision"], 2)
-        self.assertEqual(note["content"]["objects"][0]["text"], "Keep a searchable local idea")
+        self.assertEqual(note["contentFormat"], "json-canvas")
+        self.assertEqual(note["content"]["nodes"][0]["text"], "Keep a searchable local idea")
 
         code, matches = self.run_cli("search", "searchable local")
         self.assertEqual(code, 0)
@@ -93,9 +94,9 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result["revision"], note["revision"] + 1)
         code, loaded = self.run_cli("notes", "get", str(note["id"]))
-        first, second = loaded["content"]["objects"]
+        first, second = loaded["content"]["nodes"]
         self.assertEqual(first["text"], "First thought")
-        self.assertGreater(second["top"], first["top"])
+        self.assertGreater(second["y"], first["y"])
 
     def test_append_reads_stdin_and_honours_expected_revision(self):
         note = self.create_note()

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from starlette.testclient import TestClient
 
+from json_canvas import from_json_canvas
 from note_text import note_plain_text
 from routes import create_app
 from services import (
@@ -37,6 +38,12 @@ class TempServiceCase(unittest.TestCase):
             },
         )
         return self.service.get_note(note["id"])
+
+    def objects(self, note_id):
+        """The note's objects as the document model reads its stored JSON Canvas."""
+        note = self.service.get_note(note_id)
+        self.assertEqual(note["contentFormat"], "json-canvas")
+        return from_json_canvas(note["content"])["objects"]
 
 
 class PlainTextTests(TempServiceCase):
@@ -97,10 +104,10 @@ class StickyAndShapeTests(TempServiceCase):
         objects = [dict(item, top=item["top"] + 500) if item["type"] != "IText" else item for item in self.OBJECTS[:2]]
         note = self.canvas_note(objects)
         self.service.append_text(note["id"], "agent line")
-        appended = self.service.get_note(note["id"])["content"]["objects"][-1]
+        objects = self.objects(note["id"])
         lowest_bottom = 700 + 100
-        self.assertGreater(appended["top"], lowest_bottom)
-        self.assertEqual([item["type"] for item in self.service.get_note(note["id"])["content"]["objects"][:2]], ["Sticky", "Rect"])
+        self.assertGreater(objects[-1]["geometry"]["y"], lowest_bottom)
+        self.assertEqual([item["type"] for item in objects[:2]], ["sticky", "shape"])
 
 
 class ConnectorHandlingTests(TempServiceCase):
@@ -118,9 +125,9 @@ class ConnectorHandlingTests(TempServiceCase):
     def test_append_lands_below_cards_and_leaves_connectors_untouched(self):
         note = self.canvas_note(self.OBJECTS)
         self.service.append_text(note["id"], "agent line")
-        objects = self.service.get_note(note["id"])["content"]["objects"]
-        self.assertEqual([o["type"] for o in objects], ["IText", "IText", "Connector", "Textbox"])
-        self.assertGreaterEqual(objects[-1]["top"], 140)
+        objects = self.objects(note["id"])
+        self.assertEqual([o["type"] for o in objects], ["text", "text", "connector", "text"])
+        self.assertGreaterEqual(objects[-1]["geometry"]["y"], 140)
         connector = objects[2]
         self.assertEqual((connector["fromId"], connector["toId"]), ("res_a", "res_b"))
 
@@ -132,11 +139,13 @@ class AppendTextTests(TempServiceCase):
         )
         result = self.service.append_text(note["id"], "agent line", revision=note["revision"])
         self.assertEqual(result["revision"], note["revision"] + 1)
-        loaded = self.service.get_note(note["id"])
-        objects = loaded["content"]["objects"]
-        self.assertEqual([item["text"] for item in objects], ["existing", "agent line"])
-        self.assertGreaterEqual(objects[1]["top"], 80 + 60)
-        self.assertTrue(objects[1]["semanticId"])
+        objects = self.objects(note["id"])
+        self.assertEqual([item["content"] for item in objects], ["existing", "agent line"])
+        self.assertGreaterEqual(objects[1]["geometry"]["y"], 80 + 60)
+        self.assertTrue(objects[1]["id"])
+        # the agent's text is a Markdown text node in the stored JSON Canvas
+        canvas = self.service.get_note(note["id"])["content"]
+        self.assertEqual([(n["type"], n["text"]) for n in canvas["nodes"]], [("text", "existing"), ("text", "agent line")])
 
     def test_append_grows_pages_when_content_would_pass_the_bottom_edge(self):
         note = self.canvas_note(
@@ -147,24 +156,24 @@ class AppendTextTests(TempServiceCase):
         loaded = self.service.get_note(note["id"])
         self.assertGreaterEqual(loaded["pageState"]["rows"], 2)
         self.assertEqual(loaded["pageState"]["columns"], 1)
-        new = loaded["content"]["objects"][-1]
-        self.assertLess(new["top"], loaded["pageState"]["rows"] * 1080)
+        new = self.objects(note["id"])[-1]
+        self.assertLess(new["geometry"]["y"], loaded["pageState"]["rows"] * 1080)
 
     def test_append_understands_centre_origin_objects_saved_by_the_browser(self):
         note = self.canvas_note(
             [{"type": "Textbox", "text": "centred", "left": 400, "top": 500, "height": 100, "originX": "center", "originY": "center"}]
         )
         self.service.append_text(note["id"], "below")
-        new = self.service.get_note(note["id"])["content"]["objects"][-1]
-        self.assertGreaterEqual(new["top"], 550)
-        self.assertLess(new["top"], 620)
-        self.assertEqual((new["originX"], new["originY"]), ("left", "top"))
+        new = self.objects(note["id"])[-1]
+        self.assertGreaterEqual(new["geometry"]["y"], 550)
+        self.assertLess(new["geometry"]["y"], 620)
+        self.assertEqual(new["geometry"]["x"], 72)
 
     def test_append_to_empty_note_starts_near_the_top_of_the_page(self):
         note = self.service.create_note({"title": "Empty"})
         self.service.append_text(note["id"], "hello")
         loaded = self.service.get_note(note["id"])
-        self.assertEqual(loaded["content"]["objects"][0]["top"], 80)
+        self.assertEqual(self.objects(note["id"])[0]["geometry"]["y"], 80)
         self.assertEqual(loaded["pageState"], {"columns": 1, "rows": 1})
 
     def test_append_rejects_a_stale_revision_and_leaves_the_note_intact(self):
@@ -177,9 +186,11 @@ class AppendTextTests(TempServiceCase):
         drawing = {"type": "Path", "path": [["M", 0, 0], ["L", 10, 10]], "top": 20, "left": 20, "height": 10, "stroke": "#000"}
         note = self.canvas_note([drawing])
         self.service.append_text(note["id"], "note")
-        objects = self.service.get_note(note["id"])["content"]["objects"]
-        self.assertEqual(objects[0]["path"], drawing["path"])
-        self.assertEqual(objects[0]["stroke"], "#000")
+        objects = self.objects(note["id"])
+        # not an app-made stroke (no isInk), so the model keeps it verbatim
+        self.assertEqual(objects[0]["type"], "unknown")
+        self.assertEqual(objects[0]["raw"]["path"], drawing["path"])
+        self.assertEqual(objects[0]["raw"]["stroke"], "#000")
 
     def test_append_refuses_mind_maps_and_missing_notes(self):
         mindmap = self.service.create_note({"title": "Map", "noteType": "mindmap"})

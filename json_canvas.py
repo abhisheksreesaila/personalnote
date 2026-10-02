@@ -340,10 +340,12 @@ def to_json_canvas(doc: dict, media: Any = None, derived: str = "file") -> dict:
 # --- JSON Canvas -> document -----------------------------------------------------------------------------------------------
 
 def is_json_canvas(value: Any) -> bool:
-    return _is_object(value) and not isinstance(value.get("objects"), list) and (isinstance(value.get("nodes"), list) or isinstance(value.get("edges"), list) or _is_object(value.get("pn")))
+    return _is_object(value) and not isinstance(value.get("objects"), list) and ("nodes" in value or "edges" in value or "pn" in value)
 
 
 def _image_extension(path: Any) -> bool:
+    if is_data_url(path):
+        return str(path).lower().startswith("data:image/")
     name = re.split(r"[?#]", str(path))[0]
     return name.split(".")[-1].lower() in IMAGE_EXTENSIONS
 

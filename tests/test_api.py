@@ -202,7 +202,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("attachment", response.headers["content-disposition"])
         backup = response.json()
         self.assertEqual(backup["format"], "personal-note-workspace")
-        self.assertEqual(backup["version"], 1)
+        self.assertEqual(backup["version"], 2)
         self.assertNotIn("id", backup["notes"][0])
         exported_note = next(item for item in backup["notes"] if item["title"] == note["title"])
         self.assertEqual(exported_note["content"], note["content"])
@@ -222,9 +222,10 @@ class ApiContractTests(unittest.TestCase):
         matches = self.client.get("/api/search", params={"q": "useful project detail"}).json()
         self.assertEqual(len(matches), 2)
 
-        original_object_id = exported_note["content"]["objects"][0]["semanticId"]
+        self.assertEqual(exported_note["contentFormat"], "json-canvas")
+        original_object_id = exported_note["content"]["nodes"][0]["id"]
         imported_note = self.client.get(f"/api/notes/{imported.json()['noteIds'][0]}").json()
-        self.assertNotEqual(imported_note["content"]["objects"][0]["semanticId"], original_object_id)
+        self.assertNotEqual(imported_note["content"]["nodes"][0]["id"], original_object_id)
         self.assertEqual(notebook["name"], "My Notes")
 
     def test_backup_import_keeps_connectors_attached_to_their_remapped_objects(self):
@@ -244,19 +245,19 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(saved.status_code, 200)
         backup = self.client.get("/api/export/workspace").json()
         exported = next(item for item in backup["notes"] if item["title"] == "Linked")
-        self.assertEqual([o["type"] for o in exported["content"]["objects"]], ["IText", "IText", "Connector"])
+        self.assertEqual([n["type"] for n in exported["content"]["nodes"]], ["text", "text"])
+        self.assertEqual([(e["fromNode"], e["toNode"]) for e in exported["content"]["edges"]], [("res_a", "res_b")])
 
         imported = self.client.post("/api/import/workspace", json=backup).json()
         titles = {self.client.get(f"/api/notes/{i}").json()["title"]: i for i in imported["noteIds"]}
-        copy = self.client.get(f"/api/notes/{titles['Linked']}").json()["content"]["objects"]
-        by_text = {o["text"]: o["semanticId"] for o in copy if "text" in o}
-        connector = next(o for o in copy if o["type"] == "Connector")
+        copy = self.client.get(f"/api/notes/{titles['Linked']}").json()["content"]
+        by_text = {n["text"]: n["id"] for n in copy["nodes"]}
+        edge = copy["edges"][0]
         self.assertNotEqual(by_text["a"], "res_a")
-        self.assertEqual(connector["fromId"], by_text["a"])
-        self.assertEqual(connector["toId"], by_text["b"])
-        original = self.client.get(f"/api/notes/{note['id']}").json()["content"]["objects"]
-        original_connector = next(o for o in original if o["type"] == "Connector")
-        self.assertEqual((original_connector["fromId"], original_connector["toId"]), ("res_a", "res_b"))
+        self.assertEqual(edge["fromNode"], by_text["a"])
+        self.assertEqual(edge["toNode"], by_text["b"])
+        original = self.client.get(f"/api/notes/{note['id']}").json()["content"]["edges"][0]
+        self.assertEqual((original["fromNode"], original["toNode"]), ("res_a", "res_b"))
 
     def test_invalid_import_is_atomic_and_keeps_existing_workspace(self):
         self.create_text_note()
@@ -334,8 +335,10 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("Renew the passport", found[0]["excerpt"])
 
         reloaded = self.client.get(f"/api/notes/{note['id']}").json()
-        self.assertEqual([item["type"] for item in reloaded["content"]["objects"]], ["Sticky", "Rect", "Sticky", "Image"])
-        self.assertEqual(reloaded["content"]["objects"][0]["stickyColor"], "#ffd60a")
+        nodes = reloaded["content"]["nodes"]
+        self.assertEqual([(n["type"], n["pn"]["type"]) for n in nodes], [("text", "sticky"), ("file", "shape"), ("text", "sticky"), ("file", "image")])
+        self.assertEqual(nodes[0]["color"], "#ffd60a")
+        self.assertRegex(nodes[3]["file"], r"^media/[0-9a-f]{64}\.webp$")  # the picture is a media file, not embedded
 
         with zipfile.ZipFile(io.BytesIO(self.client.get("/api/export/markdown").content)) as archive:
             names = archive.namelist()

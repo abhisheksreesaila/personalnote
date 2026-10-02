@@ -97,6 +97,7 @@ class NoteService:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         # Content-addressed picture and SVG files (`media/<sha256>.<ext>` in notes); beside the database unless told otherwise.
         self.media = MediaStore(media_dir if media_dir is not None else self.database_path.parent / "media")
+        self.keep_fabric_backup()
         with self.connection() as connection:
             self.default_notebook_id = initialize_schema(connection)
             self.ensure_block_ids(connection)
@@ -298,7 +299,7 @@ class NoteService:
         return document, self.canvas_text_of(document), document["page"], plain_text(document)
 
     def convert_legacy_notes(self, connection: sqlite3.Connection) -> None:
-        """Once per old note: Fabric JSON -> JSON Canvas. The database is copied aside first, never over an existing copy.
+        """Once per old note: Fabric JSON -> JSON Canvas. (The database was copied aside first, see keep_fabric_backup.)
 
         Each note converts in its own transaction and is checked by reading the stored text back; a note that fails stays in
         Fabric format (it still opens, the next save converts it) and the failure is logged. Revisions and the change feed are
@@ -308,9 +309,6 @@ class NoteService:
             "SELECT id, content, page_state, title FROM notes WHERE note_type = 'canvas' AND content_format = ? ORDER BY id",
             (FORMAT_FABRIC,),
         ).fetchall()
-        if not rows:
-            return
-        self.keep_fabric_backup(connection)
         for row in rows:
             try:
                 content = json.loads(row["content"])
@@ -343,21 +341,34 @@ class NoteService:
 
         return json.dumps(strip(back), sort_keys=True) == json.dumps(strip(document), sort_keys=True)
 
-    def keep_fabric_backup(self, connection: sqlite3.Connection) -> Path:
-        """Copy the database beside itself as `<name>.fabric-backup` before the first conversion; an existing copy is never replaced."""
+    def keep_fabric_backup(self) -> Path | None:
+        """Before an old database is touched at all, copy it beside itself as `<name>.fabric-backup`.
+
+        "Old" means it has a notes table without the `content_format` column, so the copy is exactly what the previous version
+        wrote (before any column is added or any note converted). An existing copy is never replaced. Nothing is done for a new
+        database or one already upgraded.
+        """
+        if not self.database_path.is_file():
+            return None
         target = self.database_path.with_name(self.database_path.name + FABRIC_BACKUP_SUFFIX)
         if target.exists():
-            return target
-        partial = target.with_name(target.name + ".partial")
-        partial.unlink(missing_ok=True)
-        copy = sqlite3.connect(partial)
+            return None
+        source = sqlite3.connect(self.database_path, timeout=10)
         try:
-            connection.commit()
-            connection.backup(copy)
+            columns = {row[1] for row in source.execute("PRAGMA table_info(notes)")}
+            if not columns or "content_format" in columns:
+                return None
+            partial = target.with_name(target.name + ".partial")
+            partial.unlink(missing_ok=True)
+            copy = sqlite3.connect(partial)
+            try:
+                source.backup(copy)
+            finally:
+                copy.close()
+            partial.replace(target)
+            return target
         finally:
-            copy.close()
-        partial.replace(target)
-        return target
+            source.close()
 
     def ensure_block_ids(self, connection: sqlite3.Connection) -> None:
         """Block ids are unique across the workspace; repair any that are missing, empty or shared (imports, copies)."""
@@ -930,6 +941,28 @@ class NoteService:
         for obj in document["objects"]:
             self.inline_media(obj)
         return to_json_canvas(document)
+
+    def export_rows(self) -> list[dict]:
+        """Every note with its notebook's name and its stored content as is (media still referenced by path), for vault export."""
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT notes.id, notes.note_type, notes.title, notes.content, notes.content_format, notes.page_state, notebooks.name AS notebook_name
+                FROM notes JOIN notebooks ON notebooks.id = notes.notebook_id ORDER BY notes.id
+                """
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "noteType": row["note_type"],
+                "title": row["title"],
+                "notebookName": row["notebook_name"],
+                "content": self.parse_json(row["content"], DEFAULT_CONTENT),
+                "contentFormat": self.format_of(row),
+                "pageState": self.parse_json(row["page_state"], DEFAULT_PAGE_STATE),
+            }
+            for row in rows
+        ]
 
     def inline_media(self, obj: dict) -> None:
         if obj.get("type") == "image" and obj["mediaRef"]["kind"] == "media":

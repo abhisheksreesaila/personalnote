@@ -213,26 +213,27 @@ class TextReadersTests(unittest.TestCase):
                 old = [item["text"].strip() for item in fixture["content"]["objects"] if isinstance(item, dict) and isinstance(item.get("text"), str) and item["text"].strip()]
                 self.assertEqual(sorted(dm.plain_text_blocks(doc)), sorted(old))
 
-    def test_plain_text_keeps_note_texts_order_when_every_text_block_shares_an_origin(self):
-        for name in ("app-text", "cli-created", "benchmark-600", "ink-dots", "edge-transforms"):
-            with self.subTest(name):
-                doc = model_of(name)
-                self.assertEqual(dm.plain_text(doc), canvas_plain_text(BY_NAME[name]["content"]))
+    def test_note_text_reads_the_same_as_the_model_on_every_fixture(self):
+        # F-026 moved note_text (agent CLI read, search) onto the model's reading order, so they cannot differ.
+        for fixture in FIXTURES:
+            with self.subTest(fixture["name"]):
+                doc = model_of(fixture["name"])
+                self.assertEqual(dm.plain_text(doc), canvas_plain_text(fixture["content"], fixture["pageState"]))
 
-    def test_plain_text_reads_by_top_edge_where_note_text_read_by_origin_point(self):
-        # app-objects: a sticky (200 tall) and a text block are both centred on the same line. The sticky's top edge is higher.
-        doc = model_of("app-objects")
-        old = canvas_plain_text(BY_NAME["app-objects"]["content"]).split("\n\n")
-        new = dm.plain_text(doc).split("\n\n")
-        self.assertEqual(old[0], "Meeting notes: ship the export")
-        self.assertEqual(new[0], "Purple note")
-        self.assertEqual(sorted(new), sorted(old))
+    def test_reading_order_is_by_top_edge_not_by_origin_point(self):
+        # app-objects: a sticky (200 tall) and a text block are both centred on the same line. The sticky's top edge is higher,
+        # so it now reads first (the old origin-point rule read "Meeting notes: ship the export" first).
+        text = canvas_plain_text(BY_NAME["app-objects"]["content"], BY_NAME["app-objects"]["pageState"])
+        self.assertEqual(text.split("\n\n")[0], "Purple note")
 
-    def test_search_text_equals_the_search_index_text_on_every_fixture(self):
+    def test_the_search_index_text_is_the_reading_order_projection_on_every_fixture(self):
         for fixture in FIXTURES:
             with self.subTest(fixture["name"]):
                 doc = dm.from_fabric(fixture["content"], fixture["pageState"])
-                self.assertEqual(dm.search_text(doc), NoteService.canvas_text(json.dumps(fixture["content"])))
+                indexed = NoteService.canvas_text(json.dumps(fixture["content"]), "fabric", json.dumps(fixture["pageState"]))
+                self.assertEqual(indexed, dm.plain_text(doc))
+                # the same words as the old stored-order text; only the order moved to top edge first
+                self.assertEqual(sorted(indexed.split()), sorted(dm.search_text(doc).split()))
 
     def test_the_text_readers_agree_on_awkward_notes(self):
         content = {"objects": [
@@ -248,7 +249,7 @@ class TextReadersTests(unittest.TestCase):
         ]}
         doc = dm.from_fabric(content)
         self.assertEqual(dm.plain_text(doc), canvas_plain_text(content))
-        self.assertEqual(dm.search_text(doc), NoteService.canvas_text(json.dumps(content)))
+        self.assertEqual(dm.plain_text(doc), NoteService.canvas_text(json.dumps(content)))
 
     def test_text_in_a_cli_appended_note_reads_in_order(self):
         text = dm.plain_text(model_of("cli-created"))
