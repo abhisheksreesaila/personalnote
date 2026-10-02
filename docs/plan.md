@@ -199,9 +199,14 @@ Captain: "it should be snappier, faster, savable through a SQLite database, the 
 - [x] plain JS document types (text, sticky, shape, ink, image, connector, group), page state, schemaVersion; images reference media by id (prepares F-023)
 - [x] lossless fromFabric/toFabric round-trip on fixtures covering every object type and real-shaped notes; Python mirror with the same fixtures
 Decided: reading order for plain text is by box top edge; F-026 moves note_text/CLI read to the same rule.
-## F-026 Storage switch with originals kept (P-02) [todo]
-Blocked on captain's final yes before it touches real notes.
-## F-027 Leafer read-only render behind a switch (P-03) [doing]
+## F-026 Notes stored as JSON Canvas (Obsidian) + Markdown (P-02) [doing]
+Decision: docs/adr/0002-note-format-json-canvas.md. Captain: "let's use that Obsidian format… get the feature parity… and we'll do the same thing for the plugins."
+- [ ] the document model serializes to and from JSON Canvas 1.0 with `pn` extensions, render-equivalent round trip; the files open in Obsidian (text, images, arrows, ink/shape SVGs visible)
+- [ ] SQLite stores the JSON Canvas per note; search, the agent CLI read/append and Markdown export use the Markdown projection (reading order by top edge)
+- [ ] existing notes convert once; the old database file is kept aside untouched
+- [ ] backup/import and an Obsidian vault export/import round-trip
+## F-027 Leafer renders notes (P-03) [review]
+Direction change: no dual engine; Leafer work accumulates on the `leafer` integration branch until parity, then replaces Fabric on main (F-035/F-036). Main stays usable meanwhile.
 ## F-028 Select, move, transform, delete, z-order, lock, nudge on Leafer (P-04) [todo]
 ## F-029 Text and stickies editing on Leafer, IME fix (P-05) [todo]
 ## F-030 Undo/redo on the document model (P-06) [todo]
