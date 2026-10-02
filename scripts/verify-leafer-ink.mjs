@@ -19,10 +19,22 @@ const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ?
 let stored = { content: fixture.content, pageState: fixture.pageState, revision: 1 }
 const puts = []
 let changeSeq = 1
+let holdPuts = false
+const held = []
+// Lets the held saves through, in order, as the server would have answered them.
+const releaseHeld = async () => {
+  holdPuts = false
+  for (const { route, body } of held.splice(0)) {
+    puts.push(body)
+    Object.assign(stored, { content: body.content, pageState: body.pageState, revision: stored.revision + 1 })
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ revision: stored.revision, resourceId: 'r1' }) })
+  }
+}
 const changeLog = []
 // An agent writes the note: it deletes some objects and appends text blocks. The server stores what it is given.
-const agentWrite = ({ remove = [], append = [] }) => {
+const agentWrite = ({ remove = [], append = [], pages = null }) => {
   const doc = readJsonCanvas(stored.content)
+  if (pages) { doc.page = { ...doc.page, ...pages }; stored.pageState = { columns: doc.page.columns, rows: doc.page.rows } }
   const g = { x: 600, y: 800, width: 200, height: 60, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
   doc.objects = doc.objects.filter((o) => !remove.includes(o.id))
   for (const { id, content } of append) doc.objects.push({ id, type: 'text', mode: 'box', z: doc.objects.length + 50, content, geometry: { ...g } })
@@ -48,6 +60,7 @@ async function mock(page, getNote) {
     if (p === '/notes/1' && req.method() === 'GET') return json({ ...summary, content: note.content, pageState: note.pageState })
     if (p === '/notes/1' && req.method() === 'PUT') {
       const body = JSON.parse(req.postData())
+      if (holdPuts) { held.push({ route, body }); return } // a save that has not come back: the user has unsaved edits, so an agent's write is merged, not loaded
       puts.push(body)
       Object.assign(note, { content: body.content, pageState: body.pageState, revision: note.revision + 1 })
       return json({ revision: note.revision, resourceId: 'r1' })
@@ -311,6 +324,45 @@ try {
     await page.evaluate(() => window.__personalNote.leaferEdits.redo())
   }
 
+  // ---- the same while the user has UNSAVED edits (a save is held): the agent's write goes through the three-way merge, not through a reload
+  {
+    await tool(page, 'pen')
+    await page.evaluate(() => { const { state } = window.__personalNote; state.color = '#20201e'; state.penWidth = 3 })
+    const row = (y) => Array.from({ length: 31 }, (_, k) => ({ x: 140 + k * 20, y }))
+    await stroke(page, cdp, row(975))
+    await page.waitForTimeout(1500) // saved: the base for the merge
+    const [lower] = (await inkObjects(page)).slice(-1)
+    holdPuts = true
+    await stroke(page, cdp, row(1065)) // an unsaved edit of the user's: its save is held
+    await page.waitForTimeout(1200)
+    const unsaved = (await inkObjects(page)).at(-1)
+    const stepsBefore = await steps(page)
+    check('(setup) a save is held, so the user has an unsaved stroke', held.length >= 1)
+    await tool(page, 'eraser')
+    const down = await screenOf(page, 300, 975)
+    const across = await screenOf(page, 450, 975)
+    const past = await screenOf(page, 600, 975)
+    const press = (p, kind, buttons) => cdp.send('Input.dispatchMouseEvent', { type: kind, x: p.x, y: p.y, button: kind === 'mouseMoved' ? 'none' : 'left', buttons, clickCount: kind === 'mouseMoved' ? 0 : 1, pointerType: 'mouse' })
+    await press(down, 'mouseMoved', 0)
+    await press(down, 'mousePressed', 1)
+    await press(across, 'mouseMoved', 1)
+    await nextFrame(page)
+    check('three-way: mid-erase, the pass has cut the stroke on screen', !(await api(page, `() => window.__personalNote.leaferCanvas().hasNode(${JSON.stringify(lower.id)})`)))
+    agentWrite({ append: [{ id: 'agent_merge', content: 'merged' }] })
+    await page.waitForTimeout(5000)
+    const mergedIds = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.map((o) => o.id))
+    check('three-way: the agent\'s text arrives', mergedIds.includes('agent_merge'), JSON.stringify(mergedIds.slice(-4)))
+    check('three-way: the user\'s unsaved stroke is kept', mergedIds.includes(unsaved.id))
+    check('three-way: the stroke the pass was cutting is whole again, in the document and on screen', mergedIds.includes(lower.id) && await api(page, `() => window.__personalNote.leaferCanvas().hasNode(${JSON.stringify(lower.id)})`))
+    check('three-way: every ink object has a node', await page.evaluate(() => { const c = window.__personalNote.leaferCanvas(); return window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'ink').every((o) => c.hasNode(o.id)) }))
+    await press(past, 'mouseMoved', 1)
+    await press(past, 'mouseReleased', 0)
+    await nextFrame(page)
+    check('three-way: letting go commits nothing against the merged document', (await steps(page)) === stepsBefore, `${await steps(page)} vs ${stepsBefore}`)
+    await releaseHeld()
+    await page.waitForTimeout(800)
+  }
+
   // a merge keeps the note's library pictures
   const pictures = await page.evaluate(() => {
     const scene = window.__personalNote.leaferCanvas()
@@ -344,6 +396,24 @@ try {
   await stroke(page, cdp, wave(200, 520, 100, 10, 5))
   const lastStep = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page.columns)
   check('the next stroke is an ordinary step with no page growth in it', lastStep === grid.doc && (await steps(page)) === stepsNow + 1)
+  // the grid a given-up stroke goes back to is the document's NOW: an agent that adds a page while the pen is down keeps it
+  {
+    await tool(page, 'pen')
+    await page.waitForTimeout(1500)
+    const g0 = await api(page, `() => ({ ...window.__personalNote.state.pages })`)
+    const first = await screenOf(page, g0.columns * 860 - 40, 500)
+    const second = await screenOf(page, g0.columns * 860 + 30, 520)
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: first.x, y: first.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'pen', force: 0.5 })
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: second.x, y: second.y, button: 'none', buttons: 1, pointerType: 'pen', force: 0.5 })
+    await nextFrame(page)
+    check('(setup) the pen past the edge grew the grid by one', (await api(page, `() => window.__personalNote.state.pages.columns`)) === g0.columns + 1)
+    agentWrite({ pages: { columns: g0.columns + 1 } })
+    await page.waitForTimeout(5000)
+    await page.evaluate(() => document.querySelector('.ink-surface').dispatchEvent(new PointerEvent('pointercancel', { pointerId: window.__lastPointer, bubbles: true })))
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: second.x, y: second.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'pen', force: 0 })
+    const after = await api(page, `() => ({ shown: window.__personalNote.state.pages.columns, doc: window.__personalNote.leaferEdits.doc.page.columns })`)
+    check('giving the stroke up after an agent added that page keeps the agent\'s page (the grid goes back to the document\'s, not to the one seen when the pen went down)', after.shown === g0.columns + 1 && after.doc === g0.columns + 1, JSON.stringify([g0, after]))
+  }
   check('no page errors', errors.length === 0, errors.join(' | '))
   await context.close()
 

@@ -83,3 +83,34 @@ test('the arrow is drawn from its tail to a head at the end', () => {
   const n = '-?[\\d.]+'
   assert.match(arrowPath(ab), new RegExp(`^M ${n} ${n} L ${n} ${n} M ${n} ${n} L ${n} ${n} L ${n} ${n} Z$`))
 })
+
+// Real Fabric is the oracle for the whole chain: its getBoundingRect of two objects -> the Fabric path's connectorEndpoints and connectorBox
+// -> the box a Fabric Connector would be given. The model rule must put the arrow in exactly the same place.
+test('an arrow between two turned, scaled, stroked objects is where the Fabric path puts it', async () => {
+  const { FabricObject } = await import('fabric')
+  let seed = 9
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const between = (low, high) => low + random() * (high - low)
+  const make = (id, i) => {
+    const geometry = { x: between(0, 700), y: between(0, 900), width: between(20, 200), height: between(20, 160), rotation: i % 3 ? between(-180, 180) : 0, scaleX: between(0.5, 2), scaleY: between(0.5, 2), flipX: false, flipY: false, skewX: 0, skewY: 0 }
+    const strokeWidth = between(0, 6)
+    const model = { id, type: 'shape', kind: 'rect', z: i, geometry, stroke: '#000', strokeWidth }
+    const real = new FabricObject({ left: geometry.x + geometry.width / 2, top: geometry.y + geometry.height / 2, originX: 'center', originY: 'center', width: geometry.width, height: geometry.height, angle: geometry.rotation, scaleX: geometry.scaleX, scaleY: geometry.scaleY, strokeWidth })
+    return { model, real }
+  }
+  let compared = 0
+  for (let i = 0; i < 120; i += 1) {
+    const a = make('a', 0)
+    const b = make('b', 1)
+    const ends = connectorEndpoints(a.real.getBoundingRect(), b.real.getBoundingRect())
+    const made = newConnector([a.model, b.model], { id: 'c', fromId: 'a', toId: 'b', z: 2, rectOf })
+    assert.equal(Boolean(made), ends.visible, 'an arrow is shown exactly when Fabric shows one')
+    if (!made) continue
+    const box = connectorBox(ends.start, ends.end)
+    for (const [mine, theirs] of [[made.geometry.x, box.left], [made.geometry.y, box.top], [made.geometry.width, box.width], [made.geometry.height, box.height]]) assert.ok(Math.abs(mine - theirs) < 1e-7, `${mine} vs ${theirs}`)
+    assert.equal(made.reverseX, box.reverseX)
+    assert.equal(made.reverseY, box.reverseY)
+    compared += 1
+  }
+  assert.ok(compared > 60)
+})

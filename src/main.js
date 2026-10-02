@@ -2341,7 +2341,7 @@ async function showLeaferNote(note, { openView = true } = {}) {
   leaferBase = leaferEdits.doc
   // An arrow the note was stored with out of line (an agent moved what it joins) was brought in line on screen; what is stored is not, yet.
   leaferShowFixed = shown !== decoded.doc
-  if (leaferShowFixed) leaferSource = leaferSourceOf(note.id, leaferEdits.doc)
+  if (leaferShowFixed && !openView) leaferSource = leaferSourceOf(note.id, leaferEdits.doc) // (a note just opened keeps its stored content until it is edited)
   if (openView) openCanvasView()
   leaferCanvas.setColors(pageColors)
   leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })

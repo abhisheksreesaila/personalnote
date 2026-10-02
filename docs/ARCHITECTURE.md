@@ -208,7 +208,7 @@ The canvas route statically loads Fabric, Leafer (F-027; about 77 KiB gzip) and 
 | `app_paths.py` | Default database location shared by the app, CLI and server |
 | `scripts/build-mac-app.sh`, `packaging/` | macOS app bundle build and Linux launcher |
 | `personal_note_cli.py`, `bin/personal-note` | Machine-readable local CLI for agents, using the same service and portability contracts |
-| `src/modules/canvas-leafer/` | Leafer adapter: draws a document-model note read-only (placement, page chrome, sticky shadow, text metrics) |
+| `src/modules/canvas-leafer/` | Leafer adapter: draws and edits a document-model note (placement, page chrome, sticky shadow, text metrics; F-032: `bounds.js`, `pages.js` growth and fold-back in the same undo step, `connectors.js` and `connect-tool.js`, `overlay.js` the ghost page, lift layer and connector halo) |
 | `src/core/document/`, `document_model.py` | Engine-independent document model with render-equivalent Fabric conversion (JS and Python mirrors) |
 | `src/core/document/jsoncanvas.js`, `jsoncanvas-extras.js`, `json_canvas.py` | The model <-> JSON Canvas 1.0 with `pn` extensions: the JS reader/writer the browser ships, the extras (SVG pictures, other apps' canvases, spec validator, projection) for tests and Node, and the complete Python mirror |
 | `src/core/note-codec.js` | Browser load/save adapter between JSON Canvas and the Fabric editor (interim, removed with Fabric) |

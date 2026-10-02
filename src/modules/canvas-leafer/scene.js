@@ -468,6 +468,7 @@ export function createScene({ host, width, height, onOperation = () => null, onD
   function endLift() {
     for (const item of live.lifted) {
       const { node } = item.entry
+      if (entries.get(item.entry.id) !== item.entry) continue // the object went while it was lifted (a merge, a delete): nothing to put down
       node.rotation = item.rotation
       node.shadow = item.shadow ?? undefined
       world.addAt(node, Math.min(item.index, world.children.length))

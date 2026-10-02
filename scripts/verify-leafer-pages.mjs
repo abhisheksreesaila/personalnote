@@ -58,7 +58,6 @@ async function mock(page, getNote) {
     const p = new URL(req.url()).pathname.replace(/^\/api/, '')
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     const note = getNote()
-    if (process.env.PAGES_TRACE) console.log('TRACE', req.method(), p, Date.now() % 100000)
     const summary = { id: 1, resourceId: 'r1', revision: note.revision, noteType: 'canvas', title: 'Pages', notebookId: 1, createdAt: now, updatedAt: now }
     if (p === '/changes') { const since = Number(new URL(req.url()).searchParams.get('since') ?? changeSeq); return json({ sequence: changeSeq, changes: changeLog.filter((c) => c.sequence > since), agents: [] }) }
     if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'N', color: '#76669a', noteCount: 1 }])
@@ -86,7 +85,6 @@ const steps = (page) => page.evaluate(() => window.__personalNote.leaferEdits.st
 const grid = (page) => page.evaluate(() => ({ ...window.__personalNote.state.pages }))
 const nextFrame = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())))
 const objectOf = (d, id) => d.objects.find((o) => o.id === id)
-const rectOf = (object) => boundingRect(object)
 const consistent = (d) => followChanges(d.objects, null, (object) => boundingRect(object)).length === 0 // every connector is where its two ends put it
 const waitSave = async (page, before) => { for (let i = 0; i < 40 && puts.length <= before; i += 1) await page.waitForTimeout(150); await page.waitForTimeout(150); return puts.length > before }
 const savedDoc = () => readJsonCanvas(puts.at(-1).content)
@@ -142,10 +140,7 @@ try {
   await select(page, 'B')
   let cB = await centre(page, 'B')
   const before = await doc(page)
-  const c1Before = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); return s.connectorPathOf?.('c1') ?? null })
   await drag(page, cB, { x: cB.x - 60, y: cB.y + 140 }, { hold: true })
-  const mid = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const n = s.leafer.children[1].children.find((node) => node.id === 'c1'); return n ? 1 : 0 })
-  void mid; void c1Before
   await shot(page, 'lift-mid-drag')
   const midDoc = await doc(page)
   check('while B is dragged the document is still the old one (nothing is recorded until it lands)', JSON.stringify(objectOf(midDoc, 'c1').geometry) === JSON.stringify(objectOf(before, 'c1').geometry) && (await steps(page)) === baseSteps)
@@ -297,7 +292,6 @@ try {
     await drag(page, { x: c.right, y: c.bottom }, { x: c.right + 80, y: c.bottom + 60 }, { hold: true })
     const arrowMid = await info('c1')
     check('while A is resized, the arrow A-B is redrawn live (its node changed before the drop)', JSON.stringify(arrowMid) !== JSON.stringify(arrowAtStart), JSON.stringify([arrowAtStart, arrowMid]))
-    check('and the arrow C-A too', JSON.stringify(await info('c2')) !== JSON.stringify(await scene(page, 'nodeInfo', 'c2')) || true)
     await page.mouse.up()
     await nextFrame(page)
     await page.waitForTimeout(120)
@@ -559,6 +553,107 @@ try {
     await page.evaluate(() => window.__personalNote.leaferEdits.undo())
     d5 = await doc(page)
     check('and one undo puts the picture, the pages and every object back', d5.page.columns === startDoc.page.columns && near(objectOf(d5, 'C').geometry.x, objectOf(startDoc, 'C').geometry.x, 1e-6) && consistent(d5))
+  }
+
+  check('no page errors', errors.length === 0, errors.join(' | '))
+  await context.close()
+
+  // ---------------------------------------------------------------- the most connected object of the 600-object, 12-page note, dragged
+  const big = { content: generateNote(), pageState: { columns: COLUMNS, rows: ROWS }, revision: 1 }
+  for (const dpr of [1, 2]) {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: dpr })
+    const bigPage = await ctx.newPage()
+    const bigErrors = []
+    bigPage.on('pageerror', (error) => bigErrors.push(error.message))
+    await mock(bigPage, () => big)
+    await open(bigPage)
+    const hub = await bigPage.evaluate(() => window.__personalNote.leaferEdits.doc.objects.find((o) => o.id === 'res_rect_3'))
+    const arrows = await bigPage.evaluate(() => window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'connector' && (o.fromId === 'res_rect_3' || o.toId === 'res_rect_3')).length)
+    const objects = await bigPage.evaluate(() => window.__personalNote.leaferEdits.doc.objects.length)
+    await bigPage.evaluate(([gx, gy]) => {
+      const { canvas, state, getCanvasScale, setCanvasViewportOffset } = window.__personalNote
+      state.canvasZoom = 1
+      setCanvasViewportOffset(canvas.getWidth() / 2 - gx * getCanvasScale(), canvas.getHeight() / 2 - gy * getCanvasScale(), true)
+    }, [hub.geometry.x + hub.geometry.width / 2, hub.geometry.y + hub.geometry.height / 2])
+    await bigPage.waitForTimeout(600)
+    await bigPage.evaluate(() => { window.__personalNote.leaferCanvas().clearSelection() })
+    const at = await centre(bigPage, 'res_rect_3')
+    await bigPage.mouse.click(at.x, at.y)
+    await bigPage.waitForTimeout(150)
+    const stepsBeforeBig = await steps(bigPage)
+    await bigPage.evaluate(() => {
+      window.__frames = []
+      window.__proc = []
+      let last = performance.now()
+      const tick = (time) => { window.__frames.push(time - last); last = time; window.__loop = requestAnimationFrame(tick) }
+      window.__loop = requestAnimationFrame(tick)
+      let began = 0
+      window.addEventListener('pointermove', () => { began = performance.now() }, true)
+      window.addEventListener('pointermove', () => { window.__proc.push(performance.now() - began) })
+    })
+    await bigPage.mouse.move(at.x, at.y)
+    await bigPage.mouse.down()
+    for (let i = 1; i <= 120; i += 1) {
+      const t = i / 120
+      await bigPage.mouse.move(at.x + 260 * Math.sin(t * Math.PI), at.y + 180 * t + Math.sin(t * Math.PI * 4) * 30)
+      await nextFrame(bigPage)
+    }
+    const lifted = await dragState(bigPage)
+    await bigPage.mouse.up()
+    await nextFrame(bigPage)
+    const { frames, proc } = await bigPage.evaluate(() => { cancelAnimationFrame(window.__loop); return { frames: window.__frames.slice(2), proc: window.__proc } })
+    const q = (list, f) => [...list].sort((a, b) => a - b)[Math.min(list.length - 1, Math.floor(f * list.length))]
+    console.log(`INFO  600-object note (${objects} objects, ${arrows} arrows on the hub), devicePixelRatio ${dpr}: dragging the hub, frame gap median ${q(frames, 0.5).toFixed(1)} ms, p95 ${q(frames, 0.95).toFixed(1)} ms, max ${Math.max(...frames).toFixed(1)} ms over ${frames.length} frames; time inside the pointer handlers median ${q(proc, 0.5).toFixed(2)} ms, p95 ${q(proc, 0.95).toFixed(2)} ms, max ${Math.max(...proc).toFixed(2)} ms`)
+    check(`dpr ${dpr}: the hub is lifted while it is dragged and its ${arrows} arrows are drawn with it`, lifted.lifted.join() === 'res_rect_3' && arrows >= 6, JSON.stringify(lifted))
+    check(`dpr ${dpr}: p95 frame while dragging the most connected object is within 16.8 ms`, q(frames, 0.95) <= 16.85, `${q(frames, 0.95)}`)
+    check(`dpr ${dpr}: the drop is one undo step and the arrows are in line`, (await steps(bigPage)) === stepsBeforeBig + 1 && consistent(await doc(bigPage)))
+    check(`dpr ${dpr}: no page errors`, bigErrors.length === 0, bigErrors.join(' | '))
+    await ctx.close()
+  }
+
+  // ---------------------------------------------------------------- a phone: the connect button, a finger draws an arrow, a drag past the edge grows the page
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 })
+    const small = await phone.newPage()
+    const phoneErrors = []
+    small.on('pageerror', (error) => phoneErrors.push(error.message))
+    const note = { content: store(baseDoc()), pageState: { columns: 1, rows: 1 }, revision: 1 }
+    await mock(small, () => note)
+    await open(small)
+    const touch = await phone.newCDPSession(small)
+    const connectors = async () => (await doc(small)).objects.filter((o) => o.type === 'connector')
+    const before = (await connectors()).length
+    check('phone: the connect button is live (not dimmed, not inert)', await small.evaluate(() => { const button = document.querySelector('#mobile-connect'); const style = getComputedStyle(button); return style.pointerEvents !== 'none' && Number(style.opacity) > 0.9 }))
+    await small.click('#mobile-connect')
+    check('phone: tapping it turns the connect tool on', await small.evaluate(() => window.__personalNote.state.tool === 'connect' && document.querySelector('#mobile-connect').getAttribute('aria-pressed') === 'true'))
+    const a = await centre(small, 'B')
+    const b = await centre(small, 'C')
+    const point = (p) => ({ x: p.x, y: p.y, id: 0, force: 0.5 })
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(a)] })
+    for (let i = 1; i <= 8; i += 1) { await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point({ x: a.x + ((b.x - a.x) * i) / 8, y: a.y + ((b.y - a.y) * i) / 8 })] }); await nextFrame(small) }
+    await shot(small, 'phone-connect')
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await nextFrame(small)
+    await small.waitForTimeout(150)
+    check('phone: a finger drawn from one object to another makes an arrow', (await connectors()).length === before + 1 && (await doc(small)).objects.some((o) => o.type === 'connector' && o.fromId === 'B' && o.toId === 'C'), JSON.stringify((await connectors()).map((o) => [o.fromId, o.toId])))
+    await small.click('#mobile-connect') // off again
+    await small.evaluate(() => window.__personalNote.setTool('select'))
+    // a drag past the edge at this width: the ghost, the new page, the lift
+    const sb = await centre(small, 'B')
+    const g = objectOf(await doc(small), 'B').geometry
+    const edge = await screenOf(small, W - g.width / 2 - 2 + 40, g.y + g.height / 2)
+    await small.mouse.click(sb.x, sb.y)
+    await small.mouse.move(sb.x, sb.y)
+    await small.mouse.down()
+    for (let i = 1; i <= 8; i += 1) { await small.mouse.move(sb.x + ((edge.x - sb.x) * i) / 8, sb.y); await nextFrame(small) }
+    const state = await dragState(small)
+    check('phone: a drag past the edge lifts the object and grows the page', state.lifted.join() === 'B' && (await small.evaluate(() => window.__personalNote.state.pages.columns)) === 2, JSON.stringify(state))
+    await shot(small, 'phone-grown')
+    await small.mouse.up()
+    await nextFrame(small)
+    check('phone: after the drop the page stays and the lift is gone', (await doc(small)).page.columns === 2 && (await dragState(small)).lifted.length === 0)
+    check('phone: no page errors', phoneErrors.length === 0, phoneErrors.join(' | '))
+    await phone.close()
   }
 } finally {
   await browser.close()

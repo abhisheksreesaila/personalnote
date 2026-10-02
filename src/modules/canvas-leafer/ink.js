@@ -111,7 +111,7 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
 
   function begin(event) {
     const brush = getBrush()
-    gesture = { pointerId: event.pointerId, tool, brush: { ...brush, tool }, rect: surface.getBoundingClientRect(), points: [], pages: { ...getPages() } }
+    gesture = { pointerId: event.pointerId, tool, brush: { ...brush, tool }, rect: surface.getBoundingClientRect(), points: [] }
     const point = toPage(event)
     if (tool === 'eraser') {
       gesture.eraser = createEraser(getDoc())
@@ -165,8 +165,11 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
     gesture = null
     hideLive()
     if (done.tool === 'eraser' && done.eraser.changed) applyErase(done.eraser.revert()) // the pieces go, the strokes it split come back
+    // Growth made for a stroke that is not kept goes again. The grid to go back to is the DOCUMENT's, read now (not the one seen when the
+    // pointer went down): an agent's merge may have changed it since, and the stroke's own growth is never in the document before it lands.
     const now = getPages()
-    if (now.columns !== done.pages.columns || now.rows !== done.pages.rows) setPages(done.pages) // growth made for a stroke that is not kept
+    const grid = getDoc().page
+    if (now.columns !== grid.columns || now.rows !== grid.rows) setPages({ columns: grid.columns, rows: grid.rows })
   }
 
   surface.addEventListener('pointerdown', (event) => {
