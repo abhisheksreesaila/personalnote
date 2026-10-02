@@ -2254,6 +2254,9 @@ function snapshot() {
 }
 
 function commitHistorySnapshot() {
+  // The Leafer canvas keeps its own history (edits.js) and every edit queued its own save; the Fabric snapshot here is of an empty canvas.
+  // Leaving a note used to count that as a change and send the unchanged note back to the server.
+  if (useLeafer && state.activeNoteType === 'canvas') return false
   const next = snapshot()
   if (state.history[state.historyIndex] === next) return false
   state.history = state.history.slice(0, state.historyIndex + 1)
@@ -2568,8 +2571,8 @@ async function selectNoteNow(id) {
     setActiveNoteType(note.noteType)
     if (state.activeNoteType === 'mindmap') {
       await mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
-      state.history = []
-      state.historyIndex = -1
+      state.history = [snapshot()] // what the map was when it was loaded: leaving it unchanged sends nothing
+      state.historyIndex = 0
     } else if (useLeafer) {
       if (!(await showLeaferNote(note)) || sequence !== selectSequence) return
       state.history = []
