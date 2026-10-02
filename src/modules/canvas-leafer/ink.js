@@ -185,8 +185,9 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
     extend(event)
     finish()
   }
-  surface.addEventListener('pointerup', up)
-  surface.addEventListener('pointercancel', (event) => { if (gesture && event.pointerId === gesture.pointerId) cancel() })
+  // Capture: the touch pan and pinch handlers (main.js) stop a touch's pointerup for themselves; a stroke must still see it end.
+  surface.addEventListener('pointerup', up, { capture: true })
+  surface.addEventListener('pointercancel', (event) => { if (gesture && event.pointerId === gesture.pointerId) cancel() }, { capture: true })
   surface.addEventListener('pointerleave', () => { if (!gesture) hideCursor() })
   surface.addEventListener('contextmenu', (event) => event.preventDefault())
 

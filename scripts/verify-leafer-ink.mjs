@@ -227,6 +227,37 @@ try {
   check('no page errors', errors.length === 0, errors.join(' | '))
   await context.close()
 
+  // ---------------------------------------------------------------- a phone: touch draws, a second finger is a pinch and drops the stroke
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 })
+    const small = await phone.newPage()
+    small.on('pageerror', (error) => console.log('INFO  phone page error', error.message))
+    small.on('console', (m) => { if (m.type() === 'error') console.log('INFO  phone console', m.text()) })
+    const note = { content: fixture.content, pageState: fixture.pageState, revision: 1 }
+    await mock(small, () => note)
+    await open(small)
+    const touch = await phone.newCDPSession(small)
+    await small.evaluate(() => { window.__ev = []; for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) document.addEventListener(t, (e) => window.__ev.push([t, e.pointerType, e.target.className || e.target.tagName]), true) })
+    await small.click('#mobile-draw') // the phone's Draw button
+    const base = (await inkObjects(small)).length
+    const spots = []
+    for (let i = 0; i < 12; i += 1) spots.push(await screenOf(small, 200 + i * 20, 300 + Math.sin(i / 2) * 20))
+    const point = (p, id = 0) => ({ x: p.x, y: p.y, id, force: 0.5 })
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(spots[0])] })
+    for (const spot of spots.slice(1)) { await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(spot)] }); await nextFrame(small) }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await nextFrame(small)
+    check('phone: a finger draws a stroke', (await inkObjects(small)).length === base + 1, JSON.stringify(await small.evaluate(() => ({ tool: window.__personalNote.state.tool, surface: getComputedStyle(document.querySelector('.ink-surface')).display, w: innerWidth }))) + JSON.stringify(await small.evaluate(() => window.__ev.slice(-4))))
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(spots[0])] })
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(spots[3])] })
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(spots[3]), point(spots[8], 1)] })
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(spots[4]), point(spots[9], 1)] })
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await nextFrame(small)
+    check('phone: a second finger drops the stroke the first began (a pinch, not a mark)', (await inkObjects(small)).length === base + 1)
+    await phone.close()
+  }
+
   // ---------------------------------------------------------------- latency on the 600-object, 12-page note
   const big = { content: generateNote(), pageState: { columns: COLUMNS, rows: ROWS }, revision: 1 }
   for (const dpr of [1, 2]) {
