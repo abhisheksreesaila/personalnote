@@ -183,3 +183,10 @@ Captain: "if they drag files onto this… what happens to the media… does it c
 - [ ] dropped images and files are stored once as separate files in the app's data folder; notes hold small references
 - [ ] other files (PDF etc.) appear as cards that open on double-click
 - [ ] existing notes with embedded images migrate safely; backup/export include media; agent CLI read/append unaffected
+
+## F-024 LeaferJS parity and performance scout [doing]
+Decision: docs/adr/0001-canvas-engine-leaferjs.md. Captain: "from a feel-wise, Leaf.js is my answer… feature parity… it should be a great editor… see what optimizations we have with respect to GPU… how it performs with our core budget."
+- [ ] feature parity matrix: every canvas feature Personal Note has today (and a great editor needs) vs Fabric vs Leafer (built in / plugin / app code / missing), with effort
+- [ ] measured optimizations on our scene (shadow/text caching, worker or OffscreenCanvas rendering, culling, layer splits, Leafer render config) with before/after numbers
+- [ ] core startup budget check with Leafer in place of Fabric
+- [ ] a migration plan as vertical-slice tickets: document model, Leafer adapter, note migration, feature-by-feature cutover, removal of Fabric
