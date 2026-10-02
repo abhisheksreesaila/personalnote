@@ -7,12 +7,14 @@
 //   - the dock and the speak/draw/connect buttons are reachable and big enough at phone widths
 //
 //   TMPDIR=/var/tmp/x node scripts/verify-leafer-phone.mjs
+import os from 'node:os'
+import path from 'node:path'
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 
 const PORT = 4811
-const SHOTS = process.env.SHOTS || '/var/tmp/f035'
+const SHOTS = process.env.SHOTS || fs.mkdtempSync(path.join(os.tmpdir(), 'pn-shots-')) // a folder of this run's own
 fs.mkdirSync(SHOTS, { recursive: true })
 const now = new Date().toISOString()
 const fixture = JSON.parse(fs.readFileSync(new URL('../tests/fixtures/documents/app-all-tools.json', import.meta.url), 'utf8'))

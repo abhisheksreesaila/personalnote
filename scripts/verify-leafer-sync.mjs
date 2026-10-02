@@ -68,6 +68,8 @@ try {
   await page.goto(`http://127.0.0.1:${PORT}/notes`)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   await page.waitForTimeout(500)
+  await page.evaluate(() => window.__personalNote.setTool('select')) // a note opens with the Text tool; these checks select and drag
+  await page.waitForTimeout(200) // a drag in the first frames after the switch does not lift
 
   const doc = () => page.evaluate(() => JSON.parse(JSON.stringify(window.__personalNote.leaferEdits.doc)))
   const objectOf = (d, id) => d.objects.find((o) => o.id === id)

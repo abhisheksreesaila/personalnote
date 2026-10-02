@@ -5,13 +5,15 @@
 // emoji) writes each character once, and the words keep their line breaks when the edit ends.
 //
 //   TMPDIR=/var/tmp/x node scripts/verify-leafer-text.mjs
+import os from 'node:os'
+import path from 'node:path'
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { readJsonCanvas, writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
 
 const PORT = 4760
-const SHOTS = process.env.SHOTS || '/var/tmp/f029'
+const SHOTS = process.env.SHOTS || fs.mkdtempSync(path.join(os.tmpdir(), 'pn-shots-')) // a folder of this run's own
 fs.mkdirSync(SHOTS, { recursive: true })
 const now = new Date().toISOString()
 const fixture = JSON.parse(fs.readFileSync(new URL('../tests/fixtures/documents/app-all-tools.json', import.meta.url), 'utf8'))

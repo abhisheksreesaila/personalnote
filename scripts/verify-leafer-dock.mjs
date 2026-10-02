@@ -21,6 +21,8 @@ const stored = { 1: { content: fixture.content, pageState: fixture.pageState, re
 const puts = []
 let agents = []
 let feed = { sequence: 1, changes: [] }
+let putGate = null
+let releasePuts = () => {}
 
 const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4829' } }, logLevel: 'error' })
 await server.listen()
@@ -40,6 +42,7 @@ try {
     const m = p.match(/^\/notes\/(\d+)$/)
     if (m && req.method() === 'GET') return json({ ...summary(Number(m[1])), content: stored[m[1]].content, pageState: stored[m[1]].pageState })
     if (m && req.method() === 'PUT') {
+      if (putGate) await putGate
       const body = JSON.parse(req.postData())
       puts.push({ id: Number(m[1]), body })
       stored[m[1]] = { content: body.content, pageState: body.pageState, revision: stored[m[1]].revision + 1 }
@@ -181,19 +184,38 @@ try {
   const moved = await page.evaluate(() => document.querySelector('.agent-flag').getBoundingClientRect().x)
   check('the flag follows the view', v1.x !== v0.x && Math.abs(moved - flag.x - (v1.x - v0.x)) < 2, `${flag.x} -> ${moved}, view ${v0.x} -> ${v1.x}`)
 
-  // an agent moves that block: the flag is placed again at once
+  // an agent moves that block: the flag is placed again at once (checked 300 ms after the note changed, long before the next 2 s poll),
+  // both when the note is simply reloaded and when the agent's change is merged into unsaved local edits
   const lastId = texts.at(-1).id
-  const moved1 = JSON.parse(JSON.stringify(stored[1].content))
-  const node = moved1.nodes.find((n) => n.id === lastId)
-  node.y += 120
-  if (node.pn?.geometry) node.pn.geometry.y += 120
-  stored[1] = { ...stored[1], content: moved1, revision: stored[1].revision + 1 }
-  feed = { sequence: 2, changes: [{ sequence: 2, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: stored[1].revision }] }
-  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await page.waitForTimeout(600)
-  await page.evaluate(() => window.__personalNote.leaferCanvas().view())
-  const after = await page.evaluate(() => document.querySelector('.agent-flag').getBoundingClientRect().bottom)
-  check('after an agent moves the block the flag is placed again', Math.abs(after - (flag.y + 120 * v1.scale)) < 6 && !(await page.evaluate(() => document.querySelector('.agent-flag').hidden)), `${flag.y} -> ${after}`)
+  const flagBottom = () => page.evaluate(() => { const f = document.querySelector('.agent-flag'); return { hidden: f.hidden, bottom: f.getBoundingClientRect().bottom } })
+  const agentMoves = async (label, { unsaved }) => {
+    const scale = (await page.evaluate(() => window.__personalNote.leaferCanvas().view())).scale
+    const start = await flagBottom()
+    const yBefore = (await doc()).objects.find((o) => o.id === lastId).geometry.y
+    if (unsaved) {
+      const other = (await doc()).objects.find((o) => o.id !== lastId && o.type !== 'connector')
+      await page.evaluate(() => window.__personalNote.setTool('select'))
+      await scene('select', [other.id])
+      await scene('nudge', 6, 0)
+    }
+    const moved = JSON.parse(JSON.stringify(stored[1].content))
+    const node = moved.nodes.find((n) => n.id === lastId)
+    node.y += 120
+    if (node.pn?.geometry) node.pn.geometry.y += 120
+    stored[1] = { ...stored[1], content: moved, revision: stored[1].revision + 1 }
+    const sequence = feed.sequence + 1
+    feed = { sequence, changes: [{ sequence, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: stored[1].revision }] }
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await page.waitForFunction(([id, y]) => window.__personalNote.leaferEdits.doc.objects.find((o) => o.id === id).geometry.y > y + 100, [lastId, yBefore], { timeout: 8000 })
+    await page.waitForTimeout(300)
+    const after = await flagBottom()
+    check(`${label}: after an agent moves the block the flag is placed again at once`, !after.hidden && Math.abs(after.bottom - (start.bottom + 120 * scale)) < 6, `${start.bottom} -> ${after.bottom}`)
+  }
+  await agentMoves('reload', { unsaved: false })
+  await settle()
+  putGate = new Promise((resolve) => { releasePuts = resolve }) // a save that does not answer keeps the local edit unsaved
+  await agentMoves('merge into unsaved edits', { unsaved: true })
+  releasePuts()
 
   check('no console errors', errors.length === 0, JSON.stringify(errors))
 } finally {

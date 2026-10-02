@@ -4,6 +4,7 @@
 // move, resize or go; nothing fires while typing; geometry matches the model oracle (src/core/document/placement.js) within 0.5 px.
 //
 //   TMPDIR=/var/tmp/x node scripts/verify-leafer-edit.mjs
+import path from 'node:path'
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
@@ -127,7 +128,7 @@ try {
   await page.mouse.move(cr.right + 8, cr.bottom + 8, { steps: 8 })
   await page.mouse.up()
   check('a marquee selects what it encloses', (await call(page, 'selection')).includes(R), JSON.stringify(await call(page, 'selection')))
-  await page.screenshot({ path: '/var/tmp/f028/selected.png' })
+  if (process.env.SHOTS) { fs.mkdirSync(process.env.SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.SHOTS, 'selected.png') }) }
   await deselect()
   check('selecting alone saves nothing', puts.length === 0, `${puts.length} saves`)
 
