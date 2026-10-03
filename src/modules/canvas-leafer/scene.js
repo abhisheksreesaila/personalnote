@@ -127,7 +127,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const canvasViews = () => [app.canvas.view]
   const gesture = createGestureView({
     elements: canvasViews, size: () => size, margin: () => margin, quiet: perf.gestureQuiet,
-    commit: () => { applyViewNow(); paintNow() },
+    commit: (_, { paint }) => { applyViewNow(); if (paint) paintNow() },
     moved: () => app.canvas.updateClientBounds?.(),
   })
   function placeCanvases() {
@@ -354,12 +354,12 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // The view changed: with the gesture transform the drawn canvases are moved and the note is drawn again when the movement stops (or at once when it
   // outruns the margin); a drag that grows the page grid, and the other modes, draw every step.
   function moveView() {
-    if (!perf.gestureTransform || live.active) { if (perf.gestureTransform) gesture.redraw(view); else applyViewNow(); return }
+    if (!perf.gestureTransform || live.active || committing) { applyView(); return } // (an edit is moving the nodes and the view together: they are drawn together)
     gesture.setView(view)
     placeEditor() // the words being typed follow the view at once (they are a DOM overlay, not part of the picture)
   }
   function applyView() { // the same view again (the layers were moved by a drag's grid shift)
-    if (perf.gestureTransform) gesture.redraw(view)
+    if (perf.gestureTransform) gesture.redraw(view, { paint: false })
     else applyViewNow()
   }
   function applyViewNow() {

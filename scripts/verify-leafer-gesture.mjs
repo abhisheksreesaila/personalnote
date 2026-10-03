@@ -79,7 +79,7 @@ async function diff(page, a, b) {
 
 try {
   // ---- the canvas moves, it is not drawn again
-  const main = await open(null)
+  const main = await open(process.env.GEST_FLAGS ? JSON.parse(process.env.GEST_FLAGS) : null)
   let { page } = main
   const first = await gesture(page)
   check('the canvas is drawn a margin past the window (and the transform is on by default)', first.margin > 0 && first.canvas[0] === 1052 + 2 * first.margin, JSON.stringify(first))
@@ -139,7 +139,7 @@ try {
 
   await main.context.close()
   // ---- a click right after a gesture picks the object under the pointer
-  const second = await open(null, sparse)
+  const second = await open(process.env.GEST_FLAGS ? JSON.parse(process.env.GEST_FLAGS) : null, sparse)
   main.context = second.context
   main.errors = second.errors
   page = second.page
@@ -231,6 +231,36 @@ try {
   await sleep(page, 400)
   const end = await overlayRect()
   check('text editing: the overlay is still over the text after the zoom is drawn', closeEnough(end), JSON.stringify(end))
+  await page.keyboard.press('Escape')
+
+  // a page that grows while typing (F-029), with a zoom going on in between: the overlay stays over the words
+  await page.evaluate(() => { const n = window.__personalNote; n.leaferCanvas().clearSelection(); n.state.canvasZoom = 1; n.setCanvasViewportOffset(n.viewSize.width / 2 - 430 * n.getCanvasScale(), -700) })
+  await sleep(page, 500)
+  const typed = { x: 60, y: 940 } // a page point near the bottom of the first page (1080 high)
+  await page.evaluate((point) => window.__personalNote.leaferCanvas().createText(point), typed)
+  await sleep(page, 200)
+  const expectOverlay = () => page.evaluate((point) => {
+    const s = window.__personalNote.leaferCanvas(); const v = s.view(); const host = document.querySelector('#leafer-host').getBoundingClientRect()
+    const a = document.querySelector('.leafer-text-editor')?.getBoundingClientRect()
+    return a ? { dx: (a.left - host.left - v.x) / v.scale, dy: (a.top - host.top - v.y) / v.scale, rows: s.gridNow().rows } : null // (the page point the overlay's corner is over)
+  }, typed)
+  const t0 = await expectOverlay()
+  for (let i = 0; i < 9; i += 1) { await page.keyboard.type('a line of words'); await page.keyboard.press('Enter') }
+  const t1 = await expectOverlay()
+  check('typing past the bottom edge grows the page grid', t0 && t1 && t1.rows > t0.rows && Boolean(t1), JSON.stringify([t0, t1]))
+  await page.mouse.move(700, 450)
+  await page.keyboard.down('Control')
+  for (let i = 0; i < 4; i += 1) { await page.mouse.wheel(0, -20); await sleep(page, 10) }
+  await page.keyboard.up('Control')
+  await page.keyboard.type('more words')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('and a page grows while the picture is still moving')
+  const t2 = await expectOverlay()
+  check('typing on right after a zoom: the overlay is there, and the grid keeps its pages', Boolean(t2) && t2.rows >= t1.rows, JSON.stringify([t1, t2]))
+  await sleep(page, 500)
+  const t3 = await expectOverlay()
+  const settledState = await gesture(page)
+  check('and it is where it was when the picture is drawn', t3 && !settledState.pending && Math.abs(t3.dx - t2.dx) < 1.5 && Math.abs(t3.dy - t2.dy) < 1.5, JSON.stringify([t2, t3]))
   await page.keyboard.press('Escape')
   check('no page errors', main.errors.length === 0, main.errors.join(' | '))
   await main.context.close()

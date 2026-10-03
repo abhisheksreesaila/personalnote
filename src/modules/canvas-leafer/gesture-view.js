@@ -42,7 +42,7 @@ export const IDENTITY = Object.freeze({ k: 1, tx: 0, ty: 0 })
 const MIN_K = 0.5 // a picture scaled further than this looks too soft (or too small to cover the window): the note is drawn again
 const MAX_K = 2.5
 
-// `elements()` are the canvas elements to move; `moved()` runs after they were moved or put back; `commit(view)` puts the note's layers at `view` and draws them NOW (synchronously), so the new picture
+// `elements()` are the canvas elements to move; `moved()` runs after they were moved or put back; `commit(view, { paint })` puts the note's layers at `view` and (when `paint`) draws them NOW (synchronously), so the new picture
 // and the removal of the transform reach the screen in the same frame.
 export function createGestureView({ elements, commit, moved = () => {}, margin = () => 0, size, quiet = 120, schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id) }) {
   let committed = null // the view the canvas shows
@@ -58,11 +58,11 @@ export function createGestureView({ elements, commit, moved = () => {}, margin =
     moved()
   }
 
-  function draw(view) {
+  function draw(view, paint = true) {
     if (timer) { cancel(timer); timer = null }
     pending = false
     committed = { ...view }
-    commit(committed)
+    commit(committed, { paint })
     clear() // same task as the draw: the new picture and the end of the transform are one frame
   }
 
@@ -96,10 +96,11 @@ export function createGestureView({ elements, commit, moved = () => {}, margin =
     },
     settle,
     // Draw the view now (the note's own edit changed what the layers need, or the window was resized).
-    redraw(view = latest ?? committed) {
+    // `paint: false` leaves the drawing to the engine's next frame (an edit that is still changing the nodes: they and the view reach the screen together).
+    redraw(view = latest ?? committed, { paint = true } = {}) {
       if (!view) return
       latest = { ...view }
-      draw(view)
+      draw(view, paint)
     },
     // Forget what was drawn (the canvases were resized or cleared): the next view is drawn at once.
     reset() { if (timer) cancel(timer); timer = null; pending = false; committed = null; clear() },
