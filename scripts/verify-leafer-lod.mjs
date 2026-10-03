@@ -18,6 +18,8 @@ const stressDoc = generateStressDocument(1500, { columns: 4, rows: 4 })
 stressDoc.objects.push({ id: 'uniform', type: 'shape', kind: 'rect', z: stressDoc.objects.length, fill: '#ffffff', stroke: '#cc0000', strokeWidth: 6, strokeUniform: true, geometry: { x: 300, y: 300, width: 200, height: 120, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 } })
 const stress = { content: writeJsonCanvas(stressDoc, { derived: 'omit' }), pageState: { columns: stressDoc.page.columns, rows: stressDoc.page.rows } }
 const summary = { id: 1, resourceId: 'r1', revision: 1, noteType: 'canvas', title: 'Stress', notebookId: 1, createdAt: now, updatedAt: now }
+// The checks below are about the page bitmaps of the 'bitmaps' mode (below 60%, no hybrid): the hybrid default has its own checks (verify-leafer-hybrid.mjs).
+const OLD = { hybrid: false, dragCrowd: 0, lodZoom: 0.6 }
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 
@@ -79,7 +81,7 @@ const wheel = async (page, count, dy) => { await page.mouse.move(800, 450); for 
 try {
   // ---------------------------------------------------------------- bitmaps on: always, held up for the pictures
   {
-    const { context, page, errors } = await open({ pageBitmaps: 'always', lodQuiet: 60000 })
+    const { context, page, errors } = await open({ ...OLD, pageBitmaps: 'always', lodQuiet: 60000 })
     const scale = await zoomTo(page, 0.3)
     await page.waitForTimeout(800)
     check('the note is zoomed out to 30%', Math.abs(scale - 0.3) < 0.01, String(scale))
@@ -143,10 +145,10 @@ try {
 
   // ---------------------------------------------------------------- zooming through the bitmaps and back, a merge while they show, a failure
   {
-    const { context, page, errors } = await open({ pageBitmaps: 'always', lodQuiet: 60000 })
+    const { context, page, errors } = await open({ ...OLD, pageBitmaps: 'always', lodQuiet: 60000 })
     // the same gestures with the bitmaps off and on: the picture at the end must be the same
     const runs = []
-    for (const perf of [{ gestureTransform: false, pageBitmaps: 'off' }, { pageBitmaps: 'always', lodQuiet: 60000 }]) {
+    for (const perf of [{ ...OLD, gestureTransform: false, pageBitmaps: 'off' }, { ...OLD, pageBitmaps: 'always', lodQuiet: 60000 }]) {
       const { context: c, page: pg } = await open(perf)
       await zoomTo(pg, 0.3)
       await pg.waitForTimeout(500)
@@ -217,7 +219,7 @@ try {
 
   // ---------------------------------------------------------------- by itself: the vectors come back when the movement stops
   {
-    const { context, page, errors } = await open({ pageBitmaps: 'always', lodQuiet: 250 })
+    const { context, page, errors } = await open({ ...OLD, pageBitmaps: 'always', lodQuiet: 250 })
     await zoomTo(page, 0.3)
     await page.waitForTimeout(500)
     await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
@@ -233,7 +235,7 @@ try {
   // ---------------------------------------------------------------- the baked shadow against the live blur it replaces
   {
     const shots = []
-    for (const perf of [{ gestureTransform: false, pageBitmaps: 'off', bakedShadow: true }, { gestureTransform: false, pageBitmaps: 'off', bakedShadow: false }]) {
+    for (const perf of [{ ...OLD, gestureTransform: false, pageBitmaps: 'off', bakedShadow: true }, { ...OLD, gestureTransform: false, pageBitmaps: 'off', bakedShadow: false }]) {
       const { context, page } = await open(perf)
       const pair = []
       for (const zoom of [1, 0.5]) {
@@ -255,7 +257,7 @@ try {
   // ---------------------------------------------------------------- at 60% and above: the same pixels, with the bitmaps on or off
   {
     const shots = []
-    for (const perf of [{ gestureTransform: false, pageBitmaps: 'off' }, { pageBitmaps: 'always' }]) {
+    for (const perf of [{ ...OLD, gestureTransform: false, pageBitmaps: 'off' }, { ...OLD, pageBitmaps: 'always' }]) {
       const { context, page, errors } = await open(perf)
       await zoomTo(page, 1)
       await page.waitForTimeout(600)

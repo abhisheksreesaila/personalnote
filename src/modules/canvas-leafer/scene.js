@@ -117,6 +117,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio, getPages: () => pages, getSize: () => size,
     onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale }, // (not done while the bitmaps showed)
     pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
+    busy: () => live.active || committing || Boolean(textEdit), // no idle work (page bitmaps made again) under a drag, a commit or typing
   })
 
   let view = { x: 0, y: 0, scale: 1 } // the view the person has asked for (every conversion between the window and the page uses it)
@@ -363,7 +364,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     else applyViewNow()
   }
   function applyViewNow() {
-    const bitmaps = lod.view(view) // the vectors are taken off the stage while the bitmaps show a pan or zoom
+    const bitmaps = lod.view(view, { allowEnter: !live.active && !committing && !textEdit }) // the vectors are taken off the stage while the bitmaps show a pan or zoom
     world.set({ x: view.x + margin + live.shift.x * view.scale, y: view.y + margin + live.shift.y * view.scale, scaleX: view.scale, scaleY: view.scale })
     if (!bitmaps) for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale
     drawChrome()
@@ -440,6 +441,36 @@ export function createScene({ host, width, height, onOperation = () => null, onB
 
   const objectsById = (document) => new Map(document.objects.filter((object) => object?.id !== undefined).map((object) => [object.id, object]))
 
+  // Where objects are on the page, for the page bitmaps: only the pages under these places are made again (tiles.js). `undefined` (a place that is not
+  // known, such as a text that was not measured yet) means every page. A connector lies between its ends. Padded for strokes and shadows.
+  const TOUCH_PAD = 24
+  function rectOfObject(object) {
+    if (!object?.geometry) return null
+    const entry = entries.get(object.id)
+    if (object.type === 'connector') {
+      const ends = [entries.get(object.fromId), entries.get(object.toId)].map((end) => end?.rect)
+      if (!ends[0] || !ends[1]) return null
+      const [a, b] = ends.map(rectEdges)
+      return { left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom) }
+    }
+    if (entry?.rect && entry.object === object) return rectEdges(entry.rect)
+    const g = object.geometry
+    const size = g.width !== undefined && g.height !== undefined ? {} : entry?.size ?? null
+    if (!size) return null
+    const edges = rectEdges(boundingRect(object, size))
+    return [edges.left, edges.top, edges.right, edges.bottom].every(Number.isFinite) ? edges : null
+  }
+  function touchedRects(objects) {
+    const rects = []
+    for (const object of objects) {
+      if (!object) continue
+      const edges = rectOfObject(object)
+      if (!edges) return undefined
+      rects.push({ left: edges.left - TOUCH_PAD, top: edges.top - TOUCH_PAD, right: edges.right + TOUCH_PAD, bottom: edges.bottom + TOUCH_PAD })
+    }
+    return rects.length ? rects : undefined
+  }
+
   // Moves every node (and its box and rect) by whole page distances: the page frame's origin moved because pages were added or folded on the
   // top or left. The host moves the view by the same amount, so nothing seems to move.
   function shiftNodes(by) {
@@ -465,10 +496,11 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   function commit(op, { coalesce, selection, floor = null } = {}) {
     if (floor) op = { ...op, page: { before: doc.page, after: { ...doc.page, columns: Math.max(doc.page.columns, floor.columns), rows: Math.max(doc.page.rows, floor.rows) } } }
     if (!op.changes.length && !op.page) return false
-    lod.invalidate()
+    lod.exit() // the vectors are on screen from here: an edit is always live
     const named = new Set(op.changes.map((change) => change.id))
     const { op: whole, shift } = finalizeOp(doc, op, { sizeOf, floor })
     if (!whole.changes.length && !whole.page) return false
+    lod.invalidate(shift.x || shift.y ? undefined : touchedRects([...whole.changes.map((change) => entries.get(change.id)?.object ?? change.before), ...whole.changes.map((change) => change.after)]))
     // The view has followed the growth the drag made already; it follows the rest, and the note's layer goes back to the view's own place.
     const viewShift = { x: shift.x - live.shift.x, y: shift.y - live.shift.y }
     const offset = live.shift
@@ -550,6 +582,15 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       overlays.dragLayer.add(node)
     }
     live.lifted = items
+    // A crowd on the drag layer (hybrid): the layer is drawn at one device pixel per CSS pixel while the crowd moves, and at the screen's own on drop.
+    if (perf.dragCrowd > 0 && pixelRatio > 1 && items.filter((item) => item.lifted).length > perf.dragCrowd) dragLayerRatio(1)
+  }
+
+  // The drag layer is the sky layer's own canvas: its resolution can be changed without touching the note's.
+  function dragLayerRatio(ratio) {
+    const sky = app.sky
+    if (!sky?.canvas || sky.canvas.pixelRatio === ratio) return
+    try { sky.resize({ width: sky.canvas.width, height: sky.canvas.height, pixelRatio: ratio }) } catch (error) { console.warn('drag layer resolution:', error) }
   }
 
   function endLift() {
@@ -563,6 +604,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       world.addAt(node, Math.min(item.index, world.children.length))
     }
     live.lifted = []
+    dragLayerRatio(pixelRatio)
   }
 
   function beginGesture(kind, list) {
@@ -1163,9 +1205,9 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // selection stays, and a text being typed keeps its editor (its new model is used when the session ends).
     applyMerged(next, options = {}) {
       if (options.resolveMedia) resolveMedia = options.resolveMedia
-      lod.invalidate()
       const before = objectsById(doc)
       const after = objectsById(next)
+      lod.invalidate(next.page?.columns !== doc.page?.columns || next.page?.rows !== doc.page?.rows ? undefined : touchedRects([...before.keys(), ...after.keys()].filter((id, at, all) => all.indexOf(id) === at && before.get(id) !== after.get(id)).flatMap((id) => [entries.get(id)?.object ?? before.get(id), after.get(id)])))
       doc = next
       const editingId = textEdit?.id
       keepingSelection(() => {
@@ -1196,8 +1238,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // An undo or a redo (F-034): the document changed in the objects the step names and nowhere else, so only those are drawn again (the
     // note's 600 or 5,000 other nodes are not touched). The page frame did not move (a step that moves it draws the whole note again).
     applyChanged(next, ids) {
-      lod.invalidate()
       const after = objectsById(next)
+      lod.invalidate(next.page?.columns !== doc.page?.columns || next.page?.rows !== doc.page?.rows ? undefined : touchedRects(ids.flatMap((id) => [entries.get(id)?.object, after.get(id)])))
       doc = next
       const editingId = textEdit?.id
       keepingSelection(() => {
@@ -1416,7 +1458,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     view: () => ({ ...view }),
     // Draws model objects (a new stroke, the pieces of a split one) as nodes at their place in the stack.
     inkAdd(objects) {
-      lod.invalidate()
+      lod.invalidate(touchedRects(objects))
       for (const object of objects) {
         const z = object.z ?? 0
         let at = world.children.length
@@ -1426,7 +1468,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         addObject(world, object, boxes, at)
       }
     },
-    inkRemove(ids) { lod.invalidate(); for (const id of ids) { const entry = entries.get(id); if (entry) dropEntry(entry) } },
+    inkRemove(ids) { lod.invalidate(touchedRects(ids.map((id) => entries.get(id)?.object).filter(Boolean))); for (const id of ids) { const entry = entries.get(id); if (entry) dropEntry(entry) } },
     // Hands the op to the host as one undo step. The nodes are already on screen (inkAdd / inkRemove).
     inkCommit: (op) => commit(op),
     // Paints now what changed (so the live stroke can go the moment its final version is on screen).

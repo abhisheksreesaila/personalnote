@@ -12,14 +12,14 @@ const STRESS_OBJECTS = 5400
 const REALISTIC_OBJECTS = 600 // a busy but ordinary desk, for the render-mode comparison
 const NOTE_TITLE = 'Speed test (safe to delete)'
 // The render modes the comparison runs, in turn (perf.js RENDER_MODES has the switches). Another mode is one more entry here and one more entry there.
-// 'default' is the gesture transform (the drawn canvas is moved by the compositor while the view is panned or zoomed); 'classic' is what shipped before.
+// 'default' is the hybrid mode (page bitmaps while navigating, live vectors for editing); 'classic' is what shipped before the gesture transform;
+// 'gestureTransform' is preview 3's default (the drawn canvas is moved by the compositor while the view is panned or zoomed).
 export const COMPARE_MODES = [
-  { id: 'default', label: 'Default (gesture transform)' },
-  { id: 'classic', label: 'Draw every step (before)' },
+  { id: 'default', label: 'Hybrid (default)' },
+  { id: 'classic', label: 'Before (classic)' },
   { id: 'bitmaps', label: 'Bitmaps always' },
+  { id: 'gestureTransform', label: 'Slide picture' },
   { id: 'dpr1', label: 'DPR 1' },
-  { id: 'noShadow', label: 'Shadows off' },
-  { id: 'fullRender', label: 'Full redraw' },
 ]
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 

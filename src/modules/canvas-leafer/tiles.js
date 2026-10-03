@@ -10,11 +10,19 @@
 // page at a time, and used from then on. 'off' never.
 //
 // A bitmap is made with the page's margin (BLEED) so an object across a page edge shows whole.
+//
+// Hybrid (perf.hybrid, the default render mode): the bitmaps are used at EVERY zoom level, from the first step of a pan or zoom, and the vectors come
+// back when the view settles. The pages on screen are made at the full device pixel ratio (crisp at rest zoom), the pages near them a little coarser,
+// the far ones coarse, all inside one memory budget; a view whose pages could not be made crisp inside it (zoomed far in: few objects on screen, so
+// the vectors are cheap) does not use the bitmaps. An edit makes only the pages it touched out of date (`invalidate(rects)`), and everything is
+// made again in idle time: after a settle for the zoom the view has now, after an edit for the touched pages.
 import { Bounds, Canvas, Group, Matrix } from 'leafer-ui'
 import { quietFor } from './perf.js'
 
 const BLEED = 40
-const MEMORY_BUDGET = 96 * 1024 * 1024 // bytes of bitmap for the whole note
+const MEMORY_BUDGET = 96 * 1024 * 1024 // bytes of bitmap for the whole note (not hybrid; hybrid reads perf.tileBudget)
+const CRISP = 0.75 // hybrid: the bitmaps are used only when the pages on screen can be made at this fraction of the device resolution, or better
+const BUSY_RETRY = 150 // ms: idle work waits this long after the last view change or edit step
 const GESTURE_GAP = 500 // ms: view changes closer than this belong to one pan or zoom (the steps of a pan that is slow are far apart)
 const SLOW_FRAME = 26 // ms
 const SLOW_COUNT = 6 // slow frames within the last WINDOW gesture frames mean the machine needs the bitmaps
@@ -25,7 +33,7 @@ const SAMPLE_QUIET = 300 // ms without a view change: the frame sampler stops
 
 // `onExit()` runs when the vectors are back (the scene puts back what it did not do while they were off the stage); `pending()` is true while a
 // picture is still loading (a bitmap made now would show it empty); `raf` times rendered frames.
-export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: initialPixelRatio, getPages, getSize, onExit = () => {}, pending = () => false, now = () => performance.now(), schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), raf = (fn) => requestAnimationFrame(fn) }) {
+export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: initialPixelRatio, getPages, getSize, onExit = () => {}, pending = () => false, busy = () => false, now = () => performance.now(), schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), raf = (fn) => requestAnimationFrame(fn) }) {
   let mode = perf.pageBitmaps
   let pixelRatio = initialPixelRatio
   const layer = new Group({ hittable: false, hitChildren: false })
@@ -49,18 +57,51 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
   // moving frame has to copy and scale, the cheaper it is, and a bitmap is only on screen for a moment. A bitmap far off the zoom of the
   // view is made again when things are quiet.
   const OVERSAMPLE = 1.25
+  const hybrid = () => Boolean(perf.hybrid)
   const tileScale = (view) => {
     const { columns, rows } = getPages()
     const fit = Math.sqrt(MEMORY_BUDGET / Math.max(1, columns * rows * (pageW + 2 * BLEED) * (pageH + 2 * BLEED) * 4))
     return Math.max(0.1, Math.min(view.scale * pixelRatio * OVERSAMPLE, perf.lodZoom * pixelRatio, fit))
   }
-  const stale = (tile, view) => { const ratio = tileScale(view) / (tile.scale || 1); return ratio > 1.6 || ratio < 0.5 }
+  // Hybrid: the resolution of each page's bitmap by how near the page is to the window. `tier` 0 = on screen, 1 = within a tenth of a page of it, 2 = the
+  // rest. Pages on screen get the device resolution while they fit in 80% of the budget, the near ones what is left (75%), the far ones the remainder.
+  const AREA = (pageW + 2 * BLEED) * (pageH + 2 * BLEED) * 4 // bytes of one page's bitmap at scale 1
+  const count = (box) => Math.max(0, box.c1 - box.c0 + 1) * Math.max(0, box.r1 - box.r0 + 1)
+  const tierOf = (box, c, r) => (c >= box.c0 && c <= box.c1 && r >= box.r0 && r <= box.r1 ? 1 : 2)
+  function planFor(view) {
+    const { columns, rows } = getPages()
+    const strict = visible(view, 0)
+    const near = visible(view, 0.1)
+    const nStrict = count(strict)
+    const nNear = count(near) - nStrict
+    const nFar = columns * rows - count(near)
+    const full = view.scale * pixelRatio
+    const budget = (perf.tileBudget ?? 128) * 1024 * 1024
+    const fit = (bytes, n) => (n > 0 ? Math.sqrt(Math.max(0, bytes) / (n * AREA)) : Infinity)
+    const clamp = (value) => Math.max(0.1, value)
+    const s0 = clamp(Math.min(full, fit(budget * 0.8, nStrict)))
+    let left = budget - nStrict * AREA * s0 * s0
+    const s1 = clamp(Math.min(s0, fit(left * 0.75, nNear)))
+    left -= nNear * AREA * s1 * s1
+    const s2 = clamp(Math.min(s1, fit(left, nFar)))
+    return { strict, near, scales: [s0, s1, s2], full, crisp: s0 >= full * CRISP }
+  }
+  // The scale of page (c, r)'s bitmap for `view`, and how far off a bitmap may be before it is made again.
+  function targetFor(view, c, r, plan = planFor(view)) {
+    if (!hybrid()) return { scale: tileScale(view), low: 0.5, high: 1.6 }
+    const tier = plan.strict && c >= plan.strict.c0 && c <= plan.strict.c1 && r >= plan.strict.r0 && r <= plan.strict.r1 ? 0 : tierOf(plan.near, c, r)
+    return { scale: plan.scales[tier], low: tier === 0 ? 0.97 : tier === 1 ? 0.8 : 0.5, high: 1.6 }
+  }
+  const stale = (tile, view, c, r, plan) => {
+    const { scale, low, high } = targetFor(view, c, r, plan)
+    const ratio = (tile.scale || 1) / scale
+    return ratio < low || ratio > high
+  }
 
   // The pages on screen (with a margin of one page's tenth), as { c0, c1, r0, r1 } (inclusive).
-  function visible(view) {
+  function visible(view, margin = 0.1) {
     const { columns, rows } = getPages()
     const size = getSize()
-    const margin = 0.1
     const left = -view.x / view.scale
     const top = -view.y / view.scale
     const right = left + size.width / view.scale
@@ -92,7 +133,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
 
   function buildTile(c, r) {
     const t0 = now()
-    const scale = tileScale(latest)
+    const scale = targetFor(latest, c, r).scale
     const width = pageW + 2 * BLEED
     const height = pageH + 2 * BLEED
     let tile = tiles.get(key(c, r))
@@ -128,15 +169,20 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
   // Idle time: the pages on screen first, then the rest, one page at a time.
   function buildNext() {
     buildTimer = null
-    if (active || (mode === 'off') || !slow || latest.scale >= perf.lodZoom) return // not while the view is zoomed in: nothing would use them
+    if (active || (mode === 'off') || !slow) return
+    if (!hybrid() && latest.scale >= perf.lodZoom) return // not while the view is zoomed in: nothing would use them
+    const plan = hybrid() ? planFor(latest) : null
+    if (plan && !plan.crisp) return // zoomed in too far for the bitmaps to be crisp: the vectors are cheap there, nothing would use them
     prune()
     if (pending()) { buildTimer = schedule(buildNext, 500); return } // a picture is still loading
+    if (busy() || now() - lastView < BUSY_RETRY) { buildTimer = schedule(buildNext, BUSY_RETRY); return } // a gesture or an edit is going on: not now
     const { columns, rows } = getPages()
     const box = visible(latest)
     const order = []
     each(box, (c, r) => order.push([c, r]))
     for (let r = 0; r < rows; r += 1) for (let c = 0; c < columns; c += 1) if (!(c >= box.c0 && c <= box.c1 && r >= box.r0 && r <= box.r1)) order.push([c, r])
-    const next = order.find(([c, r]) => { const tile = tiles.get(key(c, r)); return !tile || tile.built !== version || stale(tile, latest) })
+    if (plan) order.sort((a, b) => (targetFor(latest, a[0], a[1], plan).scale >= plan.scales[0] ? 0 : 1) - (targetFor(latest, b[0], b[1], plan).scale >= plan.scales[0] ? 0 : 1)) // (stable: the pages on screen first)
+    const next = order.find(([c, r]) => { const tile = tiles.get(key(c, r)); return !tile || tile.built !== version || stale(tile, latest, c, r, plan ?? undefined) })
     if (!next) return
     build(next[0], next[1])
     buildTimer = schedule(buildNext, 40)
@@ -150,8 +196,15 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     layer.set({ x: view.x, y: view.y, scaleX: view.scale, scaleY: view.scale })
   }
 
+  // Is the whole window covered by bitmaps good enough to show? (Hybrid also needs them crisp: see CRISP.)
+  function usable(view) {
+    if (!hybrid()) return true
+    return planFor(view).crisp
+  }
+
   function enter(view) {
     const box = visible(view)
+    if (!usable(view)) return false
     if (!ready(box)) { counters.notReady += 1; wantBuild(60); return false }
     at = world.parent ? world.parent.children.indexOf(world) : 0
     const stage = world.parent
@@ -197,7 +250,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
   }
 
   // Called with every view change, before the note's layer is moved. Returns true while the bitmaps are on the stage.
-  function view(next, { zoomedOutLimit = perf.lodZoom } = {}) {
+  function view(next, { zoomedOutLimit = hybrid() ? Infinity : perf.lodZoom, allowEnter = true } = {}) {
     latest = next
     counters.views += 1
     if (mode === 'off') return false
@@ -214,11 +267,16 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       return false
     }
     if (freeTimer) { cancel(freeTimer); freeTimer = null }
+    if (hybrid() && !usable(next)) { // zoomed far in: the pages cannot be made crisp, the vectors carry the view (few objects are on screen)
+      if (active) exit()
+      if (!freeTimer && tiles.size) freeTimer = schedule(() => { freeTimer = null; if (!usable(latest)) { for (const tile of tiles.values()) tile.node.destroy?.(); tiles.clear(); version += 1 } }, FREE_AFTER)
+      return false
+    }
     if (!active) {
       // Is this machine slow at it? The frames the screen really shows while the view moves tell (the steps of a pan come at the pace of the frames).
       if (mode === 'adaptive' && !slow) sample()
       if (slow) wantBuild(400) // (a no-op once they are all made)
-      if (!slow || !moving) return false
+      if (!slow || !allowEnter || (!moving && !hybrid())) return false
       if (!enter(next)) return false
     } else place(next)
     if (quietTimer) cancel(quietTimer)
@@ -230,10 +288,18 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     view,
     exit,
     // The note changed (an edit, a merge, an undo, new fonts): every bitmap is out of date; they are made again when things are quiet.
-    invalidate() {
+    // Hybrid: `rects` ([{ left, top, right, bottom }] in page space) are the places that changed; only the pages they touch are out of date.
+    invalidate(rects) {
       exit()
-      version += 1
-      wantBuild(900)
+      if (hybrid() && rects?.length) {
+        for (const [id, tile] of tiles) {
+          const [c, r] = id.split(',').map(Number)
+          const left = c * pageW - BLEED
+          const top = r * pageH - BLEED
+          if (rects.some((rect) => rect.right >= left && rect.left <= left + pageW + 2 * BLEED && rect.bottom >= top && rect.top <= top + pageH + 2 * BLEED)) tile.built = -1
+        }
+      } else version += 1
+      wantBuild(hybrid() ? 500 : 900)
     },
     // A different note, or a different grid: the bitmaps of the old one go.
     reset() {
@@ -253,9 +319,19 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       for (const tile of tiles.values()) tile.node.destroy?.()
       tiles.clear()
       version += 1
+      wantBuild(600)
     },
     get active() { return active },
-    stats: () => ({ mode, active, slow, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, ...counters }),
+    stats: () => {
+      let bytes = 0
+      for (const tile of tiles.values()) { const { width, height } = tile.node.canvas?.view ?? {}; bytes += (width ?? 0) * (height ?? 0) * 4 }
+      let visibleReady = true
+      const plan = hybrid() ? planFor(latest) : null
+      each(visible(latest, 0), (c, r) => { const tile = tiles.get(key(c, r)); if (!tile || tile.built !== version || stale(tile, latest, c, r, plan ?? undefined)) visibleReady = false })
+      return { mode, active, slow, hybrid: hybrid(), visibleReady, crisp: plan ? plan.crisp : null, scales: plan ? plan.scales : null, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, bytes, ...counters }
+    },
+    // For checks: the tile of one page ({ c, r }) as { scale, built } (or null).
+    tileOf(c, r) { const tile = tiles.get(key(c, r)); return tile ? { scale: tile.scale, built: tile.built === version, canvas: tile.node.canvas?.view } : null },
     // For checks: build every page now.
     buildAll() {
       const { columns, rows } = getPages()
