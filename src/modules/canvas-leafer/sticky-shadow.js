@@ -15,10 +15,10 @@ export const liveStickyShadow = () => ({ x: 0, y: OFFSET_Y, blur: BLUR, color: '
 export function bakedStickyShadow(width, height) {
   const w = Math.max(1, Math.round(width))
   const h = Math.max(1, Math.round(height))
-  const key = `${w}x${h}`
+  const ratio = pixelRatioFor(globalThis.devicePixelRatio, readPerf())
+  const key = `${w}x${h}@${ratio}`
   let entry = cache.get(key)
   if (entry) return entry
-  const ratio = pixelRatioFor(globalThis.devicePixelRatio, readPerf())
   const canvas = document.createElement('canvas')
   canvas.width = Math.ceil((w + MARGIN * 2) * ratio)
   canvas.height = Math.ceil((h + MARGIN * 2) * ratio)

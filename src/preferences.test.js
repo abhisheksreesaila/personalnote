@@ -48,3 +48,13 @@ test('writes and reads back', () => {
   writePreferences(storage, { fontFamily: 'monospace', fontSize: 30 })
   assert.deepEqual(readPreferences(storage), { fontFamily: 'monospace', fontSize: 30 })
 })
+
+test('the render mode is remembered, the default is not stored, an unknown mode is dropped', () => {
+  const storage = memoryStorage()
+  writePreferences(storage, { renderMode: 'bitmaps' })
+  assert.equal(readPreferences(storage).renderMode, 'bitmaps')
+  writePreferences(storage, { renderMode: 'default' })
+  assert.equal(readPreferences(storage).renderMode, undefined)
+  writePreferences(storage, { renderMode: 'noShadow' }) // (a speed-test-only mode)
+  assert.equal(readPreferences(storage).renderMode, undefined)
+})

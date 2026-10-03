@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { formatReport, summarize, verdict } from './report.js'
+import { comparisonRows, formatComparison, formatReport, summarize, verdict } from './report.js'
 import { generateStressDocument } from './stress-note.js'
 
 test('summarize gives p50, p95 and max, ignores junk and counts the slow frames', () => {
@@ -39,4 +39,16 @@ test('the stress note is the same every time, has the mix of a busy desk and mor
   assert.equal(new Set(a.objects.map((object) => object.id)).size, a.objects.length)
   const ids = new Set(a.objects.map((object) => object.id))
   for (const connector of types.connector) assert.ok(ids.has(connector.fromId) && ids.has(connector.toId))
+})
+
+test('the comparison has a table per note with a column per render mode', () => {
+  const modes = [{ id: 'default', label: 'Default' }, { id: 'dpr1', label: 'DPR 1' }]
+  const row = (p95) => ({ p50: 16.7, p95, max: p95 + 5 })
+  const comparison = { modes, notes: [{ label: 'the stress note', objects: 5400, results: { default: { rows: { 'Pan (100%)': row(30), Zoom: row(40) }, failed: [] }, dpr1: { rows: { 'Pan (100%)': row(20) }, failed: ['Typing: no editor'] } } }] }
+  const rows = comparisonRows(comparison.notes[0], modes)
+  assert.deepEqual(rows.map((r) => [r.name, ...r.cells]), [['Pan (100%)', '16.7/30/35', '16.7/20/25'], ['Zoom', '16.7/40/45', '-']])
+  const text = formatComparison(comparison)
+  assert.match(text, /Render modes on the stress note \(5400 objects\)/)
+  assert.match(text, /Default\s+DPR 1/)
+  assert.match(text, /DPR 1: could not measure Typing/)
 })

@@ -100,14 +100,16 @@ const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y
 export function createScene({ host, width, height, onOperation = () => null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, defaults = {} }) {
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
   const perf = readPerf()
-  const app = new App({ view: host, width, height, pixelRatio: pixelRatioFor(globalThis.devicePixelRatio, perf), tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
+  let pixelRatio = pixelRatioFor(globalThis.devicePixelRatio, perf)
+  const app = new App({ view: host, width, height, pixelRatio, tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
   const leafer = app.tree
+  for (const layer of [app.tree, app.sky]) if (layer.renderer?.config) layer.renderer.config.usePartRender = perf.partRender
   const chrome = new Group({ hittable: false })
   const world = new Group()
   leafer.add(chrome)
   leafer.add(world)
   // Page bitmaps for a view that is moving while zoomed out (tiles.js); `pages` and `size` are declared just below.
-  const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio: pixelRatioFor(globalThis.devicePixelRatio, perf), getPages: () => pages, getSize: () => size,
+  const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio, getPages: () => pages, getSize: () => size,
     onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale }, // (not done while the bitmaps showed)
     pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
   })
@@ -1140,6 +1142,16 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     setListening(on) { listening = Boolean(on); drawChrome() },
     setColors(next) { colors = next; overlays.setColors(next); drawChrome() },
     setView(next) { view = { ...next }; applyView() },
+    // `window.__pnPerf` changed (the speed test's render-mode comparison, Settings > Render mode): take the new switches in without a reload. The
+    // sticky shadows are made when a note is loaded, so the caller loads the document again afterwards (see main.js).
+    applyPerf() {
+      Object.assign(perf, readPerf())
+      pixelRatio = pixelRatioFor(globalThis.devicePixelRatio, perf)
+      for (const layer of [app.tree, app.sky]) if (layer.renderer?.config) layer.renderer.config.usePartRender = perf.partRender
+      app.resize({ width: size.width, height: size.height, pixelRatio })
+      lod.retune({ mode: perf.pageBitmaps, pixelRatio })
+      drawChrome()
+    },
     resize(nextWidth, nextHeight) {
       size = { width: nextWidth, height: nextHeight }
       app.resize({ width: nextWidth, height: nextHeight })

@@ -324,6 +324,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .delete-note-action:hover { background: #f4dedb; }
 .delete-note-action svg { width: 15px; }
 .settings-section { padding: 18px 6px; border-bottom: 1px solid rgba(99,86,67,.13); }
+.settings-advanced { margin: 4px 0 8px; font-size: 11px; color: #5F584F; }
+.settings-advanced summary { cursor: pointer; padding: 6px 0; }
+.settings-advanced select { font: inherit; max-width: 170px; }
 .settings-section-label { margin: 0 0 9px; color: #766e63; font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .setting-field-heading { min-height: 28px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; color: #5f584f; font-size: 11px; }
 .setting-field-heading small { color: #9a9185; font-size: 9px; }

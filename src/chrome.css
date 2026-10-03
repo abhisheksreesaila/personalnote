@@ -469,7 +469,9 @@
   .speed-meter[hidden] { display: none; }
   /* The speed test panel (F-034): a corner box while it runs, the results in the middle when it is done; the skin's own glass. */
   .speedtest-panel { position: fixed; inset: auto 16px 16px auto; z-index: 70; margin: 0; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 12px 14px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--glass-solid); color: var(--sk-ink); font-size: 12px; }
-  .speedtest-panel.is-done { inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(560px, calc(100vw - 32px)); }
+  .speedtest-panel.is-done { inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+  .speedtest-panel h3 { margin: 12px 0 2px; font-size: 12px; }
+  .speedtest-panel .speedtest-compare td, .speedtest-panel .speedtest-compare th { white-space: nowrap; font-size: 11px; }
   .speedtest-panel table { width: 100%; border-collapse: collapse; }
   .speedtest-panel td, .speedtest-panel th { padding: 2px 6px; border-bottom: 1px solid var(--sk-line); text-align: right; }
   .speedtest-panel td:first-child, .speedtest-panel th:first-child { text-align: left; }

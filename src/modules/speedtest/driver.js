@@ -22,6 +22,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export function createSpeedTest({ host, onProgress = () => {}, now = () => performance.now() }) {
   let stopped = false
+  let k = 1 // how much of each scenario is run: 1 is the full speed test, less is the quick version the render-mode comparison runs once per mode
+  const n = (count) => Math.max(8, Math.round(count * k))
   // Before every step: stopped by the person, and (the host's guard) still on the stress note. Edits never land in any other note.
   const check = () => { if (stopped) throw Object.assign(new Error('stopped'), { stopped: true }); host.guard?.() }
 
@@ -65,7 +67,8 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     const x = box.left + box.width / 2
     const y = box.top + box.height / 2
     return gaps(async () => {
-      for (let i = 0; i < 120; i += 1) { check(); wheel(host.workspace, { dx: i < 60 ? 6 : -6, dy: i < 60 ? 24 : -24, x, y }); await frame() }
+      const total = n(120)
+      for (let i = 0; i < total; i += 1) { check(); wheel(host.workspace, { dx: i < total / 2 ? 6 : -6, dy: i < total / 2 ? 24 : -24, x, y }); await frame() }
     })
   }
 
@@ -74,7 +77,8 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     const x = box.left + box.width / 2
     const y = box.top + box.height / 2
     return gaps(async () => {
-      for (let i = 0; i < 120; i += 1) { check(); wheel(host.workspace, { dy: i < 60 ? -12 : 12, ctrl: true, x, y }); await frame() }
+      const total = n(120)
+      for (let i = 0; i < total; i += 1) { check(); wheel(host.workspace, { dy: i < total / 2 ? -12 : 12, ctrl: true, x, y }); await frame() }
     })
   }
 
@@ -130,12 +134,12 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     const one = picks[Math.floor(picks.length / 2)]
     if (!one) return { failed: 'nothing to drag in view' }
     await click(one)
-    out.one = await gaps(() => dragTo(one, { x: one.x + 160, y: one.y + 90 }, 90))
+    out.one = await gaps(() => dragTo(one, { x: one.x + 160, y: one.y + 90 }, n(90)))
     const crowd = visible(['sticky', 'shape', 'text']).slice(0, 40)
     host.scene.select(crowd.map((entry) => entry.id))
     await frame()
     const lead = find(crowd[0].id, ['sticky', 'shape', 'text']) ?? crowd[0]
-    out.many = await gaps(() => dragTo(lead, { x: lead.x + 120, y: lead.y + 70 }, 60))
+    out.many = await gaps(() => dragTo(lead, { x: lead.x + 120, y: lead.y + 70 }, n(60)))
     out.crowd = crowd.length
     host.scene.clearSelection()
     return out
@@ -180,7 +184,7 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     const gapList = []
     const lat = []
     const gapsRun = gaps(async () => {
-      for (let s = 0; s < 4; s += 1) {
+      for (let s = 0; s < (k < 1 ? 2 : 4); s += 1) {
         const x0 = rect.left + 200 + s * 14
         const y0 = rect.top + 160 + s * 60
         const point = (i) => ({ x: x0 + (360 * i) / 60, y: y0 + Math.sin((i / 60) * Math.PI * 2) * 50, kind: 'pen', pressure: 0.3 + 0.6 * Math.sin((i / 60) * Math.PI) })
@@ -209,7 +213,7 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     area.setSelectionRange(area.value.length, area.value.length)
     let lat = []
     const list = await gaps(async () => {
-      lat = await latencies((i) => { area.dispatchEvent(new KeyboardEvent('keydown', { key: TEXT[i % TEXT.length], bubbles: true })); document.execCommand('insertText', false, TEXT[i % TEXT.length]) }, 80)
+      lat = await latencies((i) => { area.dispatchEvent(new KeyboardEvent('keydown', { key: TEXT[i % TEXT.length], bubbles: true })); document.execCommand('insertText', false, TEXT[i % TEXT.length]) }, n(80))
     })
     area.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     await sleep(100)
@@ -266,5 +270,39 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     return { results, failed }
   }
 
-  return { run, stop() { stopped = true } }
+  // The quick version for the render-mode comparison: pan, zoom, drag, pen and typing on the note that is open, one row each (named for the table).
+  async function runQuick() {
+    stopped = false
+    k = 0.5
+    const rows = {}
+    const failed = []
+    const add = (name, values, unit) => { rows[name] = { ...summarize(values), ...(unit ? { unit } : {}) } }
+    try {
+      await host.setView({ zoom: 'fit' })
+      await sleep(300)
+      check(); add('Pan (zoomed out)', await pan())
+      check(); add('Zoom', await zoom())
+      await host.setView({ zoom: 1 })
+      await sleep(300)
+      check(); add('Pan (100%)', await pan())
+      check()
+      const dragged = await drag()
+      if (dragged.failed) failed.push(`Drag: ${dragged.failed}`)
+      else { add('Drag one object', dragged.one); add('Drag many objects', dragged.many) }
+      check()
+      const pen1 = await pen()
+      add('Pen (frames)', pen1.frames)
+      add('Pen (input to frame)', pen1.lat, 'ms')
+      check()
+      const typed = await typing()
+      if (typed.failed) failed.push(`Typing: ${typed.failed}`)
+      else { add('Typing (frames)', typed.frames); add('Typing (key to frame)', typed.lat, 'ms') }
+    } finally {
+      k = 1
+      host.scene.clearSelection()
+    }
+    return { rows, failed }
+  }
+
+  return { run, runQuick, stop() { stopped = true } }
 }

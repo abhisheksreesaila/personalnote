@@ -5,11 +5,22 @@
 // delete)", removed when the test ends) and saves nothing while it runs, so no note of the person's is touched. The results are shown, can be
 // copied as text, and are saved to a file in the app's data folder.
 import { createSpeedTest } from './driver.js'
-import { formatReport, verdict } from './report.js'
+import { comparisonRows, formatComparison, formatReport, verdict } from './report.js'
 import { generateStressNote } from './stress-note.js'
 
 const STRESS_OBJECTS = 5400
+const REALISTIC_OBJECTS = 600 // a busy but ordinary desk, for the render-mode comparison
 const NOTE_TITLE = 'Speed test (safe to delete)'
+// The render modes the comparison runs, in turn (perf.js RENDER_MODES has the switches). Another mode, say a gesture transform, is one more entry here
+// and one more entry there.
+export const COMPARE_MODES = [
+  { id: 'default', label: 'Default' },
+  { id: 'bitmaps', label: 'Bitmaps always' },
+  { id: 'dpr1', label: 'DPR 1' },
+  { id: 'noShadow', label: 'Shadows off' },
+  { id: 'fullRender', label: 'Full redraw' },
+]
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function gpuName() {
   try {
@@ -52,51 +63,104 @@ export async function runSpeedTest(env) {
   document.body.append(panel)
   if (typeof panel.showPopover === 'function') panel.showPopover() // (a browser without popovers shows it as a plain fixed box: the same styles)
   let test = null
-  let noteId = null
+  const noteIds = [] // every note this run made; all are removed at the end
+  let currentId = null // the note the test may touch right now
+  let comparing = false
 
   const header = (lead) => `<h2>Speed test</h2><p>${lead}</p>`
-  panel.innerHTML = `${header('Making a stress note of 5,000+ objects. Your notes are not touched. Please leave the mouse and keyboard alone for about a minute.')}<div inert><progress max="9" value="0"></progress><div class="speedtest-step">Starting</div></div><div class="portability-actions"><button data-act="stop">Stop</button></div>`
+  // Before it starts: one choice, and one click.
+  panel.innerHTML = `${header('Measures how smoothly this computer draws a note: panning, zooming, dragging, pen and typing. Your notes are not touched.')}
+    <label class="setting-row" for="speedtest-compare"><span>Compare render modes</span><input type="checkbox" id="speedtest-compare" checked /></label>
+    <p class="portability-help">Also runs a shorter version of the test under each way of drawing the canvas, on the big note and on a note of ${REALISTIC_OBJECTS} objects, and puts them side by side. About 3 minutes in all; without it, about 1 minute.</p>
+    <div class="portability-actions"><button data-act="start">Start</button><button data-act="cancel">Cancel</button></div>`
+  const choice = await new Promise((resolve) => {
+    panel.querySelector('[data-act="start"]').addEventListener('click', () => resolve({ compare: panel.querySelector('#speedtest-compare').checked }))
+    panel.querySelector('[data-act="cancel"]').addEventListener('click', () => resolve(null))
+  })
+  if (!choice) { panel.remove(); return null }
+  panel.innerHTML = `${header('Making a stress note of 5,000+ objects. Your notes are not touched. Please leave the mouse and keyboard alone.')}<div inert><progress max="9" value="0"></progress><div class="speedtest-step">Starting</div></div><div class="portability-actions"><button data-act="stop">Stop</button></div>`
   panel.querySelector('[data-act="stop"]').addEventListener('click', () => test?.stop())
+  const progress = ({ name, done, total }) => {
+    const bar = panel.querySelector('progress')
+    if (bar) { bar.max = total; bar.value = done }
+    const step = panel.querySelector('.speedtest-step')
+    if (step) step.textContent = name
+  }
 
   let report = null
   try {
     const stress = generateStressNote(STRESS_OBJECTS)
-    const note = await env.api('/notes', { method: 'POST', body: JSON.stringify({ title: NOTE_TITLE, notebookId: env.notebookId, noteType: 'canvas' }) })
-    noteId = note.id
-    await env.api(`/notes/${note.id}`, { method: 'PUT', body: JSON.stringify({ title: NOTE_TITLE, notebookId: env.notebookId, revision: note.revision, pageState: stress.pageState, content: stress.content }) })
+    const makeNote = async (made) => {
+      const note = await env.api('/notes', { method: 'POST', body: JSON.stringify({ title: NOTE_TITLE, notebookId: env.notebookId, noteType: 'canvas' }) })
+      noteIds.push(note.id)
+      await env.api(`/notes/${note.id}`, { method: 'PUT', body: JSON.stringify({ title: NOTE_TITLE, notebookId: env.notebookId, revision: note.revision, pageState: made.pageState, content: made.content }) })
+      return note
+    }
+    const note = await makeNote(stress)
     env.pause(true) // before anything is opened: nothing is saved while the test runs
     const t0 = performance.now()
     await env.openNote(note.id)
+    currentId = note.id
     if (env.activeNoteId() !== note.id) throw new Error('the stress note did not open')
     const openMs = performance.now() - t0
     const objects = env.host.edits.doc.objects.length
     test = createSpeedTest({
-      host: { ...env.host, guard: () => { if (env.activeNoteId() !== note.id) throw Object.assign(new Error('the open note is not the stress note'), { aborted: true }) } },
-      onProgress: ({ name, done, total }) => {
-        const bar = panel.querySelector('progress')
-        if (bar) { bar.max = total; bar.value = done }
-        const step = panel.querySelector('.speedtest-step')
-        if (step) step.textContent = name
-      },
+      host: { ...env.host, guard: () => { if (env.activeNoteId() !== currentId) throw Object.assign(new Error('the open note is not the stress note'), { aborted: true }) } },
+      onProgress: progress,
     })
     const { results, failed } = await test.run()
+    let comparison = null
+    if (choice.compare && !failed.some((entry) => /stopped/.test(entry))) {
+      comparing = true
+      const realistic = generateStressNote(REALISTIC_OBJECTS, { columns: 2, rows: 3 })
+      comparison = { modes: COMPARE_MODES, notes: [] }
+      const total = COMPARE_MODES.length * 2
+      let done = 0
+      const sets = [{ label: 'the stress note', objects }, { label: `a realistic note`, make: realistic }]
+      for (const set of sets) {
+        if (set.make) {
+          const made = await makeNote(set.make)
+          await env.openNote(made.id)
+          currentId = made.id
+          if (env.activeNoteId() !== made.id) throw new Error('the realistic note did not open')
+          set.objects = env.host.edits.doc.objects.length
+        }
+        const entry = { label: set.label, objects: set.objects, results: {} }
+        comparison.notes.push(entry)
+        for (const mode of COMPARE_MODES) {
+          progress({ name: `Comparing render modes: ${set.label}, ${mode.label}`, done, total })
+          await env.host.setRenderMode(mode.id)
+          await sleep(500)
+          try { entry.results[mode.id] = await test.runQuick() } catch (error) {
+            if (!error.stopped) throw error
+            failed.push('comparison stopped before the end')
+            break
+          }
+          done += 1
+        }
+        if (failed.some((text) => /comparison stopped/.test(text))) break
+      }
+      progress({ name: 'Done', done: total, total })
+    }
     const run = {
       when: new Date().toISOString(), app: 'Personal Note', ...environment(env),
       note: { objects, pages: env.pageCount() },
       results: [{ name: 'Open the note (ms)', unit: 'ms', p50: Math.round(openMs), p95: null, max: null, n: 1, slow: 0 }, ...results.map((row) => ({ ...row, verdict: row.unit === 'ms' ? '' : verdict(row.p95) }))],
       failed,
+      ...(comparison ? { comparison } : {}),
     }
-    report = { run, text: formatReport(run) }
+    report = { run, text: formatReport(run) + (comparison ? `\n${formatComparison(comparison)}` : '') }
   } catch (error) {
     console.error('Speed test failed', error)
     panel.innerHTML = `${header(`The speed test could not run: ${escape(error.message || error)}`)}<div class="portability-actions"><button data-act="close">Close</button></div>`
     panel.querySelector('[data-act="close"]').addEventListener('click', () => panel.remove())
   } finally {
     env.pause(false)
+    if (comparing) { try { await env.host.setRenderMode('saved') } catch (error) { console.error(error) } } // the person's own render mode again
     try { await env.restore() } catch (error) { console.error(error) }
-    if (noteId !== null) {
-      try { await env.api(`/notes/${noteId}`, { method: 'DELETE' }) } catch (error) { console.error('The speed test note could not be removed', error) }
-      env.forgetNote(noteId)
+    for (const id of noteIds) {
+      try { await env.api(`/notes/${id}`, { method: 'DELETE' }) } catch (error) { console.error('The speed test note could not be removed', error) }
+      env.forgetNote(id)
     }
   }
   if (!report) return null
@@ -113,6 +177,9 @@ export async function runSpeedTest(env) {
   panel.innerHTML = `${header('Milliseconds per frame, so 16.7 is 60 frames a second. Lower is better.')}
     <p class="portability-help">${escape(report.run.engine)} on ${escape(report.run.platform)}, ${escape(report.run.host)}, ${escape(report.run.dpr)}x screen (${escape(report.run.screen)}), ${escape(report.run.cores)} cores${report.run.gpu ? `, ${escape(report.run.gpu)}` : ''}. Stress note: ${report.run.note.objects} objects on ${escape(report.run.note.pages)} pages.</p>
     <table><thead><tr><th></th><th>p50</th><th>p95</th><th>max</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    ${(report.run.comparison?.notes ?? []).map((note) => `<h3>Render modes on ${escape(note.label)} (${escape(note.objects)} objects)</h3>
+    <p class="portability-help">p50/p95/max in milliseconds per frame (lower is better).</p>
+    <table class="speedtest-compare"><thead><tr><th></th>${report.run.comparison.modes.map((mode) => `<th>${escape(mode.label)}</th>`).join('')}</tr></thead><tbody>${comparisonRows(note, report.run.comparison.modes).map((row) => `<tr><td>${escape(row.name)}</td>${row.cells.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`).join('')}
     ${report.run.failed.length ? `<p class="portability-help">Could not measure: ${escape(report.run.failed.join('; '))}</p>` : ''}
     <div class="portability-actions"><button data-act="copy">Copy results</button><button data-act="again">Run again</button><button data-act="close">Close</button></div>
     <p class="portability-help">${saved ? `Saved to ${escape(saved)}` : 'The results could not be saved to a file; use Copy results.'}</p>`

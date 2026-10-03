@@ -39,3 +39,31 @@ export function formatReport(run) {
   if (run.failed?.length) { lines.push(''); lines.push(`Could not measure: ${run.failed.join('; ')}`) }
   return lines.join('\n')
 }
+
+// The render-mode comparison (Compare render modes): the same quick scenarios run on each note under each render mode.
+// `comparison`: { modes: [{ id, label }], notes: [{ label, objects, results: { [modeId]: { rows: { [scenario]: { p50, p95, max, unit? } }, failed: [] } } }] }
+// One table per note: a row per scenario, a column per mode, each cell "p50/p95/max".
+export function comparisonRows(note, modes) {
+  const names = []
+  for (const mode of modes) for (const name of Object.keys(note.results[mode.id]?.rows ?? {})) if (!names.includes(name)) names.push(name)
+  return names.map((name) => ({
+    name,
+    unit: modes.map((mode) => note.results[mode.id]?.rows?.[name]?.unit).find(Boolean),
+    cells: modes.map((mode) => { const row = note.results[mode.id]?.rows?.[name]; return row ? `${row.p50}/${row.p95}/${row.max}` : '-' }),
+  }))
+}
+
+export function formatComparison(comparison) {
+  const lines = []
+  for (const note of comparison.notes) {
+    lines.push('')
+    lines.push(`Render modes on ${note.label} (${note.objects} objects). Each cell is p50/p95/max in milliseconds (frames, or event to frame where noted).`)
+    const rows = comparisonRows(note, comparison.modes)
+    const width = Math.max(...rows.map((row) => row.name.length), 8) + 6
+    const widths = comparison.modes.map((mode, i) => Math.max(mode.label.length, ...rows.map((row) => row.cells[i].length)) + 2)
+    lines.push(`${pad('', width)}${comparison.modes.map((mode, i) => pad(mode.label, widths[i])).join('')}`)
+    for (const row of rows) lines.push(`${pad(row.name + (row.unit ? ' [ms]' : ''), width)}${row.cells.map((cell, i) => pad(cell, widths[i])).join('')}`)
+    for (const mode of comparison.modes) for (const failed of note.results[mode.id]?.failed ?? []) lines.push(`  ${mode.label}: could not measure ${failed}`)
+  }
+  return lines.join('\n')
+}

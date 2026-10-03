@@ -20,6 +20,7 @@ import { dockIcon } from './modules/editor/dock-icons.js'
 import { imageFiles, objectPalette, stickyDefaults } from './modules/editor/objects.js'
 import { readPreferences, writePreferences } from './preferences.js'
 import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
+import { RENDER_MODES } from './modules/canvas-leafer/perf.js'
 import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
 import { mergeDocuments } from './core/document/merge.js'
 import { createInk } from './modules/canvas-leafer/ink.js'
@@ -278,6 +279,11 @@ document.querySelector('#app').innerHTML = `
       <section class="settings-section">
         <p class="settings-section-label">Performance</p>
         <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
+        <details class="settings-advanced">
+          <summary>Advanced</summary>
+          <label class="setting-row" for="settings-render-mode"><span>Render mode</span><select id="settings-render-mode"><option value="default">Default</option><option value="bitmaps">Page bitmaps always</option><option value="dpr1">Lower resolution (1x)</option></select></label>
+          <p class="portability-help">For trying how the canvas feels on this computer. Changes only how the screen is drawn, never a note.</p>
+        </details>
         <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
         <div class="portability-actions speedtest-offer"><button type="button" id="settings-speed-test"><i data-lucide="gauge"></i><span>Run speed test…</span></button></div>
       </section>
@@ -459,6 +465,7 @@ const elements = {
   fontSizeValue: document.querySelector('#font-size-value'),
   settingsFontSize: document.querySelector('#settings-font-size'),
   settingsSpeedMeter: document.querySelector('#settings-speed-meter'),
+  settingsRenderMode: document.querySelector('#settings-render-mode'),
   settingsFontSizeValue: document.querySelector('#settings-font-size-value'),
   voiceButton: document.querySelector('#voice-button'),
   voiceCaption: document.querySelector('#voice-caption'),
@@ -501,6 +508,7 @@ const state = {
   fontFamily: DEFAULT_FONT_CHOICE,
   fontSize: 24,
   speedMeter: false,
+  renderMode: 'default',
   displayScale: 1,
   canvasZoom: 1,
   recognition: null,
@@ -558,13 +566,20 @@ function loadPreferences() {
   if (preferences.fontFamily) state.fontFamily = preferences.fontFamily
   if (preferences.fontSize) state.fontSize = preferences.fontSize
   if (preferences.speedMeter) state.speedMeter = true
+  if (preferences.renderMode) state.renderMode = preferences.renderMode
 }
 
 function savePreferences() {
-  writePreferences(undefined, { fontFamily: state.fontFamily, fontSize: state.fontSize, speedMeter: state.speedMeter })
+  writePreferences(undefined, { fontFamily: state.fontFamily, fontSize: state.fontSize, speedMeter: state.speedMeter, renderMode: state.renderMode })
 }
 
+// The canvas's render strategy (perf.js): a benchmark's own `window.__pnPerf` switches stay, the named mode goes on top. The speed test's comparison and
+// Settings > Performance > Advanced > Render mode both come through here.
+const externalPerf = { ...(globalThis.__pnPerf ?? {}) }
+function setPerfSwitches(name) { globalThis.__pnPerf = { ...externalPerf, ...(RENDER_MODES[name] ?? {}) } }
+
 loadPreferences()
+setPerfSwitches(state.renderMode)
 
 // ADR 0001: Leafer is the canvas. It draws the open note from the document model (JSON Canvas is the stored form, ADR 0002); a transparent
 // input surface over it hosts the pan, zoom and touch gestures and the placing clicks of the text and sticky tools. A note that was not
@@ -3026,6 +3041,22 @@ function setSpeedMeter(visible) {
   }
 }
 
+// Takes the switches into the open canvas and draws the open note again with them (the sticky shadows are made at load).
+async function applyRenderMode(name) {
+  setPerfSwitches(name)
+  if (!leaferCanvas) return
+  leaferCanvas.finishTextEdit()
+  leaferCanvas.applyPerf()
+  if (leaferEdits?.doc && state.activeNoteId) leaferCanvas.load(leaferEdits.doc)
+  await leaferCanvas.whenSettled()
+}
+elements.settingsRenderMode.value = state.renderMode
+elements.settingsRenderMode.addEventListener('change', () => {
+  state.renderMode = elements.settingsRenderMode.value
+  savePreferences()
+  void applyRenderMode(state.renderMode)
+})
+
 elements.settingsSpeedMeter.addEventListener('change', () => {
   setSpeedMeter(elements.settingsSpeedMeter.checked)
   savePreferences()
@@ -3092,6 +3123,7 @@ async function startSpeedTest() {
         edits: leaferEdits,
         get inkSurface() { return leaferInk.surface },
         setTool: (name) => setTool(name),
+        setRenderMode: (name) => applyRenderMode(name === 'saved' ? state.renderMode : name),
         setView: async ({ zoom }) => {
           if (zoom === 'fit') fitAllPages()
           else { state.canvasZoom = zoom; setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104) }

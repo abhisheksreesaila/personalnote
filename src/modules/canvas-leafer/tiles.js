@@ -24,8 +24,9 @@ const SAMPLE_QUIET = 300 // ms without a view change: the frame sampler stops
 
 // `onExit()` runs when the vectors are back (the scene puts back what it did not do while they were off the stage); `pending()` is true while a
 // picture is still loading (a bitmap made now would show it empty); `raf` times rendered frames.
-export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, getPages, getSize, onExit = () => {}, pending = () => false, now = () => performance.now(), schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), raf = (fn) => requestAnimationFrame(fn) }) {
+export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: initialPixelRatio, getPages, getSize, onExit = () => {}, pending = () => false, now = () => performance.now(), schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), raf = (fn) => requestAnimationFrame(fn) }) {
   let mode = perf.pageBitmaps
+  let pixelRatio = initialPixelRatio
   const layer = new Group({ hittable: false, hitChildren: false })
   const tiles = new Map() // 'c,r' -> { node, built }
   let version = 0
@@ -237,6 +238,16 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio, g
       version += 1
       gaps = []
       wantBuild(900)
+    },
+    // The perf switches changed (the speed test's comparison, Settings > Render mode): the mode and the pixel ratio follow, the old bitmaps go.
+    retune(next) {
+      mode = next.mode
+      if (next.pixelRatio) pixelRatio = next.pixelRatio
+      slow = mode === 'always'
+      exit()
+      for (const tile of tiles.values()) tile.node.destroy?.()
+      tiles.clear()
+      version += 1
     },
     get active() { return active },
     stats: () => ({ mode, active, slow, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, ...counters }),

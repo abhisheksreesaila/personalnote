@@ -1,6 +1,7 @@
 // Font preferences in localStorage. Some web views (WebKitGTK in private mode, Safari with site data
 // blocked) have no usable localStorage; that must never stop the notebook from loading.
 export const PREFERENCES_KEY = 'personal-note.preferences.v1'
+import { SETTINGS_RENDER_MODES } from './modules/canvas-leafer/perf.js'
 export const FONT_FAMILIES = new Set(['Source Serif 4', 'IBM Plex Sans', 'monospace'])
 
 export function browserStorage() {
@@ -35,6 +36,7 @@ export function readPreferences(storage = browserStorage()) {
   const fontSize = Number(parsed?.fontSize)
   if (Number.isFinite(fontSize)) result.fontSize = Math.min(72, Math.max(12, Math.round(fontSize)))
   if (parsed?.speedMeter === true) result.speedMeter = true
+  if (SETTINGS_RENDER_MODES.includes(parsed?.renderMode) && parsed.renderMode !== 'default') result.renderMode = parsed.renderMode
   return result
 }
 
