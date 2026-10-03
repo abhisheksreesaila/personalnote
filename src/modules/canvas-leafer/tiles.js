@@ -166,6 +166,31 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     }
   }
 
+  const bytesOf = (tile) => { const { width, height } = tile.node.canvas?.view ?? {}; return (width ?? 0) * (height ?? 0) * 4 }
+  // Hybrid: the bitmaps made for an earlier view hold memory until they are made again; the ones furthest from the window go first when the total
+  // is over the budget (the pages near the window are never let go for it).
+  function enforceBudget(plan) {
+    const budget = (perf.tileBudget ?? 128) * 1024 * 1024
+    let total = 0
+    for (const tile of tiles.values()) total += bytesOf(tile)
+    if (total <= budget) return
+    const centre = { c: (plan.near.c0 + plan.near.c1) / 2, r: (plan.near.r0 + plan.near.r1) / 2 }
+    const far = []
+    for (const [id, tile] of tiles) {
+      const [c, r] = id.split(',').map(Number)
+      if (c >= plan.near.c0 && c <= plan.near.c1 && r >= plan.near.r0 && r <= plan.near.r1) continue
+      far.push({ id, tile, distance: Math.hypot(c - centre.c, r - centre.r) })
+    }
+    far.sort((x, y) => y.distance - x.distance)
+    for (const { id, tile } of far) {
+      if (total <= budget) break
+      total -= bytesOf(tile)
+      tile.node.remove()
+      tile.node.destroy?.()
+      tiles.delete(id)
+    }
+  }
+
   // Idle time: the pages on screen first, then the rest, one page at a time.
   function buildNext() {
     buildTimer = null
@@ -174,6 +199,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     const plan = hybrid() ? planFor(latest) : null
     if (plan && !plan.crisp) return // zoomed in too far for the bitmaps to be crisp: the vectors are cheap there, nothing would use them
     prune()
+    if (plan) enforceBudget(plan)
     if (pending()) { buildTimer = schedule(buildNext, 500); return } // a picture is still loading
     if (busy() || now() - lastView < BUSY_RETRY) { buildTimer = schedule(buildNext, BUSY_RETRY); return } // a gesture or an edit is going on: not now
     const { columns, rows } = getPages()
@@ -324,7 +350,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     get active() { return active },
     stats: () => {
       let bytes = 0
-      for (const tile of tiles.values()) { const { width, height } = tile.node.canvas?.view ?? {}; bytes += (width ?? 0) * (height ?? 0) * 4 }
+      for (const tile of tiles.values()) bytes += bytesOf(tile)
       let visibleReady = true
       const plan = hybrid() ? planFor(latest) : null
       each(visible(latest, 0), (c, r) => { const tile = tiles.get(key(c, r)); if (!tile || tile.built !== version || stale(tile, latest, c, r, plan ?? undefined)) visibleReady = false })

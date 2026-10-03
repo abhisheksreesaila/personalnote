@@ -1274,7 +1274,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     settle: () => gesture.settle(),
     // Where the note's layer is in the window and at what zoom, once drawn (checks read this instead of the layer: the layer sits `margin` into the canvas).
     drawnWorld() { gesture.settle(); return { x: world.x - margin, y: world.y - margin, scaleX: world.scaleX, scaleY: world.scaleY } },
-    gestureState: () => ({ ...gesture.stats(), transform: gesture.transform, drawn: gesture.committed, view: { ...view }, margin, canvas: [app.tree.canvas.width, app.tree.canvas.height] }),
+    gestureState: () => ({ ...gesture.stats(), skyPixelRatio: app.sky.canvas.pixelRatio, treePixelRatio: app.tree.canvas.pixelRatio, transform: gesture.transform, drawn: gesture.committed, view: { ...view }, margin, canvas: [app.tree.canvas.width, app.tree.canvas.height] }),
     // `window.__pnPerf` changed (the speed test's render-mode comparison, Settings > Render mode): take the new switches in without a reload. The
     // sticky shadows are made when a note is loaded, so the caller loads the document again afterwards (see main.js).
     applyPerf() {
