@@ -9,7 +9,7 @@ test('the margin is a fraction of the window and stays inside the pixel budget',
   assert.equal(marginFor(SIZE, { fraction: 0 }), 0)
   const margin = marginFor({ width: 1440, height: 900 }, { fraction: 0.5, pixelRatio: 2, budget: 16e6 })
   assert.ok(margin > 0 && margin < 450)
-  assert.ok((1440 + 2 * margin) * (900 + 2 * margin) * 4 <= 16e6)
+  assert.ok(2 * (1440 + 2 * margin) * (900 + 2 * margin) * 4 <= 16e6)
 })
 
 test('a pan moves the canvas by the pan, a zoom scales it about the zoom point (the matrix the draw will have)', () => {

@@ -9,11 +9,11 @@
 import { quietFor } from './perf.js'
 
 // How far past the window the canvas is drawn on each side, in CSS pixels: `fraction` of the window's width and height, kept inside a budget of
-// device pixels for the whole canvas (a canvas is a bitmap in memory, twice, one per layer).
+// device pixels shared by the two layers (each is a bitmap in memory, so one canvas gets half).
 export function marginFor(size, { fraction = 0.2, pixelRatio = 1, budget = 24e6 } = {}) {
   if (!(fraction > 0) || !(size.width > 0) || !(size.height > 0)) return 0
   let margin = Math.round(Math.min(size.width, size.height) * fraction)
-  const pixels = (extra) => (size.width + 2 * extra) * (size.height + 2 * extra) * pixelRatio * pixelRatio
+  const pixels = (extra) => 2 * (size.width + 2 * extra) * (size.height + 2 * extra) * pixelRatio * pixelRatio // two layers
   while (margin > 0 && pixels(margin) > budget) margin -= 8
   return Math.max(0, margin)
 }

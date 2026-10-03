@@ -339,7 +339,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     else parent.addAt(built.node, index)
     if (object.strokeUniform && built.node.stroke && built.node.strokeScaleFixed) {
       uniformStrokes.push({ node: built.node, width: built.node.strokeWidth })
-      built.node.strokeWidth = built.node.strokeWidth * view.scale
+      built.node.strokeWidth = built.node.strokeWidth * (gesture.committed?.scale ?? view.scale) // (what the canvas shows: a gesture may be moving it to another view)
     }
     let box = null
     if (boxList && object.type !== 'connector') {
