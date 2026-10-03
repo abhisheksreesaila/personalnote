@@ -88,14 +88,14 @@ try {
   check('the stress note and the realistic note were each made, filled once, and both removed at the end', calls.filter((call) => call[0] === 'POST' && call[1] === '/notes').length === 2 && calls.filter((call) => call[0] === 'PUT').length === 2 && calls.filter((call) => call[0] === 'DELETE').length === 2 && Object.keys(notesDb).length === 1, JSON.stringify(calls))
   // Compare render modes: every mode ran on both notes and the table is on screen and in the saved report
   const comparison = report?.data?.comparison
-  const modeIds = ['default', 'classic', 'bitmaps', 'dpr1', 'noShadow', 'fullRender']
+  const modeIds = ['default', 'classic', 'bitmaps', 'gestureTransform', 'dpr1']
   check('the comparison ran every mode on both notes', JSON.stringify(comparison?.modes?.map((mode) => mode.id)) === JSON.stringify(modeIds) && comparison.notes.length === 2 && comparison.notes.every((note) => modeIds.every((id) => Object.keys(note.results[id]?.rows ?? {}).length >= 7 && note.results[id].rows['Pan (100%)'].n > 20)), JSON.stringify(comparison?.notes?.map((note) => Object.keys(note.results))))
   check('every run of every mode began with the note\'s own objects (edits are put back)', comparison?.notes?.every((note) => modeIds.every((id) => note.starts?.[id]?.length === 2 && note.starts[id].every((count) => count === note.objects))), JSON.stringify(comparison?.notes?.map((note) => note.starts)))
   check('the second note is the 600-object one', comparison?.notes?.[1]?.objects >= 500 && comparison.notes[1].objects <= 700, JSON.stringify(comparison?.notes?.map((note) => note.objects)))
   check('no mode could not be measured', comparison?.notes?.every((note) => modeIds.every((id) => !note.results[id].failed.length)), JSON.stringify(comparison?.notes?.map((note) => modeIds.map((id) => note.results[id].failed))))
   const tables = await page.evaluate(() => [...document.querySelectorAll('.speedtest-compare')].map((table) => ({ heads: [...table.querySelectorAll('th')].map((th) => th.textContent), rows: [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent)) })))
-  check('the results panel has a side-by-side table per note, a column per mode, p50/p95/max in every cell', tables.length === 2 && tables.every((table) => table.heads.length === 7 && table.rows.length >= 7 && table.rows.every((row) => row.slice(1).every((cell) => /^[\d.]+\/[\d.]+\/[\d.]+( noisy)?$/.test(cell)))), JSON.stringify(tables[0]))
-  check('the saved text has the comparison too', /Render modes on the stress note/.test(report?.text) && /Render modes on a realistic note/.test(report.text) && /Bitmaps always\s+DPR 1\s+Shadows off\s+Full redraw/.test(report.text))
+  check('the results panel has a side-by-side table per note, a column per mode, p50/p95/max in every cell', tables.length === 2 && tables.every((table) => table.heads.length === 6 && table.rows.length >= 7 && table.rows.every((row) => row.slice(1).every((cell) => /^[\d.]+\/[\d.]+\/[\d.]+( noisy)?$/.test(cell)))), JSON.stringify(tables[0]))
+  check('the saved text has the comparison too', /Render modes on the stress note/.test(report?.text) && /Render modes on a realistic note/.test(report.text) && /Bitmaps always\s+Slide picture\s+DPR 1/.test(report.text))
   const finalPerf = await page.evaluate(() => JSON.stringify(window.__pnPerf ?? {}))
   check('the render mode is back to the saved one (default) afterwards', finalPerf === '{}', finalPerf)
   const back = await page.evaluate(() => window.__personalNote.state.activeNoteId)
@@ -119,7 +119,7 @@ try {
   await page.click('.speedtest-panel [data-act="stop"]')
   await page.waitForFunction(() => document.documentElement.dataset.speedtestDone, null, { timeout: 120000 })
   check('Stop pressed during the comparison ends the run, keeps the main results, and the results say so', Boolean(report?.data?.failed?.some((entry) => /comparison stopped/.test(entry))) && report.data.results.length > 5, JSON.stringify(report?.data?.failed))
-  check('and the comparison got no further than the realistic note', report?.data?.comparison?.notes?.length === 2 && !report.data.comparison.notes[1].results.fullRender)
+  check('and the comparison got no further than the realistic note', report?.data?.comparison?.notes?.length === 2 && !report.data.comparison.notes[1].results.dpr1)
   check('and the test note was removed again', Object.keys(notesDb).length === 1)
 
   // the person's own app: nothing runs here, a separate instance is asked for
@@ -151,6 +151,8 @@ try {
   check('the choice is remembered after a reload', await mac.evaluate(() => window.__pnPerf?.pageBitmaps === 'always' && document.querySelector('#settings-render-mode').value === 'bitmaps'))
   await choose('dpr1')
   check('DPR 1 makes the live canvas draw at 1x', Math.abs(await ratio() - 1) < 0.05, String(await ratio()))
+  await choose('gestureTransform')
+  check('Slide picture (preview 3) is offered, and turns the gesture transform on with the page bitmaps off', await mac.evaluate(() => document.querySelector('#settings-render-mode option[value="gestureTransform"]')?.textContent.includes('Slide picture') && window.__pnPerf?.gestureTransform === true && window.__pnPerf.pageBitmaps === 'off'))
   await choose('default')
   check('and Default puts it back to 2x', Math.abs(await ratio() - 2) < 0.05, String(await ratio()))
   check('no page errors', errors.length === 0, errors.join(' | '))

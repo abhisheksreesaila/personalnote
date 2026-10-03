@@ -18,10 +18,10 @@
 // made again in idle time: after a settle for the zoom the view has now, after an edit for the touched pages.
 import { Bounds, Canvas, Group, Matrix } from 'leafer-ui'
 import { quietFor } from './perf.js'
+import { planScales } from './tile-plan.js'
 
 const BLEED = 40
 const MEMORY_BUDGET = 96 * 1024 * 1024 // bytes of bitmap for the whole note (not hybrid; hybrid reads perf.tileBudget)
-const CRISP = 0.75 // hybrid: the bitmaps are used only when the pages on screen can be made at this fraction of the device resolution, or better
 const BUSY_RETRY = 150 // ms: idle work waits this long after the last view change or edit step
 const GESTURE_GAP = 500 // ms: view changes closer than this belong to one pan or zoom (the steps of a pan that is slow are far apart)
 const SLOW_FRAME = 26 // ms
@@ -76,15 +76,8 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     const nNear = count(near) - nStrict
     const nFar = columns * rows - count(near)
     const full = view.scale * pixelRatio
-    const budget = (perf.tileBudget ?? 128) * 1024 * 1024
-    const fit = (bytes, n) => (n > 0 ? Math.sqrt(Math.max(0, bytes) / (n * AREA)) : Infinity)
-    const clamp = (value) => Math.max(0.1, value)
-    const s0 = clamp(Math.min(full, fit(budget * 0.8, nStrict)))
-    let left = budget - nStrict * AREA * s0 * s0
-    const s1 = clamp(Math.min(s0, fit(left * 0.75, nNear)))
-    left -= nNear * AREA * s1 * s1
-    const s2 = clamp(Math.min(s1, fit(left, nFar)))
-    return { strict, near, scales: [s0, s1, s2], full, crisp: s0 >= full * CRISP }
+    const { scales, crisp } = planScales({ full, strict: nStrict, near: nNear, far: nFar, area: AREA, budget: (perf.tileBudget ?? 128) * 1024 * 1024 })
+    return { strict, near, scales, full, crisp }
   }
   // The scale of page (c, r)'s bitmap for `view`, and how far off a bitmap may be before it is made again.
   function targetFor(view, c, r, plan = planFor(view)) {

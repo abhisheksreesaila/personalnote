@@ -22,6 +22,9 @@ const sparse = (() => {
   for (let j = 0; j < 4; j += 1) objects.push({ type: 'IText', version: '7.4.0', originX: 'left', originY: 'top', left: 1000, top: 100 + j * 200, text: `Words number ${j} to type into`, fontSize: 24, fontFamily: 'Source Serif 4', fill: '#222', lineHeight: 1.45, padding: 8 })
   return { content: { version: '7.4.0', objects }, pageState: { columns: 2, rows: 1 } }
 })()
+// These checks are about the gesture transform (the "Slide picture" render mode), no longer the default: every page opens with its switches, and the others get the plain draw.
+const SLIDE = { gestureTransform: true, pageBitmaps: 'off', hybrid: false, dragCrowd: 0 }
+const OTHER = { hybrid: false, dragCrowd: 0 }
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`) }
 
@@ -81,10 +84,10 @@ async function diff(page, a, b) {
 
 try {
   // ---- the canvas moves, it is not drawn again
-  const main = await open(process.env.GEST_FLAGS ? JSON.parse(process.env.GEST_FLAGS) : null)
+  const main = await open(process.env.GEST_FLAGS ? JSON.parse(process.env.GEST_FLAGS) : SLIDE)
   let { page } = main
   const first = await gesture(page)
-  check('the canvas is drawn a margin past the window (and the transform is on by default)', first.margin > 0 && first.canvas[0] === 1052 + 2 * first.margin, JSON.stringify(first))
+  check('the canvas is drawn a margin past the window (the transform is on in this mode)', first.margin > 0 && first.canvas[0] === 1052 + 2 * first.margin, JSON.stringify(first))
   await page.mouse.move(600, 400)
   const before = await page.evaluate(() => performance.getEntriesByType('measure').length)
   for (let i = 0; i < 8; i += 1) { await page.mouse.wheel(0, 30); await sleep(page, 16) }
@@ -122,7 +125,7 @@ try {
   await whenSettled(page)
   const target = await page.evaluate(() => { const n = window.__personalNote; return { view: n.leaferCanvas().view(), zoom: n.state.canvasZoom } })
   const gestured = await shot(page)
-  const plain = await open({ gestureTransform: false, pageBitmaps: 'off' })
+  const plain = await open({ ...OTHER, gestureTransform: false, pageBitmaps: 'off' })
   await plain.page.evaluate((t) => { const n = window.__personalNote; n.state.canvasZoom = t.zoom; n.setCanvasViewportOffset(t.view.x, t.view.y, true) }, target)
   await sleep(plain.page, 600)
   const planePlain = await plain.page.evaluate(() => window.__personalNote.leaferCanvas().view())
@@ -131,7 +134,7 @@ try {
   if (process.env.GEST_DUMP) { (await import('node:fs')).writeFileSync('/var/tmp/pn-f034-a.png', gestured); (await import('node:fs')).writeFileSync('/var/tmp/pn-f034-b.png', reference) }
   check('after pan + zoom settle, the picture matches a plain draw at the same view', Math.abs(planePlain.x - target.view.x) < 1e-6 && Math.abs(planePlain.scale - target.view.scale) < 1e-9 && d.different / d.pixels < 0.005 && d.max < 80, 'only the antialiasing slivers along long arrows differ: ' + JSON.stringify({ ...d, view: target.view, plainView: planePlain }))
   // the noise of the screen itself: a second plain draw at that view, in another page
-  const plain2 = await open({ gestureTransform: false, pageBitmaps: 'off' })
+  const plain2 = await open({ ...OTHER, gestureTransform: false, pageBitmaps: 'off' })
   await plain2.page.evaluate((t) => { const n = window.__personalNote; n.state.canvasZoom = t.zoom; n.setCanvasViewportOffset(t.view.x, t.view.y, true) }, target)
   await sleep(plain2.page, 600)
   const noise = await diff(page, reference, await shot(plain2.page))
@@ -141,7 +144,7 @@ try {
 
   await main.context.close()
   // ---- a click right after a gesture picks the object under the pointer
-  const second = await open(process.env.GEST_FLAGS ? JSON.parse(process.env.GEST_FLAGS) : null, sparse)
+  const second = await open(process.env.GEST_FLAGS ? JSON.parse(process.env.GEST_FLAGS) : SLIDE, sparse)
   main.context = second.context
   main.errors = second.errors
   page = second.page
@@ -269,7 +272,7 @@ try {
   await main.context.close()
 
   // ---- the other modes still draw and move the view
-  for (const flags of [{ gestureTransform: false, pageBitmaps: 'off' }, { gestureTransform: false, pageBitmaps: 'adaptive' }]) {
+  for (const flags of [{ ...OTHER, gestureTransform: false, pageBitmaps: 'off' }, { ...OTHER, gestureTransform: false, pageBitmaps: 'adaptive' }]) {
     const other = await open(flags)
     await other.page.mouse.move(600, 400)
     for (let i = 0; i < 6; i += 1) { await other.page.mouse.wheel(0, 30); await sleep(other.page, 16) }
