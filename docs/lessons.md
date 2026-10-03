@@ -13,3 +13,4 @@ Claude reads this at the start of each session. -->
 - Cleanup deletes only exact paths you created; never `rm -rf` with a glob (a reviewer's `/var/tmp/tmp*/t.db` could have hit other projects' files).
 - An engine port needs a feature inventory of the old app (every tool, button, shortcut) checked off before calling parity; four Fabric features (shape tool, Clear all, voice placement, agent flag) slipped through slice-by-slice reviews.
 - Test and benchmark runs on the captain's machine are headless (or under a virtual display); never open visible browser windows, never in a loop that respawns them.
+- Rendering choices are decided by the in-app comparison on the real Mac, not by headless runs: headless ranked the gesture transform best, the Mac ranked it worst.
