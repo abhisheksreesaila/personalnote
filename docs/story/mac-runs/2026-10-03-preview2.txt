@@ -1,0 +1,18 @@
+Personal Note speed test  2026-10-03T06:26:13.658Z  (v0.4.0-preview.2, default render mode)
+WebKit on MacIntel, Desktop app, devicePixelRatio 2 (3420x2214), 8 cores, Apple GPU
+Stress note: 5296 objects on 5x4 pages. Times are milliseconds per frame (16.7 = 60 fps) unless noted.
+
+                              p50    p95    max    n    verdict
+Open the note (ms)            1107.0 -      -      1
+Pan (whole desk, zoomed out)  17.0   90.0   107.0  118  choppy
+Zoom                          17.0   113.0  210.0  118  choppy
+Pan (100%)                    28.0   33.0   58.0   118  a few dropped frames
+Drag one object               17.0   17.0   28.0   90   smooth
+Drag 40 objects               135.0  143.0  157.0  60   choppy
+Undo (the call, ms)           11.0   13.0   13.0   19
+Undo (to the next frame, ms)  32.0   36.0   36.0   19
+Redo (to the next frame, ms)  32.0   34.0   34.0   19
+Pen (frames)                  17.0   17.0   23.0   246  smooth
+Pen (input to frame)          17.0   18.0   18.0   240
+Typing (frames)               17.0   17.0   80.0   78   smooth
+Typing (key to frame)         18.0   24.0   91.0   80
