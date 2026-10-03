@@ -11,10 +11,11 @@ import { generateStressNote } from './stress-note.js'
 const STRESS_OBJECTS = 5400
 const REALISTIC_OBJECTS = 600 // a busy but ordinary desk, for the render-mode comparison
 const NOTE_TITLE = 'Speed test (safe to delete)'
-// The render modes the comparison runs, in turn (perf.js RENDER_MODES has the switches). Another mode, say a gesture transform, is one more entry here
-// and one more entry there.
+// The render modes the comparison runs, in turn (perf.js RENDER_MODES has the switches). Another mode is one more entry here and one more entry there.
+// 'default' is the gesture transform (the drawn canvas is moved by the compositor while the view is panned or zoomed); 'classic' is what shipped before.
 export const COMPARE_MODES = [
-  { id: 'default', label: 'Default' },
+  { id: 'default', label: 'Default (gesture transform)' },
+  { id: 'classic', label: 'Draw every step (before)' },
   { id: 'bitmaps', label: 'Bitmaps always' },
   { id: 'dpr1', label: 'DPR 1' },
   { id: 'noShadow', label: 'Shadows off' },

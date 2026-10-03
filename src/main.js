@@ -281,7 +281,7 @@ document.querySelector('#app').innerHTML = `
         <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
         <details class="settings-advanced">
           <summary>Advanced</summary>
-          <label class="setting-row" for="settings-render-mode"><span>Render mode</span><select id="settings-render-mode"><option value="default">Default</option><option value="bitmaps">Page bitmaps always</option><option value="dpr1">Lower resolution (1x)</option></select></label>
+          <label class="setting-row" for="settings-render-mode"><span>Render mode</span><select id="settings-render-mode"><option value="default">Default (move the drawn canvas while panning)</option><option value="classic">Draw every step (before)</option><option value="bitmaps">Page bitmaps always</option><option value="dpr1">Lower resolution (1x)</option></select></label>
           <p class="portability-help">For trying how the canvas feels on this computer. Changes only how the screen is drawn, never a note. "Page bitmaps always" can make drawing and typing slower.</p>
         </details>
         <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>

@@ -65,7 +65,7 @@ async function centre(page, id) {
 // a point on the page (page pixels) -> where it is on screen
 async function pagePoint(page, x, y) {
   const v = await page.evaluate(() => {
-    const world = window.__personalNote.leaferCanvas().leafer.children[1]
+    const world = window.__personalNote.leaferCanvas().drawnWorld()
     const rect = document.querySelector('#leafer-host').getBoundingClientRect()
     return { x: rect.left + world.x, y: rect.top + world.y, scale: world.scaleX }
   })

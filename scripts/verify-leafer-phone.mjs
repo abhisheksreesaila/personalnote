@@ -51,7 +51,7 @@ const live = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__pe
 const steps = (page) => page.evaluate(() => window.__personalNote.leaferEdits.stats().undoSteps)
 const objectOf = (doc, id) => doc.objects.find((object) => object.id === id)
 const nextFrame = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-const view = (page) => page.evaluate(() => { const { getCanvasScale } = window.__personalNote; const world = window.__personalNote.leaferCanvas().leafer.children[1]; return { x: world.x, y: world.y, scale: world.scaleX, app: getCanvasScale() } })
+const view = (page) => page.evaluate(() => { const { getCanvasScale } = window.__personalNote; const world = window.__personalNote.leaferCanvas().drawnWorld(); return { x: world.x, y: world.y, scale: world.scaleX, app: getCanvasScale() } })
 const selection = (page) => page.evaluate(() => window.__personalNote.leaferCanvas().selection())
 async function centre(page, id) {
   return page.evaluate((target) => { const r = document.querySelector('#leafer-host').getBoundingClientRect(); const b = window.__personalNote.leaferCanvas().screenBox(target); return { x: r.left + b.x + b.width / 2, y: r.top + b.y + b.height / 2, left: r.left + b.x, top: r.top + b.y, width: b.width, height: b.height } }, id)
@@ -61,7 +61,7 @@ async function centre(page, id) {
 const bareSpot = (page, clear = 30) => page.evaluate((reach) => {
   const scene = window.__personalNote.leaferCanvas()
   const r = document.querySelector('#leafer-host').getBoundingClientRect()
-  const w = scene.leafer.children[1]
+  const w = scene.drawnWorld()
   for (let sy = 110; sy < innerHeight - 170; sy += 12) for (let sx = 40; sx < innerWidth - 60; sx += 12) {
     const px = (sx - r.left - w.x) / w.scaleX
     const py = (sy - r.top - w.y) / w.scaleX
@@ -184,7 +184,7 @@ try {
       await page.waitForTimeout(150)
       const v0 = await view(page)
       const stepsPan = await steps(page)
-      const emptyAt = await page.evaluate(() => { const r = document.querySelector('#leafer-host').getBoundingClientRect(); const w = window.__personalNote.leaferCanvas().leafer.children[1]; return { x: r.left + w.x + 20 * w.scaleX, y: r.top + w.y + 1150 * w.scaleX } })
+      const emptyAt = await page.evaluate(() => { const r = document.querySelector('#leafer-host').getBoundingClientRect(); const w = window.__personalNote.leaferCanvas().drawnWorld(); return { x: r.left + w.x + 20 * w.scaleX, y: r.top + w.y + 1150 * w.scaleX } })
       void emptyAt
       const spot = await bareSpot(page)
       if (process.env.DEBUG_PHONE) console.log('spot', JSON.stringify(spot), await page.evaluate(([x, y]) => [window.__personalNote.leaferCanvas().touchHit(x, y), window.__personalNote.state.tool, innerWidth], [spot.x, spot.y]))

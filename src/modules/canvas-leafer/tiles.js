@@ -11,6 +11,7 @@
 //
 // A bitmap is made with the page's margin (BLEED) so an object across a page edge shows whole.
 import { Bounds, Canvas, Group, Matrix } from 'leafer-ui'
+import { quietFor } from './perf.js'
 
 const BLEED = 40
 const MEMORY_BUDGET = 96 * 1024 * 1024 // bytes of bitmap for the whole note
@@ -34,6 +35,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
   let slow = mode === 'always'
   let gaps = []
   let lastView = 0
+  let step = 0 // the smoothed gap between two steps of a pan or zoom, ms
   let sampling = false
   let freeTimer = null
   let quietTimer = null
@@ -200,7 +202,10 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     counters.views += 1
     if (mode === 'off') return false
     const t = now()
-    const moving = t - lastView < GESTURE_GAP
+    const gap = t - lastView
+    const moving = gap < GESTURE_GAP
+    if (moving && gap > 0) step = step ? step * 0.7 + gap * 0.3 : gap
+    else if (!moving) step = 0
     lastView = t
     if (next.scale >= zoomedOutLimit) {
       if (active) exit()
@@ -217,7 +222,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       if (!enter(next)) return false
     } else place(next)
     if (quietTimer) cancel(quietTimer)
-    quietTimer = schedule(exit, perf.lodQuiet)
+    quietTimer = schedule(exit, quietFor(perf.lodQuiet, step))
     return true
   }
 

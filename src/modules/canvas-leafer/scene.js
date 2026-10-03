@@ -15,6 +15,7 @@ import { boundingRect, rectEdges } from './bounds.js'
 import { FOLD_COLOR, FOLD_DASH, FOLD_WIDTH, LABEL_FONT_FAMILY, LABEL_FONT_SIZE, pageChrome } from './chrome.js'
 import { CONNECTOR_DEFAULTS, CONNECTOR_HIT, arrowPath, connectorAt, connectorLayout, followChanges, newConnector, newConnectorId, withLayout } from './connectors.js'
 import { createEditing, EDITOR_CONFIG } from './editing.js'
+import { createGestureView, marginFor } from './gesture-view.js'
 import { createOverlays } from './overlay.js'
 import { GHOST_REACH, finalizeOp, growForDrag, growForText } from './pages.js'
 import { applyMatrix, geometryFromMatrix, multiplyMatrices, placementMatrix } from './placement.js'
@@ -101,7 +102,11 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
   const perf = readPerf()
   let pixelRatio = pixelRatioFor(globalThis.devicePixelRatio, perf)
-  const app = new App({ view: host, width, height, pixelRatio, tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
+  // F-034 gesture transform: the canvases are drawn `margin` CSS pixels past the window on every side (0 when the transform is off), the note and the
+  // page furniture sit `margin` into them, and the canvases are placed `margin` before the window's corner (see gesture-view.js).
+  const marginNow = (box) => (perf.gestureTransform ? marginFor(box, { fraction: perf.gestureMargin, pixelRatio }) : 0)
+  let margin = marginNow({ width, height })
+  const app = new App({ view: host, width: width + 2 * margin, height: height + 2 * margin, pixelRatio, tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
   const leafer = app.tree
   for (const layer of [app.tree, app.sky]) if (layer.renderer?.config) layer.renderer.config.usePartRender = perf.partRender
   const chrome = new Group({ hittable: false })
@@ -114,8 +119,31 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
   })
 
-  let view = { x: 0, y: 0, scale: 1 }
+  let view = { x: 0, y: 0, scale: 1 } // the view the person has asked for (every conversion between the window and the page uses it)
   let size = { width, height }
+  // While a pan or zoom is going on the canvases show an earlier view, moved by a CSS transform; `gesture.committed` is the view they were drawn at.
+  // Leafer maps a pointer to the canvases by the rectangle of the App's own view element (the div that holds both canvases): that element is what is
+  // placed before the window's corner and what the gesture transform moves, so Leafer's own conversion stays right moved or not.
+  const canvasViews = () => [app.canvas.view]
+  const gesture = createGestureView({
+    elements: canvasViews, size: () => size, margin: () => margin, quiet: perf.gestureQuiet,
+    commit: () => { applyViewNow(); paintNow() },
+    moved: () => app.canvas.updateClientBounds?.(),
+  })
+  function placeCanvases() {
+    const [stage] = canvasViews()
+    stage.style.left = stage.style.top = margin ? `${-margin}px` : '' // (the stage is position: relative, in the flow of the host)
+    chrome.set({ x: margin, y: margin })
+    for (const layer of [app.tree, app.sky]) layer.canvas.updateClientBounds?.()
+    app.canvas.updateClientBounds?.()
+  }
+  // Draws the layers now and leaves nothing for the next frame: the new picture and the end of the transform reach the screen together. The editor's
+  // handles (they live in the sky) are put where the selection is first.
+  function paintNow() {
+    if (!live.active) editing.update()
+    app.tree.renderer.render()
+    app.sky.renderer.render()
+  }
   let pages = { columns: 1, rows: 1 }
   let colors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', shadows: [] }
   let boxes = new Set() // the placement boxes of the note's own objects (a set: taking one away is not a search)
@@ -148,6 +176,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   let listening = false
   const pool = { shadows: [], labels: [] }
   const overlays = createOverlays({ app, chrome })
+  placeCanvases()
 
   function ensure(list, count, make, parent) {
     while (list.length < count) { const node = make(); list.push(node); parent.add(node) }
@@ -155,7 +184,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   }
 
   function drawChrome() {
-    const plan = pageChrome({ view, viewW: size.width, viewH: size.height, columns: pages.columns, rows: pages.rows, pageW: PAGE.width, pageH: PAGE.height, colors, listening })
+    if (gesture.pending) { gesture.settle(); return } // the picture is drawn for another view: draw it for this one first (settle draws the chrome too)
+    const plan = pageChrome({ view, viewW: size.width, viewH: size.height, margin, columns: pages.columns, rows: pages.rows, pageW: PAGE.width, pageH: PAGE.height, colors, listening })
     ensure(pool.shadows, plan.shadows.length, () => new Rect({ hittable: false }), shadowGroup)
     plan.shadows.forEach((band, index) => pool.shadows[index].set({ x: band.x, y: band.y, width: band.width, height: band.height, fill: band.fill, opacity: band.alpha }))
     if (plan.edge) {
@@ -169,7 +199,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     else outlineNode.visible = false
     ensure(pool.labels, plan.labels.length, () => new Text({ hittable: false, fontFamily: LABEL_FONT_FAMILY, fontSize: LABEL_FONT_SIZE, lineHeight: LABEL_FONT_SIZE, textWrap: 'none' }), labelGroup)
     plan.labels.forEach((label, index) => pool.labels[index].set({ text: label.text, x: label.x, y: label.y, fill: colors.label }))
-    overlays.setView(view, { x: view.x + live.shift.x * view.scale, y: view.y + live.shift.y * view.scale, scale: view.scale })
+    overlays.setView(view, { x: view.x + margin + live.shift.x * view.scale, y: view.y + margin + live.shift.y * view.scale, scale: view.scale })
   }
 
   // ---- objects (page space, in the model's frames)
@@ -321,9 +351,20 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     if (boxList) register(object, built, box)
   }
 
-  function applyView() {
+  // The view changed: with the gesture transform the drawn canvases are moved and the note is drawn again when the movement stops (or at once when it
+  // outruns the margin); a drag that grows the page grid, and the other modes, draw every step.
+  function moveView() {
+    if (!perf.gestureTransform || live.active) { if (perf.gestureTransform) gesture.redraw(view); else applyViewNow(); return }
+    gesture.setView(view)
+    placeEditor() // the words being typed follow the view at once (they are a DOM overlay, not part of the picture)
+  }
+  function applyView() { // the same view again (the layers were moved by a drag's grid shift)
+    if (perf.gestureTransform) gesture.redraw(view)
+    else applyViewNow()
+  }
+  function applyViewNow() {
     const bitmaps = lod.view(view) // the vectors are taken off the stage while the bitmaps show a pan or zoom
-    world.set({ x: view.x + live.shift.x * view.scale, y: view.y + live.shift.y * view.scale, scaleX: view.scale, scaleY: view.scale })
+    world.set({ x: view.x + margin + live.shift.x * view.scale, y: view.y + margin + live.shift.y * view.scale, scaleX: view.scale, scaleY: view.scale })
     if (!bitmaps) for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale
     drawChrome()
     placeEditor()
@@ -667,7 +708,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   }
 
   // A press on a connector's line picks it (and leaves the editor's selection); a press anywhere else lets the editor have it.
-  host.addEventListener('pointerdown', () => lod.exit(), true) // a touch of the note puts the vectors back before anything is picked
+  host.addEventListener('pointerdown', () => { gesture.settle(); lod.exit() }, true) // a touch of the note draws it exactly (and puts the vectors back) before anything is picked
   host.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || event.target === overlay.element || !doc) return
     const rect = host.getBoundingClientRect()
@@ -1183,21 +1224,34 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // Voice dictation is on: the pages are outlined in the accent colour.
     setListening(on) { listening = Boolean(on); drawChrome() },
     setColors(next) { colors = next; overlays.setColors(next); drawChrome() },
-    setView(next) { view = { ...next }; applyView() },
+    setView(next) { view = { ...next }; moveView() },
+    // The note drawn exactly for the view (a pan or zoom may still be moving the canvases): checks and exports that read the nodes call it.
+    settle: () => gesture.settle(),
+    // Where the note's layer is in the window and at what zoom, once drawn (checks read this instead of the layer: the layer sits `margin` into the canvas).
+    drawnWorld() { gesture.settle(); return { x: world.x - margin, y: world.y - margin, scaleX: world.scaleX, scaleY: world.scaleY } },
+    gestureState: () => ({ ...gesture.stats(), transform: gesture.transform, drawn: gesture.committed, view: { ...view }, margin, canvas: [app.tree.canvas.width, app.tree.canvas.height] }),
     // `window.__pnPerf` changed (the speed test's render-mode comparison, Settings > Render mode): take the new switches in without a reload. The
     // sticky shadows are made when a note is loaded, so the caller loads the document again afterwards (see main.js).
     applyPerf() {
       Object.assign(perf, readPerf())
       pixelRatio = pixelRatioFor(globalThis.devicePixelRatio, perf)
       for (const layer of [app.tree, app.sky]) if (layer.renderer?.config) layer.renderer.config.usePartRender = perf.partRender
-      app.resize({ width: size.width, height: size.height, pixelRatio })
+      gesture.reset()
+      margin = marginNow(size)
+      app.resize({ width: size.width + 2 * margin, height: size.height + 2 * margin, pixelRatio })
+      placeCanvases()
       lod.retune({ mode: perf.pageBitmaps, pixelRatio })
-      drawChrome()
+      if (perf.gestureTransform) gesture.redraw(view)
+      else applyViewNow()
     },
     resize(nextWidth, nextHeight) {
+      gesture.reset()
       size = { width: nextWidth, height: nextHeight }
-      app.resize({ width: nextWidth, height: nextHeight })
-      drawChrome()
+      margin = marginNow(size)
+      app.resize({ width: nextWidth + 2 * margin, height: nextHeight + 2 * margin })
+      placeCanvases()
+      if (perf.gestureTransform) gesture.redraw(view)
+      else applyViewNow() // (the world sits `margin` into the canvas)
     },
     // Text layout is cached per element and text without a stored size was measured with whatever font was loaded then. Call after
     // web fonts finish loading: layout is redone, such text is measured and placed again, and its placement box follows.
@@ -1386,7 +1440,9 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
         for (const entry of picked) {
           const b = entry.node.getBounds('box', 'world')
-          left = Math.min(left, b.x); top = Math.min(top, b.y); right = Math.max(right, b.x + b.width); bottom = Math.max(bottom, b.y + b.height)
+          const from = gesture.map({ x: b.x, y: b.y })
+          const to = gesture.map({ x: b.x + b.width, y: b.y + b.height })
+          left = Math.min(left, from.x); top = Math.min(top, from.y); right = Math.max(right, to.x); bottom = Math.max(bottom, to.y)
         }
         const inFrame = x >= left - handleReach && x <= right + handleReach && y >= top - handleReach && y <= bottom + handleReach
         const onTurnHandle = Math.abs(x - (left + right) / 2) <= handleReach + 8 && y >= top - 60 && y <= top // the turn handle sits above the middle of the top edge
@@ -1403,8 +1459,9 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     screenBox(id) {
       const node = entries.get(id)?.node
       if (!node) return null
-      const { x, y, width, height } = node.getBounds('box', 'world')
-      return { x, y, width, height }
+      const { x, y, width, height } = node.getBounds('box', 'world') // in the canvas's pixels, drawn for an earlier view while a gesture moves it
+      const at = gesture.map({ x, y })
+      return { x: at.x, y: at.y, width: width * gesture.transform.k, height: height * gesture.transform.k }
     },
     pageCorners(id) {
       const entry = entries.get(id)
@@ -1414,7 +1471,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const h = entry.built.sized ? node.height : entry.size.height ?? 0
       return [[0, 0], [w, 0], [w, h], [0, h]].map(([x, y]) => {
         const p = node.getWorldPoint({ x, y })
-        return { x: (p.x - view.x) / view.scale, y: (p.y - view.y) / view.scale }
+        const drawn = gesture.committed ?? view
+        return { x: (p.x - margin - drawn.x) / drawn.scale, y: (p.y - margin - drawn.y) / drawn.scale }
       })
     },
     hasNode: (id) => entries.has(id),
@@ -1431,7 +1489,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     lodState: () => lod.stats(),
     lodBuildAll: () => lod.buildAll(),
     lodForceSlow: () => lod.forceSlow(),
-    destroy() { lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
+    destroy() { gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
   }
   return api
 }

@@ -42,7 +42,7 @@ async function open(browser, baseUrl, note, viewport, hasTouch = false) {
 // The page frame's origin and zoom as Leafer has them (the world group), against the app's view.
 const compare = (page) => page.evaluate(() => {
   const { leaferCanvas, getCanvasScale, state } = window.__personalNote
-  const world = leaferCanvas().leafer.children[1]
+  const world = leaferCanvas().drawnWorld()
   const app = document.querySelector('#zoom-value').textContent
   return { world: { x: world.x, y: world.y, scale: world.scaleX }, scale: getCanvasScale(), zoomPill: app, zoom: state.canvasZoom }
 })

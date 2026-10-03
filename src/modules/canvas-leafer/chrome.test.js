@@ -43,3 +43,9 @@ test('while dictation is on the pages are outlined in the accent colour, 3 px ou
   const { outline } = pageChrome({ ...base, listening: true })
   assert.deepEqual([outline.x, outline.y, outline.width, outline.height, outline.stroke], [97, 47, 436, 546, '#4D839C'])
 })
+
+test('with a canvas margin, the labels of pages just past the window edge are drawn too (a pan reveals them without a redraw)', () => {
+  const left = { ...base, view: { x: -1200, y: 100, scale: 1 }, columns: 3, rows: 1 } // page 1 is wholly left of the window (ends at -340)
+  assert.equal(pageChrome(left).labels.some((label) => label.text === 'Page 1'), false)
+  assert.equal(pageChrome({ ...left, margin: 400 }).labels.some((label) => label.text === 'Page 1'), true)
+})

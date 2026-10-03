@@ -92,7 +92,7 @@ const steps = (page) => page.evaluate(() => window.__personalNote.leaferEdits.st
 const savedDoc = () => readJsonCanvas(puts.at(-1).content)
 const waitForSave = async (page, before) => { for (let i = 0; i < 40 && puts.length <= before; i += 1) await page.waitForTimeout(150); await page.waitForTimeout(100); return puts.length > before }
 const view = (page) => page.evaluate(() => {
-  const world = window.__personalNote.leaferCanvas().leafer.children[1]
+  const world = window.__personalNote.leaferCanvas().drawnWorld()
   const rect = document.querySelector('#leafer-host').getBoundingClientRect()
   return { x: rect.left + world.x, y: rect.top + world.y, scale: world.scaleX }
 })

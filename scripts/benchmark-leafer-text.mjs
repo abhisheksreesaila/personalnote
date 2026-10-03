@@ -58,7 +58,7 @@ async function typeFrames(page, count) {
 // Page coordinates -> screen, from where Leafer has put the page.
 async function pagePoint(page, x, y) {
   const v = await page.evaluate(() => {
-    const world = window.__personalNote.leaferCanvas().leafer.children[1]
+    const world = window.__personalNote.leaferCanvas().drawnWorld()
     const rect = document.querySelector('#leafer-host').getBoundingClientRect()
     return { x: rect.left + world.x, y: rect.top + world.y, scale: world.scaleX }
   })
@@ -68,7 +68,7 @@ async function pagePoint(page, x, y) {
 async function scenarios(page, label) {
   const rows = []
   const where = await page.evaluate(() => {
-    const world = window.__personalNote.leaferCanvas().leafer.children[1]
+    const world = window.__personalNote.leaferCanvas().drawnWorld()
     const rect = document.querySelector('#leafer-host').getBoundingClientRect()
     // a page spot on screen, near the middle of the view
     return { x: (rect.width / 2 - world.x) / world.scaleX, y: (rect.height / 2 - world.y) / world.scaleX }

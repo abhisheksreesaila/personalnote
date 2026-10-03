@@ -146,7 +146,7 @@ try {
     const { context, page, errors } = await open({ pageBitmaps: 'always', lodQuiet: 60000 })
     // the same gestures with the bitmaps off and on: the picture at the end must be the same
     const runs = []
-    for (const perf of [{ pageBitmaps: 'off' }, { pageBitmaps: 'always', lodQuiet: 60000 }]) {
+    for (const perf of [{ gestureTransform: false, pageBitmaps: 'off' }, { pageBitmaps: 'always', lodQuiet: 60000 }]) {
       const { context: c, page: pg } = await open(perf)
       await zoomTo(pg, 0.3)
       await pg.waitForTimeout(500)
@@ -233,7 +233,7 @@ try {
   // ---------------------------------------------------------------- the baked shadow against the live blur it replaces
   {
     const shots = []
-    for (const perf of [{ pageBitmaps: 'off', bakedShadow: true }, { pageBitmaps: 'off', bakedShadow: false }]) {
+    for (const perf of [{ gestureTransform: false, pageBitmaps: 'off', bakedShadow: true }, { gestureTransform: false, pageBitmaps: 'off', bakedShadow: false }]) {
       const { context, page } = await open(perf)
       const pair = []
       for (const zoom of [1, 0.5]) {
@@ -255,7 +255,7 @@ try {
   // ---------------------------------------------------------------- at 60% and above: the same pixels, with the bitmaps on or off
   {
     const shots = []
-    for (const perf of [{ pageBitmaps: 'off' }, { pageBitmaps: 'always' }]) {
+    for (const perf of [{ gestureTransform: false, pageBitmaps: 'off' }, { pageBitmaps: 'always' }]) {
       const { context, page, errors } = await open(perf)
       await zoomTo(page, 1)
       await page.waitForTimeout(600)

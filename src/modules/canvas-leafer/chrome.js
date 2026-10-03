@@ -16,8 +16,9 @@ const LABEL_LIMIT = 400
 export const OUTLINE_WIDTH = 2
 export const OUTLINE_GAP = 3
 
+// `margin`: the canvas is drawn that much past the window on every side (the gesture transform), so labels there are drawn too.
 // `listening`: voice dictation is on, so the pages get an accent outline (3 px outside the edge) while it is.
-export function pageChrome({ view, viewW, viewH, columns, rows, pageW, pageH, colors, listening = false }) {
+export function pageChrome({ view, viewW, viewH, margin = 0, columns, rows, pageW, pageH, colors, listening = false }) {
   const s = view.scale
   const left = view.x
   const top = view.y
@@ -52,7 +53,7 @@ export function pageChrome({ view, viewW, viewH, columns, rows, pageW, pageH, co
       for (let column = 0; column < columns; column += 1) {
         const pageLeft = left + column * pageW * s
         const pageBottom = top + (row + 1) * pageH * s
-        if (pageLeft > viewW || pageLeft + pageW * s < 0 || pageBottom > viewH + 40 || pageBottom < -40) continue
+        if (pageLeft > viewW + margin || pageLeft + pageW * s < -margin || pageBottom > viewH + margin + 40 || pageBottom < -margin - 40) continue
         const last = row === rows - 1
         labels.push({ text: `Page ${row * columns + column + 1}`, x: pageLeft + (last ? 0 : 14), y: pageBottom + (last ? 11 : -26) })
       }
