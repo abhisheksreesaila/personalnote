@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { covers, createGestureView, mapPoint, marginFor, transformFor } from './gesture-view.js'
+import { covers, createGestureView, drawGap, mapPoint, marginFor, transformFor } from './gesture-view.js'
 
 const SIZE = { width: 1000, height: 800 }
 
@@ -36,16 +36,17 @@ test('the moved canvas covers the window until the pan outruns the margin', () =
   assert.equal(covers({ k: 0.55, tx: 0, ty: 0 }, SIZE, 200), false)
 })
 
-function rig({ margin = 200 } = {}) {
+function rig({ margin = 200, drawMs = 5 } = {}) {
   const el = { style: {} }
   const log = []
   let timer = null
+  let clock = 1000
   const gesture = createGestureView({
     elements: () => [el], size: () => SIZE, margin: () => margin, quiet: 120,
-    commit: (view) => log.push({ ...view, transformAtDraw: el.style.transform }),
-    schedule: (fn) => { timer = fn; return 1 }, cancel: () => { timer = null },
+    commit: (view) => { log.push({ ...view, transformAtDraw: el.style.transform }); clock += drawMs },
+    schedule: (fn) => { timer = fn; return 1 }, cancel: () => { timer = null }, now: () => clock,
   })
-  return { el, log, gesture, fire: () => { const fn = timer; timer = null; fn?.() } }
+  return { el, log, gesture, fire: () => { const fn = timer; timer = null; fn?.() }, wait: (ms) => { clock += ms } }
 }
 
 test('the first view is drawn at once; later steps only move the canvas, and one draw follows when they stop', () => {
@@ -65,16 +66,33 @@ test('the first view is drawn at once; later steps only move the canvas, and one
 })
 
 test('a pan past the margin, or a zoom too far, draws again at once and goes on from there', () => {
-  const { el, log, gesture } = rig()
+  const { el, log, gesture, wait } = rig()
   gesture.setView({ x: 0, y: 0, scale: 1 })
+  wait(200)
   gesture.setView({ x: -250, y: 0, scale: 1 })
   assert.equal(log.length, 2)
   assert.equal(el.style.transform, '')
   gesture.setView({ x: -300, y: 0, scale: 1 }) // 50 further: a move again, from the new picture
   assert.equal(log.length, 2)
   assert.equal(el.style.transform, 'translate(-50px, 0px) scale(1)')
+  wait(200)
   gesture.setView({ x: -300, y: 0, scale: 3 })
   assert.equal(log.length, 3)
+})
+
+test('draws come no faster than a slow draw allows: in between, the canvas goes on moving (even past its edge)', () => {
+  assert.equal(drawGap(5), 120)
+  assert.equal(drawGap(300), 900)
+  assert.equal(drawGap(5000), 1000)
+  const { el, log, gesture, wait } = rig({ drawMs: 400 }) // a draw takes 400 ms here
+  gesture.setView({ x: 0, y: 0, scale: 1 })
+  wait(50)
+  gesture.setView({ x: -250, y: 0, scale: 1 }) // past the margin, but the last draw ended 50 ms ago: held
+  assert.equal(log.length, 1)
+  assert.equal(el.style.transform, 'translate(-250px, 0px) scale(1)')
+  wait(1200)
+  gesture.setView({ x: -260, y: 0, scale: 1 }) // the gap (1.2 s) has passed
+  assert.equal(log.length, 2)
 })
 
 test('settle draws only when something moved; redraw draws regardless', () => {

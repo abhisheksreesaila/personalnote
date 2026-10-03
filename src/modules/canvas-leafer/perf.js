@@ -12,7 +12,7 @@
 //   gestureMargin how far past the window the canvas is drawn on each side, as a fraction of the window (a pan has that much before it shows blank)
 //   gestureQuiet  milliseconds without a view change after which the gesture has settled and the note is drawn again
 //   lodQuiet      milliseconds without a view change after which the vectors come back (checks hold the bitmaps up with a large value)
-export const PERF_DEFAULTS = Object.freeze({ bakedShadow: true, dprCap: 2, pageBitmaps: 'off', lodZoom: 0.6, lodQuiet: 170, partRender: true, gestureTransform: true, gestureMargin: 0.25, gestureQuiet: 120 })
+export const PERF_DEFAULTS = Object.freeze({ bakedShadow: true, dprCap: 2, pageBitmaps: 'off', lodZoom: 0.6, lodQuiet: 170, partRender: true, gestureTransform: true, gestureMargin: 0.2, gestureQuiet: 120 })
 
 export function readPerf(source = globalThis.__pnPerf) {
   const given = source && typeof source === 'object' ? source : {}

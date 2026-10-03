@@ -3,3 +3,4 @@
 
 export const LIFT_TILT_DEGREES = 2
 export const LIFT_SHADOW = { blur: 26, offsetY: 14, alpha: 0.3 }
+export const LIFT_SHADOW_MAX = 3 // more objects than this lift without the shadow (a live blur each, at every step of the drag)

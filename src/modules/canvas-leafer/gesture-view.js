@@ -6,10 +6,11 @@
 // (or the picture would be scaled too far to look right) the note is drawn again at once and the gesture goes on from there.
 //
 // Pure rules here (tested without a browser); `createGestureView` is the small controller that scene.js drives.
+import { quietFor } from './perf.js'
 
 // How far past the window the canvas is drawn on each side, in CSS pixels: `fraction` of the window's width and height, kept inside a budget of
 // device pixels for the whole canvas (a canvas is a bitmap in memory, twice, one per layer).
-export function marginFor(size, { fraction = 0.25, pixelRatio = 1, budget = 24e6 } = {}) {
+export function marginFor(size, { fraction = 0.2, pixelRatio = 1, budget = 24e6 } = {}) {
   if (!(fraction > 0) || !(size.width > 0) || !(size.height > 0)) return 0
   let margin = Math.round(Math.min(size.width, size.height) * fraction)
   const pixels = (extra) => (size.width + 2 * extra) * (size.height + 2 * extra) * pixelRatio * pixelRatio
@@ -42,15 +43,26 @@ export const IDENTITY = Object.freeze({ k: 1, tx: 0, ty: 0 })
 const MIN_K = 0.5 // a picture scaled further than this looks too soft (or too small to cover the window): the note is drawn again
 const MAX_K = 2.5
 
+// How soon after one draw the next intermediate draw may come. A draw of a dense note takes a good part of a second on a slow machine; drawing again
+// and again during one long pan or zoom would make the gesture slower than drawing every step was. Between two draws the canvas keeps moving (a blank
+// edge or a soft picture for a moment is better than a stalled gesture), so the gap follows the time the last draw took.
+export function drawGap(lastDrawMs, floor = 120, ceiling = 1000) {
+  return Math.min(ceiling, Math.max(floor, Math.round((lastDrawMs || 0) * 3)))
+}
+
 // `elements()` are the canvas elements to move; `moved()` runs after they were moved or put back; `commit(view, { paint })` puts the note's layers at `view` and (when `paint`) draws them NOW (synchronously), so the new picture
 // and the removal of the transform reach the screen in the same frame.
-export function createGestureView({ elements, commit, moved = () => {}, margin = () => 0, size, quiet = 120, schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id) }) {
+export function createGestureView({ elements, commit, moved = () => {}, margin = () => 0, size, quiet = 120, schedule = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), now = () => performance.now() }) {
   let committed = null // the view the canvas shows
   let latest = null // the view the person has asked for
   let transform = IDENTITY
   let timer = null
   let pending = false
-  const counters = { moves: 0, settles: 0, intermediate: 0 }
+  let lastDrawAt = -Infinity
+  let lastDrawMs = 0
+  let lastInputAt = -Infinity
+  let step = 0 // the smoothed gap between two input steps of this gesture, ms: slow frames (a slow machine) make the gaps longer than `quiet`
+  const counters = { moves: 0, settles: 0, intermediate: 0, held: 0 }
 
   function clear() {
     transform = IDENTITY
@@ -58,12 +70,17 @@ export function createGestureView({ elements, commit, moved = () => {}, margin =
     moved()
   }
 
-  function draw(view, paint = true) {
+  const recent = [] // the last draws: how long each took and why (for checks and the benchmark)
+  function draw(view, paint = true, why = 'redraw') {
     if (timer) { cancel(timer); timer = null }
     pending = false
     committed = { ...view }
+    const began = now()
     commit(committed, { paint })
     clear() // same task as the draw: the new picture and the end of the transform are one frame
+    lastDrawMs = now() - began
+    recent.push([why, Math.round(lastDrawMs), Math.round(began)]); if (recent.length > 40) recent.shift()
+    lastDrawAt = now()
   }
 
   function place() {
@@ -76,23 +93,30 @@ export function createGestureView({ elements, commit, moved = () => {}, margin =
   function settle() {
     if (!pending || !latest) return false
     counters.settles += 1
-    draw(latest)
+    draw(latest, true, 'settle')
     return true
   }
 
   return {
     // The view changes (a pan step, a zoom step, a jump).
     setView(view) {
+      const at = now()
+      const gap = at - lastInputAt
+      lastInputAt = at
+      step = gap < 600 ? (step ? step * 0.7 + gap * 0.3 : gap) : 0
       latest = { ...view }
       if (!committed) return draw(view)
       const next = transformFor(committed, view, margin())
-      if (next.k < MIN_K || next.k > MAX_K || !covers(next, size(), margin())) { counters.intermediate += 1; return draw(view) }
+      if (next.k < MIN_K || next.k > MAX_K || !covers(next, size(), margin())) {
+        if (now() - lastDrawAt >= drawGap(lastDrawMs)) { counters.intermediate += 1; return draw(view, true, 'edge') }
+        counters.held += 1 // too soon after the last draw: the canvas goes on moving
+      }
       transform = next
       pending = true
       counters.moves += 1
       place()
       if (timer) cancel(timer)
-      timer = schedule(() => { timer = null; settle() }, quiet)
+      timer = schedule(() => { timer = null; settle() }, quietFor(quiet, step))
     },
     settle,
     // Draw the view now (the note's own edit changed what the layers need, or the window was resized).
@@ -109,7 +133,7 @@ export function createGestureView({ elements, commit, moved = () => {}, margin =
     get committed() { return committed },
     // Where a point of the canvas (the picture's own pixels) is in the window now.
     map: (point) => mapPoint(transform, margin(), point),
-    stats: () => ({ ...counters, pending, margin: margin() }),
+    stats: () => ({ ...counters, pending, margin: margin(), recent: [...recent] }),
     destroy() { if (timer) cancel(timer); timer = null; clear() },
   }
 }

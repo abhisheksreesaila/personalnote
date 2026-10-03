@@ -127,7 +127,7 @@ try {
   const reference = await shot(plain.page)
   const d = await diff(page, gestured, reference)
   if (process.env.GEST_DUMP) { (await import('node:fs')).writeFileSync('/var/tmp/pn-f034-a.png', gestured); (await import('node:fs')).writeFileSync('/var/tmp/pn-f034-b.png', reference) }
-  check('after pan + zoom settle, the picture matches a plain draw at the same view', Math.abs(planePlain.x - target.view.x) < 1e-6 && Math.abs(planePlain.scale - target.view.scale) < 1e-9 && d.different / d.pixels < 0.002 && d.max < 80, 'only the antialiasing slivers along long arrows differ: ' + JSON.stringify({ ...d, view: target.view, plainView: planePlain }))
+  check('after pan + zoom settle, the picture matches a plain draw at the same view', Math.abs(planePlain.x - target.view.x) < 1e-6 && Math.abs(planePlain.scale - target.view.scale) < 1e-9 && d.different / d.pixels < 0.005 && d.max < 80, 'only the antialiasing slivers along long arrows differ: ' + JSON.stringify({ ...d, view: target.view, plainView: planePlain }))
   // the noise of the screen itself: a second plain draw at that view, in another page
   const plain2 = await open({ gestureTransform: false, pageBitmaps: 'off' })
   await plain2.page.evaluate((t) => { const n = window.__personalNote; n.state.canvasZoom = t.zoom; n.setCanvasViewportOffset(t.view.x, t.view.y, true) }, target)

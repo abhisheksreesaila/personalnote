@@ -9,7 +9,7 @@ import { PAGE } from '../../core/document/index.js'
 import { applyChanges, isLocked, planLock, planMove, planRemove, planReorder, planSetGeometry, stacking } from '../../core/document/operations.js'
 import { connectorEndpoints } from '../editor/connectors.js'
 import { nextPageGhost } from '../editor/edge-ghost.js'
-import { LIFT_SHADOW, LIFT_TILT_DEGREES } from '../editor/lift.js'
+import { LIFT_SHADOW, LIFT_SHADOW_MAX, LIFT_TILT_DEGREES } from '../editor/lift.js'
 import { STICKY_PADDING } from '../editor/objects.js'
 import { boundingRect, rectEdges } from './bounds.js'
 import { FOLD_COLOR, FOLD_DASH, FOLD_WIDTH, LABEL_FONT_FAMILY, LABEL_FONT_SIZE, pageChrome } from './chrome.js'
@@ -538,11 +538,14 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     if (lift) for (const entry of list) if (!isLocked(entry.object)) take(entry, true)
     for (const entry of list) for (const id of linked.get(entry.id) ?? []) { const arrow = entries.get(id); if (arrow) take(arrow, false) }
     items.sort((x, y) => x.index - y.index)
+    // A live blur on every dragged object is a blur drawn per object at every step: on a Mac's WebKit 40 of them took 135 ms a frame. A crowd keeps
+    // the tilt (it costs nothing) and loses the shadow; up to a few objects lift with the shadow as before.
+    const shadowed = items.filter((item) => item.lifted).length <= LIFT_SHADOW_MAX
     for (const item of items) {
       const { node } = item.entry
       if (item.lifted) {
         node.rotation = node.rotation + LIFT_TILT_DEGREES
-        node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
+        if (shadowed) node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
       }
       overlays.dragLayer.add(node)
     }
