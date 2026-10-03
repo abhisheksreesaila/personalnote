@@ -347,6 +347,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       let visibleReady = true
       const plan = hybrid() ? planFor(latest) : null
       each(visible(latest, 0), (c, r) => { const tile = tiles.get(key(c, r)); if (!tile || tile.built !== version || stale(tile, latest, c, r, plan ?? undefined)) visibleReady = false })
+      if (visibleReady && !ready(visible(latest))) visibleReady = false // (the pages next to the window too: a pan shows them next)
       return { mode, active, slow, hybrid: hybrid(), visibleReady, crisp: plan ? plan.crisp : null, scales: plan ? plan.scales : null, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, bytes, ...counters }
     },
     // For checks: the tile of one page ({ c, r }) as { scale, built } (or null).

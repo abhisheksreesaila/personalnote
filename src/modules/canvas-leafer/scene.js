@@ -1532,6 +1532,19 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     // Page bitmaps (checks and the benchmark): what they are doing, build them all now, treat this machine as slow.
     lodState: () => lod.stats(),
+    // Resolves when the page bitmaps are made for the view as it is (they are made in idle time after a jump or a zoom), or after `maxMs`; at once when
+    // there are none to wait for. The speed test sets a view and waits for this, as a person who pauses before the next pan does.
+    whenBitmapsReady(maxMs = 8000) {
+      return new Promise((resolve) => {
+        const began = performance.now()
+        const check = () => {
+          const state = lod.stats()
+          if (!state.hybrid || state.mode === 'off' || state.crisp === false || (state.visibleReady && !state.active) || performance.now() - began > maxMs) resolve()
+          else setTimeout(check, 100)
+        }
+        check()
+      })
+    },
     lodBuildAll: () => lod.buildAll(),
     lodForceSlow: () => lod.forceSlow(),
     destroy() { gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },

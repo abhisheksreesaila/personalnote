@@ -3141,6 +3141,7 @@ async function startSpeedTest() {
           if (zoom === 'fit') fitAllPages()
           else { state.canvasZoom = zoom; setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104) }
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+          await leaferCanvas.whenBitmapsReady() // (hybrid: the page bitmaps of the new view are made in idle time, as for a person who pauses before the next pan)
         },
       },
     })
