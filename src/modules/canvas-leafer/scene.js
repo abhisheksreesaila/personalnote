@@ -751,7 +751,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // Pages appear as the words near the right or bottom edge, while they are typed (not when the typing pauses): the box the words fill now
   // is measured, and the grid grows a margin ahead of it by the drag's rule. The document does not hear of it until the next draft commit,
   // which records the grid in the session's one undo step (and keeps it: no fold-back until the session ends). Nothing moves: typing only
-  // grows a text right and down, so the overlay stays where it is.
+  // grows a text right and down, so the overlay stays where it is. (A turned text can need room on the left or top too; that growth is
+  // deferred to the settle of the draft commit and of the session's end, which prepend as usual.)
   function growPagesForWords(edit, size) {
     const object = edit.entry?.object ?? edit.object
     const geometry = fitGeometry(object, size)
@@ -877,6 +878,9 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     flushText() {
       if (!textEdit || !overlay.isOpen) return null
       if (!overlay.composing) { clearTimeout(draftTimer); storeWords(textEdit, overlay.value, { final: false }) }
+      // the grid the words made room for is in the document too (words typed past the edge and since deleted change nothing else)
+      const floor = textEdit.floor
+      if (floor && (floor.columns > doc.page.columns || floor.rows > doc.page.rows)) { commit({ label: 'Edit text', changes: [] }, { floor }); textEdit.floor = { ...pages } }
       return textEdit.entry?.id ?? null
     },
     // Ends a text edit in progress (the words typed so far are kept). The host calls it before it saves or leaves the note.
@@ -1137,6 +1141,12 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       })
       placeEditor()
       pages = { columns: doc.page?.columns ?? pages.columns, rows: doc.page?.rows ?? pages.rows }
+      // the grid a typing session made room for stays until the session settles, whatever the merged document holds
+      const floor = textEdit?.floor
+      if (floor && (pages.columns < floor.columns || pages.rows < floor.rows)) {
+        pages = { columns: Math.max(pages.columns, floor.columns), rows: Math.max(pages.rows, floor.rows) }
+        onPages({ ...pages, shiftX: 0, shiftY: 0 })
+      }
       drawChrome()
     },
     // An undo or a redo (F-034): the document changed in the objects the step names and nowhere else, so only those are drawn again (the

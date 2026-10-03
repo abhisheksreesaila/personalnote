@@ -48,7 +48,7 @@ const agentWrite = (change) => {
   changeLog.push({ sequence: changeSeq, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: stored.revision })
 }
 
-const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4859' } }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4789' } }, logLevel: 'error' })
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 
@@ -747,6 +747,66 @@ try {
     await settle()
     await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
     check('undo takes the dictation and its page away', (await doc(tp)).page.rows === 1 && !(await doc(tp)).objects.some((o) => o.type === 'text'))
+
+    // an agent writes after the grid grew but before the draft timer: the page stays, the save is right
+    await scene(tp, 'createText', { x: 100, y: 800 })
+    await tp.waitForSelector('.leafer-text-editor')
+    for (let i = 0; i < 30 && (await grid(tp)).rows === 1; i += 1) await tp.keyboard.type(`merge line ${i}\n`)
+    const grownBeforeMerge = (await grid(tp)).rows === 2
+    for (let i = 0; i < 4; i += 1) await tp.keyboard.type(`past the edge ${i}\n`) // on past the edge: the page is really needed
+    const agentDoc = readJsonCanvas(typeNote.content)
+    agentDoc.objects.push({ id: 'AGT', type: 'text', mode: 'box', z: 90, content: 'the agent was here', geometry: { x: 300, y: 100, width: 200, height: 60, ...UPRIGHT } })
+    typeNote.content = store(agentDoc)
+    typeNote.pageState = { columns: agentDoc.page.columns, rows: agentDoc.page.rows }
+    typeNote.revision += 1
+    changeSeq += 1
+    changeLog.push({ sequence: changeSeq, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: typeNote.revision })
+    let merged = null
+    for (let i = 0; i < 40 && !merged; i += 1) { await tp.waitForTimeout(250); const d = await doc(tp); if (objectOf(d, 'AGT')) merged = d }
+    check('an agent\'s write that merges while the words are typed leaves the grown page in place', grownBeforeMerge && Boolean(merged) && (await grid(tp)).rows === 2 && merged.page.rows === 2, JSON.stringify([grownBeforeMerge, merged?.page, await grid(tp)]))
+    await tp.waitForFunction(() => Boolean(document.querySelector('.leafer-text-editor')))
+    const putsAtMerge = puts.length
+    await settle()
+    await waitSave(tp, putsAtMerge)
+    check('the note saved after the merge has the agent\'s text, the typed text and the grown page', savedDoc().page.rows === 2 && savedDoc().objects.some((o) => o.id === 'AGT') && savedDoc().objects.some((o) => o.type === 'text' && o.content.includes('merge line 0')), JSON.stringify(savedDoc().page))
+    check('the grown page stays after the session', (await grid(tp)).rows === 2 && (await doc(tp)).page.rows === 2)
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo()) // (the merge is not a step; a second undo changes nothing more of the text)
+    td = await doc(tp)
+    check('undo takes the typed text and its page away; the agent\'s text stays', td.page.rows === 1 && !td.objects.some((o) => o.type === 'text' && o.content.includes('merge line')) && Boolean(objectOf(td, 'AGT')), JSON.stringify(td.page))
+
+    // words typed past the edge and then deleted: the page stays while the session is open (no fold mid-typing), and goes when it ends
+    const stepsMid = await steps(tp)
+    await scene(tp, 'createText', { x: 100, y: 800 })
+    await tp.waitForSelector('.leafer-text-editor')
+    for (let i = 0; i < 30 && (await grid(tp)).rows === 1; i += 1) await tp.keyboard.type(`gone ${i}\n`)
+    await tp.waitForTimeout(900) // the draft is committed with the page
+    await tp.keyboard.press('Control+A')
+    await tp.keyboard.press('Backspace')
+    await tp.keyboard.type('x')
+    await tp.waitForTimeout(900)
+    check('deleting the words does not fold the page mid-typing', (await grid(tp)).rows === 2 && (await doc(tp)).page.rows === 2, JSON.stringify([await grid(tp), (await doc(tp)).page]))
+    await settle()
+    td = await doc(tp)
+    check('when the session ends the page the words no longer need folds back', td.page.rows === 1 && (await grid(tp)).rows === 1 && td.objects.some((o) => o.type === 'text' && o.content === 'x'), JSON.stringify([td.page, await grid(tp)]))
+    check('the whole session is one undo step', (await steps(tp)) === stepsMid + 1, `${stepsMid} -> ${await steps(tp)}`)
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
+    check('undo removes it', !(await doc(tp)).objects.some((o) => o.type === 'text' && o.content === 'x'))
+
+    // mid input method: a composition near the right edge grows the page, and the composed words come out once
+    await scene(tp, 'createText', { x: 640, y: 200 })
+    await tp.waitForSelector('.leafer-text-editor')
+    const cdp = await typeContext.newCDPSession(tp)
+    await cdp.send('Input.imeSetComposition', { text: 'こんにちは世界こんにちは世界こんにちは', selectionStart: 19, selectionEnd: 19 })
+    await tp.waitForTimeout(100)
+    check('a composition that reaches the right edge adds a page while still composing', (await grid(tp)).columns === 2 && await tp.evaluate(() => document.querySelector('.leafer-text-editor')?.value.length > 0), JSON.stringify(await grid(tp)))
+    await cdp.send('Input.insertText', { text: 'こんにちは世界こんにちは世界こんにちは' })
+    await tp.waitForTimeout(100)
+    await settle()
+    td = await doc(tp)
+    check('the composed words are in the note once, with the page', td.page.columns === 2 && td.objects.some((o) => o.type === 'text' && o.content === 'こんにちは世界こんにちは世界こんにちは'), JSON.stringify([td.page, td.objects.filter((o) => o.type === 'text').map((o) => o.content)]))
+    await cdp.detach()
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
 
     // a sticky grows as it is typed and the page grows with it
     await scene(tp, 'createSticky', { x: 300, y: 820 })

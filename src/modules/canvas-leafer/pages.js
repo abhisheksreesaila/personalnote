@@ -70,8 +70,9 @@ export function growForDrag(pages, bounds, { pageW = PAGE.width, pageH = PAGE.he
 }
 
 // While words are typed: a page is added before the text reaches the right or bottom edge, by the same margin as a drag, and one line ahead
-// at the bottom (the next line is what would cross it). Typing only ever grows a text to the right and down, so nothing is prepended and
-// no object moves; it never folds back (that is settled when the typing is committed). `lineHeight` is the height of one line.
+// at the bottom (the next line is what would cross it). Typing grows a text right and down, so nothing is prepended and no object moves
+// (a turned text can need room on the left or the top as well: that is left to the settle when the typing is committed, which prepends then).
+// It never folds back mid-typing (that is settled when the session ends). `lineHeight` is the height of one line.
 export function growForText(pages, bounds, { lineHeight = 0, pageW = PAGE.width, pageH = PAGE.height } = {}) {
   let { columns, rows } = pages
   while (bounds.right > columns * pageW - TRANSFORM_EDGE_MARGIN) columns += 1
