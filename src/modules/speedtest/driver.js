@@ -184,7 +184,7 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     const gapList = []
     const lat = []
     const gapsRun = gaps(async () => {
-      for (let s = 0; s < (k < 1 ? 2 : 4); s += 1) {
+      for (let s = 0; s < (k < 1 ? 1 : 4); s += 1) {
         const x0 = rect.left + 200 + s * 14
         const y0 = rect.top + 160 + s * 60
         const point = (i) => ({ x: x0 + (360 * i) / 60, y: y0 + Math.sin((i / 60) * Math.PI * 2) * 50, kind: 'pen', pressure: 0.3 + 0.6 * Math.sin((i / 60) * Math.PI) })
@@ -272,8 +272,7 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
 
   // The quick version for the render-mode comparison: pan, zoom, drag, pen and typing on the note that is open, one row each (named for the table).
   async function runQuick() {
-    stopped = false
-    k = 0.5
+    k = 0.35 // (a stop pressed earlier stays: only the session starts un-stopped, see `reset`)
     const rows = {}
     const failed = []
     const add = (name, values, unit) => { rows[name] = { ...summarize(values), ...(unit ? { unit } : {}) } }
@@ -304,5 +303,19 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
     return { rows, failed }
   }
 
-  return { run, runQuick, stop() { stopped = true } }
+  // Unmeasured: the same kind of moves as the scenarios, so the first measured run after a mode switch does not pay for warming up (new bitmaps,
+  // first draws, shader and cache fills).
+  async function warm() {
+    k = 0.35
+    try {
+      await host.setView({ zoom: 'fit' })
+      await sleep(200)
+      check(); await pan()
+      await host.setView({ zoom: 1 })
+      await sleep(200)
+      check(); await pan()
+    } finally { k = 1 }
+  }
+
+  return { run, runQuick, warm, check, reset() { stopped = false }, stop() { stopped = true } }
 }

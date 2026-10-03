@@ -32,7 +32,7 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await context.route('**/api/**', async (route) => {
+  const apiHandler = async (route) => {
     const req = route.request()
     const p = new URL(req.url()).pathname.replace(/^\/api/, '')
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
@@ -63,13 +63,14 @@ try {
       if (req.method() === 'DELETE') { calls.push(['DELETE', id]); delete notesDb[id]; return route.fulfill({ status: 204 }) }
     }
     return json({})
-  })
+   }
+  await context.route('**/api/**', apiHandler)
   await page.goto('http://127.0.0.1:4830/notes?speedtest=1')
   await page.waitForSelector('.speedtest-panel [data-act="start"]', { timeout: 60000 })
   check('the panel offers Compare render modes, ticked', await page.evaluate(() => document.querySelector('#speedtest-compare')?.checked === true))
   const started = Date.now()
   await page.click('.speedtest-panel [data-act="start"]')
-  await page.waitForFunction(() => document.documentElement.dataset.speedtestDone, null, { timeout: 600000 })
+  await page.waitForFunction(() => document.documentElement.dataset.speedtestDone, null, { timeout: 1500000 })
   console.log(`the whole run took ${Math.round((Date.now() - started) / 1000)} s`)
   const text = await page.evaluate(() => document.querySelector('.speedtest-panel').innerText)
   const rows = await page.evaluate(() => [...document.querySelectorAll('.speedtest-panel table:not(.speedtest-compare) tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent)))
@@ -88,11 +89,12 @@ try {
   // Compare render modes: every mode ran on both notes and the table is on screen and in the saved report
   const comparison = report?.data?.comparison
   const modeIds = ['default', 'bitmaps', 'dpr1', 'noShadow', 'fullRender']
-  check('the comparison ran every mode on both notes', JSON.stringify(comparison?.modes?.map((mode) => mode.id)) === JSON.stringify(modeIds) && comparison.notes.length === 2 && comparison.notes.every((note) => modeIds.every((id) => Object.keys(note.results[id]?.rows ?? {}).length >= 7)), JSON.stringify(comparison?.notes?.map((note) => Object.keys(note.results))))
+  check('the comparison ran every mode on both notes', JSON.stringify(comparison?.modes?.map((mode) => mode.id)) === JSON.stringify(modeIds) && comparison.notes.length === 2 && comparison.notes.every((note) => modeIds.every((id) => Object.keys(note.results[id]?.rows ?? {}).length >= 7 && note.results[id].rows['Pan (100%)'].n > 20)), JSON.stringify(comparison?.notes?.map((note) => Object.keys(note.results))))
+  check('every run of every mode began with the note\'s own objects (edits are put back)', comparison?.notes?.every((note) => modeIds.every((id) => note.starts?.[id]?.length === 2 && note.starts[id].every((count) => count === note.objects))), JSON.stringify(comparison?.notes?.map((note) => note.starts)))
   check('the second note is the 600-object one', comparison?.notes?.[1]?.objects >= 500 && comparison.notes[1].objects <= 700, JSON.stringify(comparison?.notes?.map((note) => note.objects)))
   check('no mode could not be measured', comparison?.notes?.every((note) => modeIds.every((id) => !note.results[id].failed.length)), JSON.stringify(comparison?.notes?.map((note) => modeIds.map((id) => note.results[id].failed))))
   const tables = await page.evaluate(() => [...document.querySelectorAll('.speedtest-compare')].map((table) => ({ heads: [...table.querySelectorAll('th')].map((th) => th.textContent), rows: [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent)) })))
-  check('the results panel has a side-by-side table per note, a column per mode, p50/p95/max in every cell', tables.length === 2 && tables.every((table) => table.heads.length === 6 && table.rows.length >= 7 && table.rows.every((row) => row.slice(1).every((cell) => /^[\d.]+\/[\d.]+\/[\d.]+$/.test(cell)))), JSON.stringify(tables[0]))
+  check('the results panel has a side-by-side table per note, a column per mode, p50/p95/max in every cell', tables.length === 2 && tables.every((table) => table.heads.length === 6 && table.rows.length >= 7 && table.rows.every((row) => row.slice(1).every((cell) => /^[\d.]+\/[\d.]+\/[\d.]+( noisy)?$/.test(cell)))), JSON.stringify(tables[0]))
   check('the saved text has the comparison too', /Render modes on the stress note/.test(report?.text) && /Render modes on a realistic note/.test(report.text) && /Bitmaps always\s+DPR 1\s+Shadows off\s+Full redraw/.test(report.text))
   const finalPerf = await page.evaluate(() => JSON.stringify(window.__pnPerf ?? {}))
   check('the render mode is back to the saved one (default) afterwards', finalPerf === '{}', finalPerf)
@@ -111,9 +113,13 @@ try {
   await page.waitForTimeout(6000)
   const panelBox = await page.evaluate(() => { const r = document.querySelector('.speedtest-panel').getBoundingClientRect(); return { right: r.right, left: r.left, width: innerWidth } })
   check('while it runs the panel is in the corner (the middle of the note is free)', panelBox.left > panelBox.width / 2, JSON.stringify(panelBox))
+  // Stop pressed in the middle of the comparison (not only in the first run) ends it and is not lost
+  await page.waitForFunction(() => /Comparing render modes: a realistic note/.test(document.querySelector('.speedtest-step')?.textContent ?? ''), null, { timeout: 1500000 })
+  await page.waitForTimeout(2500)
   await page.click('.speedtest-panel [data-act="stop"]')
   await page.waitForFunction(() => document.documentElement.dataset.speedtestDone, null, { timeout: 120000 })
-  check('Stop ends the run early and the results say so', Boolean(report?.data?.failed?.some((entry) => /stopped/.test(entry))), JSON.stringify(report?.data?.failed))
+  check('Stop pressed during the comparison ends the run, keeps the main results, and the results say so', Boolean(report?.data?.failed?.some((entry) => /comparison stopped/.test(entry))) && report.data.results.length > 5, JSON.stringify(report?.data?.failed))
+  check('and the comparison got no further than the realistic note', report?.data?.comparison?.notes?.length === 2 && !report.data.comparison.notes[1].results.fullRender)
   check('and the test note was removed again', Object.keys(notesDb).length === 1)
 
   // the person's own app: nothing runs here, a separate instance is asked for
@@ -128,17 +134,25 @@ try {
   await own.waitForTimeout(1000)
   check('Settings > Run… asks for a separate instance and makes no note here', calls.some((call) => call[1] === '/speedtest/launch') && !calls.some((call) => call[1] === '/notes') && Object.keys(notesDb).length === 1, JSON.stringify(calls))
   check('and tells the person where the results will show', /window of its own/.test(await own.evaluate(() => document.body.innerText)))
-  // Settings > Performance > Advanced > Render mode: default is unchanged, a choice goes into the canvas switches and is remembered
-  check('Render mode starts at Default and the canvas switches are the defaults', await own.evaluate(() => document.querySelector('#settings-render-mode').value === 'default' && !window.__pnPerf?.pageBitmaps))
-  await own.evaluate(() => { const select = document.querySelector('#settings-render-mode'); select.value = 'bitmaps'; select.dispatchEvent(new Event('change', { bubbles: true })) })
-  await own.waitForTimeout(800)
-  check('choosing page bitmaps always sets the switches and keeps the note drawn', await own.evaluate(() => window.__pnPerf?.pageBitmaps === 'always' && window.__pnPerf.lodZoom > 1 && window.__personalNote.state.activeNoteId === 1 && document.querySelectorAll('#leafer-host canvas').length > 0))
-  await own.reload()
-  await own.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
-  check('the choice is remembered after a reload', await own.evaluate(() => window.__pnPerf?.pageBitmaps === 'always' && document.querySelector('#settings-render-mode').value === 'bitmaps'))
-  await own.evaluate(() => { const select = document.querySelector('#settings-render-mode'); select.value = 'dpr1'; select.dispatchEvent(new Event('change', { bubbles: true })) })
-  await own.waitForTimeout(800)
-  check('DPR 1 is taken into the live canvas', await own.evaluate(() => window.__pnPerf?.dprCap === 1))
+  // Settings > Performance > Advanced > Render mode, on a 2x screen: default is unchanged, a choice goes into the canvas and is remembered
+  const retina = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
+  await retina.route('**/api/**', apiHandler)
+  const mac = await retina.newPage()
+  mac.on('pageerror', (error) => errors.push(error.message))
+  const ratio = () => mac.evaluate(() => Math.max(...[...document.querySelectorAll('#leafer-host canvas')].map((canvas) => canvas.width / canvas.getBoundingClientRect().width)))
+  const choose = async (value) => { await mac.evaluate((v) => { const select = document.querySelector('#settings-render-mode'); select.value = v; select.dispatchEvent(new Event('change', { bubbles: true })) }, value); await mac.waitForTimeout(1000) }
+  await mac.goto('http://127.0.0.1:4830/notes')
+  await mac.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  check('Render mode starts at Default and draws at the screen\'s 2x', await mac.evaluate(() => document.querySelector('#settings-render-mode').value === 'default' && !window.__pnPerf?.pageBitmaps) && Math.abs(await ratio() - 2) < 0.05, String(await ratio()))
+  await choose('bitmaps')
+  check('choosing page bitmaps always sets the switches and keeps the note drawn', await mac.evaluate(() => window.__pnPerf?.pageBitmaps === 'always' && window.__pnPerf.lodZoom > 1 && window.__personalNote.state.activeNoteId === 1 && document.querySelectorAll('#leafer-host canvas').length > 0))
+  await mac.reload()
+  await mac.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  check('the choice is remembered after a reload', await mac.evaluate(() => window.__pnPerf?.pageBitmaps === 'always' && document.querySelector('#settings-render-mode').value === 'bitmaps'))
+  await choose('dpr1')
+  check('DPR 1 makes the live canvas draw at 1x', Math.abs(await ratio() - 1) < 0.05, String(await ratio()))
+  await choose('default')
+  check('and Default puts it back to 2x', Math.abs(await ratio() - 2) < 0.05, String(await ratio()))
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
   await browser.close()

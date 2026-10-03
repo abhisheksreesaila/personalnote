@@ -5,7 +5,7 @@
 // delete)", removed when the test ends) and saves nothing while it runs, so no note of the person's is touched. The results are shown, can be
 // copied as text, and are saved to a file in the app's data folder.
 import { createSpeedTest } from './driver.js'
-import { comparisonRows, formatComparison, formatReport, verdict } from './report.js'
+import { comparisonRows, formatComparison, formatReport, mergeRuns, verdict } from './report.js'
 import { generateStressNote } from './stress-note.js'
 
 const STRESS_OBJECTS = 5400
@@ -71,7 +71,7 @@ export async function runSpeedTest(env) {
   // Before it starts: one choice, and one click.
   panel.innerHTML = `${header('Measures how smoothly this computer draws a note: panning, zooming, dragging, pen and typing. Your notes are not touched.')}
     <label class="setting-row" for="speedtest-compare"><span>Compare render modes</span><input type="checkbox" id="speedtest-compare" checked /></label>
-    <p class="portability-help">Also runs a shorter version of the test under each way of drawing the canvas, on the big note and on a note of ${REALISTIC_OBJECTS} objects, and puts them side by side. About 3 minutes in all; without it, about 1 minute.</p>
+    <p class="portability-help">Also runs a shorter version of the test under each way of drawing the canvas, on the big note and on a note of ${REALISTIC_OBJECTS} objects, and puts them side by side. Each mode is run twice. About 3 minutes in all on a fast computer; without it, about 1 minute.</p>
     <div class="portability-actions"><button data-act="start">Start</button><button data-act="cancel">Cancel</button></div>`
   const choice = await new Promise((resolve) => {
     panel.querySelector('[data-act="start"]').addEventListener('click', () => resolve({ compare: panel.querySelector('#speedtest-compare').checked }))
@@ -104,6 +104,7 @@ export async function runSpeedTest(env) {
     if (env.activeNoteId() !== note.id) throw new Error('the stress note did not open')
     const openMs = performance.now() - t0
     const objects = env.host.edits.doc.objects.length
+    const stressSnapshot = JSON.parse(JSON.stringify(env.host.edits.doc)) // as opened: the full run edits the note (pen strokes), the comparison starts from this
     test = createSpeedTest({
       host: { ...env.host, guard: () => { if (env.activeNoteId() !== currentId) throw Object.assign(new Error('the open note is not the stress note'), { aborted: true }) } },
       onProgress: progress,
@@ -112,35 +113,54 @@ export async function runSpeedTest(env) {
     let comparison = null
     if (choice.compare && !failed.some((entry) => /stopped/.test(entry))) {
       comparing = true
-      const realistic = generateStressNote(REALISTIC_OBJECTS, { columns: 2, rows: 3 })
       comparison = { modes: COMPARE_MODES, notes: [] }
-      const total = COMPARE_MODES.length * 2
+      // A B C D E E D C B A: every mode twice, so what drifts over the minutes (heat, other programs) does not land on one mode only.
+      const order = [...COMPARE_MODES, ...[...COMPARE_MODES].reverse()]
+      const total = order.length * 2
       let done = 0
-      const sets = [{ label: 'the stress note', objects }, { label: `a realistic note`, make: realistic }]
-      for (const set of sets) {
-        if (set.make) {
-          const made = await makeNote(set.make)
-          await env.openNote(made.id)
-          currentId = made.id
-          if (env.activeNoteId() !== made.id) throw new Error('the realistic note did not open')
-          set.objects = env.host.edits.doc.objects.length
-        }
-        const entry = { label: set.label, objects: set.objects, results: {} }
-        comparison.notes.push(entry)
-        for (const mode of COMPARE_MODES) {
-          progress({ name: `Comparing render modes: ${set.label}, ${mode.label}`, done, total })
-          await env.host.setRenderMode(mode.id)
-          await sleep(500)
-          try { entry.results[mode.id] = await test.runQuick() } catch (error) {
-            if (!error.stopped) throw error
-            failed.push('comparison stopped before the end')
-            break
+      try {
+        const sets = [{ label: 'the stress note', objects, snapshot: stressSnapshot }, { label: 'a realistic note', make: () => generateStressNote(REALISTIC_OBJECTS, { columns: 2, rows: 3 }) }]
+        let stoppedEarly = false
+        for (const set of sets) {
+          if (set.make) {
+            const made = await makeNote(set.make())
+            await env.openNote(made.id)
+            currentId = made.id
+            if (env.activeNoteId() !== made.id) throw new Error('the realistic note did not open')
+            set.objects = env.host.edits.doc.objects.length
           }
-          done += 1
+          // Every run of every mode starts from the same document: edits one run made (the drags, the pen, the typing) are put back.
+          const snapshot = set.snapshot ?? JSON.parse(JSON.stringify(env.host.edits.doc))
+          const entry = { label: set.label, objects: set.objects, results: {}, starts: {} } // (starts: how many objects each run began with; all equal the note's)
+          comparison.notes.push(entry)
+          const runs = {}
+          for (const mode of order) {
+            try {
+              test.check()
+              progress({ name: `Comparing render modes: ${set.label}, ${mode.label}`, done, total })
+              await env.host.setRenderMode(mode.id, snapshot)
+              await sleep(300)
+              await test.warm()
+              ;(entry.starts[mode.id] ??= []).push(env.host.edits.doc.objects.length)
+              const result = await test.runQuick()
+              ;(runs[mode.id] ??= []).push(result)
+              done += 1
+            } catch (error) {
+              if (!error.stopped) throw error
+              stoppedEarly = true
+              failed.push('comparison stopped before the end')
+              break
+            }
+          }
+          for (const mode of COMPARE_MODES) if (runs[mode.id]?.length === 2) entry.results[mode.id] = mergeRuns(runs[mode.id][0], runs[mode.id][1])
+          if (stoppedEarly) break
         }
-        if (failed.some((text) => /comparison stopped/.test(text))) break
+        progress({ name: 'Done', done: total, total })
+      } catch (error) {
+        // The main results are kept; the comparison says how far it got.
+        console.error('The render-mode comparison failed', error)
+        failed.push(`Render-mode comparison failed: ${error.message || error}`)
       }
-      progress({ name: 'Done', done: total, total })
     }
     const run = {
       when: new Date().toISOString(), app: 'Personal Note', ...environment(env),
@@ -178,7 +198,7 @@ export async function runSpeedTest(env) {
     <p class="portability-help">${escape(report.run.engine)} on ${escape(report.run.platform)}, ${escape(report.run.host)}, ${escape(report.run.dpr)}x screen (${escape(report.run.screen)}), ${escape(report.run.cores)} cores${report.run.gpu ? `, ${escape(report.run.gpu)}` : ''}. Stress note: ${report.run.note.objects} objects on ${escape(report.run.note.pages)} pages.</p>
     <table><thead><tr><th></th><th>p50</th><th>p95</th><th>max</th><th></th></tr></thead><tbody>${rows}</tbody></table>
     ${(report.run.comparison?.notes ?? []).map((note) => `<h3>Render modes on ${escape(note.label)} (${escape(note.objects)} objects)</h3>
-    <p class="portability-help">p50/p95/max in milliseconds per frame (lower is better).</p>
+    <p class="portability-help">p50/p95/max in milliseconds per frame (lower is better), the median of two runs; noisy: the two runs differed by more than 1.5x.</p>
     <table class="speedtest-compare"><thead><tr><th></th>${report.run.comparison.modes.map((mode) => `<th>${escape(mode.label)}</th>`).join('')}</tr></thead><tbody>${comparisonRows(note, report.run.comparison.modes).map((row) => `<tr><td>${escape(row.name)}</td>${row.cells.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`).join('')}
     ${report.run.failed.length ? `<p class="portability-help">Could not measure: ${escape(report.run.failed.join('; '))}</p>` : ''}
     <div class="portability-actions"><button data-act="copy">Copy results</button><button data-act="again">Run again</button><button data-act="close">Close</button></div>

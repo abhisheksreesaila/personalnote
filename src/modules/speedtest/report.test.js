@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { comparisonRows, formatComparison, formatReport, summarize, verdict } from './report.js'
+import { comparisonRows, mergeRuns, formatComparison, formatReport, summarize, verdict } from './report.js'
 import { generateStressDocument } from './stress-note.js'
 
 test('summarize gives p50, p95 and max, ignores junk and counts the slow frames', () => {
@@ -51,4 +51,15 @@ test('the comparison has a table per note with a column per render mode', () => 
   assert.match(text, /Render modes on the stress note \(5400 objects\)/)
   assert.match(text, /Default\s+DPR 1/)
   assert.match(text, /DPR 1: could not measure Typing/)
+})
+
+test('two runs of a mode are merged to their median and a row where they disagree is marked noisy', () => {
+  const row = (p95) => ({ p50: 16, p95, max: p95 + 10, n: 50, slow: 1 })
+  const merged = mergeRuns({ rows: { Pan: row(20), Zoom: row(20) }, failed: [] }, { rows: { Pan: row(24), Zoom: row(50) }, failed: ['x'] })
+  assert.equal(merged.rows.Pan.p95, 22)
+  assert.equal(merged.rows.Pan.noisy, false)
+  assert.equal(merged.rows.Zoom.p95, 35)
+  assert.equal(merged.rows.Zoom.noisy, true)
+  assert.deepEqual(merged.failed, ['x'])
+  assert.match(formatComparison({ modes: [{ id: 'a', label: 'A' }], notes: [{ label: 'n', objects: 1, results: { a: merged } }] }), /16\/35\/45 noisy/)
 })

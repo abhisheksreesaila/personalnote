@@ -49,7 +49,7 @@ export function comparisonRows(note, modes) {
   return names.map((name) => ({
     name,
     unit: modes.map((mode) => note.results[mode.id]?.rows?.[name]?.unit).find(Boolean),
-    cells: modes.map((mode) => { const row = note.results[mode.id]?.rows?.[name]; return row ? `${row.p50}/${row.p95}/${row.max}` : '-' }),
+    cells: modes.map((mode) => { const row = note.results[mode.id]?.rows?.[name]; return row ? `${row.p50}/${row.p95}/${row.max}${row.noisy ? ' noisy' : ''}` : '-' }),
   }))
 }
 
@@ -57,7 +57,7 @@ export function formatComparison(comparison) {
   const lines = []
   for (const note of comparison.notes) {
     lines.push('')
-    lines.push(`Render modes on ${note.label} (${note.objects} objects). Each cell is p50/p95/max in milliseconds (frames, or event to frame where noted).`)
+    lines.push(`Render modes on ${note.label} (${note.objects} objects). Each cell is p50/p95/max in milliseconds (frames, or event to frame where noted), the median of two runs; "noisy" means the two runs' p95 differed by more than 1.5x.`)
     const rows = comparisonRows(note, comparison.modes)
     const width = Math.max(...rows.map((row) => row.name.length), 8) + 6
     const widths = comparison.modes.map((mode, i) => Math.max(mode.label.length, ...rows.map((row) => row.cells[i].length)) + 2)
@@ -66,4 +66,21 @@ export function formatComparison(comparison) {
     for (const mode of comparison.modes) for (const failed of note.results[mode.id]?.failed ?? []) lines.push(`  ${mode.label}: could not measure ${failed}`)
   }
   return lines.join('\n')
+}
+
+// Two quick runs of the same mode (the comparison runs every mode twice, A B C D E E D C B A, so a slow minute does not land on one mode only):
+// the median of two is their mean; a row whose two p95 differ by more than 1.5x is marked noisy.
+export const NOISY_RATIO = 1.5
+export function mergeRuns(first, second) {
+  const rows = {}
+  const half = (a, b) => Math.round(((a + b) / 2) * 10) / 10
+  for (const name of Object.keys({ ...first.rows, ...second.rows })) {
+    const a = first.rows[name]
+    const b = second.rows[name]
+    if (!a || !b) { rows[name] = { ...(a ?? b), noisy: true }; continue }
+    const low = Math.min(a.p95, b.p95)
+    const high = Math.max(a.p95, b.p95)
+    rows[name] = { p50: half(a.p50, b.p50), p95: half(a.p95, b.p95), max: half(a.max, b.max), n: a.n + b.n, slow: a.slow + b.slow, ...(a.unit ? { unit: a.unit } : {}), noisy: high > NOISY_RATIO * Math.max(low, 1), runs: [a.p95, b.p95] }
+  }
+  return { rows, failed: [...new Set([...first.failed, ...second.failed])] }
 }

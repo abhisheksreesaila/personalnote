@@ -282,7 +282,7 @@ document.querySelector('#app').innerHTML = `
         <details class="settings-advanced">
           <summary>Advanced</summary>
           <label class="setting-row" for="settings-render-mode"><span>Render mode</span><select id="settings-render-mode"><option value="default">Default</option><option value="bitmaps">Page bitmaps always</option><option value="dpr1">Lower resolution (1x)</option></select></label>
-          <p class="portability-help">For trying how the canvas feels on this computer. Changes only how the screen is drawn, never a note.</p>
+          <p class="portability-help">For trying how the canvas feels on this computer. Changes only how the screen is drawn, never a note. "Page bitmaps always" can make drawing and typing slower.</p>
         </details>
         <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
         <div class="portability-actions speedtest-offer"><button type="button" id="settings-speed-test"><i data-lucide="gauge"></i><span>Run speed test…</span></button></div>
@@ -3042,13 +3042,26 @@ function setSpeedMeter(visible) {
 }
 
 // Takes the switches into the open canvas and draws the open note again with them (the sticky shadows are made at load).
-async function applyRenderMode(name) {
-  setPerfSwitches(name)
-  if (!leaferCanvas) return
-  leaferCanvas.finishTextEdit()
-  leaferCanvas.applyPerf()
-  if (leaferEdits?.doc && state.activeNoteId) leaferCanvas.load(leaferEdits.doc)
-  await leaferCanvas.whenSettled()
+// `document` (the speed test's comparison): the document every mode starts from; it replaces what the canvas and the history hold. Changes are applied one
+// after another, and the note is drawn again only when the canvas shows a loaded canvas note (otherwise the next load picks the switches up).
+let renderModeQueue = Promise.resolve()
+function applyRenderMode(name, document = null) {
+  renderModeQueue = renderModeQueue.catch(() => {}).then(async () => {
+    setPerfSwitches(name)
+    if (!leaferCanvas) return
+    leaferCanvas.finishTextEdit()
+    leaferCanvas.applyPerf()
+    if (!state.loading && state.activeNoteId && state.activeNoteType === 'canvas' && leaferSource.noteId === state.activeNoteId && leaferEdits?.doc) {
+      if (document) {
+        leaferEdits.open(state.activeNoteId, JSON.parse(JSON.stringify(document)))
+        leaferBase = leaferEdits.doc
+      }
+      leaferCanvas.load(leaferEdits.doc)
+      leaferCanvas.adopt(leaferEdits.doc)
+      await leaferCanvas.whenSettled()
+    }
+  })
+  return renderModeQueue
 }
 elements.settingsRenderMode.value = state.renderMode
 elements.settingsRenderMode.addEventListener('change', () => {
@@ -3123,7 +3136,7 @@ async function startSpeedTest() {
         edits: leaferEdits,
         get inkSurface() { return leaferInk.surface },
         setTool: (name) => setTool(name),
-        setRenderMode: (name) => applyRenderMode(name === 'saved' ? state.renderMode : name),
+        setRenderMode: (name, document) => applyRenderMode(name === 'saved' ? state.renderMode : name, document),
         setView: async ({ zoom }) => {
           if (zoom === 'fit') fitAllPages()
           else { state.canvasZoom = zoom; setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104) }
