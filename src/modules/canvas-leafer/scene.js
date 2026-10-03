@@ -117,8 +117,18 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio, getPages: () => pages, getSize: () => size,
     onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale }, // (not done while the bitmaps showed)
     pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
-    busy: () => live.active || committing || Boolean(textEdit), // no idle work (page bitmaps made again) under a drag, a commit or typing
+    busy: () => live.active || committing || Boolean(textEdit) || pointerHeld || performance.now() - lastInput < 400, // no idle work (page bitmaps made again) under a drag, a stroke, a commit or typing
   })
+  // Input anywhere (the pen's surface is over the note, not in it): the page bitmaps are not made again while a button or a finger is down or a key was just pressed.
+  let pointerHeld = false
+  let lastInput = -Infinity
+  const inputDown = () => { pointerHeld = true; lastInput = performance.now() }
+  const inputUp = () => { pointerHeld = false; lastInput = performance.now() }
+  const inputKey = () => { lastInput = performance.now() }
+  globalThis.addEventListener?.('pointerdown', inputDown, true)
+  globalThis.addEventListener?.('pointerup', inputUp, true)
+  globalThis.addEventListener?.('pointercancel', inputUp, true)
+  globalThis.addEventListener?.('keydown', inputKey, true)
 
   let view = { x: 0, y: 0, scale: 1 } // the view the person has asked for (every conversion between the window and the page uses it)
   let size = { width, height }
@@ -1547,7 +1557,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     lodBuildAll: () => lod.buildAll(),
     lodForceSlow: () => lod.forceSlow(),
-    destroy() { gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
+    destroy() { for (const [type, fn] of [['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
   }
   return api
 }

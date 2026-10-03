@@ -22,7 +22,8 @@ import { planScales } from './tile-plan.js'
 
 const BLEED = 40
 const MEMORY_BUDGET = 96 * 1024 * 1024 // bytes of bitmap for the whole note (not hybrid; hybrid reads perf.tileBudget)
-const BUSY_RETRY = 150 // ms: idle work waits this long after the last view change or edit step
+const BUSY_RETRY = 150 // ms: idle work waits this long after the last view change
+const EDIT_QUIET = 900 // ms: ... and this long after the last edit (a pen draws a stroke every second or so: no page is made again between two strokes)
 const GESTURE_GAP = 500 // ms: view changes closer than this belong to one pan or zoom (the steps of a pan that is slow are far apart)
 const SLOW_FRAME = 26 // ms
 const SLOW_COUNT = 6 // slow frames within the last WINDOW gesture frames mean the machine needs the bitmaps
@@ -43,6 +44,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
   let slow = mode === 'always'
   let gaps = []
   let lastView = 0
+  let lastEdit = -Infinity
   let step = 0 // the smoothed gap between two steps of a pan or zoom, ms
   let sampling = false
   let freeTimer = null
@@ -194,7 +196,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     prune()
     if (plan) enforceBudget(plan)
     if (pending()) { buildTimer = schedule(buildNext, 500); return } // a picture is still loading
-    if (busy() || now() - lastView < BUSY_RETRY) { buildTimer = schedule(buildNext, BUSY_RETRY); return } // a gesture or an edit is going on: not now
+    if (busy() || now() - lastView < BUSY_RETRY || now() - lastEdit < EDIT_QUIET) { buildTimer = schedule(buildNext, now() - lastEdit < EDIT_QUIET ? EDIT_QUIET : BUSY_RETRY); return } // a gesture or an edit is going on: not now
     const { columns, rows } = getPages()
     const box = visible(latest)
     const order = []
@@ -310,6 +312,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     // Hybrid: `rects` ([{ left, top, right, bottom }] in page space) are the places that changed; only the pages they touch are out of date.
     invalidate(rects) {
       exit()
+      lastEdit = now()
       if (hybrid() && rects?.length) {
         for (const [id, tile] of tiles) {
           const [c, r] = id.split(',').map(Number)
