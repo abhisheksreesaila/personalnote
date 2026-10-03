@@ -12,7 +12,7 @@ import { followChanges } from '../src/modules/canvas-leafer/connectors.js'
 import { boundingRect } from '../src/modules/canvas-leafer/bounds.js'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
 
-const PORT = 4780
+const PORT = Number(process.env.VERIFY_PORT) || 4780
 const W = 860
 const H = 1080
 const now = new Date().toISOString()
@@ -48,7 +48,7 @@ const agentWrite = (change) => {
   changeLog.push({ sequence: changeSeq, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: stored.revision })
 }
 
-const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4789' } }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4859' } }, logLevel: 'error' })
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 
@@ -650,6 +650,118 @@ try {
     check(`dpr ${dpr}: the drop is one undo step and the arrows are in line`, (await steps(bigPage)) === stepsBeforeBig + 1 && consistent(await doc(bigPage)))
     check(`dpr ${dpr}: no page errors`, bigErrors.length === 0, bigErrors.join(' | '))
     await ctx.close()
+  }
+
+
+  // ---------------------------------------------------------------- typing grows the pages at once (the words, not the end of the session)
+  {
+    const typeContext = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+    const tp = await typeContext.newPage()
+    const typeErrors = []
+    tp.on('pageerror', (error) => typeErrors.push(error.message))
+    const typeNote = { content: store({ schemaVersion: 1, page: { columns: 1, rows: 1 }, extras: {}, objects: [rect('A', 100, 100, 100, 60, 0)] }), pageState: { columns: 1, rows: 1 }, revision: 1 }
+    await mock(tp, () => typeNote)
+    await open(tp)
+    const editor = () => tp.evaluate(() => {
+      const el = document.querySelector('.leafer-text-editor')
+      if (!el) return null
+      const r = el.getBoundingClientRect()
+      const host = document.querySelector('#leafer-host').getBoundingClientRect()
+      const view = window.__personalNote.leaferCanvas().view()
+      return { left: (r.left - host.left - view.x) / view.scale, top: (r.top - host.top - view.y) / view.scale, right: (r.right - host.left - view.x) / view.scale, bottom: (r.bottom - host.top - view.y) / view.scale, screenLeft: r.left, screenTop: r.top }
+    })
+    const settle = async () => { await tp.keyboard.press('Escape'); await tp.waitForTimeout(250) }
+    const stepsStart = await steps(tp)
+    const putsBefore = puts.length
+
+    // nothing near an edge: no page
+    await scene(tp, 'createText', { x: 100, y: 300 })
+    await tp.waitForSelector('.leafer-text-editor')
+    await tp.keyboard.type('a few\nshort\nlines')
+    check('typing in the middle of the page adds no page', (await grid(tp)).rows === 1 && (await grid(tp)).columns === 1)
+    await settle()
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
+
+    // bottom: lines pile up until the box nears the bottom edge; the page appears while the session is still open
+    await scene(tp, 'createText', { x: 100, y: 800 })
+    await tp.waitForSelector('.leafer-text-editor')
+    const before = await editor()
+    let grewAt = null
+    let lines = 0
+    for (; lines < 30 && !grewAt; lines += 1) {
+      await tp.keyboard.type(`line ${lines}\n`)
+      if ((await grid(tp)).rows === 2) grewAt = await editor()
+    }
+    check('typing down to the bottom edge adds a page before the session ends', Boolean(grewAt) && await tp.evaluate(() => Boolean(document.querySelector('.leafer-text-editor'))), JSON.stringify([lines, await grid(tp)]))
+    check('the page appears before the words pass the edge, near it', grewAt && grewAt.bottom <= H + 1 && grewAt.bottom > H - 140, JSON.stringify(grewAt))
+    check('the overlay stays exactly where it was (same corner, same words)', grewAt && near(grewAt.left, before.left, 0.5) && near(grewAt.top, before.top, 0.5) && near(grewAt.screenTop, before.screenTop, 0.5) && near(grewAt.screenLeft, before.screenLeft, 0.5), JSON.stringify([before, grewAt]))
+    const caret = await tp.evaluate(() => { const a = document.querySelector('.leafer-text-editor'); return [a.selectionStart, a.value.length] })
+    check('the caret stays at the end of the words', caret[0] === caret[1], JSON.stringify(caret))
+    for (let i = 0; i < 6; i += 1) await tp.keyboard.type(`more ${i}\n`)
+    check('typing on inside the new page adds no more', (await grid(tp)).rows === 2, JSON.stringify(await grid(tp)))
+    await settle()
+    let td = await doc(tp)
+    const textId = td.objects.find((o) => o.type === 'text')?.id
+    check('the session ends with the text and the page in the document', Boolean(textId) && td.page.rows === 2 && objectOf(td, textId).content.includes('line 0'), JSON.stringify([td.page, textId]))
+    check('the text and its page are ONE undo step', (await steps(tp)) === stepsStart + 1, `${stepsStart} -> ${await steps(tp)}`)
+    await waitSave(tp, putsBefore)
+    check('the pages are saved with the text', savedDoc().page.rows === 2 && savedDoc().objects.some((o) => o.type === 'text'), JSON.stringify(savedDoc().page))
+    await tp.evaluate(() => window.__personalNote.setTool('select'))
+    await tp.waitForTimeout(150)
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
+    td = await doc(tp)
+    check('one undo takes the text and the grown page away together', td.page.rows === 1 && !td.objects.some((o) => o.type === 'text') && (await grid(tp)).rows === 1, JSON.stringify([td.page, await grid(tp)]))
+    await tp.evaluate(() => window.__personalNote.leaferEdits.redo())
+    td = await doc(tp)
+    check('and one redo brings both back', td.page.rows === 2 && td.objects.some((o) => o.type === 'text') && (await grid(tp)).rows === 2)
+    // the saved note reopens with the same pages and the text (a second window on the same saved note)
+    await waitSave(tp, puts.length - 1)
+    const again = await typeContext.newPage()
+    again.on('pageerror', (error) => typeErrors.push(error.message))
+    await mock(again, () => typeNote)
+    await open(again)
+    td = await doc(again)
+    check('a reload shows the same pages and the text', (await grid(again)).rows === 2 && td.page.rows === 2 && td.objects.some((o) => o.type === 'text' && o.content.includes('line 0')), JSON.stringify(td.page))
+    await again.close()
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
+
+    // right: a point text typed toward the right edge widens the grid like a dragged object
+    await scene(tp, 'createText', { x: 600, y: 200 })
+    await tp.waitForSelector('.leafer-text-editor')
+    let widened = null
+    for (let i = 0; i < 80 && !widened; i += 1) {
+      await tp.keyboard.type('w')
+      if ((await grid(tp)).columns === 2) widened = await editor()
+    }
+    check('typing a point text toward the right edge adds a page on the right while typing', Boolean(widened) && widened.right <= W + 1 && widened.right > W - 100, JSON.stringify(widened))
+    await settle()
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
+    td = await doc(tp)
+    check('undo removes the text and the right-hand page', td.page.columns === 1 && !td.objects.some((o) => o.type === 'text'), JSON.stringify(td.page))
+
+    // dictation into a text box
+    const began = await scene(tp, 'beginDictation', { x: 100, y: 900 }, { width: 300 })
+    await tp.waitForSelector('.leafer-text-editor')
+    await scene(tp, 'setDictation', Array.from({ length: 12 }, (_, i) => `dictated sentence number ${i} goes here`).join(' '))
+    check('words dictated into a text box near the bottom add a page while dictating', began.ok && (await grid(tp)).rows === 2, JSON.stringify([began, await grid(tp)]))
+    await settle()
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
+    check('undo takes the dictation and its page away', (await doc(tp)).page.rows === 1 && !(await doc(tp)).objects.some((o) => o.type === 'text'))
+
+    // a sticky grows as it is typed and the page grows with it
+    await scene(tp, 'createSticky', { x: 300, y: 820 })
+    await tp.waitForSelector('.leafer-text-editor')
+    let tall = false
+    for (let i = 0; i < 30 && !tall; i += 1) { await tp.keyboard.type('a line in a sticky\n'); tall = (await grid(tp)).rows === 2 }
+    check('a sticky that grows toward the bottom adds a page while typing', tall, JSON.stringify(await grid(tp)))
+    for (let i = 0; i < 4; i += 1) await tp.keyboard.type('more words\n') // on past the edge: the page stays when the session ends
+    await settle()
+    td = await doc(tp)
+    check('the sticky and its page are in the document', td.page.rows === 2 && td.objects.some((o) => o.type === 'sticky'))
+    await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
+    check('one undo takes the sticky and the page away', (await doc(tp)).page.rows === 1 && !(await doc(tp)).objects.some((o) => o.type === 'sticky'))
+    check('typing: no page errors', typeErrors.length === 0, typeErrors.join(' | '))
+    await typeContext.close()
   }
 
   // ---------------------------------------------------------------- a phone: the connect button, a finger draws an arrow, a drag past the edge grows the page

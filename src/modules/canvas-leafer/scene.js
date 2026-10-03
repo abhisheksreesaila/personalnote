@@ -16,7 +16,7 @@ import { FOLD_COLOR, FOLD_DASH, FOLD_WIDTH, LABEL_FONT_FAMILY, LABEL_FONT_SIZE, 
 import { CONNECTOR_DEFAULTS, CONNECTOR_HIT, arrowPath, connectorAt, connectorLayout, followChanges, newConnector, newConnectorId, withLayout } from './connectors.js'
 import { createEditing, EDITOR_CONFIG } from './editing.js'
 import { createOverlays } from './overlay.js'
-import { GHOST_REACH, finalizeOp, growForDrag } from './pages.js'
+import { GHOST_REACH, finalizeOp, growForDrag, growForText } from './pages.js'
 import { applyMatrix, geometryFromMatrix, multiplyMatrices, placementMatrix } from './placement.js'
 import { bakedStickyShadow, STICKY_CORNERS, liveStickyShadow } from './sticky-shadow.js'
 import { pixelRatioFor, readPerf } from './perf.js'
@@ -420,11 +420,13 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // Hands an op to the host, takes the document it returns, and points the entries at the new objects. The op is first made whole
   // (pages.js finalizeOp): the connectors that follow what moved, the connectors left without an end, and the page growth or fold-back the
   // edit causes, with every object moved when pages are added on the top or left: all of it one undo step.
-  function commit(op, { coalesce, selection } = {}) {
+  // `floor` ({ columns, rows }): the grid a typing session grew ahead of its words; the step keeps it (no fold-back until the session ends).
+  function commit(op, { coalesce, selection, floor = null } = {}) {
+    if (floor) op = { ...op, page: { before: doc.page, after: { ...doc.page, columns: Math.max(doc.page.columns, floor.columns), rows: Math.max(doc.page.rows, floor.rows) } } }
     if (!op.changes.length && !op.page) return false
     lod.invalidate()
     const named = new Set(op.changes.map((change) => change.id))
-    const { op: whole, shift } = finalizeOp(doc, op, { sizeOf })
+    const { op: whole, shift } = finalizeOp(doc, op, { sizeOf, floor })
     if (!whole.changes.length && !whole.page) return false
     // The view has followed the growth the drag made already; it follows the rest, and the note's layer goes back to the view's own place.
     const viewShift = { x: shift.x - live.shift.x, y: shift.y - live.shift.y }
@@ -720,7 +722,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     if (overlay.isOpen) overlay.commit()
     if (!began) onBegin('Edit text')
     const size = entry ? entry.size : { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }
-    textEdit = { id: object.id, entry, object, size, select }
+    textEdit = { id: object.id, entry, object, size, select, armed: false, floor: null, lineHeight: overlayFont(object).lineHeight }
     lastEdited = null
     editing.clear()
     if (entry?.built.text) entry.built.text.visible = false
@@ -741,8 +743,24 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       onCommit: finishTextEdit,
       onEscape: () => onTextEvent('escape'),
     })
+    textEdit.armed = true // from here on, input is typing: it can grow the pages (opening the editor on a text near an edge must not)
     onTextEvent('start')
     return true
+  }
+
+  // Pages appear as the words near the right or bottom edge, while they are typed (not when the typing pauses): the box the words fill now
+  // is measured, and the grid grows a margin ahead of it by the drag's rule. The document does not hear of it until the next draft commit,
+  // which records the grid in the session's one undo step (and keeps it: no fold-back until the session ends). Nothing moves: typing only
+  // grows a text right and down, so the overlay stays where it is.
+  function growPagesForWords(edit, size) {
+    const object = edit.entry?.object ?? edit.object
+    const geometry = fitGeometry(object, size)
+    const box = rectEdges(boundingRect({ ...object, geometry }, { width: geometry.width, height: geometry.height }))
+    const grow = growForText(pages, box, { lineHeight: object.type === 'sticky' ? 0 : edit.lineHeight })
+    if (!grow.changed) return
+    pages = { columns: grow.columns, rows: grow.rows }
+    edit.floor = { ...pages }
+    onPages({ columns: grow.columns, rows: grow.rows, shiftX: 0, shiftY: 0 })
   }
 
   function onTextInput(content) {
@@ -754,6 +772,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const wanted = fitGeometry(entry.object, content).height
       if (wanted !== entry.node.height) { entry.node.height = wanted; entry.built.relayout?.() }
     }
+    if (edit.armed && content) growPagesForWords(edit, content)
     clearTimeout(draftTimer)
     draftTimer = setTimeout(flushDraft, DRAFT_DELAY)
   }
@@ -772,7 +791,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       if (!value.trim()) return false
       const next = { ...edit.object, content: value }
       const placed = { ...next, geometry: fitGeometry(next, contentSize(next)) }
-      commit({ label: 'Add text', changes: [{ id: placed.id, before: null, after: placed }] }, { selection: { before: [], after: [placed.id] } })
+      commit({ label: 'Add text', changes: [{ id: placed.id, before: null, after: placed }] }, { selection: { before: [], after: [placed.id] }, floor: final ? null : edit.floor })
+      if (edit.floor) edit.floor = { ...pages }
       addObject(world, doc.objects.find((candidate) => candidate?.id === placed.id) ?? placed, boxes)
       const entry = entries.get(placed.id)
       if (!entry) return false
@@ -789,10 +809,21 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     const next = { ...object, content: value }
     const plan = planSetContent(doc, { id: entry.id, content: value, geometry: fitGeometry(next, contentSize(next)) })
     if (!plan.op.changes.length) return false
-    commit(plan.op, { selection: { before: [entry.id], after: [entry.id] } })
+    commit(plan.op, { selection: { before: [entry.id], after: [entry.id] }, floor: final ? null : edit.floor })
+    if (edit.floor) edit.floor = { ...pages }
     edit.object = entry.object
     edit.size = { width: entry.object.geometry.width ?? 0, height: entry.object.geometry.height ?? 0 }
     return true
+  }
+
+  // The session is over: the grid the words made room for is settled by the ordinary rules (a page the words no longer need folds back, in the
+  // same step), and the host's grid is the document's again when the words never reached the document.
+  function settleTypedPages() {
+    commit({ label: 'Edit text', changes: [], page: { before: doc.page, after: { ...doc.page } } })
+    if (pages.columns !== doc.page.columns || pages.rows !== doc.page.rows) {
+      pages = { columns: doc.page.columns, rows: doc.page.rows }
+      onPages({ ...pages, shiftX: 0, shiftY: 0 })
+    }
   }
 
   function finishTextEdit(value) {
@@ -818,6 +849,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       if (edit.select && node) editing.select([node])
       else if (!edit.select) lastEdited = made.id
     } finally {
+      if (edit.floor) settleTypedPages()
       const live = edit.entry && entries.get(edit.entry.id)
       if (live?.built.text) live.built.text.visible = true
       onEnd()

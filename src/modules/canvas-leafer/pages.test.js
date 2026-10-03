@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createHistory } from '../../core/document/history.js'
 import { PAGE } from '../../core/document/schema.js'
-import { finalizeOp, growForDrag, settlePages, shiftedDocument, shiftedObject } from './pages.js'
+import { finalizeOp, growForDrag, growForText, settlePages, shiftedDocument, shiftedObject } from './pages.js'
 
 const UPRIGHT = { rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const box = (id, x, y, width = 100, height = 60) => ({ id, type: 'image', z: 0, geometry: { x, y, width, height, ...UPRIGHT } })
@@ -189,4 +189,21 @@ test('an object an agent moved since keeps its position on undo but still moves 
   assert.equal(objectOf(history.doc, 'a').geometry.y, 700, 'the agent\'s move is kept')
   assert.equal(objectOf(history.doc, 'a').geometry.x, -50, 'and it moved back a page with the frame (the agent kept it where the user had put it)')
   assert.equal(objectOf(history.doc, 'b').geometry.x, 400)
+})
+
+test('typing grows right and bottom a margin (and a line) ahead of the words, never up or left', () => {
+  assert.equal(growForText({ columns: 1, rows: 1 }, rects(100, 100, W - 25, 200)).changed, false)
+  assert.deepEqual(growForText({ columns: 1, rows: 1 }, rects(100, 100, W - 23, 200)), { columns: 2, rows: 1, changed: true })
+  assert.equal(growForText({ columns: 1, rows: 1 }, rects(100, 100, 300, H - 70), { lineHeight: 29 }).changed, false)
+  assert.deepEqual(growForText({ columns: 1, rows: 1 }, rects(100, 100, 300, H - 50), { lineHeight: 29 }), { columns: 1, rows: 2, changed: true })
+  assert.equal(growForText({ columns: 1, rows: 1 }, rects(-500, -500, 300, 200)).changed, false) // typing never prepends
+})
+
+test('a floor keeps the grid from folding back while words are typed, and no floor lets it fold', () => {
+  const grown = doc([box('t', 100, 100)], 2, 2)
+  const floor = { columns: 2, rows: 2 }
+  const kept = finalizeOp(grown, { label: 'Edit text', changes: [], page: { before: grown.page, after: floor } }, { floor }).op
+  assert.equal(kept.page, undefined)
+  const folded = finalizeOp(grown, { label: 'Edit text', changes: [], page: { before: grown.page, after: floor } }).op
+  assert.deepEqual(folded.page.after, { columns: 1, rows: 1 })
 })

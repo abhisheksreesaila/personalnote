@@ -5,6 +5,7 @@
 //
 //   settlePages(pages, bounds)        after an edit: the grid the content needs ({ columns, rows, shiftX, shiftY })
 //   growForDrag(pages, bounds)        while an object is dragged: grow only, before it reaches the edge
+//   growForText(pages, bounds, o)     while words are typed: grow right and bottom only, a margin ahead of the words
 //   finalizeOp(doc, op, options)      an edit as one history op: the edit, the connectors that follow it, and the page change it causes
 import { PAGE } from '../../core/document/schema.js'
 import { applyChanges } from '../../core/document/operations.js'
@@ -68,6 +69,16 @@ export function growForDrag(pages, bounds, { pageW = PAGE.width, pageH = PAGE.he
   return { columns, rows, shiftX: prependColumns * pageW, shiftY: prependRows * pageH, changed: columns !== pages.columns || rows !== pages.rows }
 }
 
+// While words are typed: a page is added before the text reaches the right or bottom edge, by the same margin as a drag, and one line ahead
+// at the bottom (the next line is what would cross it). Typing only ever grows a text to the right and down, so nothing is prepended and
+// no object moves; it never folds back (that is settled when the typing is committed). `lineHeight` is the height of one line.
+export function growForText(pages, bounds, { lineHeight = 0, pageW = PAGE.width, pageH = PAGE.height } = {}) {
+  let { columns, rows } = pages
+  while (bounds.right > columns * pageW - TRANSFORM_EDGE_MARGIN) columns += 1
+  while (bounds.bottom + lineHeight > rows * pageH - TRANSFORM_EDGE_MARGIN) rows += 1
+  return { columns, rows, changed: columns !== pages.columns || rows !== pages.rows }
+}
+
 export { shiftedDocument, shiftedObject }
 
 // The document with the changes applied, new objects (before: null) included.
@@ -101,7 +112,8 @@ function mayChangeBounds(changes) {
 //                  history, as a frame operation, whenever the step is applied, undone or redone (core/document/history.js), so an object
 //                  that arrived since (an agent's) is moved back with the rest.
 // options.sizeOf(object): the measured { width, height } of an object the model gives no size for (text laid out by the engine).
-export function finalizeOp(doc, op, { sizeOf = () => ({}) } = {}) {
+// options.floor: { columns, rows } the grid may not fold below (while words are being typed).
+export function finalizeOp(doc, op, { sizeOf = () => ({}), floor = null } = {}) {
   const changes = op.changes.map((change) => ({ ...change }))
   const byId = new Map(changes.map((change) => [change.id, change]))
   const original = indexById(doc.objects)
@@ -126,6 +138,9 @@ export function finalizeOp(doc, op, { sizeOf = () => ({}) } = {}) {
     after = { columns: settled.columns, rows: settled.rows }
     shiftX = settled.shiftX
     shiftY = settled.shiftY
+    // a typing session that grew the grid ahead of its words: the grid does not fold back below it until the session ends (the caller passes no floor then)
+    if (floor && !shiftX) after.columns = Math.max(after.columns, floor.columns)
+    if (floor && !shiftY) after.rows = Math.max(after.rows, floor.rows)
     if (shiftX || shiftY) for (const change of changes) if (change.after) change.after = shiftedObject(change.after, shiftX, shiftY)
   }
   const result = { ...op, changes: changes.filter((change) => !(change.before && change.after && (change.before === change.after || deepEqual(change.before, change.after)))) }
