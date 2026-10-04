@@ -176,7 +176,7 @@ try {
     const afterEdit = await lod(page)
     check('an edit makes only the bitmap of the page it touched out of date (15 of 16 stay current)', afterEdit.current === 15, JSON.stringify(afterEdit))
     await wheel(page, 3, 30)
-    await page.waitForTimeout(1500)
+    await page.waitForFunction(() => { const s = window.__personalNote.leaferCanvas().lodState(); const g = window.__personalNote.leaferEdits.doc.page; return s.current === s.tiles && s.tiles === g.columns * g.rows }, null, { timeout: 30000 }).catch(() => {})
     const rebuilt = await lod(page)
     const grid = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page)
     check('the touched page is made again in idle time (every bitmap of the grid is current again)', rebuilt.current === rebuilt.tiles && rebuilt.tiles === grid.columns * grid.rows, JSON.stringify([rebuilt, grid]))
