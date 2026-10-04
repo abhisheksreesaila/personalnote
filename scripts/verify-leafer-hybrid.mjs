@@ -127,7 +127,6 @@ try {
       await wheel(page, 4, 30, 250, 130)
       await page.keyboard.up('Control')
       await page.waitForTimeout(900)
-      await page.mouse.move(5, 5) // (the pointer's hover outline is not part of the note: not under it for the picture)
       await page.waitForTimeout(200)
       const settled = await shot(page)
       info(`stroke after the gestures (${perf ? 'plain' : 'hybrid'}): ${JSON.stringify(await page.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth, lod: window.__personalNote.leaferCanvas().lodState().active })))}`)
@@ -140,6 +139,26 @@ try {
     info(`settled hybrid view vs plain vector render (100%, after a pan and a zoom out and in): mean ${same.mean.toFixed(4)} of 255, ${(same.strong * 100).toFixed(3)}% far off, ${(same.any * 100).toFixed(3)}% differ at all`)
     check('after a pan and a zoom, the settled hybrid view equals a plain vector render (under 25 pixels of 2.5 million far off, mean under 0.05 of 255)', same.strong < 1e-5 && same.mean < 0.05, JSON.stringify(same))
     check('(and the vectors are what is on the stage)', await vectorsOn(hybrid.page))
+    // the hover outline of the object under the pointer is back after navigating (the pointer did not move meanwhile)
+    {
+      const { page } = hybrid
+      await zoomTo(page, 1)
+      await page.waitForTimeout(500)
+      await idle(page)
+      const at = await page.evaluate(() => { const b = window.__personalNote.leaferCanvas().screenBox('uniform'); const h = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: h.left + b.x + b.width / 2, y: h.top + b.y + b.height / 2 } })
+      await page.mouse.move(at.x, at.y)
+      await page.waitForTimeout(300)
+      await wheel(page, 3, 30, at.x, at.y)
+      await wheel(page, 3, -30, at.x, at.y)
+      await page.waitForTimeout(900)
+      const restored = await shot(page)
+      await page.mouse.move(at.x + 1, at.y + 1) // a real move over it: the outline the engine draws then
+      await page.waitForTimeout(400)
+      const real = await shot(page)
+      const same = await compare(page, restored, real)
+      info(`hover outline after navigating vs after a real pointer move: mean ${same.mean.toFixed(4)}, ${(same.strong * 100).toFixed(4)}% far off`)
+      check('the hover outline of the object under the pointer is back when the vectors are (no pointer move needed)', same.strong < 1e-5 && same.mean < 0.05, JSON.stringify(same))
+    }
     await plain.context.close()
 
     // a bitmap against the vector render of the same view, at 100%, on a whole-pixel offset (the best case) and a half-pixel one (the worst)
@@ -310,6 +329,28 @@ try {
       const after = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page)
       info(`typing: the grid went from ${grid.columns} x ${grid.rows} to ${after.columns} x ${after.rows}`)
     })
+
+    // Mixed: a navigation that starts right after an edit shows the bitmaps of every untouched page and makes only the touched pages on the spot
+    await scene((s) => s.setView({ x: 24, y: 24, scale: 0.5 }))
+    await page.waitForTimeout(300)
+    await rebuildAll()
+    await scene((s) => s.lodExit())
+    const stickyNow = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const near = window.__personalNote.leaferEdits.doc.objects.filter((x) => x.type === 'sticky').map((x) => ({ id: x.id, b: s.screenBox(x.id) })).filter((x) => x.b).sort((p, q) => Math.hypot(p.b.x - 400, p.b.y - 300) - Math.hypot(q.b.x - 400, q.b.y - 300)); return { id: near[0].id } })
+    await scene((s, e, a) => { s.select([a.id]); s.nudge(20, 12) }, stickyNow)
+    const before = await lod(page)
+    await wheel(page, 1, 30)
+    const mixed = await lod(page)
+    const jit = mixed.jitBuilds - before.jitBuilds
+    info(`a pan right after an edit: bitmaps on the first step ${mixed.active}, ${jit} page(s) made on the spot (${(mixed.jitMs - before.jitMs).toFixed(0)} ms), ${mixed.builds - before.builds} made in all, ${mixed.tiles} pages in the note`)
+    check('a pan right after an edit shows bitmaps from its first step', mixed.active && mixed.enters === before.enters + 1, JSON.stringify(mixed))
+    check('and only the touched page is made on the spot (every other page shows its bitmap as it is)', jit >= 1 && jit <= 2 && mixed.builds - before.builds === jit, JSON.stringify([before, mixed]))
+    // right after a zoom: the pages on screen that are soft are made on the spot, the first step shows bitmaps
+    await scene((s) => s.lodExit())
+    const beforeZoom = await lod(page)
+    await scene((s) => { const v = s.view(); s.setView({ ...v, scale: v.scale * 1.6 }) }) // (the first step of the navigation is this view change)
+    const afterZoom = await lod(page)
+    info(`a pan right after a zoom to 80%: bitmaps ${afterZoom.active}, ${afterZoom.jitBuilds - beforeZoom.jitBuilds} page(s) made on the spot (${(afterZoom.jitMs - beforeZoom.jitMs).toFixed(0)} ms)`)
+    check('a pan right after a zoom shows bitmaps too, the soft pages on screen made on the spot', afterZoom.active && afterZoom.jitBuilds - beforeZoom.jitBuilds >= 1 && afterZoom.jitBuilds - beforeZoom.jitBuilds <= 12, JSON.stringify([beforeZoom.lacking, afterZoom.lacking, afterZoom.scales, afterZoom.tiles]))
     check('page errors', errors.length === 0, errors.join(' | '))
     await context.close()
   }

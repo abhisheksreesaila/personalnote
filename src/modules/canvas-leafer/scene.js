@@ -115,7 +115,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   leafer.add(world)
   // Page bitmaps for a view that is moving while zoomed out (tiles.js); `pages` and `size` are declared just below.
   const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio, getPages: () => pages, getSize: () => size,
-    onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale }, // (not done while the bitmaps showed)
+    onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale; restoreHover() }, // (not done while the bitmaps showed)
     pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
     busy: () => live.active || committing || Boolean(textEdit) || pointerHeld || performance.now() - lastInput < (drawingTool ? 1500 : 150), // no idle work (page bitmaps made again) under a drag, a stroke, a commit or typing
   })
@@ -126,7 +126,23 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // A touch anywhere (the tools' input surface is over the note, not in it) draws the note exactly and puts the vectors back before anything is picked or placed.
   const inputDown = () => { pointerHeld = true; lastInput = performance.now(); gesture.settle(); lod.exit() }
   const inputUp = () => { pointerHeld = false; lastInput = performance.now() }
+  // The pointer's place, so that the hover outline of the object under it is back when the vectors are (the engine finds what is hovered from pointer moves,
+  // and there were none while the bitmaps showed).
+  let pointerAt = null
+  const inputMove = (event) => { pointerAt = event.pointerType === 'mouse' || !event.pointerType ? { x: event.clientX, y: event.clientY } : null }
+  function restoreHover() {
+    if (!pointerAt || pointerHeld || typeof PointerEvent === 'undefined') return
+    const at = pointerAt
+    requestAnimationFrame(() => {
+      if (pointerHeld || pointerAt !== at) return
+      const rect = host.getBoundingClientRect()
+      if (at.x < rect.left || at.x > rect.right || at.y < rect.top || at.y > rect.bottom) return
+      const target = document.elementFromPoint(at.x, at.y)
+      target?.dispatchEvent(new PointerEvent('pointermove', { clientX: at.x, clientY: at.y, pointerType: 'mouse', pointerId: 1, bubbles: true, cancelable: true, composed: true }))
+    })
+  }
   const inputKey = () => { lastInput = performance.now() }
+  globalThis.addEventListener?.('pointermove', inputMove, true)
   globalThis.addEventListener?.('pointerdown', inputDown, true)
   globalThis.addEventListener?.('pointerup', inputUp, true)
   globalThis.addEventListener?.('pointercancel', inputUp, true)
@@ -1562,7 +1578,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     lodBuildAll: () => lod.buildAll(),
     lodForceSlow: () => lod.forceSlow(),
-    destroy() { for (const [type, fn] of [['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
+    destroy() { for (const [type, fn] of [['pointermove', inputMove], ['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
   }
   return api
 }

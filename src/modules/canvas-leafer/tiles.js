@@ -26,6 +26,8 @@ const BUSY_RETRY = 150 // ms: idle work waits this long after the last view chan
 const EDIT_QUIET = 150 // ms: ... and this long after the last edit
 const BANDS = 4 // a page's bitmap is drawn in this many horizontal bands, one per timer tick, so no single synchronous draw is longer than a quarter of a page
 const BAND_GAP = 12 // ms between two bands (input gets its turn)
+const JIT_FREE = 2 // hybrid: when a pan or zoom starts, this many pages that are out of date (an edit) or soft (a zoom) are always made on the spot ...
+const JIT_MS = 150 // ... and more while they are expected to take no longer than this together (by the pages made so far); beyond that the vectors show until idle time has made them
 const SOFT = 0.8 // hybrid: a bitmap made for less than this share of the zoom now is soft; it is not shown by a new pan, it is made again first
 const GESTURE_GAP = 500 // ms: view changes closer than this belong to one pan or zoom (the steps of a pan that is slow are far apart)
 const SLOW_FRAME = 26 // ms
@@ -55,7 +57,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
   let buildTimer = null
   let at = 0 // where the vectors sit in the stage's stack
   let latest = { x: 0, y: 0, scale: 1 }
-  const counters = { views: 0, enters: 0, exits: 0, builds: 0, buildMs: 0, notReady: 0, maxBuildMs: 0, maxBandMs: 0, evicted: 0 }
+  const counters = { views: 0, enters: 0, exits: 0, builds: 0, buildMs: 0, notReady: 0, maxBuildMs: 0, maxBandMs: 0, evicted: 0, jitBuilds: 0, jitMs: 0 }
   let job = null // the page bitmap being drawn band by band: { c, r, tile, band, ms }
 
   const key = (c, r) => `${c},${r}`
@@ -269,12 +271,18 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     layer.set({ x: view.x, y: view.y, scaleX: view.scale, scaleY: view.scale })
   }
 
-  // Hybrid: is a bitmap on screen soft (made for much less than the zoom the view has now)? A new pan does not start on one: the vectors show until it is made again.
-  function softOn(view) {
-    const plan = planFor(view)
-    let soft = false
-    each(visible(view, 0), (c, r) => { const tile = tiles.get(key(c, r)); if (tile && tile.scale < targetFor(view, c, r, plan).scale * SOFT) soft = true })
-    return soft
+  // The pages a navigation that starts now cannot show as they are: no bitmap, a bitmap of an earlier note (an edit), or, on the pages on screen, one made for
+  // much less than the zoom the view has now (soft). Every other page shows its bitmap as it is.
+  function lacking(view) {
+    const plan = hybrid() ? planFor(view) : null
+    const list = []
+    each(visible(view), (c, r) => {
+      const tile = tiles.get(key(c, r))
+      const onScreen = plan && c >= plan.strict.c0 && c <= plan.strict.c1 && r >= plan.strict.r0 && r <= plan.strict.r1
+      const soft = onScreen && tile && tile.scale < targetFor(view, c, r, plan).scale * SOFT
+      if (!tile || tile.built !== version || soft) list.push([c, r])
+    })
+    return list
   }
 
   // Is the whole window covered by bitmaps good enough to show? (Hybrid also needs them crisp: see CRISP.)
@@ -286,7 +294,19 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
   function enter(view) {
     const box = visible(view)
     if (!usable(view)) return false
-    if (!ready(box) || (hybrid() && softOn(view))) { counters.notReady += 1; wantBuild(60); return false }
+    const lack = lacking(view)
+    if (lack.length) {
+      // Mixed: the pages that are fine show their bitmaps from the first step, and only the lacking ones are drawn now (from the live vectors, a page's
+      // worth of the objects each, before the vectors are taken off the stage). The vectors of the whole window cannot be kept on the stage for the others:
+      // the engine draws every object it can see at every step, whatever is clipped, and that is the cost the bitmaps are there to avoid.
+      const expected = lack.length * (counters.builds ? counters.buildMs / counters.builds : 0)
+      if (!hybrid() || (lack.length > JIT_FREE && expected > JIT_MS) || pending()) { counters.notReady += 1; wantBuild(60); return false }
+      const t0 = now()
+      try { for (const [c, r] of lack) buildTile(c, r) } catch (error) { failed(error); return false }
+      counters.jitBuilds += lack.length
+      counters.jitMs += now() - t0
+      enforceBudget(planFor(view))
+    }
     at = world.parent ? world.parent.children.indexOf(world) : 0
     const stage = world.parent
     world.remove()
@@ -414,7 +434,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       const plan = hybrid() ? planFor(latest) : null
       each(visible(latest, 0), (c, r) => { const tile = tiles.get(key(c, r)); if (!tile || tile.built !== version || stale(tile, latest, c, r, plan ?? undefined)) visibleReady = false })
       if (visibleReady && !ready(visible(latest))) visibleReady = false // (the pages next to the window too: a pan shows them next)
-      return { mode, active, slow, hybrid: hybrid(), visibleReady, crisp: plan ? plan.crisp : null, scales: plan ? plan.scales : null, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, bytes, ...counters }
+      return { mode, active, slow, hybrid: hybrid(), visibleReady, lacking: lacking(latest).length, crisp: plan ? plan.crisp : null, scales: plan ? plan.scales : null, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, bytes, ...counters }
     },
     // For checks: the tile of one page ({ c, r }) as { scale, built } (or null).
     tileOf(c, r) { const tile = tiles.get(key(c, r)); return tile ? { scale: tile.scale, built: tile.built === version, canvas: tile.node.canvas?.view } : null },
