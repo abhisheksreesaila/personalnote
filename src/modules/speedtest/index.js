@@ -26,7 +26,7 @@ function tileStats(scene) {
   try {
     const state = scene.lodState()
     if (!state || state.mode === 'off') return null
-    return { mode: state.mode, hybrid: state.hybrid, tiles: state.tiles, mb: +(state.bytes / 1048576).toFixed(1), worstPageMs: Math.round(state.maxBuildMs), worstBandMs: Math.round(state.maxBandMs), evicted: state.evicted }
+    return { mode: state.mode, hybrid: state.hybrid, tiles: state.tiles, mb: +(state.bytes / 1048576).toFixed(1), worstPageMs: Math.round(state.maxBuildMs), worstBandMs: Math.round(state.maxBandMs), evicted: state.evicted, jitBuilds: state.jitBuilds, jitMs: Math.round(state.jitMs) }
   } catch { return null }
 }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))

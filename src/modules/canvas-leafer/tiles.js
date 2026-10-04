@@ -26,8 +26,7 @@ const BUSY_RETRY = 150 // ms: idle work waits this long after the last view chan
 const EDIT_QUIET = 150 // ms: ... and this long after the last edit
 const BANDS = 4 // a page's bitmap is drawn in this many horizontal bands, one per timer tick, so no single synchronous draw is longer than a quarter of a page
 const BAND_GAP = 12 // ms between two bands (input gets its turn)
-const JIT_FREE = 4 // hybrid: when a pan or zoom starts, this many pages that are out of date (an edit) or soft (a zoom) are always made on the spot ...
-const JIT_MS = 400 // ... and more while they are expected to take no longer than this together (by the pages made so far); beyond that the vectors show until idle time has made them
+const JIT_MS = 100 // hybrid: when a pan or zoom starts, the pages that are out of date (an edit) or soft (a zoom) are made on the spot while that is expected to take no longer than this together (by the pages made so far: about two vector frames); a single page is always made; beyond that the vectors show until idle time has made them
 const SOFT = 0.8 // hybrid: a bitmap made for less than this share of the zoom now is soft; it is not shown by a new pan, it is made again first
 const GESTURE_GAP = 500 // ms: view changes closer than this belong to one pan or zoom (the steps of a pan that is slow are far apart)
 const SLOW_FRAME = 26 // ms
@@ -204,7 +203,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     const { columns, rows } = getPages()
     for (const [id, tile] of tiles) {
       const [c, r] = id.split(',').map(Number)
-      if (c >= columns || r >= rows) { tile.node.remove(); tile.node.destroy?.(); tiles.delete(id) }
+      if (c >= columns || r >= rows) { if (job && job.tile === tile) job = null; tile.node.remove(); tile.node.destroy?.(); tiles.delete(id) }
     }
   }
 
@@ -222,6 +221,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     for (const [id, tile] of tiles) {
       const [c, r] = id.split(',').map(Number)
       if (c >= plan.near.c0 && c <= plan.near.c1 && r >= plan.near.r0 && r <= plan.near.r1) continue
+      if (job && job.tile === tile) continue // (the page being drawn stays)
       far.push({ id, tile, distance: Math.hypot(c - centre.c, r - centre.r) })
     }
     far.sort((x, y) => y.distance - x.distance)
@@ -246,6 +246,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
     if (plan) enforceBudget(plan)
     if (pending()) { buildTimer = schedule(buildNext, 500); return } // a picture is still loading
     if (busy() || now() - lastView < BUSY_RETRY || now() - lastEdit < EDIT_QUIET) { buildTimer = schedule(buildNext, now() - lastEdit < EDIT_QUIET ? EDIT_QUIET : BUSY_RETRY); return } // a gesture or an edit is going on: not now
+    if (job && tiles.get(key(job.c, job.r)) !== job.tile) job = null // (its page went)
     if (job) { // the page being drawn goes on, a band at a time
       try { if (drawBand(job)) { finishTile(job); job = null; if (plan) enforceBudget(plan) } } catch (error) { failed(error); return }
       buildTimer = schedule(buildNext, job ? BAND_GAP : 40)
@@ -300,7 +301,8 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       // worth of the objects each, before the vectors are taken off the stage). The vectors of the whole window cannot be kept on the stage for the others:
       // the engine draws every object it can see at every step, whatever is clipped, and that is the cost the bitmaps are there to avoid.
       const expected = lack.length * (counters.builds ? counters.buildMs / counters.builds : 0)
-      if (!hybrid() || (lack.length > JIT_FREE && expected > JIT_MS) || pending()) { counters.notReady += 1; wantBuild(60); return false }
+      if (!hybrid() || (lack.length > 1 && expected > JIT_MS) || pending()) { counters.notReady += 1; wantBuild(60); return false }
+      job = null // (a page the idle build is drawing is made again whole below: its remaining bands must not be drawn over the finished page)
       const t0 = now()
       try { for (const [c, r] of lack) buildTile(c, r) } catch (error) { failed(error); return false }
       counters.jitBuilds += lack.length
@@ -354,6 +356,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
   function view(next, { zoomedOutLimit = hybrid() ? Infinity : perf.lodZoom, allowEnter = true } = {}) {
     latest = next
     counters.views += 1
+    job = null // a page half drawn when the view moves is drawn again from the start later (the bands must all be drawn at one placement of the note)
     if (mode === 'off') return false
     const t = now()
     const gap = t - lastView
@@ -434,7 +437,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       const plan = hybrid() ? planFor(latest) : null
       each(visible(latest, 0), (c, r) => { const tile = tiles.get(key(c, r)); if (!tile || tile.built !== version || stale(tile, latest, c, r, plan ?? undefined)) visibleReady = false })
       if (visibleReady && !ready(visible(latest))) visibleReady = false // (the pages next to the window too: a pan shows them next)
-      return { mode, active, slow, hybrid: hybrid(), visibleReady, lacking: lacking(latest).length, crisp: plan ? plan.crisp : null, scales: plan ? plan.scales : null, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, bytes, ...counters }
+      return { mode, active, slow, hybrid: hybrid(), jobActive: Boolean(job), jobBand: job ? job.band : -1, visibleReady, lacking: lacking(latest).length, crisp: plan ? plan.crisp : null, scales: plan ? plan.scales : null, tiles: tiles.size, current: [...tiles.values()].filter((tile) => tile.built === version).length, bytes, ...counters }
     },
     // For checks: the tile of one page ({ c, r }) as { scale, built } (or null).
     tileOf(c, r) { const tile = tiles.get(key(c, r)); return tile ? { scale: tile.scale, built: tile.built === version, canvas: tile.node.canvas?.view } : null },

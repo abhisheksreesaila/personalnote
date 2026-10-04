@@ -355,7 +355,59 @@ try {
     const afterZoom = await lod(page)
     info(`a pan right after a zoom to 80%: bitmaps ${afterZoom.active}, ${afterZoom.jitBuilds - beforeZoom.jitBuilds} page(s) made on the spot (${(afterZoom.jitMs - beforeZoom.jitMs).toFixed(0)} ms)`)
     check('a pan right after a zoom shows bitmaps too, the soft pages on screen made on the spot', afterZoom.active && afterZoom.jitBuilds - beforeZoom.jitBuilds >= 1 && afterZoom.jitBuilds - beforeZoom.jitBuilds <= 12, JSON.stringify([beforeZoom.lacking, afterZoom.lacking, afterZoom.scales, afterZoom.tiles]))
+
+    // A page the idle build is drawing band by band when a navigation starts: it is made again whole on the spot and the idle job is dropped, so the
+    // remaining bands are not drawn over the finished page (a page drawn twice is darker where it is translucent)
+    await scene((s) => { s.setView({ x: 24, y: 24, scale: 0.5 }) })
+    await page.waitForTimeout(300)
+    await rebuildAll()
+    await scene((s) => s.lodExit())
+    const victim = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const o = window.__personalNote.leaferEdits.doc.objects.filter((x) => x.type === 'sticky').map((x) => ({ id: x.id, b: s.screenBox(x.id) })).filter((x) => x.b).sort((p, q) => Math.hypot(p.b.x - 400, p.b.y - 300) - Math.hypot(q.b.x - 400, q.b.y - 300))[0]; return { id: o.id } })
+    await scene((s, e, a) => { s.select([a.id]); s.nudge(14, 9) }, victim)
+    if (process.env.HYB_DEBUG) info(JSON.stringify(await page.evaluate(() => new Promise((resolve) => { const out = []; const t0 = performance.now(); const tick = () => { const st = window.__personalNote.leaferCanvas().lodState(); out.push([Math.round(performance.now() - t0), st.jobActive, st.jobBand, st.current, st.tiles, st.active]); if (performance.now() - t0 > 1500) resolve(out.filter((x, i) => i % 6 === 0)); else requestAnimationFrame(tick) }; tick() }))))
+    await page.waitForFunction(() => { const st = window.__personalNote.leaferCanvas().lodState(); return st.jobActive && st.jobBand >= 1 }, null, { timeout: 5000, polling: 'raf' })
+    await wheel(page, 1, 30) // the navigation starts in the middle of a page's bands
+    const midJob = await lod(page)
+    check('a navigation that starts in the middle of an idle page build shows bitmaps and every page it needs is whole (a job on a page out of sight goes on afterwards)', midJob.active && midJob.lacking === 0, JSON.stringify(midJob))
+    await scene((s) => s.lodExit())
+    await page.waitForTimeout(1500) // idle time goes on: nothing is drawn over the pages
+    const settledState = await lod(page)
+    // the victim's own place (its shadow and its text are translucent: a page drawn twice is darker there), bitmaps against vectors
+    const around = async () => {
+      const box = await page.evaluate((id) => { const b = window.__personalNote.leaferCanvas().screenBox(id); const h = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: Math.max(0, h.left + b.x - 30), y: Math.max(0, h.top + b.y - 30), width: b.width + 60, height: b.height + 60 } }, victim.id)
+      return page.screenshot({ clip: box })
+    }
+    const placeVersusVectors = async () => {
+      await rebuildAll()
+      await wheel(page, 1, 30)
+      const withBitmaps = await around()
+      await scene((s) => s.lodExit())
+      await rafs(page, 3)
+      const withVectors = await around()
+      return compare(page, withBitmaps, withVectors)
+    }
+    const doubled = await placeVersusVectors()
+    await scene((s, e, a) => { s.select([a.id]); s.nudge(-14, -9) }, victim)
+    await page.waitForTimeout(2500)
+    const calm = await placeVersusVectors()
+    info(`the page whose idle build was cut by a navigation, bitmaps vs vectors around its object: mean ${doubled.mean.toFixed(3)}, ${(doubled.strong * 100).toFixed(3)}% far off; after an undisturbed build: mean ${calm.mean.toFixed(3)}, ${(calm.strong * 100).toFixed(3)}%`)
+    check('and the page is not drawn twice: around its object the bitmap is as close to the vector render as after an undisturbed build', doubled.mean <= calm.mean + 0.3 && doubled.strong <= calm.strong + 0.002 && settledState.mode === 'always', JSON.stringify([doubled, calm, settledState.mode]))
     check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- a small budget: pages are let go while others are being drawn, and the bitmaps stay on
+  {
+    const { context, page, errors } = await open({ tileBudget: 70 })
+    const warnings = []
+    page.on('console', (message) => { if (/page bitmaps are off/.test(message.text())) warnings.push(message.text()) })
+    await zoomTo(page, 1)
+    await page.waitForTimeout(500)
+    for (let round = 0; round < 6; round += 1) { await wheel(page, 3, 120); await page.waitForTimeout(700); await wheel(page, 3, -60); await page.waitForTimeout(700) }
+    await page.waitForTimeout(2500)
+    const state = await lod(page)
+    info(`budget 70 MB: ${state.tiles} bitmaps, ${MB(state.bytes)} MB, ${state.evicted} let go, mode ${state.mode}`)
+    check('with a tiny budget pages are let go and the bitmaps stay on (a page being drawn is never the one let go)', state.mode === 'always' && warnings.length === 0 && state.evicted > 0 && errors.length === 0, JSON.stringify([state.mode, warnings, state.evicted, errors]))
     await context.close()
   }
 
