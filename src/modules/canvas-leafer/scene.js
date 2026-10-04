@@ -122,7 +122,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // Input anywhere (the pen's surface is over the note, not in it): the page bitmaps are not made again while a button or a finger is down or a key was just pressed.
   let pointerHeld = false
   let lastInput = -Infinity
-  const inputDown = () => { pointerHeld = true; lastInput = performance.now() }
+  // A touch anywhere (the tools' input surface is over the note, not in it) draws the note exactly and puts the vectors back before anything is picked or placed.
+  const inputDown = () => { pointerHeld = true; lastInput = performance.now(); gesture.settle(); lod.exit() }
   const inputUp = () => { pointerHeld = false; lastInput = performance.now() }
   const inputKey = () => { lastInput = performance.now() }
   globalThis.addEventListener?.('pointerdown', inputDown, true)
@@ -815,6 +816,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
 
   // `began`: the caller already opened the history group (a new sticky); otherwise it is opened here. `point`: a page point to put the caret at.
   function startTextEdit(object, { entry = null, began = false, select = true, point = null } = {}) {
+    lod.exit() // (typing is always on the live vectors)
     if (overlay.isOpen) overlay.commit()
     if (!began) onBegin('Edit text')
     const size = entry ? entry.size : { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }
@@ -1332,6 +1334,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     onSelection(listener) { selectionListeners.add(listener); return () => selectionListeners.delete(listener) },
     selection: selectedIds,
     select(ids) {
+      lod.exit() // (the selection is on the live nodes)
       const arrow = ids.find((id) => entries.get(id)?.object.type === 'connector')
       editing.select(ids.filter((id) => id !== arrow).map((id) => entries.get(id)?.node).filter(Boolean))
       selectConnector(arrow && !editorEntries().length ? arrow : null)
