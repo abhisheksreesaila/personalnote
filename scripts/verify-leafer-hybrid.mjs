@@ -133,8 +133,8 @@ try {
     check('(setup) there is a page far from the window to build', Boolean(far), JSON.stringify(far))
     await t((test, scene, c) => { test.begin(c.c, c.r); test.idle() }, far)
     await t((test) => test.evict(1e12), null) // as much memory wanted as there can be: everything that may be let go is
-    const kept = await t((test, scene, c) => { const st = scene.lodState(); return { jobActive: st.jobActive, tiles: st.tiles } }, far)
-    check('when memory is short every page that may go does, except the page being drawn (the job is still on)', kept.jobActive === true, JSON.stringify(kept))
+    const kept = await t((test, scene, c) => { const st = scene.lodState(); return { jobActive: st.jobActive, tiles: st.tiles, hasPage: test.has(c.c, c.r) } }, far)
+    check('when memory is short every page that may go does, except the page being drawn (its bitmap is kept and the job is still on)', kept.jobActive === true && kept.hasPage === true && kept.tiles < 8, JSON.stringify(kept))
     let done = null
     for (let i = 0; i < 12 && !(done?.job === null); i += 1) done = await t((test) => test.idle(), null)
     const finished = await t((test, scene, c) => ({ mode: scene.lodState().mode, current: scene.lodState().current }), far)

@@ -471,6 +471,7 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       // The pixels of one page's bitmap, and a whole clean draw of it (the bitmap is made again whole).
       snapshot(c, r) { const tile = tiles.get(key(c, r)); const { context, view: v } = tile.node.canvas; return context.getImageData(0, 0, v.width, v.height) },
       redraw(c, r) { buildTile(c, r) },
+      has(c, r) { return tiles.has(key(c, r)) },
       farthest() { const plan = planFor(latest); let best = null; for (const id of tiles.keys()) { const [c, r] = id.split(',').map(Number); if (c >= plan.near.c0 && c <= plan.near.c1 && r >= plan.near.r0 && r <= plan.near.r1) continue; const d = Math.hypot(c - (plan.near.c0 + plan.near.c1) / 2, r - (plan.near.r0 + plan.near.r1) / 2); if (!best || d > best.d) best = { c, r, d } } return best },
     },
     destroy() {
