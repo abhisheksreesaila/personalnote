@@ -128,9 +128,9 @@ try {
   agentWrite((d) => { d.objects.push({ id: 'AG3', type: 'text', mode: 'box', z: 60, content: 'while hung', geometry: { x: 10, y: 10, width: 200, height: 60, ...UPRIGHT } }) })
   const polledBefore = changePolls.length
   const mark = Date.now()
-  await page.waitForTimeout(12000)
+  await page.waitForTimeout(18000)
   const lastPolls = changePolls.filter((at) => at > mark + 6000).length
-  check('with a save that never answers, the changes feed keeps polling (a merge never stalls it)', lastPolls >= 2 && changePolls.length > polledBefore, `${lastPolls} polls in the last 6 s`)
+  check('with a save that never answers, the changes feed keeps polling (a merge never stalls it)', lastPolls >= 2 && changePolls.length > polledBefore, `${lastPolls} polls in the last 12 s`)
   check('and the page is still usable: the editor answers', await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.length > 0))
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {

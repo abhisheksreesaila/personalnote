@@ -1174,6 +1174,7 @@ function setTool(tool) {
   if (tool === 'text' || tool === 'sticky' || tool === 'shape') leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
   if (tool === 'pen' || tool === 'highlight' || tool === 'eraser' || tool === 'connect') leaferCanvas?.clearSelection()
   leaferInk?.setTool(tool)
+  leaferCanvas?.setDrawing(tool === 'pen' || tool === 'highlight' || tool === 'eraser')
   leaferConnect?.setTool(tool)
   elements.shell.classList.toggle('leafer-picking', tool === 'select') // Leafer takes the pointer to select and move; the hand gives it to the pan
   inputSurface.style.cursor = toolCursor()

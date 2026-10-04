@@ -117,10 +117,11 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio, getPages: () => pages, getSize: () => size,
     onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale }, // (not done while the bitmaps showed)
     pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
-    busy: () => live.active || committing || Boolean(textEdit) || pointerHeld || performance.now() - lastInput < 400, // no idle work (page bitmaps made again) under a drag, a stroke, a commit or typing
+    busy: () => live.active || committing || Boolean(textEdit) || pointerHeld || performance.now() - lastInput < (drawingTool ? 1500 : 150), // no idle work (page bitmaps made again) under a drag, a stroke, a commit or typing
   })
   // Input anywhere (the pen's surface is over the note, not in it): the page bitmaps are not made again while a button or a finger is down or a key was just pressed.
   let pointerHeld = false
+  let drawingTool = false // the pen, highlighter or eraser is the tool: strokes come one after another, the page bitmaps wait longer
   let lastInput = -Infinity
   // A touch anywhere (the tools' input surface is over the note, not in it) draws the note exactly and puts the vectors back before anything is picked or placed.
   const inputDown = () => { pointerHeld = true; lastInput = performance.now(); gesture.settle(); lod.exit() }
@@ -466,9 +467,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     }
     if (entry?.rect && entry.object === object) return rectEdges(entry.rect)
     const g = object.geometry
-    const size = g.width !== undefined && g.height !== undefined ? {} : entry?.size ?? null
-    if (!size) return null
-    const edges = rectEdges(boundingRect(object, size))
+    if (g.width === undefined || g.height === undefined) return null // (a size the engine measures: where it ends up is not known here, so every page is made again)
+    const edges = rectEdges(boundingRect(object, {}))
     return [edges.left, edges.top, edges.right, edges.bottom].every(Number.isFinite) ? edges : null
   }
   function touchedRects(objects) {
@@ -1545,6 +1545,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     // Page bitmaps (checks and the benchmark): what they are doing, build them all now, treat this machine as slow.
     lodState: () => lod.stats(),
+    lodExit: () => lod.exit(),
+    setDrawing(on) { drawingTool = Boolean(on) },
     // Resolves when the page bitmaps are made for the view as it is (they are made in idle time after a jump or a zoom), or after `maxMs`; at once when
     // there are none to wait for. The speed test sets a view and waits for this, as a person who pauses before the next pan does.
     whenBitmapsReady(maxMs = 8000) {

@@ -561,7 +561,7 @@ try {
     window.__ime = []
     for (const type of ['compositionstart', 'compositionupdate', 'compositionend', 'input']) document.addEventListener(type, (event) => { if (event.target?.className === 'leafer-text-editor') window.__ime.push(`${type}:${event.data ?? event.inputType ?? ''}`) }, true)
   })
-  const imeAt = await pagePoint(page, 420, 700)
+  const imeAt = await pagePoint(page, 420, 380) // (clear of the dock, which is live now)
   await page.click('[data-tool="text"]')
   before = await live(page)
   await page.mouse.click(imeAt.x, imeAt.y)

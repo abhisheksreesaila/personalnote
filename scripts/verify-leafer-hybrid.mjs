@@ -15,6 +15,8 @@ import { writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
 const PORT = 4850
 const now = new Date().toISOString()
 const doc = generateStressDocument(1500, { columns: 4, rows: 4 })
+// one shape whose stroke keeps its screen width at every zoom (the bitmaps must not leave it at a stale width)
+doc.objects.push({ id: 'uniform', type: 'shape', kind: 'rect', z: doc.objects.length, fill: '#ffffff', stroke: '#cc0000', strokeWidth: 6, strokeUniform: true, geometry: { x: 300, y: 300, width: 200, height: 120, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 } })
 const stress = { content: writeJsonCanvas(doc, { derived: 'omit' }), pageState: { columns: doc.page.columns, rows: doc.page.rows } }
 const summary = { id: 1, resourceId: 'r1', revision: 1, noteType: 'canvas', title: 'Stress', notebookId: 1, createdAt: now, updatedAt: now }
 const results = []
@@ -69,14 +71,15 @@ const compare = (page, a, b) => page.evaluate(async ([one, two]) => {
   let total = 0
   let strong = 0
   let any = 0
+  let box = null
   for (let i = 0; i < first.data.length; i += 4) {
     const level = Math.max(Math.abs(first.data[i] - second.data[i]), Math.abs(first.data[i + 1] - second.data[i + 1]), Math.abs(first.data[i + 2] - second.data[i + 2]))
     total += level
     if (level > 0) any += 1
-    if (level > 64) strong += 1
+    if (level > 64) { strong += 1; const px = (i / 4) % first.width; const py = Math.floor(i / 4 / first.width); box = box ? [Math.min(box[0], px), Math.min(box[1], py), Math.max(box[2], px), Math.max(box[3], py)] : [px, py, px, py] }
   }
   const pixels = first.data.length / 4
-  return { mean: total / pixels, strong: strong / pixels, any: any / pixels }
+  return { mean: total / pixels, strong: strong / pixels, any: any / pixels, box }
 }, [a.toString('base64'), b.toString('base64')])
 const MB = (bytes) => (bytes / 1048576).toFixed(1)
 const PLAIN = { hybrid: false, dragCrowd: 0, gestureTransform: false, pageBitmaps: 'off' }
@@ -117,18 +120,22 @@ try {
       await zoomTo(page, 1)
       await page.waitForTimeout(500)
       if (!perf) await idle(page)
-      await wheel(page, 8, 40)
-      await wheel(page, 8, -40)
+      await wheel(page, 8, 40, 250, 130)
+      await wheel(page, 8, -40, 250, 130)
       await page.keyboard.down('Control')
-      await wheel(page, 4, -30)
-      await wheel(page, 4, 30)
+      await wheel(page, 4, -30, 250, 130)
+      await wheel(page, 4, 30, 250, 130)
       await page.keyboard.up('Control')
       await page.waitForTimeout(900)
+      await page.mouse.move(5, 5) // (the pointer's hover outline is not part of the note: not under it for the picture)
+      await page.waitForTimeout(200)
       const settled = await shot(page)
+      info(`stroke after the gestures (${perf ? 'plain' : 'hybrid'}): ${JSON.stringify(await page.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth, lod: window.__personalNote.leaferCanvas().lodState().active })))}`)
       return { context, page, errors, settled }
     }
     const hybrid = await run(null)
     const plain = await run(PLAIN)
+    if (process.env.HYB_SHOTS) { (await import('node:fs')).writeFileSync(`${process.env.HYB_SHOTS}/hybrid.png`, hybrid.settled); (await import('node:fs')).writeFileSync(`${process.env.HYB_SHOTS}/plain.png`, plain.settled) }
     const same = await compare(hybrid.page, hybrid.settled, plain.settled)
     info(`settled hybrid view vs plain vector render (100%, after a pan and a zoom out and in): mean ${same.mean.toFixed(4)} of 255, ${(same.strong * 100).toFixed(3)}% far off, ${(same.any * 100).toFixed(3)}% differ at all`)
     check('after a pan and a zoom, the settled hybrid view equals a plain vector render (under 25 pixels of 2.5 million far off, mean under 0.05 of 255)', same.strong < 1e-5 && same.mean < 0.05, JSON.stringify(same))
@@ -245,6 +252,106 @@ try {
       check(`bitmap memory at ${zoom * 100}% is inside the 128 MB budget`, s.bytes <= 128 * 1048576 * 1.1, MB(s.bytes))
     }
     check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- a bitmap is never stale: after each kind of edit, the next pan shows the edited note
+  {
+    // The bitmaps are held on screen (a long quiet wait) so the picture of the pan can be set against the vector picture of the same view.
+    const { context, page, errors } = await open({ lodQuiet: 60000 })
+    await zoomTo(page, 0.5)
+    await page.waitForTimeout(500)
+    const scene = (fn, arg) => page.evaluate(([code, a]) => new Function('scene', 'edits', 'arg', `return (${code})(scene, edits, arg)`)(window.__personalNote.leaferCanvas(), window.__personalNote.leaferEdits, a), [fn.toString(), arg])
+    const stickies = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'sticky').map((o) => ({ id: o.id, x: o.geometry.x, y: o.geometry.y })))
+    const near = stickies.find((o) => o.x % 860 > 560 && o.x % 860 < 620 && o.y % 1080 > 200 && o.y % 1080 < 800) ?? stickies[5]
+    const rebuildAll = () => scene((s) => s.lodBuildAll())
+    // the picture of a pan right after an edit (bitmaps if they may show, else vectors) against the vector picture of the same view
+    const panVersusVectors = async (label) => {
+      await wheel(page, 3, 30)
+      const panned = await shot(page)
+      const state = await lod(page)
+      await scene((s) => s.lodExit())
+      await rafs(page, 3)
+      const vector = await shot(page)
+      const d = await compare(page, panned, vector)
+      return { d, state }
+    }
+    await rebuildAll()
+    const control = await panVersusVectors('control')
+    info(`control (no edit): the pan shows bitmaps ${control.state.active}, mean ${control.d.mean.toFixed(3)}, ${(control.d.strong * 100).toFixed(3)}% far off`)
+    const tolerance = (d) => d.mean <= control.d.mean + 0.5 && d.strong <= control.d.strong + 0.0015
+    const scenario = async (name, action) => {
+      await rebuildAll()
+      await action()
+      const { d, state } = await panVersusVectors(name)
+      info(`${name}: pan right after it ${state.active ? 'shows bitmaps' : 'shows vectors'}, mean ${d.mean.toFixed(3)}, ${(d.strong * 100).toFixed(3)}% far off`)
+      check(`${name}: the next pan matches the vector render (a stale bitmap would show the old note)`, tolerance(d), JSON.stringify([d, control.d]))
+      return state
+    }
+    await scenario('a move across a page boundary', () => scene((s, e, a) => { s.select([a.id]); s.nudge(300, 160) }, near))
+    await scenario('undo of it', () => scene((s, e) => e.undo()))
+    await scenario('redo of it', () => scene((s, e) => e.redo()))
+    await scenario('an agent merge', () => scene((s, e) => {
+      const document = e.doc
+      const target = document.objects.filter((o) => o.type === 'sticky')[3]
+      s.applyMerged({ ...document, objects: document.objects.map((o) => (o.id === target.id ? { ...o, geometry: { ...o.geometry, x: o.geometry.x + 500, y: o.geometry.y + 260 } } : o)) })
+    }))
+    await scenario('a page added on the top and left (every object shifts)', () => scene((s, e, a) => { s.select([a.id]); s.nudge(-a.x - 500, -a.y - 400) }, near))
+    // typing past the bottom edge of the last page row grows the grid
+    await scenario('typing that grows the page grid across an edge', async () => {
+      const grid = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page)
+      const lowest = await page.evaluate(() => { const texts = window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'text' && o.mode === 'box'); return texts.sort((a, b) => b.geometry.y - a.geometry.y)[0]?.id })
+      await scene((s, e, id) => s.editText(id), lowest)
+      await page.waitForSelector('.leafer-text-editor', { timeout: 10000 })
+      await page.keyboard.press('Control+End')
+      for (let i = 0; i < 40; i += 1) await page.keyboard.type('line of words\n')
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(300)
+      const after = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page)
+      info(`typing: the grid went from ${grid.columns} x ${grid.rows} to ${after.columns} x ${after.rows}`)
+    })
+    check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- the failure path and the uniform stroke, under the hybrid default
+  {
+    const { context, page, errors } = await open(null)
+    await zoomTo(page, 0.5)
+    await page.waitForTimeout(500)
+    await idle(page)
+    await wheel(page, 4, 30)
+    await page.keyboard.down('Control')
+    await wheel(page, 6, -30)
+    await wheel(page, 6, 30)
+    await page.keyboard.up('Control')
+    await page.waitForTimeout(900)
+    const stroke = await page.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth, active: window.__personalNote.leaferCanvas().lodState().active }))
+    check('hybrid: after navigating through the bitmaps a stroke that keeps its screen width has the width of the zoom it ends at', !stroke.active && Math.abs(stroke.width - 6 * stroke.scale) < 1e-6, JSON.stringify(stroke))
+    await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const v = s.view(); s.setView({ ...v, scale: v.scale * 1.3 }) })
+    await page.waitForTimeout(700)
+    const stroke2 = await page.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth }))
+    check('and after a zoom step too', Math.abs(stroke2.width - 6 * stroke2.scale) < 1e-6, JSON.stringify(stroke2))
+    // a failure inside the engine turns the bitmaps off for good and leaves the vectors
+    await page.evaluate(() => { const world = window.__personalNote.leaferCanvas().leafer.children[1]; const real = world.__render.bind(world); world.__render = (canvas, options) => { if (options?.bounds) throw new Error('engine said no'); return real(canvas, options) } })
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    const failed = await lod(page)
+    check('hybrid: a bitmap that cannot be made turns the bitmaps off, with no error shown, and the vectors carry on', failed.mode === 'off' && !failed.active && failed.tiles === 0 && errors.length === 0 && await vectorsOn(page), JSON.stringify([failed, errors]))
+    await wheel(page, 3, 30)
+    check('and a pan afterwards is vectors, not a blank', !(await lod(page)).active && await vectorsOn(page))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- the longest synchronous stretch of making a page, on the 1,500-object note (the speed test report gives the 5,400-object numbers)
+  {
+    const { context, page } = await open(null)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodExit())
+    await zoomTo(page, 1)
+    await page.waitForTimeout(500)
+    await idle(page)
+    const s = await lod(page)
+    info(`page bitmaps: ${s.builds} made, worst whole page ${s.maxBuildMs.toFixed(0)} ms, worst single synchronous band ${s.maxBandMs.toFixed(0)} ms, ${MB(s.bytes)} MB`)
+    check('no single synchronous stretch of making a page is longer than a quarter-page band (under 120 ms here on 1,500 objects)', s.maxBandMs < 120, JSON.stringify(s))
     await context.close()
   }
 } finally {
