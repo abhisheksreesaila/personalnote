@@ -1552,7 +1552,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         const began = performance.now()
         const check = () => {
           const state = lod.stats()
-          if (!state.hybrid || state.mode === 'off' || state.crisp === false || (state.visibleReady && !state.active) || performance.now() - began > maxMs) resolve()
+          if (state.mode !== 'always' || state.crisp === false || (state.visibleReady && !state.active) || performance.now() - began > maxMs) resolve()
           else setTimeout(check, 100)
         }
         check()
