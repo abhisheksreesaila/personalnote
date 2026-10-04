@@ -85,6 +85,70 @@ const MB = (bytes) => (bytes / 1048576).toFixed(1)
 const PLAIN = { hybrid: false, dragCrowd: 0, gestureTransform: false, pageBitmaps: 'off' }
 
 try {
+  // ---------------------------------------------------------------- the idle page build, driven step by step: never drawn twice, never loses its page
+  {
+    const { context, page, errors } = await open(null)
+    const warnings = []
+    page.on('console', (message) => { if (/page bitmaps are off/.test(message.text())) warnings.push(message.text()) })
+    const t = (fn, arg) => page.evaluate(([code, a]) => new Function('test', 'scene', 'arg', `return (${code})(test, scene, arg)`)(window.__personalNote.leaferCanvas().lodTest, window.__personalNote.leaferCanvas(), a), [fn.toString(), arg])
+    await zoomTo(page, 1)
+    await page.waitForTimeout(500)
+    await idle(page)
+    await page.waitForTimeout(400)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    await t((test, scene) => scene.lodExit())
+    // a page on screen with plenty on it: the page of the middle of the window
+    const target = await t((test, scene) => { const v = scene.view(); const size = { w: document.querySelector('#leafer-host').clientWidth, h: document.querySelector('#leafer-host').clientHeight }; return { c: Math.max(0, Math.floor((-v.x + size.w / 2) / v.scale / 860)), r: Math.max(0, Math.floor((-v.y + size.h / 2) / v.scale / 1080)) } })
+    const diffCount = (a, b) => t((test, scene, [x, y]) => { const A = window.__snaps[x]; const B = window.__snaps[y]; let n = 0; for (let i = 0; i < A.data.length; i += 1) if (A.data[i] !== B.data[i]) n += 1; return n }, [a, b])
+    const snap = (name) => t((test, scene, [n, c, r]) => { window.__snaps = window.__snaps || {}; window.__snaps[n] = test.snapshot(c, r); return true }, [name, target.c, target.r])
+
+    // (1) the build of a page is cut by a navigation that enters the bitmaps: the page is made whole on the spot, and the rest of the idle build does not
+    // draw over it (a page drawn twice is darker where it is translucent and has doubled edges)
+    await t((test, scene, c) => { test.begin(c.c, c.r); test.idle(); return test.idle() }, target) // two bands of four are drawn
+    const cut = await t((test) => test.idle().job, null)
+    check('(setup) the idle build of a page is in the middle of its bands', Boolean(cut) && cut.band >= 2 && cut.band < 4, JSON.stringify(cut))
+    const entered = await t((test, scene) => test.enter({ ...scene.view() }), null)
+    check('(setup) a navigation enters the bitmaps with that page lacking: it is made whole on the spot', entered === true)
+    await snap('afterEnter')
+    await t((test, scene) => scene.lodExit(), null)
+    for (let i = 0; i < 8; i += 1) await t((test) => test.idle(), null)
+    await snap('afterIdle')
+    const changed = await diffCount('afterEnter', 'afterIdle')
+    await t((test, scene, c) => test.redraw(c.c, c.r), target)
+    await snap('clean')
+    const unlike = await diffCount('afterIdle', 'clean')
+    info(`the page made on the spot, then idle time: ${changed} bytes changed since; against a clean whole draw: ${unlike} bytes differ`)
+    check('the rest of the cut idle build is not drawn over the finished page (its pixels do not change in idle time)', changed === 0, String(changed))
+    check('and the page is the same as a clean whole draw of it', unlike === 0, String(unlike))
+
+    // (2) a view change that does not enter the bitmaps drops a build that is half drawn (its bands must all be drawn at one placement of the note)
+    await t((test, scene, c) => { test.begin(c.c, c.r); test.idle(); }, target)
+    const before = await t((test) => test.idle().job, null)
+    await t((test, scene) => test.viewWithoutEntering({ ...scene.view() }), null)
+    const after = await t((test) => { const st = window.__personalNote.leaferCanvas().lodState(); return st.jobActive }, null)
+    check('a view change that does not enter the bitmaps drops a half-drawn idle build', Boolean(before) && after === false, JSON.stringify([before, after]))
+
+    // (3) the page being drawn is never the one let go for the memory budget
+    const far = await t((test) => test.farthest(), null)
+    check('(setup) there is a page far from the window to build', Boolean(far), JSON.stringify(far))
+    await t((test, scene, c) => { test.begin(c.c, c.r); test.idle() }, far)
+    await t((test) => test.evict(1e12), null) // as much memory wanted as there can be: everything that may be let go is
+    const kept = await t((test, scene, c) => { const st = scene.lodState(); return { jobActive: st.jobActive, tiles: st.tiles } }, far)
+    check('when memory is short every page that may go does, except the page being drawn (the job is still on)', kept.jobActive === true, JSON.stringify(kept))
+    let done = null
+    for (let i = 0; i < 12 && !(done?.job === null); i += 1) done = await t((test) => test.idle(), null)
+    const finished = await t((test, scene, c) => ({ mode: scene.lodState().mode, current: scene.lodState().current }), far)
+    check('and its idle build completes (the bitmaps stay on)', done?.job === null && finished.mode === 'always' && warnings.length === 0, JSON.stringify([done, finished, warnings]))
+
+    // (4) the page of a build that is on went (a pruned grid, a let-go page): the build is dropped, nothing is drawn into a lost canvas, the bitmaps stay on
+    await t((test, scene, c) => { test.begin(c.c, c.r); test.idle() }, far)
+    await t((test, scene, c) => test.dropTile(c.c, c.r), far)
+    const gone = await t((test) => test.idle(), null)
+    check('when the page of an idle build is gone the build is dropped, and the bitmaps stay on (this guards a crash that turns them off for the session)', (!gone.job || gone.job.c !== far.c || gone.job.r !== far.r) && gone.mode === 'always' && warnings.length === 0 && errors.length === 0, JSON.stringify([gone, warnings, errors]))
+    await context.close()
+  }
+  if (process.env.HYB_ONLY) { await browser.close(); await server.close(); const bad = results.filter((ok) => !ok).length; console.log(bad ? `${bad} FAILED` : `all ${results.length} checks passed`); process.exit(bad ? 1 : 0) }
+
   // ---------------------------------------------------------------- the default is the hybrid mode; navigation uses bitmaps at every zoom
   {
     const { context, page, errors } = await open(null)
@@ -356,42 +420,6 @@ try {
     info(`a pan right after a zoom to 80%: bitmaps ${afterZoom.active}, ${afterZoom.jitBuilds - beforeZoom.jitBuilds} page(s) made on the spot (${(afterZoom.jitMs - beforeZoom.jitMs).toFixed(0)} ms)`)
     check('a pan right after a zoom shows bitmaps too, the soft pages on screen made on the spot', afterZoom.active && afterZoom.jitBuilds - beforeZoom.jitBuilds >= 1 && afterZoom.jitBuilds - beforeZoom.jitBuilds <= 12, JSON.stringify([beforeZoom.lacking, afterZoom.lacking, afterZoom.scales, afterZoom.tiles]))
 
-    // A page the idle build is drawing band by band when a navigation starts: it is made again whole on the spot and the idle job is dropped, so the
-    // remaining bands are not drawn over the finished page (a page drawn twice is darker where it is translucent)
-    await scene((s) => { s.setView({ x: 24, y: 24, scale: 0.5 }) })
-    await page.waitForTimeout(300)
-    await rebuildAll()
-    await scene((s) => s.lodExit())
-    const victim = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const o = window.__personalNote.leaferEdits.doc.objects.filter((x) => x.type === 'sticky').map((x) => ({ id: x.id, b: s.screenBox(x.id) })).filter((x) => x.b).sort((p, q) => Math.hypot(p.b.x - 400, p.b.y - 300) - Math.hypot(q.b.x - 400, q.b.y - 300))[0]; return { id: o.id } })
-    await scene((s, e, a) => { s.select([a.id]); s.nudge(14, 9) }, victim)
-    if (process.env.HYB_DEBUG) info(JSON.stringify(await page.evaluate(() => new Promise((resolve) => { const out = []; const t0 = performance.now(); const tick = () => { const st = window.__personalNote.leaferCanvas().lodState(); out.push([Math.round(performance.now() - t0), st.jobActive, st.jobBand, st.current, st.tiles, st.active]); if (performance.now() - t0 > 1500) resolve(out.filter((x, i) => i % 6 === 0)); else requestAnimationFrame(tick) }; tick() }))))
-    await page.waitForFunction(() => { const st = window.__personalNote.leaferCanvas().lodState(); return st.jobActive && st.jobBand >= 1 }, null, { timeout: 5000, polling: 'raf' })
-    await wheel(page, 1, 30) // the navigation starts in the middle of a page's bands
-    const midJob = await lod(page)
-    check('a navigation that starts in the middle of an idle page build shows bitmaps and every page it needs is whole (a job on a page out of sight goes on afterwards)', midJob.active && midJob.lacking === 0, JSON.stringify(midJob))
-    await scene((s) => s.lodExit())
-    await page.waitForTimeout(1500) // idle time goes on: nothing is drawn over the pages
-    const settledState = await lod(page)
-    // the victim's own place (its shadow and its text are translucent: a page drawn twice is darker there), bitmaps against vectors
-    const around = async () => {
-      const box = await page.evaluate((id) => { const b = window.__personalNote.leaferCanvas().screenBox(id); const h = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: Math.max(0, h.left + b.x - 30), y: Math.max(0, h.top + b.y - 30), width: b.width + 60, height: b.height + 60 } }, victim.id)
-      return page.screenshot({ clip: box })
-    }
-    const placeVersusVectors = async () => {
-      await rebuildAll()
-      await wheel(page, 1, 30)
-      const withBitmaps = await around()
-      await scene((s) => s.lodExit())
-      await rafs(page, 3)
-      const withVectors = await around()
-      return compare(page, withBitmaps, withVectors)
-    }
-    const doubled = await placeVersusVectors()
-    await scene((s, e, a) => { s.select([a.id]); s.nudge(-14, -9) }, victim)
-    await page.waitForTimeout(2500)
-    const calm = await placeVersusVectors()
-    info(`the page whose idle build was cut by a navigation, bitmaps vs vectors around its object: mean ${doubled.mean.toFixed(3)}, ${(doubled.strong * 100).toFixed(3)}% far off; after an undisturbed build: mean ${calm.mean.toFixed(3)}, ${(calm.strong * 100).toFixed(3)}%`)
-    check('and the page is not drawn twice: around its object the bitmap is as close to the vector render as after an undisturbed build', doubled.mean <= calm.mean + 0.3 && doubled.strong <= calm.strong + 0.002 && settledState.mode === 'always', JSON.stringify([doubled, calm, settledState.mode]))
     check('page errors', errors.length === 0, errors.join(' | '))
     await context.close()
   }

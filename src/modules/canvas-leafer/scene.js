@@ -1578,6 +1578,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     lodBuildAll: () => lod.buildAll(),
     lodForceSlow: () => lod.forceSlow(),
+    lodTest: lod.test,
     destroy() { for (const [type, fn] of [['pointermove', inputMove], ['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
   }
   return api

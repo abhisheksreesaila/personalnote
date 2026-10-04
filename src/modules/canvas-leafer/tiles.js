@@ -447,6 +447,32 @@ export function createTileLod({ leafer, world, perf, pageW, pageH, pixelRatio: i
       for (let r = 0; r < rows; r += 1) for (let c = 0; c < columns; c += 1) build(c, r)
     },
     forceSlow() { slow = true },
+    // For checks (verify-leafer-hybrid.mjs): the pieces of the idle build and the memory rules, driven one step at a time instead of by timers.
+    test: {
+      // Starts the idle build of one page (as the idle step would) without drawing a band.
+      begin(c, r) { job = beginTile(c, r, planFor(latest)); return { band: job.band } },
+      // One idle step now, past the quiet waits: draws a band of the job, or starts the next page that needs one. Returns where the job is.
+      idle() {
+        if (buildTimer) { cancel(buildTimer); buildTimer = null }
+        lastView = -Infinity
+        lastEdit = -Infinity
+        buildNext()
+        if (buildTimer) { cancel(buildTimer); buildTimer = null }
+        return { job: job ? { c: job.c, r: job.r, band: job.band } : null, mode }
+      },
+      // The start of a navigation, entered directly (not through `view`, which drops the job first): returns whether the bitmaps are on the stage.
+      enter(next) { latest = next; return enter(next) },
+      // A view change that does not enter the bitmaps.
+      viewWithoutEntering(next) { return view(next, { allowEnter: false }) },
+      // The memory rule with `extra` more bytes wanted: everything that may go, goes.
+      evict(extra) { enforceBudget(planFor(latest), extra) },
+      // The page's bitmap lost, as an eviction or a pruned grid would.
+      dropTile(c, r) { const tile = tiles.get(key(c, r)); if (tile) { tile.node.remove(); tile.node.destroy?.(); tiles.delete(key(c, r)) } },
+      // The pixels of one page's bitmap, and a whole clean draw of it (the bitmap is made again whole).
+      snapshot(c, r) { const tile = tiles.get(key(c, r)); const { context, view: v } = tile.node.canvas; return context.getImageData(0, 0, v.width, v.height) },
+      redraw(c, r) { buildTile(c, r) },
+      farthest() { const plan = planFor(latest); let best = null; for (const id of tiles.keys()) { const [c, r] = id.split(',').map(Number); if (c >= plan.near.c0 && c <= plan.near.c1 && r >= plan.near.r0 && r <= plan.near.r1) continue; const d = Math.hypot(c - (plan.near.c0 + plan.near.c1) / 2, r - (plan.near.r0 + plan.near.r1) / 2); if (!best || d > best.d) best = { c, r, d } } return best },
+    },
     destroy() {
       exit()
       if (buildTimer) cancel(buildTimer)
