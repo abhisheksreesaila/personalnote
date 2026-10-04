@@ -3138,11 +3138,11 @@ async function startSpeedTest() {
         get inkSurface() { return leaferInk.surface },
         setTool: (name) => setTool(name),
         setRenderMode: (name, document) => applyRenderMode(name === 'saved' ? state.renderMode : name, document),
-        setView: async ({ zoom }) => {
+        setView: async ({ zoom, wait = true }) => {
           if (zoom === 'fit') fitAllPages()
           else { state.canvasZoom = zoom; setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104) }
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-          await leaferCanvas.whenBitmapsReady() // (hybrid: the page bitmaps of the new view are made in idle time, as for a person who pauses before the next pan)
+          if (wait) await leaferCanvas.whenBitmapsReady() // (hybrid: the page bitmaps of the new view are made in idle time, as for a person who pauses before the next pan)
         },
       },
     })

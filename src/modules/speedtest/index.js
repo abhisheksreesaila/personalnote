@@ -21,6 +21,14 @@ export const COMPARE_MODES = [
   { id: 'gestureTransform', label: 'Slide picture' },
   { id: 'dpr1', label: 'DPR 1' },
 ]
+// The page bitmaps at the end of the run (hybrid and bitmaps modes): their memory and the longest time one page, and one band of a page, took to draw.
+function tileStats(scene) {
+  try {
+    const state = scene.lodState()
+    if (!state || state.mode === 'off') return null
+    return { mode: state.mode, hybrid: state.hybrid, tiles: state.tiles, mb: +(state.bytes / 1048576).toFixed(1), worstPageMs: Math.round(state.maxBuildMs), worstBandMs: Math.round(state.maxBandMs), evicted: state.evicted }
+  } catch { return null }
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function gpuName() {
@@ -168,6 +176,7 @@ export async function runSpeedTest(env) {
       note: { objects, pages: env.pageCount() },
       results: [{ name: 'Open the note (ms)', unit: 'ms', p50: Math.round(openMs), p95: null, max: null, n: 1, slow: 0 }, ...results.map((row) => ({ ...row, verdict: row.unit === 'ms' ? '' : verdict(row.p95) }))],
       failed,
+      tiles: tileStats(env.host.scene),
       ...(comparison ? { comparison } : {}),
     }
     report = { run, text: formatReport(run) + (comparison ? `\n${formatComparison(comparison)}` : '') }

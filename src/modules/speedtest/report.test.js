@@ -3,6 +3,13 @@ import test from 'node:test'
 import { comparisonRows, mergeRuns, formatComparison, formatReport, summarize, verdict } from './report.js'
 import { generateStressDocument } from './stress-note.js'
 
+test('the report says what the page bitmaps took: memory and the longest draw of a page and of a band', () => {
+  const base = { when: '2026-10-02T10:00:00.000Z', engine: 'Chromium', platform: 'Linux', host: 'Desktop app', dpr: 2, screen: '2880x1800', cores: 8, note: { objects: 5296, pages: '4x4' }, results: [{ name: 'Pan', p50: 16.7, p95: 16.8, max: 33.4, n: 360, slow: 1 }], failed: [] }
+  const text = formatReport({ ...base, tiles: { mode: 'always', hybrid: true, tiles: 16, mb: 120.3, worstPageMs: 180, worstBandMs: 52, evicted: 2 } })
+  assert.match(text, /Page bitmaps: 16 made, 120\.3 MB, the longest page took 180 ms.*band of it: 52 ms.*2 let go/)
+  assert.doesNotMatch(formatReport(base), /Page bitmaps/)
+})
+
 test('summarize gives p50, p95 and max, ignores junk and counts the slow frames', () => {
   const values = [...Array.from({ length: 94 }, () => 16.7), 40, 50, 60, 70, 80, 90, Number.NaN]
   const summary = summarize(values)

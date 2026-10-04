@@ -29,6 +29,7 @@ export function formatReport(run) {
   lines.push(`Personal Note speed test  ${run.when}`)
   lines.push(`${run.engine} on ${run.platform}, ${run.host}, devicePixelRatio ${run.dpr} (${run.screen}), ${run.cores} cores${run.gpu ? `, ${run.gpu}` : ''}`)
   lines.push(`Stress note: ${run.note.objects} objects on ${run.note.pages} pages. Times are milliseconds per frame (16.7 = 60 fps) unless noted.`)
+  if (run.tiles) lines.push(`Page bitmaps: ${run.tiles.tiles} made, ${run.tiles.mb} MB, the longest page took ${run.tiles.worstPageMs} ms to draw (the longest single stretch, a band of it: ${run.tiles.worstBandMs} ms), ${run.tiles.evicted} let go for the memory budget.`)
   lines.push('')
   const width = Math.max(...run.results.map((row) => row.name.length), 8)
   lines.push(`${pad('', width)}  ${pad('p50', 7)}${pad('p95', 7)}${pad('max', 7)}${pad('n', 5)}verdict`)

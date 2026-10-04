@@ -12,7 +12,7 @@
 //   edits          the note's history (undo, redo, stats)
 //   inkSurface     the element the pen draws on
 //   setTool(name)  switches the toolbar tool
-//   setView({ zoom }) puts the view at the opening view ('fit') or 100% (1) and returns when it is there
+//   setView({ zoom, wait }) puts the view at the opening view ('fit') or 100% (1) and returns when it is there (and, unless `wait` is false, when the page bitmaps of it are made)
 //   pageToScreen(x, y) a page point -> client coordinates
 import { summarize } from './report.js'
 
@@ -70,6 +70,22 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
       const total = n(120)
       for (let i = 0; i < total; i += 1) { check(); wheel(host.workspace, { dx: i < total / 2 ? 6 : -6, dy: i < total / 2 ? 24 : -24, x, y }); await frame() }
     })
+  }
+
+  // A pan right after an edit: an object on screen is nudged and the pan starts at once (the page bitmaps of the edited page are out of date).
+  async function panAfterEdit() {
+    const box = viewport()
+    const target = host.edits.doc.objects.find((object) => {
+      if (object.type === 'connector' || object.type === 'ink' || object.type === 'text') return false
+      const at = host.scene.screenBox(object.id)
+      return at && at.x > 40 && at.y > 40 && at.x + at.width < box.width - 40 && at.y + at.height < box.height - 40
+    })
+    if (!target) return null
+    host.scene.select([target.id])
+    host.scene.nudge(24, 16)
+    const frames = await pan()
+    host.scene.clearSelection()
+    return frames
   }
 
   async function zoom() {
@@ -296,6 +312,15 @@ export function createSpeedTest({ host, onProgress = () => {}, now = () => perfo
       const typed = await typing()
       if (typed.failed) failed.push(`Typing: ${typed.failed}`)
       else { add('Typing (frames)', typed.frames); add('Typing (key to frame)', typed.lat, 'ms') }
+      // What a person meets right after: a pan with the page bitmaps of the edited page out of date, and a pan straight after a zoom (no pause for the bitmaps).
+      await host.setView({ zoom: 1 })
+      await sleep(300)
+      check()
+      const edited = await panAfterEdit()
+      if (edited) add('Pan right after an edit', edited)
+      check()
+      await host.setView({ zoom: 'fit', wait: false })
+      add('Pan right after zoom (no wait)', await pan())
     } finally {
       k = 1
       host.scene.clearSelection()
