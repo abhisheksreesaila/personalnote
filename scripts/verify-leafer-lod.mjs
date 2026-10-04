@@ -76,7 +76,7 @@ const compare = (page, a, b) => page.evaluate(async ([one, two]) => {
   const pixels = first.data.length / 4
   return { mean: total / pixels, strong: strong / pixels, any: any / pixels }
 }, [a.toString('base64'), b.toString('base64')])
-const wheel = async (page, count, dy) => { await page.mouse.move(800, 450); for (let i = 0; i < count; i += 1) { await page.mouse.wheel(0, dy); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r()))) } }
+const wheel = async (page, count, dy, x = 800, y = 450) => { await page.mouse.move(x, y); for (let i = 0; i < count; i += 1) { await page.mouse.wheel(0, dy); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r()))) } }
 
 try {
   // ---------------------------------------------------------------- bitmaps on: always, held up for the pictures
@@ -153,10 +153,10 @@ try {
       await zoomTo(pg, 0.3)
       await pg.waitForTimeout(500)
       await pg.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll?.())
-      await wheel(pg, 6, 40)
+      await wheel(pg, 6, 40, 250, 120)
       await pg.keyboard.down('Control')
-      await wheel(pg, 10, -40) // zoom in through the bitmaps
-      await wheel(pg, 10, 40)
+      await wheel(pg, 10, -40, 250, 120) // zoom in through the bitmaps
+      await wheel(pg, 10, 40, 250, 120)
       await pg.keyboard.up('Control')
       const during = await lod(pg)
       await zoomTo(pg, 1)

@@ -14,7 +14,7 @@ import { writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
 
 const PORT = 4850
 const now = new Date().toISOString()
-const doc = generateStressDocument(1500, { columns: 4, rows: 4 })
+const doc = generateStressDocument(Number(process.env.HYB_COUNT ?? 1500), { columns: 4, rows: 4 })
 // one shape whose stroke keeps its screen width at every zoom (the bitmaps must not leave it at a stale width)
 doc.objects.push({ id: 'uniform', type: 'shape', kind: 'rect', z: doc.objects.length, fill: '#ffffff', stroke: '#cc0000', strokeWidth: 6, strokeUniform: true, geometry: { x: 300, y: 300, width: 200, height: 120, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 } })
 const stress = { content: writeJsonCanvas(doc, { derived: 'omit' }), pageState: { columns: doc.page.columns, rows: doc.page.rows } }
@@ -338,8 +338,12 @@ try {
     const stickyNow = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const near = window.__personalNote.leaferEdits.doc.objects.filter((x) => x.type === 'sticky').map((x) => ({ id: x.id, b: s.screenBox(x.id) })).filter((x) => x.b).sort((p, q) => Math.hypot(p.b.x - 400, p.b.y - 300) - Math.hypot(q.b.x - 400, q.b.y - 300)); return { id: near[0].id } })
     await scene((s, e, a) => { s.select([a.id]); s.nudge(20, 12) }, stickyNow)
     const before = await lod(page)
+    await page.evaluate(() => { window.__gaps = []; let last = performance.now(); const tick = (t) => { window.__gaps.push(t - last); last = t; window.__raf = requestAnimationFrame(tick) }; window.__raf = requestAnimationFrame(tick) })
     await wheel(page, 1, 30)
     const mixed = await lod(page)
+    await wheel(page, 30, 30)
+    const gaps = await page.evaluate(() => { cancelAnimationFrame(window.__raf); return window.__gaps.slice(1).sort((x, y) => x - y) })
+    info(`frame gaps over a 30-step pan right after the edit: p50 ${gaps[Math.floor(gaps.length / 2)].toFixed(1)}, p95 ${gaps[Math.floor(gaps.length * 0.95)].toFixed(1)}, max ${gaps.at(-1).toFixed(1)} ms; bitmaps still showing ${(await lod(page)).active}`)
     const jit = mixed.jitBuilds - before.jitBuilds
     info(`a pan right after an edit: bitmaps on the first step ${mixed.active}, ${jit} page(s) made on the spot (${(mixed.jitMs - before.jitMs).toFixed(0)} ms), ${mixed.builds - before.builds} made in all, ${mixed.tiles} pages in the note`)
     check('a pan right after an edit shows bitmaps from its first step', mixed.active && mixed.enters === before.enters + 1, JSON.stringify(mixed))
