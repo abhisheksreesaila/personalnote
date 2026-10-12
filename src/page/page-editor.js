@@ -1,6 +1,6 @@
 // The page note editor (F-040): Markdown in CodeMirror 6 on a sheet of paper that grows as you write. Loaded only when a page note
 // opens (src/modules/page.js). The text layer is the Markdown itself; the ink layer (marks, drawings) is added by ink.js.
-import { EditorState } from '@codemirror/state'
+import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView, keymap, drawSelection } from '@codemirror/view'
 import { history, historyKeymap, defaultKeymap, indentWithTab, undo, redo } from '@codemirror/commands'
 import { Language, defineLanguageFacet, syntaxHighlighting, HighlightStyle } from '@codemirror/language'
@@ -8,6 +8,8 @@ import { parser as markdownParser, GFM } from '@lezer/markdown'
 import { tags as t } from '@lezer/highlight'
 import { normalizePageDocument } from './document.js'
 import { installPageStyle } from './page-style.js'
+import { inkState, readInk, setMarks, setDrawings } from './ink-state.js'
+import { isInkTransaction, mountInkLayer } from './ink.js'
 
 // Markdown with GitHub's tables, task lists and strike-through. Built from the Lezer parser directly: @codemirror/lang-markdown would
 // also pull in the HTML, CSS and JavaScript parsers for embedded code, which a notes page doesn't need.
@@ -55,7 +57,6 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
   const desk = host.querySelector('.page-desk')
   const paper = host.querySelector('.page-paper')
   const sheets = host.querySelector('.page-sheets')
-  let ink = null
   let silent = false
 
   const view = new EditorView({
@@ -71,14 +72,15 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ 'aria-label': 'Page text', spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences' }),
         pageTheme,
+        inkState(initial.ink),
         EditorView.updateListener.of((update) => {
           if (silent) return
-          if (update.docChanged) onChange()
+          if (update.docChanged || update.transactions.some(isInkTransaction)) onChange()
         }),
       ],
     }),
   })
-  let inkValue = initial.ink // kept as it came until the ink layer (F-042) edits it
+  const ink = mountInkLayer({ view, host, paper, desk })
 
   // Faint "Page N" marks every sheet: the page is one continuous sheet that grows; the marks only show where paper would break.
   let shownSheets = 0
@@ -101,15 +103,18 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
   return {
     view,
     getDocument() {
-      return { version: initial.version, markdown: view.state.doc.toString(), ink: ink ? ink.toDocument() : inkValue }
+      return { version: initial.version, markdown: view.state.doc.toString(), ink: readInk(view.state) }
     },
     // A whole new document (an agent's change): replaces the text and ink without announcing an edit.
     setDocument(documentValue) {
       const next = normalizePageDocument(documentValue)
       silent = true
       try {
-        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next.markdown } })
-        if (ink) ink.load(next.ink); else inkValue = next.ink
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: next.markdown },
+          effects: [setMarks.of(next.ink.marks), setDrawings.of(next.ink.drawings)],
+          annotations: Transaction.addToHistory.of(false),
+        })
       } finally { silent = false }
     },
     setTitle() {},
@@ -125,7 +130,7 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
     focus() { view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true }); view.focus() },
     destroy() {
       resize.disconnect()
-      ink?.destroy()
+      ink.destroy()
       view.destroy()
       host.replaceChildren()
     },

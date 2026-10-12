@@ -273,7 +273,7 @@ Brief: Look and feel · Needs: F-040
 - [ ] page notes look like the prototype: ivory paper (860 px sheet) on a warm desk, Literata 18 px / 1.65, Bricolage headings, Figtree controls, faint "Page N" marks every 1080 px
 - [ ] heading marks (#) and list marks are quiet; the page grows as you write
 - [ ] the app chrome uses the same warm palette by default (other skins still selectable)
-## F-042 Marks on words [todo]
+## F-042 Marks on words [review]
 Brief: What it does 2 · Needs: F-040
 - [ ] Write/Draw switch (Esc returns to writing); pen, red, highlighter, eraser; Pencil always draws, fingers scroll; drag on empty margins draws in Write mode
 - [ ] a mark on words anchors to its word and follows it through typing, split/merge, wrapping and zoom; a margin mark follows its line

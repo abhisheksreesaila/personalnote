@@ -31,6 +31,31 @@ const CSS = `
   font: 500 11px var(--page-ui); letter-spacing: .06em; text-transform: uppercase; color: #b3aa98;
 }
 .page-sheet-mark[hidden] { display: none; }
+.page-ink { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; overflow: visible; }
+.page-draw-cursor, .page-draw-cursor * { cursor: crosshair !important; }
+.page-drawing .page-paper, .page-drawing .page-paper * { cursor: crosshair !important; }
+.page-drawing .page-desk { box-shadow: inset 0 0 0 3px var(--page-accent); }
+.page-toolbar {
+  position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; width: max-content;
+  max-width: 100%; margin: -16px auto 14px; padding: 6px 8px; border: 1px solid var(--page-line); border-radius: 12px;
+  background: color-mix(in srgb, var(--page-paper) 92%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: 0 6px 18px -10px rgba(60, 40, 10, .35); font: 500 13px var(--page-ui);
+}
+.page-tool-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.page-tool-group:empty { display: none; }
+.page-toolbar button {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 10px; border: 1px solid var(--page-line); border-radius: 8px;
+  color: var(--page-ink); background: var(--page-paper); font: inherit; cursor: pointer;
+}
+.page-toolbar button:hover { border-color: #bdb3a2; }
+.page-toolbar button[aria-pressed="true"] { color: var(--page-paper); background: var(--page-ink); border-color: var(--page-ink); }
+.page-toolbar button:focus-visible { outline: 2px solid var(--page-accent); outline-offset: 2px; }
+.page-swatch { width: 10px; height: 10px; border-radius: 99px; flex: none; }
+.page-draw-hint {
+  display: none; position: sticky; top: 52px; z-index: 5; width: max-content; max-width: 100%; margin: -8px auto 8px; padding: 6px 14px;
+  border-radius: 99px; color: var(--page-paper); background: var(--page-ink); font: 12.5px var(--page-ui);
+}
+.page-drawing .page-draw-hint { display: block; }
 @media (max-width: 900px) {
   .app-shell .page-host { inset: 0; border: 0; border-radius: 0; }
   .page-desk { padding: 0 0 96px; }
