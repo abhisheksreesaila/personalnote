@@ -26,6 +26,9 @@ import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
 import { newImage } from './media.js'
 import { createTextOverlay } from './text.js'
 import { clearMarkdownLayouts, layoutMarkdown } from './markdown-layout.js'
+import { anchorStroke, mapMarks, placeMarks, quoteOf, wholeWords } from './text-marks.js'
+import { followLinks, linkRanges, linkWord } from './text-links.js'
+import { ERASER_RADIUS, samplePath } from './ink-model.js'
 import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal } from './text-ops.js'
 import { prettifySelection } from '../editor/prettify.js'
 
@@ -106,10 +109,11 @@ function markdownBase(object) {
   }
 }
 const markdownWidth = (object) => (object.mode === 'point' ? undefined : object.geometry.width)
-const markdownLayout = (object) => layoutMarkdown(object.content ?? '', { width: markdownWidth(object), base: markdownBase(object) })
+const markdownLayout = (object, links = []) => layoutMarkdown(object.content ?? '', { width: markdownWidth(object), base: markdownBase(object), links })
 
-// What the layout measured, as Leafer nodes in the text's own frame: the paper behind code, bullets, checkboxes, bars and rules, then the words.
-function markdownNodes(layout) {
+// What the layout measured, as Leafer nodes in the text's own frame: the paper behind code, bullets, checkboxes, bars and rules, the words,
+// then the marks on them (F-050), each at its first word.
+function markdownNodes(layout, marks) {
   const group = new Group({ hittable: false })
   for (const shape of layout.shapes) {
     if (shape.kind === 'dot') group.add(new Ellipse({ x: shape.x, y: shape.y, width: shape.size, height: shape.size, fill: shape.color, hittable: false }))
@@ -128,7 +132,21 @@ function markdownNodes(layout) {
       textDecoration: piece.decoration, hittable: false,
     }))
   }
+  for (const mark of placeMarks(marks, layout.words)) group.add(markNode(mark))
   return group
+}
+
+// A mark is drawn like the ink it was made from, at (x, y) in the text's frame.
+function markNode(mark) {
+  const color = withAlpha(mark.color, mark.alpha)
+  if (mark.kind === 'dot') return new Ellipse({ x: mark.x, y: mark.y, width: mark.radius * 2, height: mark.radius * 2, fill: color, hittable: false })
+  return new Path({ x: mark.x, y: mark.y, path: pathData(mark.path), stroke: color, strokeWidth: mark.width ?? 2, strokeCap: mark.cap ?? 'round', strokeJoin: mark.join ?? 'round', hittable: false })
+}
+
+// The points of a placed mark in the text's frame (for the eraser).
+function markPoints(mark) {
+  if (mark.kind === 'dot') return [{ x: mark.x + mark.radius, y: mark.y + mark.radius }]
+  return samplePath(mark.path).map((point) => ({ x: point.x + mark.x, y: point.y + mark.y }))
 }
 
 const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y2}`).join(' ')
@@ -220,6 +238,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   let stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
   const textNodes = []
   const markdownEntries = new Set() // ids of the Markdown texts drawn, made again when web fonts arrive
+  const layoutOf = (object) => markdownLayout(object, linkRanges(doc, object.id)) // with its link words (F-051)
   const measuredText = []
   const uniformStrokes = [] // strokeScaleFixed keeps a stroke a constant number of SCREEN pixels; Fabric's uniform stroke still follows the zoom
   let resolveMedia = null
@@ -286,7 +305,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   function commonProps(object) {
     const props = { hittable: true }
     if (object.opacity !== undefined && object.opacity !== 1) props.opacity = object.opacity
-    if (object.visible === false) props.visible = false
+    if (object.visible === false || (object.folded && object.link)) props.visible = false // F-051: folded away into its words
     if (object.shadow) props.shadow = { x: object.shadow.x, y: object.shadow.y, blur: object.shadow.blur, color: object.shadow.color }
     return props
   }
@@ -314,14 +333,21 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         // The former Fabric engine drops empty and legacy placeholder text blocks when it opens a note; so does this one.
         if (isPlaceholderText(object.content)) return null
         if (isMarkdownText(object)) {
-          const layout = markdownLayout(object)
-          const words = markdownNodes(layout)
+          const layout = layoutOf(object)
+          const words = markdownNodes(layout, object.marks)
           const size = { width: object.mode === 'point' ? layout.width : g.width, height: layout.height }
           const holder = object.mode === 'point' ? new Group({ ...base, hitChildren: false }) : new Box({ ...base, width: size.width, height: size.height, hitFill: 'all', hitChildren: false })
           if (object.mode === 'point') holder.add(new Rect({ width: size.width, height: size.height, fill: 'rgba(0,0,0,0)', hittable: false }))
           holder.add(words)
           markdownEntries.add(object.id)
-          return { node: holder, text: words, size, markdown: true, sized: object.mode !== 'point', lockRatio: object.mode === 'point', relayout: () => {} }
+          // While a resize is dragged the words rewrap at the new width at once (the drop makes the text anew from the model).
+          const relayout = () => {
+            if (object.mode === 'point') return
+            const next = layoutOf({ ...object, geometry: { ...g, width: holder.width } })
+            words.clear()
+            for (const child of [...markdownNodes(next, object.marks).children]) words.add(child)
+          }
+          return { node: holder, text: words, size, markdown: true, sized: object.mode !== 'point', lockRatio: object.mode === 'point', relayout }
         }
         const text = new Text(textProps(object, { width: g.width }))
         textNodes.push(text)
@@ -834,7 +860,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // A press on a connector's line picks it (and leaves the editor's selection); a press anywhere else lets the editor have it.
   host.addEventListener('pointerdown', () => { gesture.settle(); lod.exit() }, true) // a touch of the note draws it exactly (and puts the vectors back) before anything is picked
   host.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || event.target === overlay.element || !doc) return
+    if (event.button !== 0 || overlay.element?.contains(event.target) || !doc) return
     const rect = host.getBoundingClientRect()
     const point = { x: (event.clientX - rect.left - view.x) / view.scale, y: (event.clientY - rect.top - view.y) / view.scale }
     const arrow = connectorAt(doc.objects, point, CONNECTOR_HIT / view.scale)
@@ -849,7 +875,29 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // words typed so far go into the document a moment after the typing pauses (never in the middle of an input-method composition), so
   // they are saved as they are typed. A new text is made at its first such moment (and never at all when nothing is typed); a new
   // sticky is made at once (an empty sticky stays, as in the former Fabric engine). An emptied text is removed when the session ends.
-  const overlay = createTextOverlay({ host })
+  // Two editors with one contract: the plain one (a textarea, text.js) and, for Markdown text, the one that keeps it formatted while it is
+  // typed (markdown-editor.js, F-049). That one brings CodeMirror, so it loads a moment after the canvas does; a Markdown text opened before
+  // it is there is edited in the plain one.
+  const plainOverlay = createTextOverlay({ host })
+  let markdownEditor = null
+  let activeEditor = plainOverlay
+  const loadEditor = () => import('./markdown-editor.js').then((module) => { markdownEditor ??= module.createMarkdownEditor({ host }) }).catch(() => {})
+  if (globalThis.requestIdleCallback) requestIdleCallback(() => loadEditor(), { timeout: 4000 }) // (when the canvas is idle: never in the way of a pan)
+  else setTimeout(loadEditor, 1500)
+  const overlay = {
+    get isOpen() { return activeEditor.isOpen },
+    get element() { return activeEditor.element },
+    get value() { return activeEditor.value },
+    get composing() { return activeEditor.composing },
+    get selection() { return activeEditor.selection },
+    open(options) { activeEditor = options.markdown && markdownEditor ? markdownEditor : plainOverlay; return activeEditor.open(options) },
+    setValue: (...args) => activeEditor.setValue(...args),
+    replaceRange: (...args) => activeEditor.replaceRange(...args),
+    setMatrix: (matrix) => activeEditor.setMatrix(matrix),
+    setWidth: (width) => activeEditor.setWidth(width),
+    commit: () => activeEditor.commit(),
+    cancel: () => activeEditor.cancel(),
+  }
   const DRAFT_DELAY = 650 // the save delay
   let textEdit = null // { id, entry|null, object, size, select, caret }
   let draftTimer = 0
@@ -861,7 +909,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
 
   // How big the words are once laid out ({ width, height }, inside a sticky's padding), measured on a scratch node.
   function contentSize(object) {
-    if (isMarkdownText(object)) { const layout = markdownLayout(object); return { width: layout.width, height: layout.height } }
+    if (isMarkdownText(object)) { const layout = layoutOf(object); return { width: layout.width, height: layout.height } }
     const props = textProps(object, { width: wrapWidth(object) })
     const scratch = new Text({ ...props, x: 0, y: 0 })
     const size = measure(scratch)
@@ -906,6 +954,9 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     }
     overlay.open({
       value: object.content ?? '',
+      markdown: isMarkdownText(object),
+      base: isMarkdownText(object) ? markdownBase(object) : null,
+      marks: isMarkdownText(object) ? object.marks ?? [] : [],
       font: overlayFont(object),
       wrap: width !== undefined,
       width: width ?? 0,
@@ -960,6 +1011,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
 
   // Puts `value` into the model for the edit's object (making a new text when it has words). Returns false when nothing changed.
   function storeWords(edit, value, { final }) {
+    if (edit.entry) edit.entry = entries.get(edit.entry.id) ?? edit.entry // (an entry is made anew when its object is drawn again)
     if (!edit.entry) { // a new text: it exists from its first words
       if (!value.trim()) return false
       const next = { ...edit.object, content: value }
@@ -980,10 +1032,15 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     if ((object.content ?? '') === value) return false
     if (object.type === 'text' && !value.trim() && !final) return false // an emptied text is removed when the session ends
     const next = { ...object, content: value }
+    if (object.marks?.length) next.marks = mapMarks(object.marks, object.content ?? '', value) // F-050: marks follow their words
     const plan = planSetContent(doc, { id: entry.id, content: value, geometry: fitGeometry(next, contentSize(next)) })
     if (!plan.op.changes.length) return false
+    if (next.marks) plan.op.changes = plan.op.changes.map((change) => (change.id === entry.id ? { ...change, after: { ...change.after, marks: next.marks } } : change))
+    const linked = isMarkdownText(object) ? followLinks(doc, entry.id, object.content ?? '', value) : [] // F-051: link words follow too
+    plan.op.changes.push(...linked)
     commit(plan.op, { selection: { before: [entry.id], after: [entry.id] }, floor: final ? null : edit.floor })
     if (edit.floor) edit.floor = { ...pages }
+    for (const change of linked) { const other = entries.get(change.id); if (other) rebuild(other) } // shown again when its words went
     edit.object = entry.object
     edit.size = { width: entry.object.geometry.width ?? 0, height: entry.object.geometry.height ?? 0 }
     return true
@@ -1049,6 +1106,82 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     const entry = lastEdited && entries.get(lastEdited)
     return entry && isTextual(entry.object) ? [entry] : []
   }
+
+  // ---- link and fold (F-051)
+  let linking = false
+  // The topmost upright Markdown text with a word under a page point: { text, layout, word, local }, or null.
+  function wordAtPoint(point) {
+    for (const object of [...stacking(doc)].reverse()) {
+      if (!isMarkdownText(object) || object.folded || !entries.has(object.id)) continue
+      const g = object.geometry
+      if ((g.rotation ?? 0) || (g.scaleX ?? 1) !== 1 || (g.scaleY ?? 1) !== 1 || g.flipX || g.flipY) continue
+      const local = { x: point.x - g.x, y: point.y - g.y }
+      const layout = layoutOf(object)
+      if (local.x < 0 || local.y < 0 || local.x > layout.width || local.y > layout.height) continue
+      const word = layout.words.find((each) => local.x >= each.x - 2 && local.x <= each.x + each.width + 2 && local.y >= each.y && local.y <= each.y + each.height)
+      return word ? { text: object, layout, word, local } : null
+    }
+    return null
+  }
+  const wordCentre = (text, layout, range) => {
+    const word = layout.words.find((each) => each.from >= range.pos && each.to <= range.end) ?? layout.words[0]
+    return word ? { x: text.geometry.x + word.x + word.width / 2, y: text.geometry.y + word.y + word.height / 2 } : null
+  }
+
+  // Folds (or opens) objects as one step, with the motion: they slide out of their words, or back into them, in about 0.6 s.
+  const FOLD_MS = 620
+  const liquid = (t) => { const c = 1.35; return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2 } // eases out with a soft overshoot
+  function setFolded(ids, folded, from) {
+    const targets = ids.map((id) => entries.get(id)).filter(Boolean)
+    if (!targets.length) return
+    const textIds = new Set(targets.map((entry) => entry.object.link?.textId).filter(Boolean))
+    const apply = () => {
+      commit({ label: folded ? 'Fold' : 'Open', changes: targets.map((entry) => ({ id: entry.id, before: entry.object, after: { ...entry.object, folded } })) }, { selection: { before: selectedIds(), after: selectedIds().filter((id) => !folded || !ids.includes(id)) } })
+      keepingSelection(() => { for (const id of [...ids, ...textIds]) { const entry = entries.get(id); if (entry) rebuild(entry) } })
+    }
+    if (folded) editing.clear()
+    if (!folded) apply()
+    const moving = ids.map((id) => entries.get(id)).filter(Boolean).map((entry) => {
+      const node = entry.node
+      const word = from ?? (() => { const text = doc.objects.find((object) => object?.id === entry.object.link?.textId); return text ? wordCentre(text, layoutOf(text), entry.object.link) : null })()
+      const start = { x: node.x, y: node.y, scaleX: node.scaleX ?? 1, scaleY: node.scaleY ?? 1, opacity: node.opacity ?? 1 }
+      const rect = entry.rect ?? boundingRect(entry.object, entry.size)
+      const centre = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      node.visible = true
+      return { node, start, centre, word: word ?? centre }
+    })
+    lod.exit()
+    const began = performance.now()
+    const frame = (now) => {
+      const t = Math.min(1, (now - began) / FOLD_MS)
+      const open = folded ? 1 - liquid(t) : liquid(t) // 1 = where it lives, 0 = inside its word
+      for (const item of moving) {
+        const s = Math.max(0.04, open)
+        const cx = item.word.x + (item.centre.x - item.word.x) * open
+        const cy = item.word.y + (item.centre.y - item.word.y) * open
+        item.node.set({ scaleX: item.start.scaleX * s, scaleY: item.start.scaleY * s, x: cx - (item.centre.x - item.start.x) * s, y: cy - (item.centre.y - item.start.y) * s, opacity: item.start.opacity * Math.min(1, Math.max(0, open * 1.4)) })
+      }
+      if (t < 1) { requestAnimationFrame(frame); return }
+      for (const item of moving) item.node.set(item.start)
+      if (folded) apply()
+    }
+    requestAnimationFrame(frame)
+  }
+  // A press on link words (select tool) folds or opens; in link mode a press links the selection to the words under it.
+  host.addEventListener('pointerdown', (event) => {
+    if (event.button > 0 || overlay.isOpen || drawingTool) return
+    const rect = host.getBoundingClientRect()
+    const point = { x: (event.clientX - rect.left - view.x) / view.scale, y: (event.clientY - rect.top - view.y) / view.scale }
+    if (linking) {
+      event.preventDefault()
+      event.stopPropagation()
+      api.linkSelectionAt(point)
+      api.stopLinking()
+      onTextEvent('link')
+      return
+    }
+    if (api.toggleFoldAt(point)) { event.preventDefault(); event.stopPropagation() }
+  }, true)
 
   const textApi = {
     isEditingText: () => overlay.isOpen,
@@ -1147,14 +1280,14 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     markdownInfo(id) {
       const entry = entries.get(id)
       if (!entry?.built.markdown) return null
-      const layout = markdownLayout(entry.object)
-      return { width: layout.width, height: layout.height, visible: entry.built.text.visible !== false, pieces: layout.pieces.map((piece) => ({ text: piece.text, fontSize: piece.fontSize, fontWeight: piece.fontWeight, italic: piece.italic, decoration: piece.decoration, fontFamily: piece.fontFamily })), shapes: layout.shapes.map((shape) => shape.kind), drawn: entry.built.text.children.length }
+      const layout = layoutOf(entry.object)
+      return { width: layout.width, height: layout.height, visible: entry.built.text.visible !== false, pieces: layout.pieces.map((piece) => ({ text: piece.text, fontSize: piece.fontSize, fontWeight: piece.fontWeight, italic: piece.italic, decoration: piece.decoration, fontFamily: piece.fontFamily, color: piece.color })), shapes: layout.shapes.map((shape) => shape.kind), drawn: entry.built.text.children.length, source: entry.object.content ?? '', placed: placeMarks(entry.object.marks, layout.words).map((mark) => ({ x: mark.x, y: mark.y, exact: mark.anchor.quote?.exact })), words: layout.words.map((word) => ({ from: word.from, to: word.to, x: word.x, y: word.y, width: word.width, height: word.height })), marks: (entry.object.marks ?? []).length }
     },
     // What Leafer drew for a text or sticky (for checks): its lines, and the font it used.
     textInfo(id) {
       const entry = entries.get(id)
       if (entry?.built.markdown) { // the Markdown source of each drawn row, and the text's own font
-        const layout = markdownLayout(entry.object)
+        const layout = layoutOf(entry.object)
         const rows = new Map()
         for (const piece of layout.pieces) if (!piece.marker) { const row = rows.get(piece.rowTop); if (row) { row.from = Math.min(row.from, piece.from); row.to = Math.max(row.to, piece.to) } else rows.set(piece.rowTop, { from: piece.from, to: piece.to }) }
         const source = entry.object.content ?? ''
@@ -1205,11 +1338,11 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   let tapEditedAt = 0
   host.addEventListener('pointerdown', (event) => { downType = event.pointerType || 'mouse' }, true)
   host.addEventListener('dblclick', (event) => {
-    if (event.button !== 0 || event.target === overlay.element || performance.now() - tapEditedAt < 700) return
+    if (event.button !== 0 || overlay.element?.contains(event.target) || performance.now() - tapEditedAt < 700) return
     editOrCreateAt(event.clientX, event.clientY)
   })
   host.addEventListener('click', (event) => {
-    if (downType === 'mouse' || event.button !== 0 || event.target === overlay.element) return
+    if (downType === 'mouse' || event.button !== 0 || overlay.element?.contains(event.target)) return
     const at = { x: event.clientX, y: event.clientY, time: performance.now() }
     const again = lastTap && at.time - lastTap.time < 400 && Math.hypot(at.x - lastTap.x, at.y - lastTap.y) < 30
     lastTap = again ? null : at
@@ -1416,7 +1549,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     refreshText() {
       lod.invalidate()
       clearMarkdownLayouts()
-      keepingSelection(() => { for (const id of [...markdownEntries]) { const entry = entries.get(id); if (entry) { refreshBox(entry); rebuild(entry) } else markdownEntries.delete(id) } })
+      keepingSelection(() => { for (const id of [...markdownEntries]) { if (textEdit?.entry?.id === id) continue; const entry = entries.get(id); if (entry) { refreshBox(entry); rebuild(entry) } else markdownEntries.delete(id) } }) // (the text being typed is drawn again when its edit ends)
       textNodes.forEach((node) => node.forceUpdate?.())
       for (const item of measuredText) {
         const g = item.object.geometry
@@ -1587,6 +1720,108 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     inkRemove(ids) { lod.invalidate(touchedRects(ids.map((id) => entries.get(id)?.object).filter(Boolean))); for (const id of ids) { const entry = entries.get(id); if (entry) dropEntry(entry) } },
     // Hands the op to the host as one undo step. The nodes are already on screen (inkAdd / inkRemove).
     inkCommit: (op) => commit(op),
+    // F-050: a stroke drawn over the words of a Markdown text (upright, as most are) becomes a mark of that text: the op that adds it, or
+    // null when the stroke is not on words (it stays ordinary ink).
+    inkAsMark(ink) {
+      const g = ink.geometry
+      for (const object of [...stacking(doc)].reverse()) {
+        if (!isMarkdownText(object) || isLocked(object) || !entries.has(object.id)) continue
+        const og = object.geometry
+        if ((og.rotation ?? 0) || (og.scaleX ?? 1) !== 1 || (og.scaleY ?? 1) !== 1 || og.flipX || og.flipY || og.skewX || og.skewY) continue
+        const layout = layoutOf(object)
+        const box = { x: g.x - og.x, y: g.y - og.y, width: g.width, height: g.height }
+        if (box.x > layout.width || box.y > layout.height || box.x + box.width < 0 || box.y + box.height < 0) continue
+        const anchor = anchorStroke(box, layout.words, object.content ?? '')
+        if (!anchor) continue
+        const { type, z, geometry, opacity, visible, strokeUniform, blend, extras, points, ...look } = ink
+        const mark = { ...look, anchor }
+        return { label: ink.tool === 'highlight' ? 'Highlight' : 'Mark', changes: [{ id: object.id, before: object, after: { ...object, marks: [...(object.marks ?? []), mark] } }], selection: { before: [], after: [] } }
+      }
+      return null
+    },
+    // Commits a change to texts' marks (a new mark, an erase pass) and draws those texts again.
+    inkMark(op) {
+      const done = commit(op)
+      keepingSelection(() => { for (const change of op.changes) { const entry = entries.get(change.id); if (entry && isMarkdownText(entry.object)) rebuild(entry) } })
+      return done
+    },
+    // The eraser over marks: the marks of Markdown texts that the eraser touches between page points a and b go at once (shown, not yet
+    // a step). Returns [{ id, before, after }] for the texts changed by this move; `before` is the text as it was when the pass began.
+    eraseMarks(a, b, originals) {
+      const changed = []
+      for (const entry of entries.values()) {
+        const object = entry.object
+        if (!isMarkdownText(object) || !object.marks?.length || isLocked(object)) continue
+        const og = object.geometry
+        if ((og.rotation ?? 0) || (og.scaleX ?? 1) !== 1 || (og.scaleY ?? 1) !== 1) continue
+        const layout = layoutOf(object)
+        const near = (point, mark) => {
+          const reach = ERASER_RADIUS + (mark.width ?? 2) / 2
+          const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 4))
+          for (let step = 0; step <= steps; step += 1) {
+            const t = step / steps
+            if (Math.hypot(a.x + (b.x - a.x) * t - og.x - point.x, a.y + (b.y - a.y) * t - og.y - point.y) <= reach) return true
+          }
+          return false
+        }
+        const placed = placeMarks(object.marks, layout.words)
+        const kept = object.marks.filter((mark, index) => !markPoints(placed[index]).some((point) => near(point, mark)))
+        if (kept.length === object.marks.length) continue
+        if (!originals.has(object.id)) originals.set(object.id, object)
+        entry.object = { ...object, marks: kept }
+        keepingSelection(() => rebuild(entry))
+        changed.push(object.id)
+      }
+      return changed
+    },
+    // An erase pass over marks that is given up: the texts are drawn as the document has them.
+    markedObject: (id) => entries.get(id)?.object ?? null,
+    // ---- link and fold (F-051)
+    // The selected objects (not the text itself) are linked to the words of a Markdown text at a page point. False when no words are there.
+    linkSelectionAt(point) {
+      const found = wordAtPoint(point)
+      if (!found) return false
+      const { text, word } = found
+      const source = text.content ?? ''
+      const [pos, end] = wholeWords(source, word.from, word.to)
+      const ids = selectedIds().filter((id) => id !== text.id && entries.get(id)?.object.type !== 'connector')
+      if (!ids.length) return false
+      const changes = ids.map((id) => { const object = entries.get(id).object; return { id, before: object, after: { ...object, link: { textId: text.id, pos, end, quote: quoteOf(source, pos, end) }, folded: false } } })
+      commit({ label: 'Link', changes }, { selection: { before: ids, after: ids } })
+      keepingSelection(() => { const entry = entries.get(text.id); if (entry) rebuild(entry) })
+      return true
+    },
+    unlinkSelection() {
+      const ids = selectedIds().filter((id) => entries.get(id)?.object.link)
+      if (!ids.length) return false
+      const texts = new Set(ids.map((id) => entries.get(id).object.link.textId))
+      commit({ label: 'Unlink', changes: ids.map((id) => { const object = entries.get(id).object; return { id, before: object, after: { ...object, link: null, folded: false } } }) }, { selection: { before: ids, after: ids } })
+      keepingSelection(() => { for (const id of [...ids, ...texts]) { const entry = entries.get(id); if (entry) rebuild(entry) } })
+      return true
+    },
+    selectionLinked: () => selectedIds().some((id) => Boolean(entries.get(id)?.object.link)),
+    hasLinks: () => Boolean(doc?.objects.some((object) => object?.link)),
+    allFolded: () => (doc?.objects ?? []).filter((object) => object?.link).every((object) => object.folded),
+    // A press on link words folds what they open, or opens it. True when the point was on link words.
+    toggleFoldAt(point) {
+      const found = wordAtPoint(point)
+      if (!found) return false
+      const range = linkWord(found.layout.words, linkRanges(doc, found.text.id), found.local)
+      if (!range) return false
+      setFolded(range.ids, !range.folded, wordCentre(found.text, found.layout, range))
+      return true
+    },
+    // Fold or open everything linked in the note, as one step.
+    foldAll(folded) {
+      const ids = doc.objects.filter((object) => object?.link && Boolean(object.folded) !== folded).map((object) => object.id)
+      setFolded(ids, folded, null)
+      return ids.length > 0
+    },
+    // Link mode: the next press on words links the selection to them; anywhere else ends it.
+    startLinking() { linking = true; host.classList.add('is-linking') },
+    stopLinking() { linking = false; host.classList.remove('is-linking') },
+    isLinking: () => linking,
+    restoreMarks(ids) { keepingSelection(() => { for (const id of ids) { const entry = entries.get(id); const object = doc.objects.find((candidate) => candidate?.id === id); if (entry && object) { entry.object = object; rebuild(entry) } } }) },
     // Paints now what changed (so the live stroke can go the moment its final version is on screen).
     flush() { leafer.renderer.render() },
 

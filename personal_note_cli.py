@@ -130,8 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
     append_note.add_argument("--revision", type=int, help="Fail if the note is no longer at this revision")
     append_note.set_defaults(handler=command_notes_append)
     write_note = note_commands.add_parser(
-        "write", help="Replace a page note's Markdown; its ink finds its words again (marks it can't place are kept as loose ink)", parents=[agent_option]
+        "write",
+        help="Replace a page note's Markdown, or a canvas note's Markdown text (the first, or --object); its ink finds its words again (marks it can't place are kept as loose ink)",
+        parents=[agent_option],
     )
+    write_note.add_argument("--object", dest="object_id", help="Canvas notes: the id of the Markdown text to replace (default: the first in reading order)")
     write_note.add_argument("note_id", type=int)
     write_note.add_argument("--text", help="The new Markdown; omit or use - to read standard input")
     write_note.add_argument("--revision", type=int, help="Fail if the note is no longer at this revision")
@@ -246,7 +249,10 @@ def command_notes_append(service: NoteService, args: argparse.Namespace) -> dict
 
 def command_notes_write(service: NoteService, args: argparse.Namespace) -> dict:
     text = args.text if args.text not in (None, "-") else read_stdin_text()
-    result = service.write_page(args.note_id, text, revision=args.revision)
+    if service.get_note(args.note_id)["noteType"] == "canvas":
+        result = service.write_canvas_text(args.note_id, text, object_id=args.object_id, revision=args.revision)
+    else:
+        result = service.write_page(args.note_id, text, revision=args.revision)
     service.record_agent_activity(args.agent, args.note_id, "writing")
     return result
 

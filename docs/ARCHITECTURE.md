@@ -56,9 +56,18 @@ A note type is immutable after creation:
 
 Every write increments an integer revision. A caller that supplies a stale revision receives HTTP 409. FTS5 indexing is updated in the same transaction as note content, using the Markdown projection of a canvas (its text blocks in reading order: top edge of the box first, then left edge, blank-line separated) or mind-map node labels. The agent CLI's `read` and the Markdown export use the same projection.
 
+### Markdown text on the canvas (Milestone 1, ADR 0004)
+
+The two layers live inside the canvas note: every tool, the zoom and the growing pages stay. A text made since F-048 has `format: 'markdown'`; older texts stay plain.
+
+- `src/modules/canvas-leafer/markdown.js` reads the source line by line (headings, lists, tasks, quotes, code, rules) with inline runs that are exact slices of the source. `markdown-layout.js` lays it out in a hidden DOM copy (the browser breaks the lines) and returns every word's box; `scene.js` paints those pieces with Leafer, so a text box grows the pages and prints like any object.
+- `markdown-editor.js` (lazy chunk, CodeMirror) edits a Markdown text in place with the same per-line look, hiding the marks except on the caret's line; until it loads, the plain textarea editor (`text.js`) is used.
+- `text-marks.js`: a pen or highlighter stroke over a Markdown text's words becomes one of its `marks`, anchored to the whole words ([pos, end) + quote) and drawn relative to the first word, so it follows typing, rewrapping and moving. `text-links.js`: any object can `link` to words of a Markdown text; the words are drawn teal and a click folds the object into them (`folded`) or opens it with a short liquid motion. `src/core/text-diff.js` maps both through an edit.
+- Agents: `notes write` on a canvas replaces a Markdown text; `NoteService._reanchor_canvas_text` re-finds marks and links by quote. `scripts/verify-markdown-text.mjs` checks the whole path in the real app.
+
 ### Page notes (Milestone 1, ADR 0003)
 
-A `page` note is Markdown you can draw on, and the default New note. `src/modules/page.js` lazy-loads `src/page/page-editor.js` (CodeMirror 6 with the Lezer Markdown parser, its own bundle budget). The stored document is `{version, markdown, ink}`; search, `read`, Markdown and vault export use the Markdown only.
+A `page` note is Markdown you can draw on (first build of Milestone 1; New note opens a canvas again since ADR 0004). `src/modules/page.js` lazy-loads `src/page/page-editor.js` (CodeMirror 6 with the Lezer Markdown parser, its own bundle budget). The stored document is `{version, markdown, ink}`; search, `read`, Markdown and vault export use the Markdown only.
 
 - `src/page/ink-state.js`: marks and drawings live inside CodeMirror's state, so text and ink share one undo history. A mark anchors to the whole word under it (or, in the margin, its whole line) plus a quote of it with context; edits map the positions, deleting the word deletes the mark, and an agent's rewrite re-finds it by quote or keeps it as loose ink. A drawing is a block between lines (linked to no word unless the user links it); a linked drawing folds behind its word (fold state is saved but is never an undo step).
 - `src/page/ink.js`: toolbar and input. A pen always draws, a finger scrolls, a mouse types on words and draws on empty space (Alt or Draw mode draws everywhere). A stroke inside a drawing joins it, on words becomes a mark, in the margin follows its line, elsewhere starts a new drawing.

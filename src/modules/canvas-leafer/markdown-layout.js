@@ -3,11 +3,13 @@
 // line breaks are the browser's, the editor and the picture agree, and every word's box is known (marks anchor to words, F-050).
 // lineLook, splitWords and piecesOf are pure and tested in Node; layoutMarkdown needs a DOM.
 import { parseMarkdown } from './markdown.js'
+import { withLinks } from './text-links.js'
 
 export const MONO_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 export const LINK_COLOR = '#1d5fae'
-const QUIET_COLOR = '#6b6257'
-const CODE_PAPER = 'rgba(120, 100, 70, 0.10)'
+export const FOLD_COLOR = '#0f8b8d' // the teal of words that open linked objects (F-051)
+export const QUIET_COLOR = '#6b6257'
+export const CODE_PAPER = 'rgba(120, 100, 70, 0.10)'
 // Bold is the 600 face: the text fonts ship 400 and 600 (a 700 would be a synthetic or a late-loading face).
 export const BOLD = '600'
 const HEADING_SCALE = [1.75, 1.45, 1.25, 1.1, 1, 0.95]
@@ -55,11 +57,12 @@ export function piecesOf(source, line, words) {
 const cssFont = ({ italic, fontWeight, fontSize, fontFamily }) => `${italic ? 'italic ' : ''}${fontWeight} ${fontSize}px ${fontFamily}`
 const quoteFamily = (family) => family.split(',').map((name) => { const n = name.trim(); return /\s/.test(n) && !/^["']/.test(n) ? `"${n}"` : n }).join(', ')
 
-function runLook(look, style) {
+export function runLook(look, style) {
   const piece = { fontFamily: look.fontFamily, fontSize: look.fontSize, fontWeight: style.bold ? BOLD : look.fontWeight, italic: look.italic || Boolean(style.italic), color: look.color, decoration: 'none' }
   if (style.code && look.kind !== 'code') { piece.fontFamily = MONO_FAMILY; piece.fontSize = Math.round(look.fontSize * 0.86 * 100) / 100; piece.paper = CODE_PAPER }
   if (style.link) { piece.color = LINK_COLOR; piece.decoration = 'under' }
   if (style.strike) piece.decoration = 'delete'
+  if (style.fold) { piece.color = FOLD_COLOR; piece.decoration = 'under'; piece.fontWeight = BOLD }
   return piece
 }
 
@@ -87,22 +90,23 @@ export function clearMarkdownLayouts() { cache.clear(); ascents.clear() }
 // The layout of `source` wrapped at `width` px (no wrapping when it is undefined), in the text's own frame (origin at its top-left):
 // { width, height, pieces, shapes, words }. pieces: what is drawn as text ({ text, x, baseline, font..., color, decoration });
 // shapes: bullets, checkboxes, quote bars, code paper and rules; words: every word's box with its place in the source.
-export function layoutMarkdown(source, { width, base }) {
-  const key = JSON.stringify([source, width ?? null, base])
+// `links`: the words that open linked objects (text-links.js linkRanges), drawn teal.
+export function layoutMarkdown(source, { width, base, links = [] }) {
+  const key = JSON.stringify([source, width ?? null, base, links.map((link) => [link.pos, link.end, link.folded])])
   const known = cache.get(key)
   if (known) { cache.delete(key); cache.set(key, known); return known }
-  const result = measure(String(source ?? ''), width, base)
+  const result = measure(String(source ?? ''), width, base, links)
   if (document.fonts?.status === 'loading') return result // measured with a font still on its way: measured again once it is here
   cache.set(key, result)
   if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value)
   return result
 }
 
-function measure(source, width, base) {
+function measure(source, width, base, links) {
   probe ??= Object.assign(document.createElement('div'), { ariaHidden: 'true' })
   probe.style.cssText = `position:absolute;left:-100000px;top:0;visibility:hidden;pointer-events:none;white-space:pre-wrap;overflow-wrap:break-word;word-break:normal;font-kerning:normal;text-rendering:auto;${width === undefined ? 'width:max-content' : `width:${width}px`}`
   probe.replaceChildren()
-  const lines = parseMarkdown(source)
+  const lines = withLinks(parseMarkdown(source), links)
   const rows = []
   for (const line of lines) {
     const look = lineLook(line, base)
@@ -142,18 +146,23 @@ function measure(source, width, base) {
         range.setEnd(node, word.to - run.from)
         const rects = [...range.getClientRects()].filter((rect) => rect.width > 0)
         if (rects.length > 1) { // a word too long for the width was broken: its parts, letter by letter
+          // Each letter's row; a part is a stretch of letters on one row.
           let partFrom = word.from
-          for (let at = word.from + 1; at <= word.to; at += 1) {
+          let partRow = null
+          const close = (end) => {
             range.setStart(node, partFrom - run.from)
-            range.setEnd(node, at - run.from)
-            if (range.getClientRects().length > 1 || at === word.to) {
-              const end = at === word.to && range.getClientRects().length === 1 ? at : at - 1
-              range.setEnd(node, end - run.from)
-              const rect = range.getBoundingClientRect()
-              measured.push({ run: runIndex, from: partFrom, to: end, x: rect.left - origin.left, row: rowOf(rect), rect, ascent })
-              partFrom = end
-            }
+            range.setEnd(node, end - run.from)
+            const rect = range.getBoundingClientRect()
+            measured.push({ run: runIndex, from: partFrom, to: end, x: rect.left - origin.left, row: rowOf(rect), rect, ascent })
           }
+          for (let at = word.from; at < word.to; at += 1) {
+            range.setStart(node, at - run.from)
+            range.setEnd(node, at + 1 - run.from)
+            const row = rowOf(range.getBoundingClientRect())
+            if (partRow !== null && row !== partRow) { close(at); partFrom = at }
+            partRow = row
+          }
+          close(word.to)
           continue
         }
         const rect = rects[0] ?? range.getBoundingClientRect()

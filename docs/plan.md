@@ -318,30 +318,31 @@ Found while building Milestone 1; none blocks using pages.
 Captain: "all the existing functionality should remain.. only add should be 2 layer stuff we discussed, so that its text native but can be drawn." Choice: inside the canvas (one note type).
 Order: F-048 → F-049 → F-050 → F-051 → F-052 → F-053. All touch the canvas scene, so one after another.
 ## F-048 Markdown text on the canvas [review]
+Review 1 (a7ec7e1): NEEDS WORK, fixed: last letter of a long broken word, backslashes in code, plain-text check now runs, resize rewraps live.
 Brief: docs/briefs/two-layer-pages.md · ADR 0004 · Needs: none
 - [x] New note opens a canvas again (a411316)
 - [x] a new text is Markdown (`format: 'markdown'`) and is drawn formatted: headings, bold, italic, inline code, strikethrough, links, bullet/numbered/task lists, quotes, code blocks, rules; older texts look exactly as before
 - [x] a new text made with the Text tool wraps at the page's right margin, so writing flows down and the pages grow as before
 - [x] save, reload, undo, backup/import, Markdown export, search and print keep it (print draws the same nodes)
 - [x] selection, move, resize (rewraps), delete, style controls and every verify script still pass (scripts/verify-markdown-text.mjs; text and pages checks updated for Markdown)
-## F-049 Writing in place [todo]
+## F-049 Writing in place [review]
 Needs: F-048
-- [ ] editing a Markdown text keeps it formatted while you type (heading sizes, emphasis); the marks of the line being typed show, others stay hidden
-- [ ] input methods, spellcheck, paste, undo of a typing session, page growth while typing, voice dictation and Prettify work as with plain text
-## F-050 Ink on words [todo]
+- [x] editing a Markdown text keeps it formatted while you type (heading sizes, emphasis); the Markdown marks of the line being typed show, others stay hidden; the ink marks on the words stay on screen and follow them
+- [x] input methods, spellcheck, paste, undo of a typing session, page growth while typing, voice dictation and Prettify work as with plain text (verify-leafer-text/voice/pages/phone pass with the new editor)
+## F-050 Ink on words [review]
 Needs: F-049
-- [ ] a pen or highlighter stroke over a Markdown text's words becomes a mark of that text; it follows its words through typing, rewrap, resize and move
-- [ ] deleting the words deletes the mark; the eraser removes marks; one undo step each; saved and reloaded
-- [ ] strokes elsewhere stay ordinary ink, exactly as today
-## F-051 Link and fold [todo]
+- [x] a pen or highlighter stroke over a Markdown text's words becomes a mark of that text; it follows its words through typing, rewrap, resize and move
+- [x] deleting the words deletes the mark; the eraser removes marks; one undo step each; saved and reloaded
+- [x] strokes elsewhere stay ordinary ink, exactly as today
+## F-051 Link and fold [review]
 Needs: F-050
-- [ ] any object (ink, shape, sticky, image, text, group) can be linked to a word of a Markdown text; the word turns teal
-- [ ] clicking the word folds the object away into the word and opens it again with a smooth ~0.6 s slide; Fold all / Unfold all
-- [ ] fold state is saved; deleting the word unlinks and shows the object (undo restores both)
-## F-052 Agents and Markdown text [todo]
+- [x] any object (ink, shape, sticky, image, text, group) can be linked to a word of a Markdown text (selection bar: Link to words, then click the word); the word turns teal
+- [x] clicking the word folds the object away into the word and opens it again with a smooth ~0.6 s slide; Fold all / Open all in the top bar
+- [x] fold state is saved; deleting the word unlinks and shows the object (undo restores both)
+## F-052 Agents and Markdown text [review]
 Needs: F-050
-- [ ] the CLI reads and writes a canvas note's Markdown texts; marks and links re-find their words after an agent edit, never lost
-- [ ] the open note merges an agent's change as it does today
+- [x] the CLI reads and writes a canvas note's Markdown texts (`notes write`, `--object`; `append` adds Markdown text); marks and links re-find their words after an agent edit, never lost (a mark whose words are gone becomes ink beside the text)
+- [x] the open note merges an agent's change as it does today (object-level canvas merge, unchanged)
 ## F-053 Preview build 2 [todo]
 Needs: F-048..F-051 (F-052 if ready)
 - [ ] the Page type leaves the New note menu (old page notes still open)

@@ -206,7 +206,8 @@ bin/personal-note notes create --title "Idea" --text "A local searchable capture
 bin/personal-note notes append 12 --text "One more thought"   # or pipe: echo "..." | bin/personal-note notes append 12
 bin/personal-note notes append 12 --text "..." --revision 5   # fail instead of writing over a newer note
 bin/personal-note notes create --title "Findings" --type page --text "# Findings"   # a page note: Markdown you can draw on
-bin/personal-note notes write 12 --text "# New text"   # replace a page's Markdown; its ink finds its words again (loose ink is kept)
+bin/personal-note notes write 12 --text "# New text"   # replace a page's Markdown, or a canvas note's first Markdown text; its ink finds its words again (loose ink is kept)
+bin/personal-note notes write 12 --object res_... --text "..."   # a canvas note: replace this Markdown text
 bin/personal-note status
 bin/personal-note export workspace --output backup.json
 bin/personal-note import backup.json

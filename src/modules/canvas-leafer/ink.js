@@ -115,8 +115,10 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
     const point = toPage(event)
     if (tool === 'eraser') {
       gesture.eraser = createEraser(getDoc())
+      gesture.marks = new Map() // texts whose marks the pass took (F-050): id -> the text as the document has it
       gesture.last = point
       applyErase(gesture.eraser.at(point))
+      scene.eraseMarks?.(point, point, gesture.marks)
       return
     }
     gesture.ratio = prepareLive(gesture.brush)
@@ -131,6 +133,7 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
       point = toPage(item)
       if (gesture.tool === 'eraser') {
         applyErase(gesture.eraser.between(gesture.last, point))
+        scene.eraseMarks?.(gesture.last, point, gesture.marks)
         gesture.last = point
         continue
       }
@@ -147,11 +150,21 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
     gesture = null
     if (done.tool === 'eraser') {
       const op = done.eraser.plan()
-      if (op) scene.inkCommit(op)
+      const marks = [...done.marks].map(([id, before]) => ({ id, before, after: { ...before, marks: scene.markedObject(id)?.marks ?? [] } }))
+      if (marks.length) scene.inkMark({ label: 'Erase', ...(op ?? {}), changes: [...(op?.changes ?? []), ...marks], selection: op?.selection ?? { before: [], after: [] } })
+      else if (op) scene.inkCommit(op)
       return
     }
     const doc = getDoc()
     const object = inkObject({ points: done.points, tool: done.tool, color: done.brush.color, width: done.brush.width, z: topZ(doc), scale: scene.view().scale })
+    const markOp = scene.inkAsMark?.(object) // F-050: over words, the stroke is a mark of that text
+    if (markOp) {
+      const pages = pagesOp()
+      scene.inkMark(pages ? { ...markOp, page: pages } : markOp)
+      scene.flush()
+      hideLive()
+      return
+    }
     scene.inkAdd([object]) // on screen first, then the step: the pen lifts and the stroke is already the note's own
     scene.flush()
     hideLive()
@@ -165,6 +178,7 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
     gesture = null
     hideLive()
     if (done.tool === 'eraser' && done.eraser.changed) applyErase(done.eraser.revert()) // the pieces go, the strokes it split come back
+    if (done.tool === 'eraser' && done.marks?.size) scene.restoreMarks?.([...done.marks.keys()])
     // Growth made for a stroke that is not kept goes again. The grid to go back to is the DOCUMENT's, read now (not the one seen when the
     // pointer went down): an agent's merge may have changed it since, and the stroke's own growth is never in the document before it lands.
     const now = getPages()

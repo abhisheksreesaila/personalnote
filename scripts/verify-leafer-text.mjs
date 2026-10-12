@@ -559,7 +559,7 @@ try {
   // ---- the input method: composition through the DevTools protocol
   await page.evaluate(() => {
     window.__ime = []
-    for (const type of ['compositionstart', 'compositionupdate', 'compositionend', 'input']) document.addEventListener(type, (event) => { if (event.target?.className === 'leafer-text-editor') window.__ime.push(`${type}:${event.data ?? event.inputType ?? ''}`) }, true)
+    for (const type of ['compositionstart', 'compositionupdate', 'compositionend', 'input']) document.addEventListener(type, (event) => { if (event.target?.closest?.('.leafer-text-editor')) window.__ime.push(`${type}:${event.data ?? event.inputType ?? ''}`) }, true)
   })
   const imeAt = await pagePoint(page, 420, 380) // (clear of the dock, which is live now)
   await page.click('[data-tool="text"]')
@@ -608,7 +608,7 @@ try {
   const cjkInfo = await scene(page, 'textInfo', stickyId)
   check('a CJK paragraph breaks into the same lines in the editor and on the canvas', JSON.stringify(cjkLines) === JSON.stringify(cjkInfo.rows.map((r) => r.replace(/\s+$/, ''))), JSON.stringify([cjkLines, cjkInfo.rows]))
 
-  check('spellcheck is on and the field takes plain text', await (async () => { await scene(page, 'editText', N1); await page.waitForSelector('.leafer-text-editor'); const r = await page.evaluate(() => { const a = document.querySelector('.leafer-text-editor'); return [a.spellcheck, a.tagName] }); await page.keyboard.press('Escape'); return r[0] === true && r[1] === 'TEXTAREA' })())
+  check('spellcheck is on and the field takes plain text', await (async () => { await scene(page, 'editText', N1); await page.waitForSelector('.leafer-text-editor'); const r = await page.evaluate(() => { const a = document.querySelector('.leafer-text-editor'); return [a.spellcheck, a.tagName, a.isContentEditable] }); await page.keyboard.press('Escape'); return r[0] === true && (r[1] === 'TEXTAREA' || r[2]) })()) // (a Markdown text is edited in the formatting editor; it pastes plain text too)
   check('the app shortcuts do not fire while typing (T, N, V, Delete are letters there)', await (async () => {
     await scene(page, 'editText', N1); await page.waitForSelector('.leafer-text-editor')
     await page.keyboard.press('Control+End'); await page.keyboard.type('tnv pdc'); await page.keyboard.press('Backspace')

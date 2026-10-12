@@ -9,6 +9,8 @@ export default defineConfig({
         landingNote: fileURLToPath(new URL('./landing-note.html', import.meta.url)),
         spatialDocs: fileURLToPath(new URL('./spatial-docs.html', import.meta.url)),
       },
+      // CodeMirror is shared by the two editors that load on demand (page notes, Markdown text on the canvas): one chunk of its own.
+      output: { advancedChunks: { groups: [{ name: 'codemirror', test: /node_modules[\\/]@(codemirror|lezer)[\\/]/ }] } },
     },
   },
   server: {

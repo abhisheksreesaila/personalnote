@@ -71,3 +71,9 @@ test('line positions cover the source, so marks can find their line', () => {
   const lines = parseMarkdown(source)
   assert.deepEqual(lines.map((line) => [line.from, line.to]), [[0, 3], [4, 7], [8, 8]])
 })
+
+test('a backslash inside code is kept, and does not keep the code from closing', () => {
+  const source = '`path\\` and `\\*x` and \\`not code`'
+  const [line] = parseMarkdown(source)
+  assert.deepEqual(styled(source, line), [['path\\', 'code'], [' and ', ''], ['\\*x', 'code'], [' and ', ''], ['`not code`', '']]) // (the escaping backslash is hidden)
+})

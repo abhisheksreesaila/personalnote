@@ -14,7 +14,7 @@ from app_schema import initialize_schema
 from document_model import DocumentError, empty_document, from_fabric, plain_text
 from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
 from media_store import MediaStore, data_url_of
-from page_note import empty_page_document, normalize_page_document, page_document_of, page_text, reanchor_ink
+from page_note import empty_page_document, find_quote, normalize_page_document, page_document_of, page_text, reanchor_ink, utf16
 
 logger = logging.getLogger(__name__)
 
@@ -817,6 +817,61 @@ class NoteService:
         expected = note["revision"] if revision is None else revision
         return self.update_note(note_id, {"title": note["title"], "content": document, "revision": expected, "notebookId": note["notebookId"]})
 
+    def write_canvas_text(self, note_id: int, markdown: str, object_id: str | None = None, revision: int | None = None) -> dict:
+        """Replace the Markdown of a canvas note's text (an agent's rewrite, F-052): the one named, else the first Markdown text in
+        reading order; a note without one gets one, as append does. The text's marks and the objects linked to its words find those words
+        again; a mark whose words are gone is kept as ink beside the text, and a linked object whose words are gone is unlinked and shown.
+        """
+        if len(markdown) > APPEND_MAX_LENGTH * 10:
+            raise AppendTextError("Text is too long")
+        note = self.get_note(note_id)
+        if note["noteType"] != "canvas":
+            raise UnsupportedNoteTypeError("Only canvas notes have Markdown texts to write")
+        document = self.document_of(note["content"], note["contentFormat"], note["pageState"])
+        texts = [item for item in document["objects"] if isinstance(item, dict) and item.get("type") == "text" and item.get("format") == "markdown"]
+        if object_id is not None:
+            texts = [item for item in texts if item.get("id") == object_id]
+            if not texts:
+                raise NotFoundError(f"No Markdown text {object_id} in note {note_id}")
+        if not texts:
+            return self.append_text(note_id, markdown, revision=revision)
+        target = min(texts, key=lambda item: (item["geometry"].get("y", 0), item["geometry"].get("x", 0)))
+        expected = note["revision"] if revision is None else revision
+        if markdown != target.get("content"):
+            self._reanchor_canvas_text(document, target, markdown)
+        return self.update_note(note_id, {"title": note["title"], "notebookId": note["notebookId"], "revision": expected, "content": to_json_canvas(document, media=self.media)})
+
+    def _reanchor_canvas_text(self, document: dict, target: dict, markdown: str) -> None:
+        g = target["geometry"]
+        marks = []
+        for mark in target.get("marks") or []:
+            anchor = mark.get("anchor") if isinstance(mark.get("anchor"), dict) else None
+            found = find_quote(markdown, anchor.get("quote")) if anchor else None
+            if found is None:  # its words are gone: the stroke stays on the canvas as ordinary ink, where it was drawn
+                if anchor and isinstance(mark.get("path"), list):
+                    document["objects"].append({
+                        **{key: value for key, value in mark.items() if key not in ("anchor", "id")},
+                        "id": self.new_resource_id(), "type": "ink", "z": len(document["objects"]),
+                        "geometry": {**g, "x": g.get("x", 0) + anchor.get("dx", 0), "y": g.get("y", 0) + anchor.get("dy", 0), "width": 1, "height": 1},
+                        "extras": {},
+                    })
+                continue
+            start = utf16(markdown[:found])
+            marks.append({**mark, "anchor": {**anchor, "pos": start, "end": start + utf16(anchor["quote"]["exact"])}})
+        target["marks"] = marks
+        target["content"] = markdown
+        for item in document["objects"]:
+            link = item.get("link") if isinstance(item, dict) and isinstance(item.get("link"), dict) else None
+            if not link or link.get("textId") != target.get("id"):
+                continue
+            found = find_quote(markdown, link.get("quote"))
+            if found is None:
+                item["link"] = None
+                item["folded"] = False
+            else:
+                start = utf16(markdown[:found])
+                item["link"] = {**link, "pos": start, "end": start + utf16(link["quote"]["exact"])}
+
     def append_text(self, note_id: int, text: str, revision: int | None = None) -> dict:
         """Add a text block below a canvas note's content, growing pages as needed.
 
@@ -855,6 +910,7 @@ class NoteService:
             {
                 "id": self.new_resource_id(),
                 "type": "text",
+                "format": "markdown",  # F-048: canvas text is Markdown (ADR 0004)
                 "z": len(document["objects"]),
                 "mode": "box",
                 "geometry": {

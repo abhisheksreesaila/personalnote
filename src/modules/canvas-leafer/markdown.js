@@ -67,11 +67,9 @@ function inlineRuns(source, from, to) {
   const locked = new Array(n).fill(false) // code, escaped characters, link targets: no emphasis inside
   const styles = Array.from({ length: n }, () => ({}))
 
-  for (let i = 0; i < n - 1; i += 1) { // escapes
-    if (text[i] === '\\' && PUNCTUATION.test(text[i + 1]) && !locked[i]) { hidden[i] = true; locked[i] = true; locked[i + 1] = true; i += 1 }
-  }
-  for (let i = 0; i < n; i += 1) { // code spans: a run of backticks closed by a run of the same length
-    if (text[i] !== '`' || locked[i]) continue
+  const escaped = (i) => { let count = 0; while (i - 1 - count >= 0 && text[i - 1 - count] === '\\') count += 1; return count % 2 === 1 }
+  for (let i = 0; i < n; i += 1) { // code spans first (a backslash inside one is just a backslash): backticks closed by as many
+    if (text[i] !== '`' || locked[i] || escaped(i)) continue
     let open = i
     while (open < n && text[open] === '`') open += 1
     const size = open - i
@@ -88,6 +86,9 @@ function inlineRuns(source, from, to) {
     if (found === -1) { i = open - 1; continue }
     for (let k = i; k < found + size; k += 1) { locked[k] = true; if (k < open || k >= found) hidden[k] = true; else styles[k].code = true }
     i = found + size - 1
+  }
+  for (let i = 0; i < n - 1; i += 1) { // escapes, outside code
+    if (text[i] === '\\' && PUNCTUATION.test(text[i + 1]) && !locked[i]) { hidden[i] = true; locked[i] = true; locked[i + 1] = true; i += 1 }
   }
   for (let i = 0; i < n; i += 1) { // links: [text](target)
     if (text[i] !== '[' || locked[i]) continue

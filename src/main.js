@@ -137,6 +137,7 @@ document.querySelector('#app').innerHTML = `
               <button role="menuitem" id="share-vault"><i data-lucide="folder-down"></i><span>Obsidian vault</span></button>
             </div>
           </div>
+          <button class="icon-button glass-button" id="fold-all" title="Fold all linked objects into their words" aria-label="Fold all linked objects" hidden><i data-lucide="fold-vertical"></i></button>
           <button class="icon-button glass-button" id="clear-note" title="Clear all" aria-label="Clear all"><i data-lucide="eraser"></i></button>
           <button class="icon-button glass-button properties-trigger" id="top-properties" title="Settings and properties" aria-label="Open settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
         </div>
@@ -147,6 +148,7 @@ document.querySelector('#app').innerHTML = `
           <button type="button" data-selection-action="backward" title="Send backward (Ctrl+[)">Back</button>
           <button type="button" data-selection-action="forward" title="Bring forward (Ctrl+])">Forward</button>
           <button type="button" data-selection-action="lock" title="Lock or unlock (Ctrl+Shift+L)">Lock</button>
+          <button type="button" data-selection-action="link" title="Link to words: then click a word of a text; the word opens and folds it">Link to words</button>
           <button type="button" data-selection-action="delete" title="Delete (Delete key)">Delete</button>
         </div>
         <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
@@ -1536,6 +1538,7 @@ function mountLeaferCanvas() {
     onPages: ({ columns, rows, shiftX, shiftY }) => { state.pages = { ...state.pages, columns, rows }; resizePaper(shiftX, shiftY) },
     onTextEvent: (type) => {
       if (type === 'escape') setTool('select')
+      if (type === 'link') updateSelectionBar()
       if (type === 'start' || type === 'end') setPageZoomLocked(type === 'start')
     },
     // What a new text and a new sticky look like, in the model's words.
@@ -1614,13 +1617,34 @@ function updateSelectionBar() {
   const lockButton = elements.selectionBar.querySelector('[data-selection-action="lock"]')
   lockButton.textContent = locked ? 'Unlock' : 'Lock'
   elements.selectionBar.classList.toggle('is-locked', locked)
+  const linkButton = elements.selectionBar.querySelector('[data-selection-action="link"]')
+  linkButton.textContent = leaferCanvas.isLinking() ? 'Click a word…' : leaferCanvas.selectionLinked() ? 'Unlink' : 'Link to words'
+  updateFoldAll()
 }
+// F-051: the top bar's Fold all / Open all, shown when the note has linked objects.
+function updateFoldAll() {
+  const button = document.querySelector('#fold-all')
+  const has = state.activeNoteType === 'canvas' && Boolean(leaferCanvas?.hasLinks())
+  button.hidden = !has
+  if (!has) return
+  const folded = leaferCanvas.allFolded()
+  button.title = folded ? 'Open everything folded into words' : 'Fold all linked objects into their words'
+  button.setAttribute('aria-label', button.title)
+  button.innerHTML = `<i data-lucide="${folded ? 'unfold-vertical' : 'fold-vertical'}"></i>`
+  createIcons({ icons, root: button })
+}
+document.querySelector('#fold-all').addEventListener('click', () => { leaferCanvas.foldAll(!leaferCanvas.allFolded()); setTimeout(updateFoldAll, 700) })
 elements.selectionBar.addEventListener('pointerdown', (event) => event.stopPropagation())
 elements.selectionBar.addEventListener('click', (event) => {
   const action = event.target.closest('[data-selection-action]')?.dataset.selectionAction
   if (action === 'forward' || action === 'backward') leaferCanvas.reorderSelection(action)
   else if (action === 'lock') toggleLeaferLock()
   else if (action === 'delete') leaferCanvas.deleteSelection()
+  else if (action === 'link') {
+    if (leaferCanvas.isLinking()) leaferCanvas.stopLinking()
+    else if (leaferCanvas.selectionLinked()) leaferCanvas.unlinkSelection()
+    else leaferCanvas.startLinking()
+  }
   updateSelectionBar()
 })
 
@@ -2811,6 +2835,7 @@ inputSurface.addEventListener('pointerdown', (event) => {
   else if (state.tool === 'shape') placeShape(leaferCanvas.pageAt(event.clientX, event.clientY))
   else if (state.tool === 'text') {
     const at = leaferCanvas.pageAt(event.clientX, event.clientY)
+    if (leaferCanvas.toggleFoldAt(at)) return // F-051: a teal word folds or opens what is linked to it, with any tool that writes or picks
     setTimeout(() => { if (!leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false }) }, 0)
   }
 })
@@ -2827,7 +2852,7 @@ window.addEventListener('pointerup', (event) => {
   const at = leaferCanvas.pageAt(event.clientX, event.clientY)
   if (state.tool === 'sticky') placeSticky(at, { now: true })
   else if (state.tool === 'shape') placeShape(at)
-  else if (state.tool === 'text' && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
+  else if (state.tool === 'text' && !leaferCanvas.toggleFoldAt(at) && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
 }, true)
 
 
