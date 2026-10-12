@@ -274,29 +274,41 @@ Brief: Look and feel · Needs: F-040
 - [x] heading marks (#) and list marks are quiet; the page grows as you write
 - [x] the app chrome uses the same warm palette by default (other skins still selectable)
 Reviewed: PASS (fce7fae).
-## F-042 Marks on words [review]
+## F-042 Marks on words [done]
 Brief: What it does 2 · Needs: F-040
-- [ ] Write/Draw switch (Esc returns to writing); pen, red, highlighter, eraser; Pencil always draws, fingers scroll; drag on empty margins draws in Write mode
-- [ ] a mark on words anchors to its word and follows it through typing, split/merge, wrapping and zoom; a margin mark follows its line
-- [ ] deleting the words deletes the mark; one undo history for text and ink
-- [ ] marks are saved and come back after reload
-## F-043 Drawings on empty space [review]
+- [x] Write/Draw switch (Esc returns to writing); pen, red, highlighter, eraser; Pencil always draws, fingers scroll; drag on empty margins draws in Write mode
+- [x] a mark on words anchors to its word and follows it through typing, split/merge, wrapping and zoom; a margin mark follows its line
+- [x] deleting the words deletes the mark; one undo history for text and ink
+- [x] marks are saved and come back after reload
+Reviewed: PASS after fixes (1bb4e9f, 7e66333).
+## F-043 Drawings on empty space [done]
 Built together with F-044 in one commit: the drawing's Link/Fold buttons and its block widget are the same code.
 Brief: What it does 2 · Needs: F-042
-- [ ] drawing on empty space creates a standalone drawing in the flow (linked to no word); more strokes join it; it grows as you draw past its edge; the page grows past its bottom
-- [ ] shapes (rectangle, ellipse) and text objects (word art: placed text, sizes S–XL) inside drawings
-- [ ] saved, undoable, erasable
-## F-044 Link and fold [review]
+- [x] drawing on empty space creates a standalone drawing in the flow (linked to no word); more strokes join it; it grows as you draw past its edge; the page grows past its bottom
+- [x] shapes (rectangle, ellipse) and text objects (word art: placed text, sizes S–XL) inside drawings
+- [x] saved, undoable, erasable
+Reviewed: PASS after fixes (7e66333, bc82e41).
+## F-044 Link and fold [done]
 Brief: What it does 3 · Needs: F-043
-- [ ] "Link to text" then a click on a word links a drawing; it moves under that paragraph; the word turns into a teal link
-- [ ] clicking the word folds/unfolds the drawing with a smooth ~0.6 s slide; text and marks below glide; Fold all / Unfold all
-- [ ] a linked drawing is deleted with its word (undo restores both); fold state is saved with the note
+- [x] "Link to text" then a click on a word links a drawing; it moves under that paragraph; the word turns into a teal link
+- [x] clicking the word folds/unfolds the drawing with a smooth ~0.6 s slide; text and marks below glide; Fold all / Unfold all
+- [x] a linked drawing is deleted with its word (undo restores both); fold state is saved with the note
+Reviewed: PASS after fixes (7e66333, bc82e41).
 ## F-045 Agents and pages [review]
+Fixes after review: a179cab (multi-hunk merge, wait for saves, UTF-16 positions), 9756c37 (long notes).
 Brief: What it does, also in v1 · Needs: F-040 (backend), F-044 (UI)
 - [ ] CLI `write` replaces a page's Markdown with a revision check; the server re-finds each mark and linked drawing by its quoted words; marks it can't place become loose ink, never deleted
 - [ ] the open page reloads an agent's change when you have no unsaved edits; loose ink shows in a tray on the page
 - [ ] an agent writing to a page you are typing in never traps or loses your typing (today a page conflicts like a mind map: every save 409s and switching notes is refused; F-040 review)
-## F-046 Preview build for the captain [todo]
+## F-046 Preview build for the captain [doing]
 Needs: F-040..F-045
 - [ ] runs as a local web server (`npm run dev`) for a first play
 - [ ] Mac and Linux packages published as a GitHub pre-release
+## F-047 Page follow-ups [todo]
+Found while building Milestone 1; none blocks using pages.
+- [ ] voice dictation into a page (the mic is hidden on pages today; it types into canvas notes)
+- [ ] after an agent write conflicts with a save, "Could not save" can flash until the merged save lands (F-045 review)
+- [ ] zoom on pages; check pen, IME and the fold slide in the Mac app (WebKit) and on an iPad
+- [ ] pages keep their ivory look under the Night skin: decide whether pages follow skins
+- [ ] agents can't draw yet (create drawings or marks through the CLI): later, with Milestone 2
+
