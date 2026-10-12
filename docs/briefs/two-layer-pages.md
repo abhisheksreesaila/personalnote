@@ -19,7 +19,7 @@ Status: approved
 ## What it does
 - Core job: write in Markdown, draw on top, and keep both in order.
 - v1 does:
-  1. **A page note** that opens by default: CodeMirror 6 Markdown, one continuous page with faint page marks, growing as you write or draw.
+  1. **Markdown text on the canvas** (since 2026-10-12, ADR 0004; first built as a separate page note): CodeMirror 6 Markdown, one continuous page with faint page marks, growing as you write or draw.
   2. **Two layers of ink.** Marks on words follow those words through every edit (circles, underlines, highlights; margin marks follow their line). A drawing on empty space stands on its own in the page and can hold shapes and **text objects** (word art: big or small text placed freely, not Markdown).
   3. **Fold behind a word.** Link any drawing to a word; it can fold away and the word becomes a teal link that slides the drawing out, smoothly, on click. Fold all / unfold all.
 - Also in v1: Write/Draw modes (Esc returns to writing), one undo for text and ink, agents read and write the Markdown through the CLI and ink re-finds its words (loose ink waits in a tray, never lost), search, backup and Markdown export.
@@ -42,7 +42,8 @@ Status: approved
 - Mac web view (Safari engine) is untested by the prototype: check pen, IME and the fold animation there early.
 
 ## Decisions and trade-offs
-- Page is the default new note; canvas and mind map stay. Pro: writing-first. Con: canvas becomes secondary.
+- 2026-10-12, after trying preview 1: the two layers go inside the canvas note, not a separate page type (ADR 0004). Every existing tool, the zoom and the pages that grow and shrink stay; text becomes Markdown you can draw on. Pro: nothing is lost. Con: a bigger build than the separate page.
+- (superseded by the line above) Page is the default new note; canvas and mind map stay.
 - Continuous page with page marks, not real sheets. Pro: cheap, smooth. Con: print splits wherever a mark falls.
 - Drawings on empty space stand alone; linking to a word is the user's choice. Pro: no guessed links. Con: a standalone drawing still moves down when text is added above it.
 - Merged the Leafer engine into main first (2026-10-11). Pro: one branch. Con: the Mac zoom hitches ship to main unfixed for now.

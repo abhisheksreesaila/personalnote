@@ -314,3 +314,35 @@ Found while building Milestone 1; none blocks using pages.
 - [ ] merge edge cases: you and an agent inserting different text at the same spot keep both; deleting a line an agent just edited drops the agent's edit (typing wins). Show a notice when an agent edit is dropped
 - [ ] agents can't draw yet (create drawings or marks through the CLI): later, with Milestone 2
 
+## Milestone 1, second pass: the two layers inside the canvas (captain, 2026-10-12, after preview 1; ADR 0004)
+Captain: "all the existing functionality should remain.. only add should be 2 layer stuff we discussed, so that its text native but can be drawn." Choice: inside the canvas (one note type).
+Order: F-048 → F-049 → F-050 → F-051 → F-052 → F-053. All touch the canvas scene, so one after another.
+## F-048 Markdown text on the canvas [doing]
+Brief: docs/briefs/two-layer-pages.md · ADR 0004 · Needs: none
+- [x] New note opens a canvas again (a411316)
+- [ ] a new text is Markdown (`format: 'markdown'`) and is drawn formatted: headings, bold, italic, inline code, strikethrough, links, bullet/numbered/task lists, quotes, code blocks, rules; older texts look exactly as before
+- [ ] a new text made with the Text tool wraps at the page's right margin, so writing flows down and the pages grow as before
+- [ ] save, reload, undo, backup/import, Markdown export, search and print keep it (print shows it formatted)
+- [ ] selection, move, resize (rewraps), delete, style controls and every verify script still pass
+## F-049 Writing in place [todo]
+Needs: F-048
+- [ ] editing a Markdown text keeps it formatted while you type (heading sizes, emphasis); the marks of the line being typed show, others stay hidden
+- [ ] input methods, spellcheck, paste, undo of a typing session, page growth while typing, voice dictation and Prettify work as with plain text
+## F-050 Ink on words [todo]
+Needs: F-049
+- [ ] a pen or highlighter stroke over a Markdown text's words becomes a mark of that text; it follows its words through typing, rewrap, resize and move
+- [ ] deleting the words deletes the mark; the eraser removes marks; one undo step each; saved and reloaded
+- [ ] strokes elsewhere stay ordinary ink, exactly as today
+## F-051 Link and fold [todo]
+Needs: F-050
+- [ ] any object (ink, shape, sticky, image, text, group) can be linked to a word of a Markdown text; the word turns teal
+- [ ] clicking the word folds the object away into the word and opens it again with a smooth ~0.6 s slide; Fold all / Unfold all
+- [ ] fold state is saved; deleting the word unlinks and shows the object (undo restores both)
+## F-052 Agents and Markdown text [todo]
+Needs: F-050
+- [ ] the CLI reads and writes a canvas note's Markdown texts; marks and links re-find their words after an agent edit, never lost
+- [ ] the open note merges an agent's change as it does today
+## F-053 Preview build 2 [todo]
+Needs: F-048..F-051 (F-052 if ready)
+- [ ] the Page type leaves the New note menu (old page notes still open)
+- [ ] Mac and Linux packages as a GitHub pre-release

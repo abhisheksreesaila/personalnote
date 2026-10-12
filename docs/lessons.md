@@ -18,3 +18,4 @@ Claude reads this at the start of each session. -->
 - Rendering choices are decided by the in-app comparison on the real Mac, not by headless runs: headless ranked the gesture transform best, the Mac ranked it worst.
 - Before merging anything into leafer, run every verify-* script (one at a time), not just the ones the change seems to touch: a CSS-only dock fix broke the IME text check because the test clicked where the dock used to be inert.
 - 2026-10-12 · Real-app check scripts must take their ports from the environment: a reviewer running the same script in parallel made the main run fail on a busy port.
+- 2026-10-12 · A new capability is added to the existing experience, never as a separate surface that hides existing tools or replaces a default: preview 1's page note dropped the dock, zoom and page growth, and the captain rejected it. Before changing a default, list what the captain loses.
