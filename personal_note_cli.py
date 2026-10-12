@@ -117,23 +117,23 @@ def build_parser() -> argparse.ArgumentParser:
     get_note.add_argument("note_id", type=int)
     get_note.set_defaults(handler=command_notes_get)
     read_note = note_commands.add_parser(
-        "read", help="Read a note as plain text (canvas in reading order, mind map as an outline)", parents=[agent_option]
+        "read", help="Read a note as plain text (canvas in reading order, mind map as an outline, page as its Markdown)", parents=[agent_option]
     )
     read_note.add_argument("note_id", type=int)
     read_note.add_argument("--text", dest="as_text", action="store_true", help="Print only the text instead of JSON")
     read_note.set_defaults(handler=command_notes_read)
     append_note = note_commands.add_parser(
-        "append", help="Append text below a canvas note's content (grows pages as needed)", parents=[agent_option]
+        "append", help="Append text to a canvas note (below its content) or a page note (a new paragraph at the end)", parents=[agent_option]
     )
     append_note.add_argument("note_id", type=int)
     append_note.add_argument("--text", help="Text to append; omit or use - to read standard input")
     append_note.add_argument("--revision", type=int, help="Fail if the note is no longer at this revision")
     append_note.set_defaults(handler=command_notes_append)
-    create_note = note_commands.add_parser("create", help="Create a canvas or mind-map note", parents=[agent_option])
+    create_note = note_commands.add_parser("create", help="Create a canvas, mind-map or page note", parents=[agent_option])
     create_note.add_argument("--title", required=True)
     create_note.add_argument("--notebook-id", type=int)
-    create_note.add_argument("--type", dest="note_type", choices=("canvas", "mindmap"), default="canvas")
-    create_note.add_argument("--text", help="Initial canvas text; not valid for mind maps")
+    create_note.add_argument("--type", dest="note_type", choices=("canvas", "mindmap", "page"), default="canvas")
+    create_note.add_argument("--text", help="Initial text (Markdown for a page); not valid for mind maps")
     create_note.set_defaults(handler=command_notes_create)
     delete_note = note_commands.add_parser("delete", help="Delete a note")
     delete_note.add_argument("note_id", type=int)

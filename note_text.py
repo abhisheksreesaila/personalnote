@@ -65,4 +65,6 @@ def note_plain_text(note: dict) -> str:
     content = note.get("content") or {}
     if note.get("noteType") == "mindmap":
         return mindmap_outline(content)
+    if note.get("noteType") == "page":
+        return content.get("markdown", "") if isinstance(content, dict) else ""
     return canvas_plain_text(content, note.get("pageState"))

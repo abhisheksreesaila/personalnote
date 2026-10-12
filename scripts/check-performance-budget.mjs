@@ -7,6 +7,8 @@ const DIST_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url))
 const KIB = 1024
 const budgets = {
   javascriptGzip: 240 * KIB,
+  // The page note editor (CodeMirror) loads only when a page note opens, so it has its own budget instead of eating the app's (F-040).
+  pageEditorGzip: 130 * KIB,
   cssGzip: 16 * KIB,
   largestJavascriptRaw: 850 * KIB,
 }
@@ -35,14 +37,17 @@ const assets = await Promise.all(files.map(async (path) => {
   }
 }))
 
-const javascript = assets.filter((asset) => asset.extension === '.js')
+const isPageEditor = (asset) => /(^|\/)page-editor-[^/]*\.js$/.test(asset.path)
+const javascript = assets.filter((asset) => asset.extension === '.js' && !isPageEditor(asset))
+const pageEditorGzip = assets.filter(isPageEditor).reduce((total, asset) => total + asset.gzip, 0)
 const css = assets.filter((asset) => asset.extension === '.css')
 const javascriptGzip = javascript.reduce((total, asset) => total + asset.gzip, 0)
 const cssGzip = css.reduce((total, asset) => total + asset.gzip, 0)
 const largestJavascript = javascript.reduce((largest, asset) => asset.raw > largest.raw ? asset : largest, javascript[0])
 
 const checks = [
-  ['JavaScript gzip', javascriptGzip, budgets.javascriptGzip],
+  ['JavaScript gzip (app, without the page editor)', javascriptGzip, budgets.javascriptGzip],
+  ['Page editor gzip (loaded when a page opens)', pageEditorGzip, budgets.pageEditorGzip],
   ['CSS gzip', cssGzip, budgets.cssGzip],
   ['Largest JavaScript chunk', largestJavascript.raw, budgets.largestJavascriptRaw],
 ]

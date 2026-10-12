@@ -14,6 +14,7 @@ from app_schema import initialize_schema
 from document_model import DocumentError, empty_document, from_fabric, plain_text
 from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
 from media_store import MediaStore, data_url_of
+from page_note import empty_page_document, normalize_page_document, page_document_of, page_text
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 FORMAT_CANVAS = "json-canvas"  # JSON Canvas 1.0 + pn extensions (ADR 0002)
 FORMAT_FABRIC = "fabric"  # Fabric JSON: notes saved before F-026 until they are converted
 FORMAT_MINDMAP = "mindmap"  # normalized mind-map JSON
+FORMAT_PAGE = "page"  # page note: {version, markdown, ink} (ADR 0003)
 FABRIC_BACKUP_SUFFIX = ".fabric-backup"
 
 DEFAULT_CONTENT = {"objects": []}
@@ -46,7 +48,7 @@ DEFAULT_MINDMAP_CONTENT = {
         }
     ],
 }
-NOTE_TYPES = {"canvas", "mindmap"}
+NOTE_TYPES = {"canvas", "mindmap", "page"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")
 DEFAULT_NOTEBOOK_CATEGORY = "projects"
@@ -150,6 +152,8 @@ class NoteService:
     def format_of(note) -> str:
         if note["note_type"] == "mindmap":
             return FORMAT_MINDMAP
+        if note["note_type"] == "page":
+            return FORMAT_PAGE
         return FORMAT_FABRIC if note["content_format"] == FORMAT_FABRIC else FORMAT_CANVAS
 
     @staticmethod
@@ -464,6 +468,8 @@ class NoteService:
 
     @classmethod
     def note_text(cls, note_type: str, content: str, content_format: str = FORMAT_FABRIC, page_state: str | None = None) -> str:
+        if note_type == "page":
+            return page_text(content)
         return cls.mindmap_text(content) if note_type == "mindmap" else cls.canvas_text(content, content_format, page_state)
 
     @staticmethod
@@ -686,10 +692,12 @@ class NoteService:
         title = str(payload.get("title") or "Untitled note")[:180]
         requested_note_type = str(payload.get("noteType") or "canvas")
         note_type = requested_note_type if requested_note_type in NOTE_TYPES else "canvas"
-        initial_text = (
-            json.dumps(DEFAULT_MINDMAP_CONTENT, separators=(",", ":")) if note_type == "mindmap" else empty_canvas_text()
-        )
-        content_format = FORMAT_MINDMAP if note_type == "mindmap" else FORMAT_CANVAS
+        if note_type == "page":
+            initial_text, content_format = json.dumps(empty_page_document(), separators=(",", ":")), FORMAT_PAGE
+        elif note_type == "mindmap":
+            initial_text, content_format = json.dumps(DEFAULT_MINDMAP_CONTENT, separators=(",", ":")), FORMAT_MINDMAP
+        else:
+            initial_text, content_format = empty_canvas_text(), FORMAT_CANVAS
         try:
             requested_notebook_id = int(payload.get("notebookId"))
         except (TypeError, ValueError):
@@ -728,7 +736,10 @@ class NoteService:
             expected_revision = self.expected_revision(payload, current["revision"])
             note_type = current["note_type"]
             body = None
-            if note_type == "mindmap":
+            if note_type == "page":
+                content_format = FORMAT_PAGE
+                content = json.dumps(normalize_page_document(payload.get("content")), separators=(",", ":"))
+            elif note_type == "mindmap":
                 content_format = FORMAT_MINDMAP
                 document = self.normalize_mindmap_document(payload.get("content") or DEFAULT_MINDMAP_CONTENT)
                 content = json.dumps(document, separators=(",", ":"))
@@ -805,8 +816,15 @@ class NoteService:
         if len(text) > APPEND_MAX_LENGTH:
             raise AppendTextError("Text to append is too long")
         note = self.get_note(note_id)
+        if note["noteType"] == "page":
+            # A new paragraph at the end of the Markdown; every mark and drawing keeps its position because nothing before it moved.
+            document = note["content"]
+            markdown = document["markdown"].rstrip("\n")
+            document["markdown"] = f"{markdown}\n\n{text}" if markdown else text
+            expected = note["revision"] if revision is None else revision
+            return self.update_note(note_id, {"title": note["title"], "content": document, "revision": expected, "notebookId": note["notebookId"]})
         if note["noteType"] != "canvas":
-            raise UnsupportedNoteTypeError("Text can only be appended to canvas notes")
+            raise UnsupportedNoteTypeError("Text can only be appended to canvas and page notes")
         document = self.document_of(note["content"], note["contentFormat"], note["pageState"])
         objects = [item for item in document["objects"] if isinstance(item, dict)]
         width = PAGE_WIDTH - 2 * APPEND_LEFT
@@ -951,6 +969,8 @@ class NoteService:
 
     def snapshot_content(self, row) -> dict:
         """A note's content for a backup or export: canvases as self-contained JSON Canvas (pictures and SVGs inline as data URLs)."""
+        if row["note_type"] == "page":
+            return page_document_of(row["content"])
         content = self.parse_json(row["content"], DEFAULT_CONTENT)
         if row["note_type"] == "mindmap":
             return content
@@ -1047,7 +1067,10 @@ class NoteService:
                 page_state_value = note.get("pageState")
                 page_state = page_state_value if isinstance(page_state_value, dict) else DEFAULT_PAGE_STATE
                 body = None
-                if note_type == "mindmap":
+                if note_type == "page":
+                    content_format = FORMAT_PAGE
+                    content = json.dumps(normalize_page_document(note["content"]), separators=(",", ":"))
+                elif note_type == "mindmap":
                     content_format = FORMAT_MINDMAP
                     content = json.dumps(self.normalize_mindmap_document(json.loads(json.dumps(note["content"]))), separators=(",", ":"))
                 else:

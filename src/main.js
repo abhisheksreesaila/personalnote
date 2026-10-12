@@ -10,6 +10,7 @@ import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './cor
 import { nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
+import { mountPageModule } from './modules/page.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
 import { createMobileHoldController } from './modules/voice/mobile-hold-controller.js'
 import { pageBoundedTextLayout, voiceInsertPoint } from './modules/voice/text-layout.js'
@@ -93,6 +94,7 @@ const DEFAULT_MINDMAP_DOCUMENT = {
 document.querySelector('#app').innerHTML = `
   <div class="app-shell">
     <div class="note-create-menu" id="note-create-menu" role="menu" aria-label="Create note as" hidden>
+      <button role="menuitem" data-create-note-type="page"><i data-lucide="file-pen"></i><span>Page</span></button>
       <button role="menuitem" data-create-note-type="canvas"><i data-lucide="file-text"></i><span>Canvas note</span></button>
       <button role="menuitem" data-create-note-type="mindmap"><i data-lucide="git-fork"></i><span>Mind map</span></button>
     </div>
@@ -103,7 +105,7 @@ document.querySelector('#app').innerHTML = `
         <span class="brand-name">Personal Note</span>
         <button class="icon-button sidebar-close" id="close-sidebar" title="Close notebooks" aria-label="Close notebooks"><i data-lucide="x"></i></button>
       </div>
-      <button class="quick-note hold-create-button" id="rail-new-note" title="New canvas note - hold for more types" aria-label="Quick note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false">
+      <button class="quick-note hold-create-button" id="rail-new-note" title="New page - hold for more types" aria-label="Quick note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false">
         <i data-lucide="plus"></i><span>Quick note</span><kbd id="quick-note-kbd">Ctrl N</kbd>
       </button>
       <nav class="notebook-navigator" id="notebook-navigator" aria-label="Inbox and notebooks">
@@ -217,6 +219,7 @@ document.querySelector('#app').innerHTML = `
           <div class="input-surface" id="note-input"></div>
         </div>
         <div class="mindmap-host" id="mindmap-host" hidden></div>
+        <div class="page-host" id="page-host" hidden></div>
         <div class="scroll-indicator scroll-indicator-y" id="scroll-y" aria-hidden="true"><span></span></div>
         <div class="scroll-indicator scroll-indicator-x" id="scroll-x" aria-hidden="true"><span></span></div>
         <div class="page-minimap" id="page-minimap" role="group" aria-label="Pages">
@@ -424,6 +427,7 @@ const elements = {
   workspace: document.querySelector('#workspace'),
   paper: document.querySelector('#paper'),
   mindmapHost: document.querySelector('#mindmap-host'),
+  pageHost: document.querySelector('#page-host'),
   title: document.querySelector('#note-title'),
   list: document.querySelector('#notebook-navigator'),
   notebookList: document.querySelector('#notebook-list'),
@@ -524,30 +528,44 @@ const state = {
 }
 
 let mindmapEditor = null
+let pageEditor = null
 
 function setActiveNoteType(noteType) {
-  state.activeNoteType = noteType === 'mindmap' ? 'mindmap' : 'canvas'
+  state.activeNoteType = noteType === 'mindmap' || noteType === 'page' ? noteType : 'canvas'
   const isMindMap = state.activeNoteType === 'mindmap'
+  const isPage = state.activeNoteType === 'page'
+  const notCanvas = isMindMap || isPage
   elements.shell.classList.toggle('mindmap-active', isMindMap)
-  elements.paper.hidden = isMindMap
+  elements.shell.classList.toggle('page-active', isPage)
+  elements.paper.hidden = notCanvas
   elements.mindmapHost.hidden = !isMindMap
-  elements.pageMinimap.hidden = isMindMap
-  elements.zoomControl.hidden = isMindMap
-  elements.dockCanvas.hidden = isMindMap
-  if (isMindMap) hideScrollIndicators()
-  elements.canvasTypographyProperties.hidden = isMindMap
+  elements.pageHost.hidden = !isPage
+  elements.pageMinimap.hidden = notCanvas
+  elements.zoomControl.hidden = notCanvas
+  elements.dockCanvas.hidden = notCanvas
+  if (notCanvas) hideScrollIndicators()
+  elements.canvasTypographyProperties.hidden = notCanvas
   elements.mindmapProperties.hidden = !isMindMap
   elements.mindmapRailActions.hidden = !isMindMap
   elements.properties.querySelector('.properties-heading span').textContent = isMindMap ? 'Mind map' : 'Inspector'
   elements.properties.querySelector('.properties-heading h2').textContent = isMindMap ? 'Node properties' : 'Note properties'
-  elements.noteSurfaceLabel.textContent = isMindMap ? 'Mind map' : 'Canvas'
-  elements.noteSurfaceDetail.textContent = isMindMap ? 'Infinite SVG workspace' : 'Expands automatically'
-  elements.printButton.disabled = isMindMap
-  elements.printButton.title = isMindMap ? 'Print preview is available for canvas notes' : 'Print preview'
+  elements.noteSurfaceLabel.textContent = isMindMap ? 'Mind map' : isPage ? 'Page' : 'Canvas'
+  elements.noteSurfaceDetail.textContent = isMindMap ? 'Infinite SVG workspace' : isPage ? 'Markdown you can draw on' : 'Expands automatically'
+  elements.printButton.disabled = notCanvas
+  elements.printButton.title = notCanvas ? 'Print preview is available for canvas notes' : 'Print preview'
   if (!isMindMap) {
     mindmapEditor?.destroy()
     mindmapEditor = null
   }
+  if (!isPage) {
+    pageEditor?.destroy()
+    pageEditor = null
+  }
+}
+
+async function mountActivePage(documentValue) {
+  pageEditor?.destroy()
+  pageEditor = await mountPageModule(elements.pageHost, { documentValue, onChange: () => queueSave() })
 }
 
 async function mountActiveMindMap(documentValue) {
@@ -779,7 +797,7 @@ function escapeHtml(value) {
 function noteRowHtml(note, { dotFor = null } = {}) {
   const dot = dotFor
     ? `<span class="notebook-dot" style="--notebook-color:${dotFor.color}" title="${escapeHtml(dotFor.name)}"></span>`
-    : `<i data-lucide="${note.noteType === 'mindmap' ? 'git-fork' : 'file-text'}"></i>`
+    : `<i data-lucide="${note.noteType === 'mindmap' ? 'git-fork' : note.noteType === 'page' ? 'file-pen' : 'file-text'}"></i>`
   return `
     <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''}" data-note-id="${note.id}" draggable="true">
       ${dot}
@@ -1283,7 +1301,9 @@ async function saveActiveNote({ unloading = false } = {}) {
     const editedLeafer = state.activeNoteType === 'canvas' && leaferSource.editedDoc
     const savedShift = leaferSource.shift
     saveFrame = editedLeafer && savedShift ? savedShift : null
-    const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : leaferSource.content
+    const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument()
+      : state.activeNoteType === 'page' ? pageEditor?.getDocument()
+      : leaferSource.content
     const fields = {
       title,
       pageState: state.activeNoteType === 'canvas' ? leaferSource.pageState : state.pages,
@@ -1374,9 +1394,10 @@ window.personalNote = {
 // A mind map announces its edits through onChange. What it was when it was loaded is kept, so that leaving it unchanged sends nothing and a
 // change that was not announced still goes out. A canvas note needs none of this: the Leafer scene queues a save for every edit it records.
 let mindmapSnapshot = null
+// The same for a page note: CodeMirror announces each edit, and the snapshot catches one that was not announced.
 function mindmapChanged() {
-  if (state.activeNoteType !== 'mindmap') return false
-  const next = JSON.stringify({ content: mindmapEditor?.getDocument() })
+  if (state.activeNoteType !== 'mindmap' && state.activeNoteType !== 'page') return false
+  const next = JSON.stringify({ content: state.activeNoteType === 'page' ? pageEditor?.getDocument() : mindmapEditor?.getDocument() })
   if (next === mindmapSnapshot) return false
   mindmapSnapshot = next
   return true
@@ -1445,6 +1466,7 @@ const leaferEdits = createLeaferEdits({
 })
 // Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, Ctrl+Y, the dock buttons and the desktop menu all arrive here. (A mind map has undo of its own.)
 function stepHistory(direction) {
+  if (state.activeNoteType === 'page') { pageEditor?.history(direction); return }
   if (state.activeNoteType === 'mindmap' || state.loading) return
   if (direction < 0) leaferEdits.undo()
   else leaferEdits.redo()
@@ -1634,6 +1656,8 @@ async function selectNoteNow(id) {
   state.loading = true
   mindmapEditor?.destroy()
   mindmapEditor = null
+  pageEditor?.destroy()
+  pageEditor = null
   try {
     const note = await api(`/notes/${id}`)
     // A newer pick superseded this one while it loaded: its content must not land under another note's id.
@@ -1651,6 +1675,11 @@ async function selectNoteNow(id) {
     if (state.activeNoteType === 'mindmap') {
       await mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
       mindmapSnapshot = JSON.stringify({ content: mindmapEditor?.getDocument() }) // what the map was when it was loaded: leaving it unchanged sends nothing
+    } else if (state.activeNoteType === 'page') {
+      await mountActivePage(note.content)
+      if (sequence !== selectSequence) return
+      mindmapSnapshot = JSON.stringify({ content: pageEditor?.getDocument() })
+      pageEditor?.focus() // a page opens ready for typing
     } else {
       if (!(await showLeaferNote(note)) || sequence !== selectSequence) return
       setTool('text') // a note opens ready for typing
@@ -1752,7 +1781,7 @@ async function mergeRemoteNote(note) {
   return mergeLeaferNote(note)
 }
 
-async function createNote(notebookId, noteType = 'canvas') {
+async function createNote(notebookId, noteType = 'page') {
   if (state.creatingNote) return
   state.creatingNote = true
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
@@ -2513,6 +2542,7 @@ async function undoClear() {
   const pending = pendingClearUndo
   hideToast()
   if (!pending || pending.noteId !== state.activeNoteId) return
+  if (pending.page) { pageEditor?.history(-1); return }
   if (pending.mindmap) {
     await mountActiveMindMap(pending.mindmap)
     queueSave()
@@ -2522,6 +2552,12 @@ async function undoClear() {
 async function clearActiveNote() {
   if (!state.activeNoteId) return
   await commitPendingDelete()
+  if (state.activeNoteType === 'page') {
+    if (!pageEditor?.clear()) return
+    pendingClearUndo = { noteId: state.activeNoteId, page: true }
+    showToast('Note cleared', 'Undo', undoClear)
+    return
+  }
   if (state.activeNoteType === 'mindmap') {
     const previous = mindmapEditor?.getDocument()
     await mountActiveMindMap(structuredClone(DEFAULT_MINDMAP_DOCUMENT))
@@ -3441,7 +3477,7 @@ document.addEventListener('keydown', (event) => {
   } else if (pendingClearUndo && !isTyping && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
     event.preventDefault()
     undoClear()
-  } else if (state.activeNoteType === 'mindmap') {
+  } else if (state.activeNoteType === 'mindmap' || state.activeNoteType === 'page') {
     return
   } else if (!isTyping && canPanFromKeyboard(activeElement) && handleLeaferKey(event)) {
     event.preventDefault()

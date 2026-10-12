@@ -23,6 +23,7 @@ from pathlib import Path, PurePosixPath
 from json_canvas import FOREIGN_TEXT_STYLE, estimate_text_box, to_json_canvas, validate_json_canvas
 from media_store import EXTENSION_BY_SUFFIX, MediaStore, data_url_of, decode_data_url
 from note_text import mindmap_outline
+from page_note import normalize_page_document
 from services import InvalidNoteContentError
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -92,6 +93,11 @@ def export_vault(service) -> tuple[dict[str, bytes], list[str]]:
     for note in service.export_rows():
         folder = vault_name(note["notebookName"], "Notebook")
         title = vault_name(note["title"], f"Note {note['id']}")
+        if note["noteType"] == "page":
+            # A page is Markdown: Obsidian opens it as a normal note (its ink stays in the workspace backup).
+            markdown = normalize_page_document(note["content"])["markdown"]
+            files[_unique(f"{folder}/{title}.md", used)] = (markdown.rstrip("\n") + "\n").encode("utf-8")
+            continue
         if note["noteType"] == "mindmap":
             outline = mindmap_outline(note["content"])
             path = _unique(f"{folder}/{title}.md", used)

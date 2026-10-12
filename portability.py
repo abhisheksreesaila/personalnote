@@ -19,6 +19,7 @@ from pathlib import PurePosixPath
 
 from document_model import DocumentError, from_fabric, object_text, reading_order
 from json_canvas import from_json_canvas, is_json_canvas
+from page_note import normalize_page_document
 
 
 BACKUP_FORMAT = "personal-note-workspace"
@@ -202,7 +203,10 @@ def markdown_archive(service) -> bytes:
                 f"- Updated: {note.get('updatedAt', '')}",
                 "",
             ]
-            if note.get("noteType") == "mindmap":
+            if note.get("noteType") == "page":
+                # A page is Markdown already: written as is (its ink stays in the JSON backup).
+                lines.extend(normalize_page_document(note.get("content"))["markdown"].splitlines())
+            elif note.get("noteType") == "mindmap":
                 lines.extend(_mindmap_markdown(note, archive, asset_root))
             else:
                 lines.extend(_canvas_markdown(note, archive, asset_root))

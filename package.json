@@ -19,7 +19,7 @@
     "desktop:mac-app": "sh scripts/build-mac-app.sh",
     "desktop:linux-bundle": "sh scripts/build-linux-bundle.sh",
     "test:cli": "node scripts/run-python.mjs -m unittest tests.test_cli -v",
-    "test:ui": "node --test src/*.test.js src/core/*.test.js src/core/document/*.test.js src/modules/editor/*.test.js src/modules/canvas-leafer/*.test.js src/modules/voice/*.test.js src/modules/sync/*.test.js src/modules/library/*.test.js src/modules/desktop/*.test.js src/modules/speedtest/*.test.js src/mindmap/*.test.js",
+    "test:ui": "node --test src/*.test.js src/core/*.test.js src/core/document/*.test.js src/modules/editor/*.test.js src/modules/canvas-leafer/*.test.js src/modules/voice/*.test.js src/modules/sync/*.test.js src/modules/library/*.test.js src/modules/desktop/*.test.js src/modules/speedtest/*.test.js src/mindmap/*.test.js src/page/*.test.js",
     "voice:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-voice.ps1",
     "voice:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-voice.ps1",
     "build": "vite build",
@@ -34,8 +34,14 @@
     "vite": "^8.1.1"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.14",
     "@leafer-in/editor": "2.3.0",
     "@leafer-in/resize": "2.3.0",
+    "@lezer/highlight": "^1.2.5",
+    "@lezer/markdown": "^1.8.0",
     "leafer-ui": "2.3.0",
     "lucide": "^1.24.0"
   }
