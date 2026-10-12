@@ -7,9 +7,19 @@ import { ChangeSet } from '@codemirror/state'
 
 const DIFF_LIMIT = 4_000_000 // cells of the comparison table; beyond this a stretch is treated as one replaced range
 
-// Hunks [{ from, to, insert }] (positions in `a`) turning sequence a into sequence b, from their longest common subsequence.
+// Hunks [{ aFrom, aTo, bFrom, bTo }] turning sequence a into sequence b, from their longest common subsequence. The common start and end
+// are set aside first (cheap), so the table only covers what actually changed and the size limit is practically never reached.
 function sequenceHunks(a, b) {
-  if (a.length * b.length > DIFF_LIMIT) return a.length || b.length ? [{ aFrom: 0, aTo: a.length, bFrom: 0, bTo: b.length }] : []
+  let head = 0
+  while (head < a.length && head < b.length && a[head] === b[head]) head += 1
+  let tail = 0
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail += 1
+  return middleHunks(a.slice(head, a.length - tail), b.slice(head, b.length - tail)).map((hunk) => ({ aFrom: hunk.aFrom + head, aTo: hunk.aTo + head, bFrom: hunk.bFrom + head, bTo: hunk.bTo + head }))
+}
+
+function middleHunks(a, b) {
+  if (!a.length && !b.length) return []
+  if (!a.length || !b.length || a.length * b.length > DIFF_LIMIT) return [{ aFrom: 0, aTo: a.length, bFrom: 0, bTo: b.length }]
   const width = b.length + 1
   const table = new Uint32Array((a.length + 1) * width)
   for (let i = a.length - 1; i >= 0; i -= 1) {
@@ -76,8 +86,15 @@ export function mergeText(base, local, remote) {
   const ours = hunksOf(base, local)
   const inside = (point, range) => range.from < point && point < range.to
   const touches = (hunk) => ours.some((mine) => (hunk.from < mine.to && mine.from < hunk.to) // both replace some of the same text
-    || (hunk.from === hunk.to && inside(hunk.from, mine)) || (mine.from === mine.to && inside(mine.from, hunk)) // one inserts inside the other
-    || (hunk.from === hunk.to && mine.from === mine.to && hunk.from === mine.from && mine.insert.startsWith(hunk.insert))) // the agent saw this typing already
-  const theirs = hunksOf(base, remote).filter((hunk) => !touches(hunk))
+    || (hunk.from === hunk.to && inside(hunk.from, mine)) || (mine.from === mine.to && inside(mine.from, hunk))) // one inserts inside the other
+  // Two insertions at one spot where the agent's already holds the typed words (it saw them before the base did): only the rest is new.
+  const unseen = (hunk) => {
+    if (hunk.from !== hunk.to) return hunk
+    const mine = ours.find((each) => each.from === each.to && each.from === hunk.from)
+    if (!mine) return hunk
+    if (mine.insert.startsWith(hunk.insert)) return null
+    return hunk.insert.startsWith(mine.insert) ? { ...hunk, insert: hunk.insert.slice(mine.insert.length) } : hunk
+  }
+  const theirs = hunksOf(base, remote).filter((hunk) => !touches(hunk)).map(unseen).filter(Boolean)
   return ChangeSet.of(theirs, base.length).map(ChangeSet.of(ours, base.length))
 }
