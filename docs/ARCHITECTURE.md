@@ -56,6 +56,16 @@ A note type is immutable after creation:
 
 Every write increments an integer revision. A caller that supplies a stale revision receives HTTP 409. FTS5 indexing is updated in the same transaction as note content, using the Markdown projection of a canvas (its text blocks in reading order: top edge of the box first, then left edge, blank-line separated) or mind-map node labels. The agent CLI's `read` and the Markdown export use the same projection.
 
+### Page notes (Milestone 1, ADR 0003)
+
+A `page` note is Markdown you can draw on, and the default New note. `src/modules/page.js` lazy-loads `src/page/page-editor.js` (CodeMirror 6 with the Lezer Markdown parser, its own bundle budget). The stored document is `{version, markdown, ink}`; search, `read`, Markdown and vault export use the Markdown only.
+
+- `src/page/ink-state.js`: marks and drawings live inside CodeMirror's state, so text and ink share one undo history. A mark anchors to the whole word under it (or, in the margin, its whole line) plus a quote of it with context; edits map the positions, deleting the word deletes the mark, and an agent's rewrite re-finds it by quote or keeps it as loose ink. A drawing is a block between lines (linked to no word unless the user links it); a linked drawing folds behind its word (fold state is saved but is never an undo step).
+- `src/page/ink.js`: toolbar and input. A pen always draws, a finger scrolls, a mouse types on words and draws on empty space (Alt or Draw mode draws everywhere). A stroke inside a drawing joins it, on words becomes a mark, in the margin follows its line, elsewhere starts a new drawing.
+- `src/page/drawings.js`: drawings as CodeMirror block widgets updated in place (so folding animates) and the teal link-word decorations.
+- `src/page/merge.js`: an agent's change arriving during unsaved typing is mapped over the local edits; both survive. Server-side, `page_note.reanchor_ink` re-finds ink after `notes write`.
+- `scripts/verify-page.mjs` checks all of this in the real app (`PN_VERIFY_PORT` moves its ports).
+
 ### Optional built-in mind map
 
 `src/modules/mindmap.js` is the shell-facing boundary. Its only job is to lazy-import the SVG editor and return the established editor lifecycle (`getDocument`, `setTitle`, `destroy`). The module receives a host element and an `onChange` callback. It uses the normal note API and introduces no separate database or library.
