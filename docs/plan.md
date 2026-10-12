@@ -347,3 +347,8 @@ Needs: F-050
 Needs: F-048..F-051 (F-052 if ready)
 - [ ] the Page type leaves the New note menu (old page notes still open)
 - [ ] Mac and Linux packages as a GitHub pre-release
+## F-054 Focus write mode [todo]
+Captain (2026-10-12, queued for the release after preview 2): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."
+- [ ] a Focus write mode: drawing and ink input off, the canvas chrome quiet, typing goes straight into Markdown text with nothing else in the way
+- [ ] typing latency measured (speed test row) and kept low on the Mac, in and out of focus mode
+- [ ] one key or button in and out; Esc leaves it
