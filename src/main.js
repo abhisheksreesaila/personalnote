@@ -95,7 +95,6 @@ document.querySelector('#app').innerHTML = `
   <div class="app-shell">
     <div class="note-create-menu" id="note-create-menu" role="menu" aria-label="Create note as" hidden>
       <button role="menuitem" data-create-note-type="canvas"><i data-lucide="file-text"></i><span>Canvas note</span></button>
-      <button role="menuitem" data-create-note-type="page"><i data-lucide="file-pen"></i><span>Page</span></button>
       <button role="menuitem" data-create-note-type="mindmap"><i data-lucide="git-fork"></i><span>Mind map</span></button>
     </div>
     <div class="sidebar-scrim" id="sidebar-scrim" aria-hidden="true"></div>

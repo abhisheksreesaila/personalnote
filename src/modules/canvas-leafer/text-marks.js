@@ -9,7 +9,6 @@ const UNDERLINE_REACH = 0.35 // a word's box reaches this much of its height bel
 
 export const quoteOf = (source, pos, end) => ({ exact: source.slice(pos, end), prefix: source.slice(Math.max(0, pos - QUOTE_CONTEXT), pos), suffix: source.slice(end, end + QUOTE_CONTEXT) })
 
-const meets = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
 // The anchor for a stroke, or null when it is not a mark on words (it stays ordinary ink). `box` is the stroke's box and `points` its
 // points, both in the text's frame; `words` the laid-out words. A mark is a stroke that encloses words (a circle, a box), or runs over or

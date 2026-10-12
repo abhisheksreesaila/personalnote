@@ -317,7 +317,8 @@ Found while building Milestone 1; none blocks using pages.
 ## Milestone 1, second pass: the two layers inside the canvas (captain, 2026-10-12, after preview 1; ADR 0004)
 Captain: "all the existing functionality should remain.. only add should be 2 layer stuff we discussed, so that its text native but can be drawn." Choice: inside the canvas (one note type).
 Order: F-048 → F-049 → F-050 → F-051 → F-052 → F-053. All touch the canvas scene, so one after another.
-## F-048 Markdown text on the canvas [review]
+## F-048 Markdown text on the canvas [done]
+Reviewed: PASS after fixes (4239908).
 Review 1 (a7ec7e1): NEEDS WORK, fixed: last letter of a long broken word, backslashes in code, plain-text check now runs, resize rewraps live.
 Brief: docs/briefs/two-layer-pages.md · ADR 0004 · Needs: none
 - [x] New note opens a canvas again (a411316)
@@ -325,30 +326,34 @@ Brief: docs/briefs/two-layer-pages.md · ADR 0004 · Needs: none
 - [x] a new text made with the Text tool wraps at the page's right margin, so writing flows down and the pages grow as before
 - [x] save, reload, undo, backup/import, Markdown export, search and print keep it (print draws the same nodes)
 - [x] selection, move, resize (rewraps), delete, style controls and every verify script still pass (scripts/verify-markdown-text.mjs; text and pages checks updated for Markdown)
-## F-049 Writing in place [review]
+## F-049 Writing in place [done]
+Reviewed: PASS (233550b).
 Needs: F-048
 - [x] editing a Markdown text keeps it formatted while you type (heading sizes, emphasis); the Markdown marks of the line being typed show, others stay hidden; the ink marks on the words stay on screen and follow them
 - [x] input methods, spellcheck, paste, undo of a typing session, page growth while typing, voice dictation and Prettify work as with plain text (verify-leafer-text/voice/pages/phone pass with the new editor)
-## F-050 Ink on words [review]
+## F-050 Ink on words [done]
+Reviewed: PASS after fixes (233550b).
 Review (4239908): NEEDS WORK, fixed: a stroke is a mark only when its points enclose or run over words and stay near them (a big arrow or diagonal stays ink).
 Needs: F-049
 - [x] a pen or highlighter stroke over a Markdown text's words becomes a mark of that text; it follows its words through typing, rewrap, resize and move
 - [x] deleting the words deletes the mark; the eraser removes marks; one undo step each; saved and reloaded
 - [x] strokes elsewhere stay ordinary ink, exactly as today
-## F-051 Link and fold [review]
+## F-051 Link and fold [done]
+Reviewed: PASS after fixes (233550b, selection kept when no link words change).
 Review (4239908): NEEDS WORK, fixed: deleting the text unlinks and shows what was folded into it; teal words redrawn after undo, redo, merges and deletes; a fold in flight can't be doubled and lands on the current object; reduced motion respected; Select all skips folded objects; link words look the same in the editor.
 Needs: F-050
 - [x] any object (ink, shape, sticky, image, text, group) can be linked to a word of a Markdown text (selection bar: Link to words, then click the word); the word turns teal
 - [x] clicking the word folds the object away into the word and opens it again with a smooth ~0.6 s slide; Fold all / Open all in the top bar
 - [x] fold state is saved; deleting the word unlinks and shows the object (undo restores both)
-## F-052 Agents and Markdown text [review]
+## F-052 Agents and Markdown text [done]
+Reviewed: PASS after fixes (233550b).
 Review (4239908): NEEDS WORK, fixed: dot marks kept; one-letter words found by their context; lost marks become ink where last drawn with their real size; the text's height and pages follow the new words.
 Needs: F-050
 - [x] the CLI reads and writes a canvas note's Markdown texts (`notes write`, `--object`; `append` adds Markdown text); marks and links re-find their words after an agent edit, never lost (a mark whose words are gone becomes ink beside the text)
 - [x] the open note merges an agent's change as it does today (object-level canvas merge, unchanged)
-## F-053 Preview build 2 [todo]
+## F-053 Preview build 2 [doing]
 Needs: F-048..F-051 (F-052 if ready)
-- [ ] the Page type leaves the New note menu (old page notes still open)
+- [x] the Page type leaves the New note menu (old page notes still open)
 - [ ] Mac and Linux packages as a GitHub pre-release
 ## F-054 Focus write mode [todo]
 Captain (2026-10-12, queued for the release after preview 2): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."

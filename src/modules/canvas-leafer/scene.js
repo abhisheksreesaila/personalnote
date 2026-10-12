@@ -652,7 +652,9 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   function redrawLinkedTexts(changes, skip = new Set()) {
     const texts = new Set()
     for (const change of changes) for (const object of [change.before, change.after]) if (object?.link?.textId) texts.add(object.link.textId)
-    keepingSelection(() => { for (const id of texts) { if (skip.has(id) || id === textEdit?.id) continue; const entry = entries.get(id); if (entry) rebuild(entry) } })
+    const due = [...texts].filter((id) => !skip.has(id) && id !== textEdit?.id && entries.has(id))
+    if (!due.length) return // (most edits touch no link: the selection is left alone)
+    keepingSelection(() => { for (const id of due) { const entry = entries.get(id); if (entry) rebuild(entry) } })
   }
 
   const editorEntries = () => editing.nodes().map((node) => entryOfNode.get(node)).filter(Boolean) // the editor's own (never a connector)
