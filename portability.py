@@ -17,9 +17,15 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
+from document_model import DocumentError, from_fabric, object_text, reading_order
+from json_canvas import from_json_canvas, is_json_canvas
+
 
 BACKUP_FORMAT = "personal-note-workspace"
-BACKUP_VERSION = 1
+# Version 2 (F-026): canvas notes are JSON Canvas 1.0 with `pn` extensions, pictures and ink/shape SVGs embedded as data URLs so the
+# file is self-contained. Version 1 (Fabric JSON canvases) is still accepted on import.
+BACKUP_VERSION = 2
+SUPPORTED_BACKUP_VERSIONS = (1, 2)
 _DATA_URL = re.compile(
     r"^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$",
     re.IGNORECASE,
@@ -58,7 +64,7 @@ def workspace_backup(service) -> dict:
 def import_workspace_backup(service, payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise PortabilityError("Backup must be a JSON object")
-    if payload.get("format") != BACKUP_FORMAT or payload.get("version") != BACKUP_VERSION:
+    if payload.get("format") != BACKUP_FORMAT or payload.get("version") not in SUPPORTED_BACKUP_VERSIONS:
         raise PortabilityError("Unsupported Personal Note backup format")
     return service.import_workspace_snapshot(payload)
 
@@ -83,19 +89,21 @@ def _extract_data_image(value, archive: zipfile.ZipFile, asset_path: str) -> str
 
 
 def _canvas_markdown(note: dict, archive: zipfile.ZipFile, asset_root: str) -> list[str]:
-    objects = note.get("content", {}).get("objects", [])
-    if not isinstance(objects, list):
+    content = note.get("content", {})
+    try:
+        document = from_json_canvas(content) if is_json_canvas(content) else from_fabric(content, note.get("pageState"))
+    except DocumentError:
         return []
-    sortable = [item for item in objects if isinstance(item, dict)]
-    sortable.sort(key=lambda item: (float(item.get("top") or 0), float(item.get("left") or 0)))
     lines: list[str] = []
     asset_number = 0
-    for item in sortable:
-        text = item.get("text")
-        if isinstance(text, str) and text.strip():
+    # Markdown projection: text in reading order (top edge first) with each picture where it sits.
+    for item in reading_order(document):
+        text = object_text(item)
+        if text and text.strip():
             lines.extend([text.strip(), ""])
+        source = item.get("mediaRef", {}).get("dataUrl") if item.get("type") == "image" else None
         asset = _extract_data_image(
-            item.get("src"), archive, f"{asset_root}/image-{asset_number + 1}"
+            source, archive, f"{asset_root}/image-{asset_number + 1}"
         )
         if asset:
             asset_number += 1

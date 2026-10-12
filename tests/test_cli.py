@@ -48,7 +48,8 @@ class CliContractTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(note["revision"], 2)
-        self.assertEqual(note["content"]["objects"][0]["text"], "Keep a searchable local idea")
+        self.assertEqual(note["contentFormat"], "json-canvas")
+        self.assertEqual(note["content"]["nodes"][0]["text"], "Keep a searchable local idea")
 
         code, matches = self.run_cli("search", "searchable local")
         self.assertEqual(code, 0)
@@ -81,6 +82,21 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(text, "Line one\n\nLine two\n")
 
+    def test_vault_export_and_import_round_trip_through_the_cli(self):
+        note = self.create_note(title="Vault note", text="Exported through the vault")
+        target = self.database_path.parent / "vault"
+        code, summary = self.run_cli("export", "vault", "--output", str(target))
+        self.assertEqual((code, summary["canvasFiles"]), (0, 1))
+        canvas = next(target.rglob("*.canvas"))
+        self.assertEqual(json.loads(canvas.read_text())["nodes"][0]["text"], "Exported through the vault")
+        code, again = self.run_cli_raw("export", "vault", "--output", str(target))
+        self.assertEqual((code, json.loads(again)["ok"]), (2, False))  # never overwrites
+        code, imported = self.run_cli("import-vault", str(target))
+        self.assertEqual((code, imported["notesImported"]), (0, 1))
+        code, found = self.run_cli("search", "vault")
+        self.assertEqual(len(found), 2)
+        self.assertIn(note["id"], [item["id"] for item in found])
+
     def test_read_of_a_mind_map_is_an_outline(self):
         code, note = self.run_cli("notes", "create", "--title", "Map", "--type", "mindmap")
         self.assertEqual(code, 0)
@@ -93,9 +109,9 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result["revision"], note["revision"] + 1)
         code, loaded = self.run_cli("notes", "get", str(note["id"]))
-        first, second = loaded["content"]["objects"]
+        first, second = loaded["content"]["nodes"]
         self.assertEqual(first["text"], "First thought")
-        self.assertGreater(second["top"], first["top"])
+        self.assertGreater(second["y"], first["y"])
 
     def test_append_reads_stdin_and_honours_expected_revision(self):
         note = self.create_note()

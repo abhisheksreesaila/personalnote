@@ -11,6 +11,8 @@ Claude reads this at the start of each session. -->
 - 2026-09-30 · Guard every browser-storage access (localStorage can be missing in WebKit web views) and check frontend changes in a non-Chromium engine; tests/test_webview_smoke.py loads the built app in the system web view with a hidden window.
 - 2026-10-02 · Never use broad pkill patterns (e.g. `pkill -f headless`) — other projects' sessions run headless browsers on this machine; stop only the PIDs you started.
 - Cleanup deletes only exact paths you created; never `rm -rf` with a glob (a reviewer's `/var/tmp/tmp*/t.db` could have hit other projects' files).
+- 2026-10-02 · Take the "before" run of the verify and benchmark scripts from a clean copy of the branch (export it into a scratch folder), never from the tree being edited: a run that overlaps edits fails for the wrong reasons and proves nothing.
+- 2026-10-02 · Before removing a library that tests used as their oracle, measure what it does into a fixture (tests/fixtures/fabric-oracle.json) and name the commit that still has the library in the fixture's README, so the tests keep their independent check.
 - An engine port needs a feature inventory of the old app (every tool, button, shortcut) checked off before calling parity; four Fabric features (shape tool, Clear all, voice placement, agent flag) slipped through slice-by-slice reviews.
 - Test and benchmark runs on the captain's machine are headless (or under a virtual display); never open visible browser windows, never in a loop that respawns them.
 - Rendering choices are decided by the in-app comparison on the real Mac, not by headless runs: headless ranked the gesture transform best, the Mac ranked it worst.

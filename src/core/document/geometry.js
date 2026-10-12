@@ -65,11 +65,6 @@ export function centerFromOrigin({ left, top, originX, originY, angle, dimension
   return angle ? rotatePoint(point, toRadians(angle), { x: left, y: top }) : point
 }
 
-export function originFromCenter({ x, y, originX, originY, angle, dimensions }) {
-  const point = { x: x + (originNumber(originX) - 0.5) * dimensions.x, y: y + (originNumber(originY) - 0.5) * dimensions.y }
-  return angle ? rotatePoint(point, toRadians(angle), { x, y }) : point
-}
-
 // Extremes of a cubic Bezier, as Fabric's getBoundsOfCurve finds them.
 function curveBounds(begX, begY, cp1X, cp1Y, cp2X, cp2Y, endX, endY) {
   const ts = []
@@ -161,4 +156,11 @@ export function pathBounds(path) {
 
 export function shiftPath(path, dx, dy) {
   return path.map((command) => command.map((value, index) => (index === 0 ? value : value + (index % 2 === 1 ? dx : dy))))
+}
+
+// The model's own stroke width (it lives under a different name per type), with the old engine's default when the note had none:
+// none for a group, a picture and a connector, 1 for the rest.
+export function strokeWidthOfModel(object) {
+  const stored = object.type === 'shape' ? object.strokeWidth : object.type === 'ink' && object.kind === 'stroke' ? object.width : object.extras?.strokeWidth
+  return typeof stored === 'number' && Number.isFinite(stored) ? stored : ['group', 'image', 'connector'].includes(object.type) ? 0 : 1
 }

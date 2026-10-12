@@ -1,5 +1,9 @@
+import json
 import logging
 import os
+import subprocess
+import sys
+from datetime import datetime
 from pathlib import Path
 
 from fasthtml.common import FastHTML
@@ -14,7 +18,9 @@ from portability import (
     utc_timestamp,
     workspace_backup,
 )
-from services import ConflictError, NoteService, NotFoundError, WorkspaceImportError
+from media_store import MAX_MEDIA_BYTES, MEDIA_NAME, sniff_image
+from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, WorkspaceImportError
+from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
 
@@ -56,6 +62,42 @@ def default_voice_runtime() -> VoiceRuntime:
     return VoiceRuntime(root=Path(folder) if folder else app_data_dir() / "voice", version=app_version(ROOT))
 
 
+def speedtest_folder() -> Path:
+    """The speed test's results (F-034) live in the app-data folder (PERSONAL_NOTE_SPEEDTEST_DIR overrides it), never beside the notes."""
+    folder = os.environ.get("PERSONAL_NOTE_SPEEDTEST_DIR")
+    return Path(folder) if folder else app_data_dir() / "speedtest"
+
+
+MAX_SPEEDTEST_REPORT_BYTES = 1024 * 1024
+
+
+SPEEDTEST_SETTLE_SECONDS = 1.5
+
+
+def speedtest_command() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--speedtest"]
+    return [sys.executable, str(Path(__file__).resolve().parent / "desktop.py"), "--speedtest", "--no-build"]
+
+
+def launch_speedtest_instance(settle: float = SPEEDTEST_SETTLE_SECONDS):
+    """Start the speed test as a separate app instance (temporary notebook, own window profile, own port): it never runs in the person's notebook.
+
+    Its output goes to launch.log in the speed test's results folder. Raises OSError when it cannot start or has already exited after `settle` seconds
+    (a missing window engine, say); otherwise returns the running process.
+    """
+    folder = speedtest_folder()
+    folder.mkdir(parents=True, exist_ok=True)
+    log_path = folder / "launch.log"
+    with open(log_path, "ab") as log:
+        process = subprocess.Popen(speedtest_command(), stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+    try:
+        code = process.wait(timeout=settle)
+    except subprocess.TimeoutExpired:
+        return process
+    raise OSError(f"The speed test window closed at once (exit code {code}); see {log_path}")
+
+
 LOOPBACK_NAMES = {"127.0.0.1", "localhost", "::1"}
 
 
@@ -89,9 +131,13 @@ def create_app(
     database_path: Path | str | None = None,
     voice: VoiceRuntime | None = None,
     bound_host: str | None = None,
+    speedtest_instance: bool = False,
+    speedtest_launcher=None,
+    desktop_host: bool = False,
 ) -> FastHTML:
     """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
     data_path = Path(database_path or default_database_path())
+    speedtest_process: dict = {}  # the speed test this app started: one at a time
     service = NoteService(data_path)
     # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
@@ -101,11 +147,11 @@ def create_app(
         app.add_middleware(LoopbackHostMiddleware)
 
     def json_error(error: Exception) -> JSONResponse:
-        status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 500
+        status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 400 if isinstance(error, InvalidNoteContentError) else 500
         if status == 500:
             logger.exception("event=api.request outcome=failed error_class=%s", type(error).__name__)
         return JSONResponse(
-            {"error": str(error) if status in {404, 409} else "Request failed"},
+            {"error": str(error) if status in {400, 404, 409} else "Request failed"},
             status_code=status,
         )
 
@@ -165,6 +211,66 @@ def create_app(
         if not from_this_app(request):
             return forbidden()
         return voice_response(lambda: app.state.voice.remove())
+
+    @app.get("/api/speedtest/status")
+    def speedtest_status():
+        """True only in the separate instance the speed test runs in (a temporary notebook): the page runs the test there and nowhere else."""
+        # canLaunch: only the desktop app starts the test (it has a window to open it in); the speed test instance itself runs it.
+        return JSONResponse({"instance": speedtest_instance, "canLaunch": bool(desktop_host and not speedtest_instance)})
+
+    @app.post("/api/speedtest/launch")
+    def speedtest_launch(request):
+        """The person's own app starts the speed test as a separate instance; it never runs the test in this notebook."""
+        if not from_this_app(request):
+            return forbidden()
+        if speedtest_instance:
+            return JSONResponse({"error": "This is the speed test"}, status_code=409)
+        if not desktop_host:
+            return JSONResponse({"error": "The speed test starts from the desktop app"}, status_code=409)
+        running = speedtest_process.get("process")
+        if running is not None and running.poll() is None:
+            return JSONResponse({"error": "A speed test is already running"}, status_code=409)
+        try:
+            speedtest_process["process"] = (speedtest_launcher or launch_speedtest_instance)()
+        except OSError as error:
+            logger.exception("event=speedtest.launch outcome=failed")
+            return JSONResponse({"error": f"The speed test could not be started: {error}"}, status_code=500)
+        return JSONResponse({"started": True}, status_code=202)
+
+    @app.post("/api/speedtest/report")
+    async def speedtest_report(request):
+        """Saves the speed test's results as a text file and a JSON file the person can find again (and send along)."""
+        if not from_this_app(request):
+            return forbidden()
+        raw = await request.body()
+        if len(raw) > MAX_SPEEDTEST_REPORT_BYTES:
+            return JSONResponse({"error": "The report is too large"}, status_code=413)
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        text = body.get("text")
+        data = body.get("data")
+        if not isinstance(text, str) or not text.strip() or not isinstance(data, dict):
+            return JSONResponse({"error": "A speed test report needs text and data"}, status_code=400)
+        folder = speedtest_folder()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            name = f"speedtest-{stamp}"
+            number = 1
+            while (folder / f"{name}.txt").exists() or (folder / f"{name}.json").exists():
+                number += 1
+                name = f"speedtest-{stamp}-{number}"
+            text_path = folder / f"{name}.txt"
+            json_path = folder / f"{name}.json"
+            text_path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+            json_path.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        except OSError:
+            logger.exception("event=speedtest.report outcome=failed")
+            return JSONResponse({"error": "The results could not be saved"}, status_code=500)
+        return JSONResponse({"path": str(text_path), "jsonPath": str(json_path)}, status_code=201)
 
     @app.get("/api/changes")
     def changes(request):
@@ -254,6 +360,63 @@ def create_app(
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="personal-note-markdown-{date}.zip"'},
         )
+
+    @app.post("/api/media")
+    async def upload_media(request):
+        # A picture dropped, pasted or picked in the app: stored once under its SHA-256, so the note holds only `media/<name>`.
+        if not from_this_app(request):  # a raw body can be sent cross-site without a preflight, unlike JSON
+            return forbidden()
+        try:
+            if int(request.headers.get("content-length") or 0) > MAX_MEDIA_BYTES:
+                return JSONResponse({"error": "That picture is larger than 20 MB"}, status_code=413)
+        except ValueError:
+            pass
+        received = bytearray()
+        async for chunk in request.stream():  # counted as it arrives: a body without Content-Length is cut off too
+            received.extend(chunk)
+            if len(received) > MAX_MEDIA_BYTES:
+                return JSONResponse({"error": "That picture is larger than 20 MB"}, status_code=413)
+        data = bytes(received)
+        extension = sniff_image(data)
+        if extension is None:
+            return JSONResponse({"error": "That is not a PNG, JPEG, WebP or GIF picture"}, status_code=400)
+        path = service.media.put_bytes(data, extension)
+        return JSONResponse({"id": path.removeprefix("media/"), "path": path}, status_code=201)
+
+    @app.get("/api/media/{name}")
+    def get_media(name: str):
+        # Content-addressed files only: a name that is not `<sha256>.<ext>` never reaches the file system.
+        path = service.media.file(name) if MEDIA_NAME.fullmatch(name) else None
+        if path is None or not path.is_file():
+            return JSONResponse({"error": "Not found"}, status_code=404)
+        return FileResponse(path, headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+            # An SVG opened directly must not run script or load anything.
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        })
+
+    @app.get("/api/export/vault")
+    def export_vault():
+        date = utc_timestamp()[:10]
+        return Response(
+            export_vault_archive(service),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="personal-note-obsidian-vault-{date}.zip"'},
+        )
+
+    @app.post("/api/import/vault")
+    async def import_vault(request):
+        if not from_this_app(request):  # a raw body can be sent cross-site without a preflight, unlike JSON
+            return forbidden()
+        try:
+            result = import_vault_archive(service, await request.body())
+            return JSONResponse(result, status_code=201)
+        except (PortabilityVaultError, WorkspaceImportError) as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
+        except Exception as error:
+            logger.exception("event=vault.import outcome=failed error_class=%s", type(error).__name__)
+            return JSONResponse({"error": "Import failed; the existing workspace was not changed"}, status_code=500)
 
     @app.post("/api/import/workspace")
     async def import_workspace(request):

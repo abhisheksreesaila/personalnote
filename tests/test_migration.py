@@ -53,6 +53,21 @@ class MigrationTests(unittest.TestCase):
         self.assertTrue(marker_path(self.legacy).exists())
         self.assertFalse(self.appdata.with_name(self.appdata.name + ".partial").exists())
 
+    def test_copy_brings_the_media_folder_and_never_overwrites_files_there(self):
+        self.make_legacy_note()
+        name = "a" * 64 + ".png"
+        other = "b" * 64 + ".png"
+        (self.legacy.parent / "media").mkdir()
+        (self.legacy.parent / "media" / name).write_bytes(b"picture")
+        (self.legacy.parent / "media" / other).write_bytes(b"legacy bytes")
+        (self.appdata.parent / "media").mkdir(parents=True)
+        (self.appdata.parent / "media" / other).write_bytes(b"already here")
+        result = migrate_legacy_database(self.legacy, self.appdata)
+        self.assertEqual(result["mode"], "copied")
+        self.assertEqual((self.appdata.parent / "media" / name).read_bytes(), b"picture")
+        self.assertEqual((self.appdata.parent / "media" / other).read_bytes(), b"already here")
+        self.assertEqual((self.legacy.parent / "media" / name).read_bytes(), b"picture", "the original is kept")
+
     def test_merges_into_a_destination_another_install_already_created(self):
         self.make_legacy_note("Legacy note")
         NoteService(self.appdata).create_note({"title": "App note", "noteType": "canvas"})

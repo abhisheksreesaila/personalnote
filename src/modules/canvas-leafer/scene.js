@@ -1,0 +1,1585 @@
+// The Leafer adapter (F-027, F-028): draws a document-model note and edits it. Everything about WHERE an object goes comes from the
+// documented model rules (placement.js: the one matrix per object, and its inverse; schema.js: frames, ink frame, group frames); this
+// file only knows how to make each model type look like the Fabric render. Leafer is imported here and in editing.js (the
+// selection and transform layer) and overlay.js (the ghost page, the connector halo, the connect tool's outlines) and nowhere else. An edit is
+// a document-model operation (operations.js); the nodes follow the model. F-032: every edit goes through pages.js finalizeOp, so the connectors
+// that follow what moved and the pages that grow or fold back are part of the same undo step.
+import { App, Box, Group, Ellipse, Image, Leafer, MatrixHelper, Path, Rect, Text } from 'leafer-ui'
+import { PAGE } from '../../core/document/index.js'
+import { applyChanges, isLocked, planLock, planMove, planRemove, planReorder, planSetGeometry, stacking } from '../../core/document/operations.js'
+import { connectorEndpoints } from '../editor/connectors.js'
+import { nextPageGhost } from '../editor/edge-ghost.js'
+import { LIFT_SHADOW, LIFT_SHADOW_MAX, LIFT_TILT_DEGREES } from '../editor/lift.js'
+import { STICKY_PADDING } from '../editor/objects.js'
+import { boundingRect, rectEdges } from './bounds.js'
+import { FOLD_COLOR, FOLD_DASH, FOLD_WIDTH, LABEL_FONT_FAMILY, LABEL_FONT_SIZE, pageChrome } from './chrome.js'
+import { CONNECTOR_DEFAULTS, CONNECTOR_HIT, arrowPath, connectorAt, connectorLayout, followChanges, newConnector, newConnectorId, withLayout } from './connectors.js'
+import { createEditing, EDITOR_CONFIG } from './editing.js'
+import { createGestureView, marginFor } from './gesture-view.js'
+import { createOverlays } from './overlay.js'
+import { GHOST_REACH, finalizeOp, growForDrag, growForText } from './pages.js'
+import { applyMatrix, geometryFromMatrix, multiplyMatrices, placementMatrix } from './placement.js'
+import { bakedStickyShadow, STICKY_CORNERS, liveStickyShadow } from './sticky-shadow.js'
+import { pixelRatioFor, readPerf } from './perf.js'
+import { createTileLod } from './tiles.js'
+import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
+import { newImage } from './media.js'
+import { createTextOverlay } from './text.js'
+import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal } from './text-ops.js'
+import { prettifySelection } from '../editor/prettify.js'
+
+// What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
+const TEXT_DEFAULTS = { fontFamily: 'Times New Roman', fontSize: 40, fontWeight: 'normal', fontStyle: 'normal', lineHeight: 1.16, textAlign: 'left', color: 'rgb(0,0,0)' }
+const SHAPE_DEFAULT_FILL = 'rgb(0,0,0)'
+const INK_HIT_RADIUS = 10 // a pen line is a few pixels wide; a click this close to it (page pixels) picks it
+
+const LEGACY_TEXT_PLACEHOLDER = 'Start typing'
+const isPlaceholderText = (value) => { const trimmed = String(value ?? '').trim(); return !trimmed || trimmed === LEGACY_TEXT_PLACEHOLDER }
+const isColor = (value) => typeof value === 'string' && value.length > 0
+
+// A pen line's commands in the engine's own number form ([1, x, y, 7, cx, cy, x, y, ...]), so it is not made into text for the engine to read
+// again (F-034: 55 ms of the 900 ms it takes to open 5,000 objects). The model holds absolute M, L, Q, C and Z only; anything else goes as text.
+const COMMAND_CODES = { M: 1, L: 2, C: 5, Q: 7, Z: 11 }
+function pathData(commands) {
+  const data = []
+  for (const command of commands) {
+    const code = COMMAND_CODES[command[0]]
+    if (code === undefined) return commands.map((item) => item.join(' ')).join(' ')
+    data.push(code)
+    for (let at = 1; at < command.length; at += 1) data.push(command[at])
+  }
+  return data
+}
+
+// An elliptical-cornered rectangle (Fabric's rx differs from ry); Leafer's cornerRadius is circular only.
+function roundedRectPath(width, height, rx, ry) {
+  const cx = Math.min(rx, width / 2)
+  const cy = Math.min(ry, height / 2)
+  const k = 0.5522847498
+  return [
+    `M ${cx} 0`, `L ${width - cx} 0`, `C ${width - cx + cx * k} 0 ${width} ${cy - cy * k} ${width} ${cy}`,
+    `L ${width} ${height - cy}`, `C ${width} ${height - cy + cy * k} ${width - cx + cx * k} ${height} ${width - cx} ${height}`,
+    `L ${cx} ${height}`, `C ${cx - cx * k} ${height} 0 ${height - cy + cy * k} 0 ${height - cy}`,
+    `L 0 ${cy}`, `C 0 ${cy - cy * k} ${cx - cx * k} 0 ${cx} 0 Z`,
+  ].join(' ')
+}
+
+function textProps(object, { width, padding = 0, offsetY = 0 }) {
+  const style = object.style ?? {}
+  const fontSize = style.fontSize ?? TEXT_DEFAULTS.fontSize
+  const { pitch, firstBaselineShift } = fabricLineMetrics(fontSize, style.lineHeight ?? TEXT_DEFAULTS.lineHeight)
+  const props = {
+    text: object.content ?? '',
+    fontFamily: canvasFamily(!style.fontFamily ? TEXT_DEFAULTS.fontFamily : style.fontFamily === 'Georgia' ? 'Source Serif 4' : style.fontFamily), // the former Fabric engine renames the legacy Georgia
+    fontSize,
+    fontWeight: style.fontWeight ?? TEXT_DEFAULTS.fontWeight,
+    italic: (style.fontStyle ?? TEXT_DEFAULTS.fontStyle) === 'italic',
+    lineHeight: pitch,
+    textAlign: style.textAlign ?? TEXT_DEFAULTS.textAlign,
+    fill: isColor(style.color) ? style.color : TEXT_DEFAULTS.color,
+    letterSpacing: ((style.charSpacing ?? 0) / 1000) * fontSize,
+    textDecoration: style.underline ? 'under' : style.linethrough ? 'delete' : 'none',
+    x: padding,
+    y: padding + firstBaselineShift + offsetY,
+    hittable: false,
+  }
+  if (width) {
+    props.width = width
+    props.textWrap = object.mode === 'point' ? 'none' : 'normal'
+  } else props.textWrap = 'none'
+  return props
+}
+
+const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y2}`).join(' ')
+
+// `onOperation(op, { coalesce })` is how an edit leaves the scene: the host records it (undo history, save) and returns the new document.
+// F-029: `defaults.text()` is the model style for a new text ({ fontFamily, fontSize, color ... }); `defaults.sticky()` is
+// { fill, ink, style } for a new sticky. `onBegin(label)` / `onEnd()` group edits into one undo step (a new sticky and the words typed
+// into it); `onTextEvent(type)` hears 'start', 'end' and 'escape' of a text edit.
+// F-032: `onPages({ columns, rows, shiftX, shiftY })` hears that the page grid grew while an object was being dragged, resized or turned (the
+// host sets its page state and moves the view by the shift so nothing seems to move); an edit's own page change travels in the op instead.
+export function createScene({ host, width, height, onOperation = () => null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, defaults = {} }) {
+  // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
+  const perf = readPerf()
+  let pixelRatio = pixelRatioFor(globalThis.devicePixelRatio, perf)
+  // F-034 gesture transform: the canvases are drawn `margin` CSS pixels past the window on every side (0 when the transform is off), the note and the
+  // page furniture sit `margin` into them, and the canvases are placed `margin` before the window's corner (see gesture-view.js).
+  const marginNow = (box) => (perf.gestureTransform ? marginFor(box, { fraction: perf.gestureMargin, pixelRatio }) : 0)
+  let margin = marginNow({ width, height })
+  const app = new App({ view: host, width: width + 2 * margin, height: height + 2 * margin, pixelRatio, tree: { type: 'draw' }, sky: { type: 'draw' }, editor: EDITOR_CONFIG })
+  const leafer = app.tree
+  for (const layer of [app.tree, app.sky]) if (layer.renderer?.config) layer.renderer.config.usePartRender = perf.partRender
+  const chrome = new Group({ hittable: false })
+  const world = new Group()
+  leafer.add(chrome)
+  leafer.add(world)
+  // Page bitmaps for a view that is moving while zoomed out (tiles.js); `pages` and `size` are declared just below.
+  const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio, getPages: () => pages, getSize: () => size,
+    onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale; restoreHover() }, // (not done while the bitmaps showed)
+    pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
+    busy: () => live.active || committing || Boolean(textEdit) || pointerHeld || performance.now() - lastInput < (drawingTool ? 1500 : 150), // no idle work (page bitmaps made again) under a drag, a stroke, a commit or typing
+  })
+  // Input anywhere (the pen's surface is over the note, not in it): the page bitmaps are not made again while a button or a finger is down or a key was just pressed.
+  let pointerHeld = false
+  let drawingTool = false // the pen, highlighter or eraser is the tool: strokes come one after another, the page bitmaps wait longer
+  let lastInput = -Infinity
+  // A touch anywhere (the tools' input surface is over the note, not in it) draws the note exactly and puts the vectors back before anything is picked or placed.
+  const inputDown = () => { pointerHeld = true; lastInput = performance.now(); gesture.settle(); lod.exit() }
+  const inputUp = () => { pointerHeld = false; lastInput = performance.now() }
+  // The pointer's place, so that the hover outline of the object under it is back when the vectors are (the engine finds what is hovered from pointer moves,
+  // and there were none while the bitmaps showed).
+  let pointerAt = null
+  const inputMove = (event) => { pointerAt = event.pointerType === 'mouse' || !event.pointerType ? { x: event.clientX, y: event.clientY } : null }
+  function restoreHover() {
+    if (!pointerAt || pointerHeld || typeof PointerEvent === 'undefined') return
+    const at = pointerAt
+    requestAnimationFrame(() => {
+      if (pointerHeld || pointerAt !== at) return
+      const rect = host.getBoundingClientRect()
+      if (at.x < rect.left || at.x > rect.right || at.y < rect.top || at.y > rect.bottom) return
+      const target = document.elementFromPoint(at.x, at.y)
+      target?.dispatchEvent(new PointerEvent('pointermove', { clientX: at.x, clientY: at.y, pointerType: 'mouse', pointerId: 1, bubbles: true, cancelable: true, composed: true }))
+    })
+  }
+  const inputKey = () => { lastInput = performance.now() }
+  globalThis.addEventListener?.('pointermove', inputMove, true)
+  globalThis.addEventListener?.('pointerdown', inputDown, true)
+  globalThis.addEventListener?.('pointerup', inputUp, true)
+  globalThis.addEventListener?.('pointercancel', inputUp, true)
+  globalThis.addEventListener?.('keydown', inputKey, true)
+
+  let view = { x: 0, y: 0, scale: 1 } // the view the person has asked for (every conversion between the window and the page uses it)
+  let size = { width, height }
+  // While a pan or zoom is going on the canvases show an earlier view, moved by a CSS transform; `gesture.committed` is the view they were drawn at.
+  // Leafer maps a pointer to the canvases by the rectangle of the App's own view element (the div that holds both canvases): that element is what is
+  // placed before the window's corner and what the gesture transform moves, so Leafer's own conversion stays right moved or not.
+  const canvasViews = () => [app.canvas.view]
+  const gesture = createGestureView({
+    elements: canvasViews, size: () => size, margin: () => margin, quiet: perf.gestureQuiet,
+    commit: (_, { paint }) => { applyViewNow(); if (paint) paintNow() },
+    moved: () => app.canvas.updateClientBounds?.(),
+  })
+  function placeCanvases() {
+    const [stage] = canvasViews()
+    stage.style.left = stage.style.top = margin ? `${-margin}px` : '' // (the stage is position: relative, in the flow of the host)
+    chrome.set({ x: margin, y: margin })
+    for (const layer of [app.tree, app.sky]) layer.canvas.updateClientBounds?.()
+    app.canvas.updateClientBounds?.()
+  }
+  // Draws the layers now and leaves nothing for the next frame: the new picture and the end of the transform reach the screen together. The editor's
+  // handles (they live in the sky) are put where the selection is first.
+  function paintNow() {
+    if (!live.active) editing.update()
+    app.tree.renderer.render()
+    app.sky.renderer.render()
+  }
+  let pages = { columns: 1, rows: 1 }
+  let colors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', shadows: [] }
+  let boxes = new Set() // the placement boxes of the note's own objects (a set: taking one away is not a search)
+  let stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
+  const textNodes = []
+  const measuredText = []
+  const uniformStrokes = [] // strokeScaleFixed keeps a stroke a constant number of SCREEN pixels; Fabric's uniform stroke still follows the zoom
+  let resolveMedia = null
+  const mediaUrls = new Map() // media id -> the URL of a picture added in this session (its bytes are already here), so it needs no fetch
+  let doc = null // the document model on screen: edits change it, the nodes follow
+  let committing = false // true while an edit made here is being handed to the host: the host need not draw it again
+  const entries = new Map() // object id -> { id, node, built, rect, ... }: every top-level object that has a node
+  const entryOfNode = new WeakMap()
+  const linked = new Map() // object id -> the ids of the connectors on it (a drag only touches its own arrows)
+  // What a drag, resize or turn in progress has done on screen. `shift` is how far the page grid has grown on the top and left since it began:
+  // the grid (and the view) are in the new frame, the nodes and the document stay in the old one until the gesture lands (the editor works
+  // out every move from where the node was when the drag began), so the note's layer is placed by that much to keep everything where it is.
+  const live = { active: false, kind: null, rest: null, shift: { x: 0, y: 0 }, grown: false, lifted: [], ghost: '' }
+  let connectorSelected = null // the id of the selected connector (it is picked by its line, apart from the editor's selection)
+  const sizeOf = (object) => entries.get(object?.id)?.size ?? {}
+
+  // ---- page furniture (screen space), stacked: shadow bands, edge, paper, fold lines, labels
+  const shadowGroup = new Group({ hittable: false })
+  const labelGroup = new Group({ hittable: false })
+  const edgeNode = new Rect({ hittable: false })
+  const paperNode = new Rect({ hittable: false })
+  const foldNode = new Path({ hittable: false, stroke: FOLD_COLOR, strokeWidth: FOLD_WIDTH, dashPattern: FOLD_DASH, strokeAlign: 'center', path: 'M 0 0' })
+  const outlineNode = new Rect({ hittable: false, visible: false, fill: undefined })
+  for (const node of [shadowGroup, edgeNode, paperNode, foldNode, labelGroup, outlineNode]) chrome.add(node)
+  let listening = false
+  const pool = { shadows: [], labels: [] }
+  const overlays = createOverlays({ app, chrome })
+  placeCanvases()
+
+  function ensure(list, count, make, parent) {
+    while (list.length < count) { const node = make(); list.push(node); parent.add(node) }
+    list.forEach((node, index) => { node.visible = index < count })
+  }
+
+  function drawChrome() {
+    if (gesture.pending) { gesture.settle(); return } // the picture is drawn for another view: draw it for this one first (settle draws the chrome too)
+    const plan = pageChrome({ view, viewW: size.width, viewH: size.height, margin, columns: pages.columns, rows: pages.rows, pageW: PAGE.width, pageH: PAGE.height, colors, listening })
+    ensure(pool.shadows, plan.shadows.length, () => new Rect({ hittable: false }), shadowGroup)
+    plan.shadows.forEach((band, index) => pool.shadows[index].set({ x: band.x, y: band.y, width: band.width, height: band.height, fill: band.fill, opacity: band.alpha }))
+    if (plan.edge) {
+      edgeNode.set({ visible: true, x: plan.edge.x, y: plan.edge.y, width: plan.edge.width, height: plan.edge.height, cornerRadius: plan.edge.radius, fill: plan.edge.fill })
+      paperNode.set({ visible: true, x: plan.paper.x, y: plan.paper.y, width: plan.paper.width, height: plan.paper.height, cornerRadius: plan.paper.radius, fill: plan.paper.fill })
+      foldNode.set({ visible: plan.folds.length > 0, path: FOLD_PATH(plan.folds) || 'M 0 0' })
+    } else {
+      edgeNode.visible = paperNode.visible = foldNode.visible = false
+    }
+    if (plan.outline) outlineNode.set({ visible: true, x: plan.outline.x, y: plan.outline.y, width: plan.outline.width, height: plan.outline.height, stroke: plan.outline.stroke, strokeWidth: plan.outline.strokeWidth, strokeAlign: 'center' })
+    else outlineNode.visible = false
+    ensure(pool.labels, plan.labels.length, () => new Text({ hittable: false, fontFamily: LABEL_FONT_FAMILY, fontSize: LABEL_FONT_SIZE, lineHeight: LABEL_FONT_SIZE, textWrap: 'none' }), labelGroup)
+    plan.labels.forEach((label, index) => pool.labels[index].set({ text: label.text, x: label.x, y: label.y, fill: colors.label }))
+    overlays.setView(view, { x: view.x + margin + live.shift.x * view.scale, y: view.y + margin + live.shift.y * view.scale, scale: view.scale })
+  }
+
+  // ---- objects (page space, in the model's frames)
+  function measure(textNode) {
+    const bounds = textNode.getBounds('box', 'inner')
+    return { width: bounds.width, height: bounds.height }
+  }
+
+  function place(node, matrix) {
+    node.set(MatrixHelper.getLayout(matrix))
+  }
+
+  function commonProps(object) {
+    const props = { hittable: true }
+    if (object.opacity !== undefined && object.opacity !== 1) props.opacity = object.opacity
+    if (object.visible === false) props.visible = false
+    if (object.shadow) props.shadow = { x: object.shadow.x, y: object.shadow.y, blur: object.shadow.blur, color: object.shadow.color }
+    return props
+  }
+
+  function strokeProps(color, widthValue, uniform, cap, join) {
+    if (!isColor(color) || !(widthValue > 0)) return {}
+    const props = { stroke: color, strokeWidth: widthValue, strokeAlign: 'center' }
+    if (uniform) props.strokeScaleFixed = true
+    if (cap) props.strokeCap = cap
+    if (join) props.strokeJoin = join
+    return props
+  }
+
+  // A connector's node follows its model object: placed at its box, the arrow drawn in the box frame, hidden when the two ends are too close.
+  function connectorProps(object) {
+    return { x: object.geometry.x, y: object.geometry.y, path: arrowPath(object), visible: object.visible !== false }
+  }
+
+  // Returns { node, size } where size is the box the matrix uses (measured for text without a stored height).
+  function build(object) {
+    const g = object.geometry
+    const base = commonProps(object)
+    switch (object.type) {
+      case 'text': {
+        // The former Fabric engine drops empty and legacy placeholder text blocks when it opens a note; so does this one.
+        if (isPlaceholderText(object.content)) return null
+        const text = new Text(textProps(object, { width: g.width }))
+        textNodes.push(text)
+        // Measure before any turn: a block saved without a height (an agent-written Textbox) is placed from what the engine lays out.
+        const measured = g.width === undefined || g.height === undefined ? measure(text) : null
+        const size = measured ? { width: g.width ?? measured.width, height: g.height ?? measured.height } : { width: g.width, height: g.height }
+        if (object.mode === 'point') { // a point text has no box of its own: it scales like a picture (the Fabric IText does too)
+          const holder = new Group({ ...base, hitChildren: false })
+          holder.add(text)
+          return { node: holder, text, size: measured ? size : {}, measured: Boolean(measured), lockRatio: true }
+        }
+        // A text box is a sized node, so the editor resizes it (wider box, wrapped lines) instead of stretching the letters.
+        const holder = new Box({ ...base, width: size.width, height: size.height, hitFill: 'all', hitChildren: false })
+        holder.add(text)
+        const relayout = () => { text.width = holder.width }
+        return { node: holder, text, size, measured: Boolean(measured), sized: true, relayout }
+      }
+      case 'sticky': {
+        const w = g.width ?? 240
+        const h = g.height ?? 200
+        const holder = new Box({ ...base, width: w, height: h, hitFill: 'all', hitChildren: false })
+        const shadow = perf.bakedShadow ? bakedStickyShadow(w, h) : { margin: 0, width: w, height: h }
+        const shadowImage = perf.bakedShadow ? new Image({ url: shadow.url, x: -shadow.margin, y: -shadow.margin, width: shadow.width, height: shadow.height, hittable: false }) : null
+        const paper = new Rect({ width: w, height: h, fill: isColor(object.color) ? object.color : '#ffd60a', cornerRadius: STICKY_CORNERS, hittable: false, ...(perf.bakedShadow ? {} : { shadow: liveStickyShadow() }) })
+        if (shadowImage) holder.add(shadowImage)
+        holder.add(paper)
+        const text = new Text(textProps(object, { width: w - STICKY_PADDING * 2, padding: STICKY_PADDING }))
+        textNodes.push(text)
+        holder.add(text)
+        // While the editor resizes the box the paper and the words follow it; the baked shadow is re-made when the resize ends.
+        const relayout = () => {
+          paper.set({ width: holder.width, height: holder.height })
+          text.width = holder.width - STICKY_PADDING * 2
+          shadowImage?.set({ width: holder.width + shadow.margin * 2, height: holder.height + shadow.margin * 2 })
+        }
+        return { node: holder, text, size: { width: w, height: h }, sized: true, relayout }
+      }
+      case 'shape': {
+        const fill = isColor(object.fill) ? object.fill : SHAPE_DEFAULT_FILL
+        const strokes = strokeProps(object.stroke, object.strokeWidth ?? 1, object.strokeUniform, undefined, 'miter')
+        if (object.kind === 'circle') return { node: new Ellipse({ ...base, width: g.width, height: g.height, fill, ...strokes }), size: {}, sized: true }
+        const rx = object.cornerRadius ?? 0
+        const ry = object.cornerRadiusY ?? rx
+        if (rx !== ry && rx > 0 && ry > 0) return { node: new Path({ ...base, path: roundedRectPath(g.width, g.height, rx, ry), fill, ...strokes }), size: {} }
+        return { node: new Rect({ ...base, width: g.width, height: g.height, fill, cornerRadius: rx || undefined, ...strokes }), size: {}, sized: true }
+      }
+      case 'ink': {
+        const color = withAlpha(object.color, object.alpha)
+        const blend = object.blend && object.blend !== 'source-over' ? { blendMode: object.blend } : {}
+        if (object.kind === 'dot') {
+          const radius = object.radius ?? g.width / 2
+          return { node: new Ellipse({ ...base, ...blend, width: radius * 2, height: radius * 2, fill: color }), size: {} }
+        }
+        return { node: new Path({ ...base, ...blend, hitRadius: INK_HIT_RADIUS, path: pathData(object.path), fill: undefined, ...strokeProps(color, object.width ?? 1, object.strokeUniform, object.cap, object.join) }), size: {} }
+      }
+      case 'image': {
+        const ref = object.mediaRef
+        const url = ref?.kind === 'inline' ? ref.dataUrl : mediaUrls.get(ref?.id) ?? resolveMedia?.(ref)
+        if (typeof url !== 'string') return null
+        stats.images += 1
+        return { node: new Image({ ...base, url, width: g.width, height: g.height }), size: {}, sized: true }
+      }
+      case 'connector': {
+        const color = isColor(object.color) ? object.color : CONNECTOR_DEFAULTS.color
+        const props = connectorProps(object)
+        return { node: new Path({ ...base, hittable: false, ...props, fill: color, ...strokeProps(color, object.lineWidth ?? CONNECTOR_DEFAULTS.lineWidth, false, 'round', 'round') }), size: {} }
+      }
+      case 'group': {
+        const group = new Group({ ...base, hitChildren: false })
+        for (const child of [...object.children].sort((a, b) => (a.z ?? 0) - (b.z ?? 0))) addObject(group, child, null)
+        return { node: group, size: {} }
+      }
+      default:
+        return null
+    }
+  }
+
+  const boxOf = (matrix, w, h) => {
+    const corners = [[0, 0], [w, 0], [w, h], [0, h]].map(([x, y]) => applyMatrix(matrix, { x, y }))
+    const xs = corners.map((p) => p.x)
+    const ys = corners.map((p) => p.y)
+    return { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
+  }
+
+  // `boxList` is given for the note's own objects (those that get a placement box and an entry); group children are placed but not boxed.
+  function addObject(parent, object, boxList, index) {
+    if (object.type === 'unknown') { if (boxList) stats.unknown += 1; return }
+    const built = build(object)
+    if (!built) { if (boxList) stats.skipped += 1; return }
+    if (boxList) stats.drawn += 1
+    const g = object.geometry
+    const matrix = placementMatrix(g, built.size)
+    place(built.node, matrix)
+    if (built.sized && built.size.width !== undefined) built.node.set({ width: built.size.width, height: built.size.height })
+    if (index === undefined) parent.add(built.node)
+    else parent.addAt(built.node, index)
+    if (object.strokeUniform && built.node.stroke && built.node.strokeScaleFixed) {
+      uniformStrokes.push({ node: built.node, width: built.node.strokeWidth })
+      built.node.strokeWidth = built.node.strokeWidth * (gesture.committed?.scale ?? view.scale) // (what the canvas shows: a gesture may be moving it to another view)
+    }
+    let box = null
+    if (boxList && object.type !== 'connector') {
+      box = boxOf(matrix, built.size.width ?? g.width ?? 0, built.size.height ?? g.height ?? 0)
+      boxList.add(box)
+    }
+    // Text laid out by the engine (no stored size) is placed from what was measured, so it is placed again when fonts change.
+    if (built.measured) measuredText.push({ object, built, box })
+    if (boxList) register(object, built, box)
+  }
+
+  // The view changed: with the gesture transform the drawn canvases are moved and the note is drawn again when the movement stops (or at once when it
+  // outruns the margin); a drag that grows the page grid, and the other modes, draw every step.
+  function moveView() {
+    if (!perf.gestureTransform || live.active || committing) { applyView(); return } // (an edit is moving the nodes and the view together: they are drawn together)
+    gesture.setView(view)
+    placeEditor() // the words being typed follow the view at once (they are a DOM overlay, not part of the picture)
+  }
+  function applyView() { // the same view again (the layers were moved by a drag's grid shift)
+    if (perf.gestureTransform) gesture.redraw(view, { paint: false })
+    else applyViewNow()
+  }
+  function applyViewNow() {
+    const bitmaps = lod.view(view, { allowEnter: !live.active && !committing && !textEdit }) // the vectors are taken off the stage while the bitmaps show a pan or zoom
+    world.set({ x: view.x + margin + live.shift.x * view.scale, y: view.y + margin + live.shift.y * view.scale, scaleX: view.scale, scaleY: view.scale })
+    if (!bitmaps) for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale
+    drawChrome()
+    placeEditor()
+  }
+
+  // ---- editing: the nodes of the note's own objects, and the model operations that change them
+
+  // Which nodes can be picked, and how they may be edited. A locked object can be picked (to unlock it) but has no handles and does
+  // not move; paths, groups and point text scale as a whole, boxes (text, sticky, shapes, pictures) are resized.
+  function register(object, built, box) {
+    const entry = { id: object.id, object, built, node: built.node, box, size: built.size.width !== undefined ? { ...built.size } : { width: object.geometry.width, height: object.geometry.height }, rect: null }
+    if (object.type === 'connector') link(object)
+    else entry.rect = boundingRect(object, entry.size)
+    entries.set(object.id, entry)
+    entryOfNode.set(built.node, entry)
+    configure(entry)
+    return entry
+  }
+
+  function link(connector) {
+    for (const end of [connector.fromId, connector.toId]) {
+      if (!linked.has(end)) linked.set(end, new Set())
+      linked.get(end).add(connector.id)
+    }
+  }
+  function unlink(connector) { for (const end of [connector.fromId, connector.toId]) linked.get(end)?.delete(connector.id) }
+
+  function configure(entry) {
+    const { object, built, node } = entry
+    const pickable = object.type !== 'connector'
+    const locked = isLocked(object)
+    const config = {}
+    if (locked) Object.assign(config, { moveable: false, resizeable: false, rotateable: false })
+    if (!built.sized) config.editSize = 'scale'
+    node.set({ hittable: pickable, editable: pickable ? (locked ? 'single' : true) : false, editConfig: Object.keys(config).length ? config : undefined })
+    if (built.lockRatio) node.lockRatio = true
+    if (built.text && object.mode === 'point') built.text.hittable = true
+  }
+
+  const selectionListeners = new Set()
+
+  function refreshBox(entry) {
+    const g = entry.object.geometry
+    if (entry.rect) entry.rect = boundingRect(entry.object, entry.size)
+    if (!entry.box) return
+    Object.assign(entry.box, boxOf(placementMatrix(g, entry.size), entry.size.width ?? g.width ?? 0, entry.size.height ?? g.height ?? 0))
+  }
+
+  // A resize (or a multi-object scale) changed the size of the model object: make the node from the model again, in the same place.
+  function rebuild(entry) {
+    const { object } = entry
+    const index = world.children.indexOf(entry.node)
+    const old = entry.node
+    const slot = measuredText.findIndex((item) => item.object === object)
+    if (slot !== -1) measuredText.splice(slot, 1)
+    const stroke = uniformStrokes.findIndex((item) => item.node === old)
+    if (stroke !== -1) uniformStrokes.splice(stroke, 1)
+    entries.delete(entry.id)
+    boxes.delete(entry.box)
+    addObject(world, object, boxes, index)
+    old.remove()
+  }
+
+  // The selection holds nodes; when nodes are made again or taken away, the same objects are selected again afterwards.
+  function keepingSelection(change) {
+    const keep = editorEntries().map((entry) => entry.id)
+    editing.clear()
+    try { change() } finally { editing.select(keep.map((id) => entries.get(id)?.node).filter(Boolean)) }
+  }
+
+  // ---- edits. The document is an immutable value the host owns (and the undo history keeps): an edit is an `op` of { id, before, after }
+  // changes planned by core/document/operations.js, handed to `onOperation`, which returns the new document.
+
+  const objectsById = (document) => new Map(document.objects.filter((object) => object?.id !== undefined).map((object) => [object.id, object]))
+
+  // Where objects are on the page, for the page bitmaps: only the pages under these places are made again (tiles.js). `undefined` (a place that is not
+  // known, such as a text that was not measured yet) means every page. A connector lies between its ends. Padded for strokes and shadows.
+  const TOUCH_PAD = 24
+  function rectOfObject(object) {
+    if (!object?.geometry) return null
+    const entry = entries.get(object.id)
+    if (object.type === 'connector') {
+      const ends = [entries.get(object.fromId), entries.get(object.toId)].map((end) => end?.rect)
+      if (!ends[0] || !ends[1]) return null
+      const [a, b] = ends.map(rectEdges)
+      return { left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom) }
+    }
+    if (entry?.rect && entry.object === object) return rectEdges(entry.rect)
+    const g = object.geometry
+    if (g.width === undefined || g.height === undefined) return null // (a size the engine measures: where it ends up is not known here, so every page is made again)
+    const edges = rectEdges(boundingRect(object, {}))
+    return [edges.left, edges.top, edges.right, edges.bottom].every(Number.isFinite) ? edges : null
+  }
+  function touchedRects(objects) {
+    const rects = []
+    for (const object of objects) {
+      if (!object) continue
+      const edges = rectOfObject(object)
+      if (!edges) return undefined
+      rects.push({ left: edges.left - TOUCH_PAD, top: edges.top - TOUCH_PAD, right: edges.right + TOUCH_PAD, bottom: edges.bottom + TOUCH_PAD })
+    }
+    return rects.length ? rects : undefined
+  }
+
+  // Moves every node (and its box and rect) by whole page distances: the page frame's origin moved because pages were added or folded on the
+  // top or left. The host moves the view by the same amount, so nothing seems to move.
+  function shiftNodes(by) {
+    lod.invalidate()
+    for (const entry of entries.values()) {
+      entry.node.set({ x: entry.node.x + by.x, y: entry.node.y + by.y })
+      if (entry.box) { entry.box.left += by.x; entry.box.top += by.y }
+      if (entry.rect) { entry.rect.left += by.x; entry.rect.top += by.y }
+    }
+    editing.update()
+  }
+
+  // A connector's node from its model object (or from a trial layout while its ends are being dragged).
+  function syncConnector(entry, object = entry.object) {
+    entry.node.set(connectorProps(object))
+    if (connectorSelected === entry.id) showHalo()
+  }
+
+  // Hands an op to the host, takes the document it returns, and points the entries at the new objects. The op is first made whole
+  // (pages.js finalizeOp): the connectors that follow what moved, the connectors left without an end, and the page growth or fold-back the
+  // edit causes, with every object moved when pages are added on the top or left: all of it one undo step.
+  // `floor` ({ columns, rows }): the grid a typing session grew ahead of its words; the step keeps it (no fold-back until the session ends).
+  function commit(op, { coalesce, selection, floor = null } = {}) {
+    if (floor) op = { ...op, page: { before: doc.page, after: { ...doc.page, columns: Math.max(doc.page.columns, floor.columns), rows: Math.max(doc.page.rows, floor.rows) } } }
+    if (!op.changes.length && !op.page) return false
+    lod.exit() // the vectors are on screen from here: an edit is always live
+    const named = new Set(op.changes.map((change) => change.id))
+    const { op: whole, shift } = finalizeOp(doc, op, { sizeOf, floor })
+    if (!whole.changes.length && !whole.page) return false
+    lod.invalidate(shift.x || shift.y ? undefined : touchedRects([...whole.changes.map((change) => entries.get(change.id)?.object ?? change.before), ...whole.changes.map((change) => change.after)]))
+    // The view has followed the growth the drag made already; it follows the rest, and the note's layer goes back to the view's own place.
+    const viewShift = { x: shift.x - live.shift.x, y: shift.y - live.shift.y }
+    const offset = live.shift
+    live.shift = { x: 0, y: 0 }
+    const handed = { ...whole, viewShift }
+    if (selection) handed.selection = selection
+    committing = true
+    try { doc = onOperation(handed, { coalesce }) ?? applyChanges(doc, whole) } finally { committing = false }
+    const latest = objectsById(doc)
+    for (const change of whole.changes) {
+      const entry = entries.get(change.id)
+      if (!entry) continue
+      if (change.after) entry.object = latest.get(change.id) ?? change.after
+      else if (!named.has(change.id)) dropEntry(entry) // a connector left without an end (the edit's own removals are dropped by its caller)
+    }
+    if (shift.x || shift.y) {
+      for (const entry of entries.values()) entry.object = latest.get(entry.id) ?? entry.object // the frame moved: the history moved every object
+      shiftNodes(shift)
+    }
+    if (offset.x || offset.y) applyView() // the note's layer goes back to the view's own place, in the same frame as the nodes catch up
+    if (whole.page) pages = { columns: whole.page.after.columns, rows: whole.page.after.rows }
+    for (const change of whole.changes) {
+      const entry = entries.get(change.id)
+      if (!entry || !change.after) continue
+      if (entry.object.type === 'connector') syncConnector(entry)
+      else if (entry.rect) entry.rect = boundingRect(entry.object, entry.size)
+    }
+    placeEditor()
+    return true
+  }
+
+  const editorEntries = () => editing.nodes().map((node) => entryOfNode.get(node)).filter(Boolean) // the editor's own (never a connector)
+  const selectedEntries = () => {
+    const picked = editorEntries()
+    const arrow = connectorSelected && entries.get(connectorSelected)
+    return picked.length ? picked : arrow ? [arrow] : []
+  }
+  const selectedIds = () => selectedEntries().map((entry) => entry.id)
+
+  // ---- a drag, a resize or a turn in progress (F-032): the arrows follow live, pages appear as the object nears an edge, the dragged object
+  // lifts and the page that would be added is previewed. None of it touches the document until the gesture ends (flushGesture).
+
+  // Where a selected node is now, as a rect on the page (the same measure the model rules use).
+  function liveRect(entry) {
+    const { node, object } = entry
+    if (live.kind === 'move') { // a drag is a pure move: the model geometry moved by how far the node has come (the lift's tilt turns about the node's own corner, which stays put)
+      const g = { ...object.geometry, x: object.geometry.x + (node.x - entry.liveBase.x), y: object.geometry.y + (node.y - entry.liveBase.y) }
+      return boundingRect({ ...object, geometry: g }, entry.size)
+    }
+    const size = entry.built.sized ? { width: node.width, height: node.height } : entry.size
+    const g = geometryFromMatrix(node.localTransform, size, object.geometry, { bake: Boolean(entry.built.sized) })
+    return boundingRect({ ...object, geometry: g }, size)
+  }
+
+  // The dragged objects (lifted: tilted, with a deeper shadow) and the arrows on them move to a layer of their own for the gesture, so the
+  // note's 600 other objects are not painted again at every step; they go back to their place in the stack when it ends.
+  function startLift(list, { lift }) {
+    const scale = view.scale
+    const items = []
+    const seen = new Set()
+    const take = (entry, lifted) => {
+      if (seen.has(entry.id)) return
+      seen.add(entry.id)
+      const { node } = entry
+      items.push({ entry, lifted, rotation: node.rotation, shadow: node.shadow, index: world.children.indexOf(node) })
+    }
+    if (lift) for (const entry of list) if (!isLocked(entry.object)) take(entry, true)
+    for (const entry of list) for (const id of linked.get(entry.id) ?? []) { const arrow = entries.get(id); if (arrow) take(arrow, false) }
+    items.sort((x, y) => x.index - y.index)
+    // A live blur on every dragged object is a blur drawn per object at every step: on a Mac's WebKit 40 of them took 135 ms a frame. A crowd keeps
+    // the tilt (it costs nothing) and loses the shadow; up to a few objects lift with the shadow as before.
+    const shadowed = items.filter((item) => item.lifted).length <= LIFT_SHADOW_MAX
+    for (const item of items) {
+      const { node } = item.entry
+      if (item.lifted) {
+        node.rotation = node.rotation + LIFT_TILT_DEGREES
+        if (shadowed) node.shadow = { x: 0, y: LIFT_SHADOW.offsetY / scale, blur: LIFT_SHADOW.blur / scale, color: `rgba(0, 0, 0, ${LIFT_SHADOW.alpha})` }
+      }
+      overlays.dragLayer.add(node)
+    }
+    live.lifted = items
+    // A crowd on the drag layer (hybrid): the layer is drawn at one device pixel per CSS pixel while the crowd moves, and at the screen's own on drop.
+    if (perf.dragCrowd > 0 && pixelRatio > 1 && items.filter((item) => item.lifted).length > perf.dragCrowd) dragLayerRatio(1)
+  }
+
+  // The drag layer is the sky layer's own canvas: its resolution can be changed without touching the note's.
+  function dragLayerRatio(ratio) {
+    const sky = app.sky
+    if (!sky?.canvas || sky.canvas.pixelRatio === ratio) return
+    try { sky.resize({ width: sky.canvas.width, height: sky.canvas.height, pixelRatio: ratio }) } catch (error) { console.warn('drag layer resolution:', error) }
+  }
+
+  function endLift() {
+    for (const item of live.lifted) {
+      const { node } = item.entry
+      if (entries.get(item.entry.id) !== item.entry) continue // the object went while it was lifted (a merge, a delete): nothing to put down
+      if (item.lifted) {
+        node.rotation = item.rotation
+        node.shadow = item.shadow ?? undefined
+      }
+      world.addAt(node, Math.min(item.index, world.children.length))
+    }
+    live.lifted = []
+    dragLayerRatio(pixelRatio)
+  }
+
+  function beginGesture(kind, list) {
+    live.active = true
+    live.kind = kind
+    const moving = new Set(list.map((entry) => entry.id))
+    let rest = null
+    for (const entry of entries.values()) {
+      if (!entry.rect || moving.has(entry.id)) continue
+      const edges = rectEdges(entry.rect)
+      rest = rest ? { left: Math.min(rest.left, edges.left), top: Math.min(rest.top, edges.top), right: Math.max(rest.right, edges.right), bottom: Math.max(rest.bottom, edges.bottom) } : edges
+    }
+    live.rest = rest
+    for (const entry of list) entry.liveBase = { x: entry.node.x, y: entry.node.y }
+    startLift(list, { lift: kind === 'move' })
+  }
+
+  const unionOf = (a, b) => (a && b ? { left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom) } : a ?? b)
+
+  function onGesture(kind) {
+    const list = editorEntries()
+    if (!list.length) return
+    if (!live.active) beginGesture(kind, list)
+    for (const entry of list) entry.live = { rect: liveRect(entry) }
+    // the arrows on what moves follow it
+    const arrows = new Set()
+    for (const entry of list) for (const id of linked.get(entry.id) ?? []) arrows.add(id)
+    for (const id of arrows) {
+      const arrow = entries.get(id)
+      const from = entries.get(arrow?.object.fromId)
+      const to = entries.get(arrow?.object.toId)
+      if (!arrow || !from?.rect || !to?.rect) continue
+      syncConnector(arrow, withLayout(arrow.object, connectorLayout(from.live?.rect ?? from.rect, to.live?.rect ?? to.rect)))
+    }
+    // pages appear before the object reaches an edge, in every direction
+    let bounds = null
+    for (const entry of list) bounds = unionOf(bounds, rectEdges(entry.live.rect))
+    const inGrid = (box) => ({ left: box.left + live.shift.x, top: box.top + live.shift.y, right: box.right + live.shift.x, bottom: box.bottom + live.shift.y })
+    const grow = growForDrag(pages, inGrid(unionOf(live.rest, bounds)))
+    if (grow.changed) {
+      pages = { columns: grow.columns, rows: grow.rows }
+      live.shift = { x: live.shift.x + grow.shiftX, y: live.shift.y + grow.shiftY }
+      live.grown = true
+      onPages({ columns: grow.columns, rows: grow.rows, shiftX: grow.shiftX, shiftY: grow.shiftY }) // the host sets its grid and moves the view by the shift
+    }
+    bounds = inGrid(bounds)
+    // the page that would be added next, previewed
+    if (kind === 'move') {
+      const ghost = nextPageGhost(bounds, { columns: pages.columns, rows: pages.rows, pageW: PAGE.width, pageH: PAGE.height, reach: GHOST_REACH })
+      const key = JSON.stringify(ghost)
+      if (key !== live.ghost) { live.ghost = key; overlays.showGhost(ghost) }
+    }
+  }
+
+  // Back to rest: the lift is put down, the preview goes, nothing of the gesture stays on the nodes.
+  function endGesture() {
+    endLift()
+    overlays.showGhost(null)
+    for (const entry of entries.values()) { entry.live = null; entry.liveBase = null }
+    live.active = false
+    live.kind = null
+    live.rest = null
+    live.shift = { x: 0, y: 0 }
+    live.grown = false
+    live.ghost = ''
+  }
+
+  // The editor has finished a gesture: read where each selected node ended up and commit it as one step.
+  function flushGesture() {
+    const ids = selectedIds()
+    endLift() // the tilt comes off before the nodes are read
+    const changes = []
+    const rebuilds = []
+    for (const entry of editorEntries()) {
+      const { node, object } = entry
+      const size = entry.built.sized ? { width: node.width, height: node.height } : entry.size
+      const next = geometryFromMatrix(node.localTransform, size, object.geometry, { bake: Boolean(entry.built.sized) })
+      const before = object.geometry
+      const same = ['x', 'y', 'width', 'height', 'rotation', 'scaleX', 'scaleY', 'skewX'].every((key) => Math.abs((next[key] ?? 0) - (before[key] ?? (key.startsWith('scale') ? 1 : 0))) < 1e-6)
+      if (same) continue
+      const plan = planSetGeometry(doc, { id: entry.id, geometry: next })
+      if (!plan.op.changes.length) continue
+      changes.push(...plan.op.changes)
+      entry.size = { width: next.width, height: next.height }
+      if (entry.built.sized) rebuilds.push(entry) // the size may have changed: shadow, wrapping and sticky corners are made again from the model
+    }
+    const grew = live.grown
+    const dragShift = live.shift
+    const committed = commit({ label: 'Transform', changes }, { selection: { before: ids, after: ids } })
+    // The grid the document holds is the one that counts now. A step that records a page change has told the host already; when the edit
+    // left the grid as it was (the object came back) or nothing was recorded, the pages the drag added go again.
+    if (grew && (!committed || pages.columns !== doc.page.columns || pages.rows !== doc.page.rows)) {
+      live.shift = { x: 0, y: 0 }
+      pages = { columns: doc.page.columns, rows: doc.page.rows }
+      onPages({ ...pages, shiftX: committed ? 0 : -dragShift.x, shiftY: committed ? 0 : -dragShift.y })
+    }
+    endGesture()
+    if (!committed) return
+    for (const entry of rebuilds) refreshBox(entry)
+    if (rebuilds.length) keepingSelection(() => { for (const entry of rebuilds) rebuild(entry) })
+    for (const entry of editorEntries()) refreshBox(entry)
+  }
+
+  const editing = createEditing({
+    app,
+    onResize(node) { entryOfNode.get(node)?.built.relayout?.() },
+    onGesture,
+    onGestureEnd: flushGesture,
+    onSelect(nodes) {
+      if (nodes.length) { lastEdited = null; if (connectorSelected) selectConnector(null, true) }
+      const ids = nodes.map((node) => entryOfNode.get(node)?.id).filter(Boolean)
+      for (const listener of selectionListeners) listener(ids)
+    },
+  })
+
+  // After a reorder (or an undo of one): put the nodes whose place in the stack changed where the document says.
+  function syncStacking(ids) {
+    const nodes = stacking(doc).map((object) => entries.get(object.id)?.node).filter(Boolean)
+    const changed = new Set(ids)
+    nodes.forEach((node, position) => { if (changed.has(entryOfNode.get(node)?.id) && world.children[position] !== node) world.addAt(node, position) })
+  }
+
+  function dropEntry(entry) {
+    entries.delete(entry.id)
+    if (entry.object.type === 'connector') { unlink(entry.object); if (connectorSelected === entry.id) selectConnector(null) }
+    const stroke = uniformStrokes.findIndex((item) => item.node === entry.node)
+    if (stroke !== -1) uniformStrokes.splice(stroke, 1)
+    boxes.delete(entry.box)
+    const slot = measuredText.findIndex((item) => item.object === entry.object)
+    if (slot !== -1) measuredText.splice(slot, 1)
+    entry.node.remove()
+  }
+
+  // ---- connectors (F-032): picked by their line (never by the whole diagonal box), apart from the editor's selection, drawn with a halo while
+  // selected, and deleted with Delete (or with an end). A connector is never moved by hand; it only follows its ends.
+  function selectConnector(id, silent = false) {
+    if (connectorSelected === id) return
+    connectorSelected = id
+    showHalo()
+    if (!silent) for (const listener of selectionListeners) listener(selectedIds())
+  }
+
+  function showHalo() {
+    const entry = connectorSelected && entries.get(connectorSelected)
+    overlays.showHalo(entry ? { path: arrowPath(entry.object), x: entry.object.geometry.x, y: entry.object.geometry.y, lineWidth: entry.object.lineWidth ?? CONNECTOR_DEFAULTS.lineWidth } : null)
+  }
+
+  // A press on a connector's line picks it (and leaves the editor's selection); a press anywhere else lets the editor have it.
+  host.addEventListener('pointerdown', () => { gesture.settle(); lod.exit() }, true) // a touch of the note draws it exactly (and puts the vectors back) before anything is picked
+  host.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || event.target === overlay.element || !doc) return
+    const rect = host.getBoundingClientRect()
+    const point = { x: (event.clientX - rect.left - view.x) / view.scale, y: (event.clientY - rect.top - view.y) / view.scale }
+    const arrow = connectorAt(doc.objects, point, CONNECTOR_HIT / view.scale)
+    if (!arrow || !entries.has(arrow.id)) { if (connectorSelected) selectConnector(null); return }
+    event.stopPropagation()
+    editing.clear()
+    selectConnector(arrow.id)
+  }, true)
+
+  // ---- text and sticky editing (F-029). The words are typed in a real textarea laid over them (text.js); this is the glue between that
+  // overlay, the nodes and the document. A typing session is ONE undo step: it runs inside one history group (onBegin/onEnd), and the
+  // words typed so far go into the document a moment after the typing pauses (never in the middle of an input-method composition), so
+  // they are saved as they are typed. A new text is made at its first such moment (and never at all when nothing is typed); a new
+  // sticky is made at once (an empty sticky stays, as in the former Fabric engine). An emptied text is removed when the session ends.
+  const overlay = createTextOverlay({ host })
+  const DRAFT_DELAY = 650 // the save delay
+  let textEdit = null // { id, entry|null, object, size, select, caret }
+  let draftTimer = 0
+  let lastEdited = null // the id of the text just edited with nothing selected (the Text tool): the style controls apply to it
+  const isTextual = (object) => object?.type === 'text' || object?.type === 'sticky'
+  const LAYOUT_KEYS = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'charSpacing', 'textAlign', 'underline', 'linethrough']
+
+  const wrapWidth = (object) => (object.type === 'sticky' ? (object.geometry.width ?? 240) - STICKY_PADDING * 2 : object.mode === 'point' ? undefined : object.geometry.width)
+
+  // How big the words are once laid out ({ width, height }, inside a sticky's padding), measured on a scratch node.
+  function contentSize(object) {
+    const props = textProps(object, { width: wrapWidth(object) })
+    const scratch = new Text({ ...props, x: 0, y: 0 })
+    const size = measure(scratch)
+    scratch.destroy?.()
+    return size
+  }
+
+  const viewMatrix = () => ({ a: view.scale, b: 0, c: 0, d: view.scale, e: view.x, f: view.y })
+  const textOffset = (object) => { const props = textProps(object, { width: wrapWidth(object), padding: object.type === 'sticky' ? STICKY_PADDING : 0 }); return { x: props.x, y: props.y } }
+  // The overlay sits over the text node: its frame is the text's own (the node's offset inside the object, then the object's matrix, then the view).
+  function overlayMatrix() {
+    const { object, size } = textEdit
+    const at = textOffset(object)
+    return multiplyMatrices(viewMatrix(), multiplyMatrices(placementMatrix(object.geometry, size), { a: 1, b: 0, c: 0, d: 1, e: at.x, f: at.y }))
+  }
+
+  function overlayFont(object) {
+    const props = textProps(object, { width: wrapWidth(object) })
+    return { family: props.fontFamily, size: props.fontSize, weight: props.fontWeight, italic: props.italic, lineHeight: props.lineHeight, letterSpacing: props.letterSpacing, align: props.textAlign, color: props.fill, decoration: props.textDecoration === 'under' ? 'underline' : props.textDecoration === 'delete' ? 'line-through' : 'none', baseline: (props.lineHeight + 0.7 * props.fontSize) / 2 }
+  }
+
+  // `began`: the caller already opened the history group (a new sticky); otherwise it is opened here. `point`: a page point to put the caret at.
+  function startTextEdit(object, { entry = null, began = false, select = true, point = null } = {}) {
+    lod.exit() // (typing is always on the live vectors)
+    if (overlay.isOpen) overlay.commit()
+    if (!began) onBegin('Edit text')
+    const size = entry ? entry.size : { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }
+    textEdit = { id: object.id, entry, object, size, select, armed: false, floor: null, lineHeight: overlayFont(object).lineHeight }
+    lastEdited = null
+    editing.clear()
+    if (entry?.built.text) entry.built.text.visible = false
+    const width = wrapWidth(object)
+    let caret = null
+    if (point) {
+      const local = toLocal(object.geometry, size, point)
+      if (local) { const at = textOffset(object); caret = { x: local.x - at.x, y: local.y - at.y } }
+    }
+    overlay.open({
+      value: object.content ?? '',
+      font: overlayFont(object),
+      wrap: width !== undefined,
+      width: width ?? 0,
+      matrix: overlayMatrix(),
+      caret,
+      onInput: onTextInput,
+      onCommit: finishTextEdit,
+      onEscape: () => onTextEvent('escape'),
+    })
+    textEdit.armed = true // from here on, input is typing: it can grow the pages (opening the editor on a text near an edge must not)
+    onTextEvent('start')
+    return true
+  }
+
+  // Pages appear as the words near the right or bottom edge, while they are typed (not when the typing pauses): the box the words fill now
+  // is measured, and the grid grows a margin ahead of it by the drag's rule. The document does not hear of it until the next draft commit,
+  // which records the grid in the session's one undo step (and keeps it: no fold-back until the session ends). Nothing moves: typing only
+  // grows a text right and down, so the overlay stays where it is. (A turned text can need room on the left or top too; that growth is
+  // deferred to the settle of the draft commit and of the session's end, which prepend as usual.)
+  function growPagesForWords(edit, size) {
+    const object = edit.entry?.object ?? edit.object
+    const geometry = fitGeometry(object, size)
+    const box = rectEdges(boundingRect({ ...object, geometry }, { width: geometry.width, height: geometry.height }))
+    const grow = growForText(pages, box, { lineHeight: object.type === 'sticky' ? 0 : edit.lineHeight })
+    if (!grow.changed) return
+    pages = { columns: grow.columns, rows: grow.rows }
+    edit.floor = { ...pages }
+    onPages({ columns: grow.columns, rows: grow.rows, shiftX: 0, shiftY: 0 })
+  }
+
+  function onTextInput(content) {
+    const edit = textEdit
+    if (!edit) return
+    // A sticky is as tall as its words need, the paper following the text while it is typed.
+    const entry = edit.entry
+    if (entry && entry.object.type === 'sticky' && content) {
+      const wanted = fitGeometry(entry.object, content).height
+      if (wanted !== entry.node.height) { entry.node.height = wanted; entry.built.relayout?.() }
+    }
+    if (edit.armed && content) growPagesForWords(edit, content)
+    clearTimeout(draftTimer)
+    draftTimer = setTimeout(flushDraft, DRAFT_DELAY)
+  }
+
+  // The words typed so far go into the document (and so into a save), inside the session's one history group.
+  function flushDraft() {
+    const edit = textEdit
+    if (!edit || !overlay.isOpen) return
+    if (overlay.composing) { draftTimer = setTimeout(flushDraft, 200); return } // never in the middle of a composition
+    storeWords(edit, overlay.value, { final: false })
+  }
+
+  // Puts `value` into the model for the edit's object (making a new text when it has words). Returns false when nothing changed.
+  function storeWords(edit, value, { final }) {
+    if (!edit.entry) { // a new text: it exists from its first words
+      if (!value.trim()) return false
+      const next = { ...edit.object, content: value }
+      const placed = { ...next, geometry: fitGeometry(next, contentSize(next)) }
+      commit({ label: 'Add text', changes: [{ id: placed.id, before: null, after: placed }] }, { selection: { before: [], after: [placed.id] }, floor: final ? null : edit.floor })
+      if (edit.floor) edit.floor = { ...pages }
+      addObject(world, doc.objects.find((candidate) => candidate?.id === placed.id) ?? placed, boxes)
+      const entry = entries.get(placed.id)
+      if (!entry) return false
+      if (entry.built.text && !final) entry.built.text.visible = false
+      edit.entry = entry
+      edit.object = entry.object
+      edit.size = { ...entry.size }
+      return true
+    }
+    const { entry } = edit
+    const object = entry.object
+    if ((object.content ?? '') === value) return false
+    if (object.type === 'text' && !value.trim() && !final) return false // an emptied text is removed when the session ends
+    const next = { ...object, content: value }
+    const plan = planSetContent(doc, { id: entry.id, content: value, geometry: fitGeometry(next, contentSize(next)) })
+    if (!plan.op.changes.length) return false
+    commit(plan.op, { selection: { before: [entry.id], after: [entry.id] }, floor: final ? null : edit.floor })
+    if (edit.floor) edit.floor = { ...pages }
+    edit.object = entry.object
+    edit.size = { width: entry.object.geometry.width ?? 0, height: entry.object.geometry.height ?? 0 }
+    return true
+  }
+
+  // The session is over: the grid the words made room for is settled by the ordinary rules (a page the words no longer need folds back, in the
+  // same step), and the host's grid is the document's again when the words never reached the document.
+  function settleTypedPages() {
+    commit({ label: 'Edit text', changes: [], page: { before: doc.page, after: { ...doc.page } } })
+    if (pages.columns !== doc.page.columns || pages.rows !== doc.page.rows) {
+      pages = { columns: doc.page.columns, rows: doc.page.rows }
+      onPages({ ...pages, shiftX: 0, shiftY: 0 })
+    }
+  }
+
+  function finishTextEdit(value) {
+    clearTimeout(draftTimer)
+    const edit = textEdit
+    textEdit = null
+    if (!edit) return
+    try {
+      const entry = edit.entry
+      if (entry && entry.object.type === 'text' && !value.trim()) { // an emptied text goes
+        const removal = planRemove(doc, { ids: [entry.id] })
+        commit(removal.op, { selection: { before: [entry.id], after: [] } })
+        for (const change of removal.op.changes) { const gone = entries.get(change.id); if (gone) dropEntry(gone) }
+        if (entries.get(entry.id) === entry) dropEntry(entry)
+        return
+      }
+      storeWords(edit, value, { final: true })
+      const made = edit.entry
+      if (!made) return // nothing was typed into a new text
+      refreshBox(made)
+      rebuild(made) // the node is made again from the model: new words, size and shadow, and its text shown again
+      const node = entries.get(made.id)?.node
+      if (edit.select && node) editing.select([node])
+      else if (!edit.select) lastEdited = made.id
+    } finally {
+      if (edit.floor) settleTypedPages()
+      const live = edit.entry && entries.get(edit.entry.id)
+      if (live?.built.text) live.built.text.visible = true
+      onEnd()
+      onTextEvent('end')
+    }
+  }
+
+  const newId = () => `res_${globalThis.crypto.randomUUID().replaceAll('-', '')}`
+
+  // Puts the overlay back over its text (the view moved or was resized).
+  function placeEditor() { if (textEdit && overlay.isOpen) overlay.setMatrix(overlayMatrix()) }
+
+  // The text and stickies the style controls act on: the selection, or the text just edited with the Text tool.
+  function styleTargets() {
+    const picked = selectedEntries().filter((entry) => isTextual(entry.object))
+    if (picked.length || selectedEntries().length) return picked
+    const entry = lastEdited && entries.get(lastEdited)
+    return entry && isTextual(entry.object) ? [entry] : []
+  }
+
+  const textApi = {
+    isEditingText: () => overlay.isOpen,
+    // Before a merge: the words typed so far go into the document now (not in the middle of a composition, which cannot be read yet).
+    // Returns the id of the object being typed (it counts as the user's in the merge), or null.
+    flushText() {
+      if (!textEdit || !overlay.isOpen) return null
+      if (!overlay.composing) { clearTimeout(draftTimer); storeWords(textEdit, overlay.value, { final: false }) }
+      // the grid the words made room for is in the document too (words typed past the edge and since deleted change nothing else)
+      const floor = textEdit.floor
+      if (floor && (floor.columns > doc.page.columns || floor.rows > doc.page.rows)) { commit({ label: 'Edit text', changes: [] }, { floor }); textEdit.floor = { ...pages } }
+      return textEdit.entry?.id ?? null
+    },
+    // Ends a text edit in progress (the words typed so far are kept). The host calls it before it saves or leaves the note.
+    finishTextEdit() { if (overlay.isOpen) overlay.commit() },
+    // Starts editing the words of a text or sticky (by id, or the topmost one at a page point, with the caret there). False when nothing editable is there.
+    editText(target, options = {}) {
+      const byPoint = typeof target !== 'string'
+      const object = byPoint ? objectAt(doc, new Map([...entries].map(([id, entry]) => [id, entry.size])), target) : doc.objects.find((candidate) => candidate?.id === target)
+      const entry = object && entries.get(object.id)
+      if (!entry || !isTextual(entry.object) || isLocked(entry.object)) return false
+      return startTextEdit(entry.object, { entry, select: options.select ?? true, point: byPoint ? target : null })
+    },
+    // A new text at a page point (typed in the overlay; nothing is made until there are words).
+    createText(point, options = {}) {
+      let object = newText({ id: newId(), z: nextZ(doc), point, style: defaults.text?.() ?? {} })
+      if (options.width) object = { ...object, mode: 'box', geometry: { ...object.geometry, width: options.width } } // a text box that wraps at this width
+      return startTextEdit(object, { select: options.select ?? true })
+    },
+    // A new shape centred on a page point: made at once and selected, one undo step.
+    createShape(point, { fill } = {}) {
+      const object = newShape({ id: newId(), z: nextZ(doc), point, fill: fill ?? defaults.shapeFill?.() ?? '#ffd60a' })
+      if (overlay.isOpen) overlay.commit()
+      onBegin('Add shape')
+      try {
+        commit({ label: 'Add shape', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: [], after: [object.id] } })
+        addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+        const entry = entries.get(object.id)
+        if (entry) editing.select([entry.node])
+        return Boolean(entry)
+      } finally { onEnd() }
+    },
+    // A new sticky centred on a page point: made at once, selected, with its first words in the same undo step.
+    createSticky(point) {
+      const { fill, ink, style } = defaults.sticky?.() ?? { fill: '#ffd60a', ink: '#292202', style: {} }
+      const object = newSticky({ id: newId(), z: nextZ(doc), point, fill, ink, style })
+      if (overlay.isOpen) overlay.commit()
+      onBegin('Add sticky')
+      commit({ label: 'Add sticky', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: [], after: [object.id] } })
+      addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+      const entry = entries.get(object.id)
+      if (!entry) { onEnd(); return false }
+      return startTextEdit(entry.object, { entry, began: true })
+    },
+    // Voice dictation (F-035): the words go into the text being edited, through the overlay, so they are part of that typing session
+    // (one undo step, saved as typed). beginDictation opens the editor for it: the one already open, else the single selected text or
+    // sticky (caret at its end), else a new text box at `point` (wrapping at `width`; nothing is made until there are words).
+    // Returns { ok, fresh } (fresh: a new text, which an empty dictation leaves unmade).
+    beginDictation(point, { width } = {}) {
+      if (overlay.isOpen) return { ok: true, fresh: !textEdit?.entry }
+      const picked = selectedEntries().filter((entry) => isTextual(entry.object) && !isLocked(entry.object))
+      if (picked.length === 1 && editorEntries().length === 1) return { ok: startTextEdit(picked[0].object, { entry: picked[0] }), fresh: false }
+      return { ok: textApi.createText(point, { width }), fresh: true }
+    },
+    // The words in the editor now (an interim result, the final ones), or null when no editor is open.
+    dictationText: () => (overlay.isOpen ? overlay.value : null),
+    // Puts the words (all of them: what was there plus what is dictated) in the editor. False when no editor is open.
+    setDictation: (words) => overlay.isOpen && overlay.setValue(words),
+    // Prettify (F-035): the words selected in the editor when there are some (the editor stays open), else every text and sticky of the
+    // note, as one step. False when nothing changed.
+    prettify() {
+      if (overlay.isOpen) {
+        const range = overlay.selection
+        if (range && range.start !== range.end) {
+          const next = prettifySelection(overlay.value, range.start, range.end)
+          return overlay.replaceRange(range.start, range.end, next.text.slice(next.start, next.end))
+        }
+        // No selection: the words being typed are tidied too, the editor stays open and the caret stays where it was (as on Fabric).
+        const value = overlay.value
+        const tidy = prettifySelection(value, 0, 0).text
+        if (tidy !== value) overlay.setValue(tidy, Math.min(range?.start ?? value.length, tidy.length))
+        clearTimeout(draftTimer)
+        storeWords(textEdit, overlay.value, { final: false })
+      }
+      const plan = planPrettify(doc, { fit: (object) => fitGeometry(object, contentSize(object)) })
+      if (!plan.op.changes.length) return false
+      const ids = selectedIds()
+      commit(plan.op, { selection: { before: ids, after: ids } })
+      keepingSelection(() => { for (const change of plan.op.changes) { const entry = entries.get(change.id); if (entry) { refreshBox(entry); rebuild(entry) } } })
+      return true
+    },
+    // What Leafer drew for a text or sticky (for checks): its lines, and the font it used.
+    textInfo(id) {
+      const node = entries.get(id)?.built.text
+      if (!node) return null
+      const rows = node.__?.__textDrawData?.rows ?? []
+      return { rows: rows.map((row) => row.text), fontSize: node.fontSize, fontFamily: node.fontFamily, fill: node.fill, visible: node.visible, lineHeight: node.lineHeight, height: node.getBounds('box', 'inner').height }
+    },
+    // The text and stickies the style controls act on.
+    selectedText: () => styleTargets().map((entry) => ({ id: entry.id, type: entry.object.type, style: entry.object.style ?? {}, color: entry.object.color })),
+    // The colour of the selected shapes. One step.
+    setShapeFill(fill) {
+      const ids = selectedIds()
+      const plan = planSetShapeFill(doc, { ids, fill })
+      if (!plan.op.changes.length) return false
+      commit(plan.op, { coalesce: 'shape-fill', selection: { before: ids, after: ids } })
+      keepingSelection(() => { for (const change of plan.op.changes) { const entry = entries.get(change.id); if (entry) { refreshBox(entry); rebuild(entry) } } })
+      return true
+    },
+    // Font, size, colour of those (`style`), or the sticky paper (`paper`: { fill, ink }). One step (a slider drag is one).
+    setTextStyle({ style, paper }) {
+      const targets = styleTargets()
+      const ids = targets.map((entry) => entry.id)
+      const plan = planSetStyle(doc, { ids, style, paper })
+      if (!plan.op.changes.length) return false
+      const relayout = style && Object.keys(style).some((key) => LAYOUT_KEYS.includes(key))
+      const changes = plan.op.changes.map((change) => (relayout ? { ...change, after: { ...change.after, geometry: fitGeometry(change.after, contentSize(change.after)) } } : change))
+      commit({ label: plan.op.label, changes }, { coalesce: 'text-style', selection: { before: ids, after: ids } })
+      keepingSelection(() => { for (const change of changes) { const entry = entries.get(change.id); if (entry) { refreshBox(entry); rebuild(entry) } } })
+      return true
+    },
+  }
+
+  // A double click on a text or sticky edits it; on empty paper it makes a new text (the former Fabric engine does the same). A phone sends no
+  // reliable double click, so two taps close together (by finger or pen) count as one, noticed on the click that ends the second tap.
+  function editOrCreateAt(clientX, clientY) {
+    const rect = host.getBoundingClientRect()
+    const point = { x: (clientX - rect.left - view.x) / view.scale, y: (clientY - rect.top - view.y) / view.scale }
+    if (textApi.editText(point)) return
+    for (const box of boxes) if (point.x >= box.left && point.x <= box.left + box.width && point.y >= box.top && point.y <= box.top + box.height) return
+    textApi.createText(point)
+  }
+  let downType = 'mouse'
+  let lastTap = null
+  let tapEditedAt = 0
+  host.addEventListener('pointerdown', (event) => { downType = event.pointerType || 'mouse' }, true)
+  host.addEventListener('dblclick', (event) => {
+    if (event.button !== 0 || event.target === overlay.element || performance.now() - tapEditedAt < 700) return
+    editOrCreateAt(event.clientX, event.clientY)
+  })
+  host.addEventListener('click', (event) => {
+    if (downType === 'mouse' || event.button !== 0 || event.target === overlay.element) return
+    const at = { x: event.clientX, y: event.clientY, time: performance.now() }
+    const again = lastTap && at.time - lastTap.time < 400 && Math.hypot(at.x - lastTap.x, at.y - lastTap.y) < 30
+    lastTap = again ? null : at
+    if (!again) return
+    tapEditedAt = at.time
+    editOrCreateAt(at.x, at.y)
+  })
+
+  // ---- pictures (F-033). media.js prepares and uploads them; each is one model object that references the media library file.
+  const pictureApi = {
+    // `pictures`: [{ mediaId, url, width, height }] (the stored size of each), placed around a page point as one undo step; the last is selected.
+    addImages(pictures, point) {
+      if (!pictures.length) return []
+      if (overlay.isOpen) overlay.commit()
+      onBegin('Add picture')
+      const ids = []
+      try {
+        pictures.forEach((picture, index) => {
+          mediaUrls.set(picture.mediaId, picture.url)
+          const object = newImage({ id: newId(), z: nextZ(doc), mediaId: picture.mediaId, width: picture.width, height: picture.height, point, index })
+          commit({ label: 'Add picture', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: [], after: [object.id] } })
+          addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+          if (entries.has(object.id)) ids.push(object.id)
+        })
+      } finally { onEnd() }
+      if (ids.length) editing.select([entries.get(ids.at(-1)).node])
+      return ids
+    },
+    // A point in client (window) pixels -> the page point under it.
+    pageAt(clientX, clientY) {
+      const rect = host.getBoundingClientRect()
+      return { x: (clientX - rect.left - view.x) / view.scale, y: (clientY - rect.top - view.y) / view.scale }
+    },
+  }
+
+  // ---- output (F-033): the note as it prints and exports, drawn from the model on a leafer of its own (white paper, no page furniture,
+  // no handles), so the screen's view, selection and chrome never reach it. `region` is a rectangle of the page grid, in page pixels.
+  async function renderRegion(region, { pixelRatio = 2, type = 'image/png', quality } = {}) {
+    await document.fonts?.ready // text is laid out with the fonts that are loaded now, never a fallback
+    const surface = document.createElement('canvas')
+    const sheet = new Leafer({ view: surface, width: region.width, height: region.height, pixelRatio, type: 'draw', hittable: false })
+    const marks = { text: textNodes.length, measured: measuredText.length, strokes: uniformStrokes.length }
+    const counted = { ...stats }
+    const group = new Group({ x: -region.x, y: -region.y, hittable: false })
+    try {
+      sheet.add(group)
+      for (const object of stacking(doc)) addObject(group, object, null)
+      // The bookkeeping addObject keeps for the live view is not for these nodes; a uniform stroke is its own width at scale 1.
+      for (const item of uniformStrokes.splice(marks.strokes)) item.node.strokeWidth = item.width
+      textNodes.length = marks.text
+      measuredText.length = marks.measured
+      Object.assign(stats, counted) // what the screen drew is what stats() reports, not these copies
+      await new Promise((resolve) => { sheet.waitViewCompleted(() => requestAnimationFrame(() => requestAnimationFrame(resolve))) })
+      // White paper under whatever is transparent, as the Fabric print sheet had it.
+      const paper = document.createElement('canvas')
+      paper.width = surface.width
+      paper.height = surface.height
+      const context = paper.getContext('2d')
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, paper.width, paper.height)
+      context.drawImage(surface, 0, 0)
+      return await new Promise((resolve, reject) => paper.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not draw the page'))), type, quality))
+    } finally { sheet.destroy() }
+  }
+
+  const api = {
+    leafer,
+    ...textApi,
+    ...pictureApi,
+    renderRegion,
+    // Draws a note. `next` is a document model (fromFabric output); `options.resolveMedia` turns a media-library picture into a URL.
+    load(next, options = {}) {
+      if ('resolveMedia' in options) resolveMedia = options.resolveMedia ?? null // a redraw from the document (undo, redo, an erase pass given up) keeps the pictures the note was opened with
+      if (overlay.isOpen) overlay.commit() // words being typed are kept
+      if ('resolveMedia' in options) { for (const url of mediaUrls.values()) if (url.startsWith('blob:')) URL.revokeObjectURL(url); mediaUrls.clear() } // a note is opened: the pictures added to the one before are not needed
+      lastEdited = null
+      lod.reset()
+      doc = next
+      endGesture()
+      connectorSelected = null
+      overlays.showHalo(null)
+      editing.clear()
+      world.clear()
+      entries.clear()
+      linked.clear()
+      textNodes.length = 0
+      measuredText.length = 0
+      uniformStrokes.length = 0
+      boxes = new Set()
+      stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
+      for (const object of stacking(doc)) addObject(world, object, boxes)
+      pages = { columns: doc.page?.columns ?? 1, rows: doc.page?.rows ?? 1 }
+      drawChrome()
+    },
+    // True while the scene is handing its own edit to the host (so the host does not draw it a second time).
+    isCommitting: () => committing,
+    document: () => doc,
+    // The same document, held by the history now (a new open, an agent's merge): the objects are equal, so only the references change.
+    adopt(next) {
+      doc = next
+      const latest = objectsById(doc)
+      for (const entry of entries.values()) entry.object = latest.get(entry.id) ?? entry.object
+    },
+    // An agent's changes merged into the document (core/document/merge.js): only the objects that differ are drawn again, the
+    // selection stays, and a text being typed keeps its editor (its new model is used when the session ends).
+    applyMerged(next, options = {}) {
+      if (options.resolveMedia) resolveMedia = options.resolveMedia
+      const before = objectsById(doc)
+      const after = objectsById(next)
+      lod.invalidate(next.page?.columns !== doc.page?.columns || next.page?.rows !== doc.page?.rows ? undefined : touchedRects([...before.keys(), ...after.keys()].filter((id, at, all) => all.indexOf(id) === at && before.get(id) !== after.get(id)).flatMap((id) => [entries.get(id)?.object ?? before.get(id), after.get(id)])))
+      doc = next
+      const editingId = textEdit?.id
+      keepingSelection(() => {
+        for (const entry of [...entries.values()]) {
+          const object = after.get(entry.id)
+          if (object === entry.object) continue
+          if (!object) {
+            if (entry.id === editingId) continue // never taken from under the typing: the merge treats it as the user's, so this is not reached
+            dropEntry(entry)
+            continue
+          }
+          entry.object = object
+          if (entry.id === editingId) { textEdit.object = object; textEdit.size = { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }; continue }
+          rebuild(entry)
+        }
+        for (const object of stacking(doc)) if (object?.id !== undefined && !before.has(object.id) && !entries.has(object.id)) addObject(world, object, boxes)
+      })
+      placeEditor()
+      pages = { columns: doc.page?.columns ?? pages.columns, rows: doc.page?.rows ?? pages.rows }
+      // the grid a typing session made room for stays until the session settles, whatever the merged document holds
+      const floor = textEdit?.floor
+      if (floor && (pages.columns < floor.columns || pages.rows < floor.rows)) {
+        pages = { columns: Math.max(pages.columns, floor.columns), rows: Math.max(pages.rows, floor.rows) }
+        onPages({ ...pages, shiftX: 0, shiftY: 0 })
+      }
+      drawChrome()
+    },
+    // An undo or a redo (F-034): the document changed in the objects the step names and nowhere else, so only those are drawn again (the
+    // note's 600 or 5,000 other nodes are not touched). The page frame did not move (a step that moves it draws the whole note again).
+    applyChanged(next, ids) {
+      const after = objectsById(next)
+      lod.invalidate(next.page?.columns !== doc.page?.columns || next.page?.rows !== doc.page?.rows ? undefined : touchedRects(ids.flatMap((id) => [entries.get(id)?.object, after.get(id)])))
+      doc = next
+      const editingId = textEdit?.id
+      keepingSelection(() => {
+        const fresh = []
+        for (const id of ids) {
+          const entry = entries.get(id)
+          const object = after.get(id)
+          if (!entry) { if (object) fresh.push(object); continue }
+          if (object === entry.object) continue
+          if (!object) { if (id !== editingId) dropEntry(entry); continue }
+          entry.object = object
+          if (id === editingId) { textEdit.object = object; textEdit.size = { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }; continue }
+          rebuild(entry)
+        }
+        for (const object of fresh) addObject(world, object, boxes)
+        syncStacking(ids)
+        for (const entry of entries.values()) entry.object = after.get(entry.id) ?? entry.object // (stacking values may have been renumbered without the object being named)
+      })
+      placeEditor()
+      pages = { columns: doc.page?.columns ?? pages.columns, rows: doc.page?.rows ?? pages.rows }
+      drawChrome()
+    },
+    // Leafer (draw mode) lays the tree out when something first needs it: the first click on a note of 5,000 objects paid 80 ms (every text laid
+    // out, every box measured). Called once the note is on screen and the machine is idle, so the click does not.
+    warmLayout() { try { leafer.layouter?.layout?.() } catch { /* the first interaction does it instead */ } },
+    setPages(next) { pages = { ...next }; drawChrome() },
+    // Voice dictation is on: the pages are outlined in the accent colour.
+    setListening(on) { listening = Boolean(on); drawChrome() },
+    setColors(next) { colors = next; overlays.setColors(next); drawChrome() },
+    setView(next) { view = { ...next }; moveView() },
+    // The note drawn exactly for the view (a pan or zoom may still be moving the canvases): checks and exports that read the nodes call it.
+    settle: () => gesture.settle(),
+    // Where the note's layer is in the window and at what zoom, once drawn (checks read this instead of the layer: the layer sits `margin` into the canvas).
+    drawnWorld() { gesture.settle(); return { x: world.x - margin, y: world.y - margin, scaleX: world.scaleX, scaleY: world.scaleY } },
+    gestureState: () => ({ ...gesture.stats(), skyPixelRatio: app.sky.canvas.pixelRatio, treePixelRatio: app.tree.canvas.pixelRatio, transform: gesture.transform, drawn: gesture.committed, view: { ...view }, margin, canvas: [app.tree.canvas.width, app.tree.canvas.height] }),
+    // `window.__pnPerf` changed (the speed test's render-mode comparison, Settings > Render mode): take the new switches in without a reload. The
+    // sticky shadows are made when a note is loaded, so the caller loads the document again afterwards (see main.js).
+    applyPerf() {
+      Object.assign(perf, readPerf())
+      pixelRatio = pixelRatioFor(globalThis.devicePixelRatio, perf)
+      for (const layer of [app.tree, app.sky]) if (layer.renderer?.config) layer.renderer.config.usePartRender = perf.partRender
+      gesture.reset()
+      margin = marginNow(size)
+      app.resize({ width: size.width + 2 * margin, height: size.height + 2 * margin, pixelRatio })
+      placeCanvases()
+      lod.retune({ mode: perf.pageBitmaps, pixelRatio })
+      if (perf.gestureTransform) gesture.redraw(view)
+      else applyViewNow()
+    },
+    resize(nextWidth, nextHeight) {
+      gesture.reset()
+      size = { width: nextWidth, height: nextHeight }
+      margin = marginNow(size)
+      app.resize({ width: nextWidth + 2 * margin, height: nextHeight + 2 * margin })
+      placeCanvases()
+      if (perf.gestureTransform) gesture.redraw(view)
+      else applyViewNow() // (the world sits `margin` into the canvas)
+    },
+    // Text layout is cached per element and text without a stored size was measured with whatever font was loaded then. Call after
+    // web fonts finish loading: layout is redone, such text is measured and placed again, and its placement box follows.
+    refreshText() {
+      lod.invalidate()
+      textNodes.forEach((node) => node.forceUpdate?.())
+      for (const item of measuredText) {
+        const g = item.object.geometry
+        const measured = measure(item.built.text)
+        const size = { width: g.width ?? measured.width, height: g.height ?? measured.height }
+        const matrix = placementMatrix(g, size)
+        place(item.built.node, matrix)
+        if (item.built.sized) item.built.node.set({ width: size.width, height: size.height })
+        const entry = entries.get(item.object.id)
+        if (entry) entry.size = size
+        if (item.box) Object.assign(item.box, boxOf(matrix, size.width, size.height))
+      }
+    },
+    boxes: () => [...boxes],
+    stats: () => ({ ...stats, drawn: entries.size }),
+
+    // ---- selection and edits (F-028)
+    onSelection(listener) { selectionListeners.add(listener); return () => selectionListeners.delete(listener) },
+    selection: selectedIds,
+    select(ids) {
+      lod.exit() // (the selection is on the live nodes)
+      const arrow = ids.find((id) => entries.get(id)?.object.type === 'connector')
+      editing.select(ids.filter((id) => id !== arrow).map((id) => entries.get(id)?.node).filter(Boolean))
+      selectConnector(arrow && !editorEntries().length ? arrow : null)
+    },
+    clearSelection() { editing.clear(); selectConnector(null) },
+    selectAll() { editing.select([...entries.values()].filter((entry) => entry.object.type !== 'connector' && !isLocked(entry.object)).map((entry) => entry.node)) },
+    isLocked: (id) => isLocked(entries.get(id)?.object),
+
+    // ---- connectors and the connect tool (F-032)
+    // The topmost object under a page point that a connector can join (a pen line only when nothing else is there), or null.
+    connectTargetAt(point, exclude = null) {
+      let ink = null
+      for (const object of stacking(doc).reverse()) {
+        if (object.id === exclude || !object.geometry || object.type === 'connector' || object.type === 'unknown' || object.visible === false) continue
+        const entry = entries.get(object.id)
+        if (!entry) continue
+        const width = object.geometry.width ?? entry.size.width ?? 0
+        const height = object.geometry.height ?? entry.size.height ?? 0
+        const local = toLocal(object.geometry, { width, height }, point)
+        if (!local || local.x < 0 || local.x > width || local.y < 0 || local.y > height) continue
+        if (object.type === 'ink') ink ||= object.id
+        else return object.id
+      }
+      return ink
+    },
+    // The connect tool's preview over the note: { source, hover, pointer } (ids and a page point), or null for none.
+    connectPreview(spec) {
+      const rectOf = (id) => entries.get(id)?.rect
+      if (spec?.source && rectOf(spec.source)) {
+        const from = rectOf(spec.source)
+        const target = spec.hover ? rectOf(spec.hover) : null
+        const goal = target ?? { left: spec.pointer.x, top: spec.pointer.y, width: 0, height: 0 }
+        const ends = connectorEndpoints(from, goal, target ? undefined : 0)
+        overlays.showConnect({ outlines: target ? [from, target] : [from], dots: ends.visible ? (target ? [ends.start, ends.end] : [ends.start]) : [], arrow: ends.visible ? ends : null })
+      } else if (spec?.hover && rectOf(spec.hover)) {
+        const box = rectOf(spec.hover)
+        overlays.showConnect({ outlines: [box], dots: [{ x: box.left + box.width / 2, y: box.top + box.height / 2 }], arrow: null })
+      } else overlays.showConnect(null)
+    },
+    // An arrow from one object to another, as one undo step. Returns its id, or null when there is nothing to show (the same object, the pair is
+    // already joined, or the two are too close for an arrow).
+    createConnector(fromId, toId, color) {
+      const object = newConnector(doc.objects, { fromId, toId, color, z: nextZ(doc), rectOf: (target) => boundingRect(target, sizeOf(target)) })
+      if (!object) return null
+      const ids = editorEntries().map((entry) => entry.id)
+      commit({ label: 'Connect', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: ids, after: ids } })
+      addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+      return object.id
+    },
+    // The document with every connector brought in line with the objects it joins (a note saved by an older app, or an agent that moved an end).
+    followConnectors(next) {
+      const changes = followChanges(next.objects, null, (object) => boundingRect(object, sizeOf(object)))
+      return changes.length ? applyChanges(next, { changes }) : next
+    },
+    connectorAt: (point) => connectorAt(doc?.objects ?? [], point, CONNECTOR_HIT / view.scale)?.id ?? null,
+    selectedConnector: () => connectorSelected,
+    // For checks: what a drag in progress has put on screen.
+    dragState: () => ({ active: live.active, lifted: live.lifted.filter((item) => item.lifted).map((item) => item.entry.id), tilt: live.lifted.filter((item) => item.lifted).map((item) => item.entry.node.rotation - item.rotation), layer: live.lifted.map((item) => item.entry.id), ghost: live.ghost ? JSON.parse(live.ghost) : null, shift: { ...live.shift } }),
+    gridNow: () => ({ ...pages }),
+    sizeOf,
+    overlayState: () => overlays.state(),
+    // What Leafer has for an object now (checks): its place, turn and, for an arrow, its drawing.
+    nodeInfo(id) {
+      const node = entries.get(id)?.node
+      return node ? { x: node.x, y: node.y, rotation: node.rotation, visible: node.visible, path: node.path, width: node.width, height: node.height, strokeWidth: node.strokeWidth } : null
+    },
+
+    // Arrow keys: move the selection by (dx, dy) page pixels. Locked objects stay. Repeated nudges are one undo step.
+    nudge(dx, dy) {
+      const targets = editorEntries()
+      const ids = targets.map((entry) => entry.id)
+      const plan = planMove(doc, { ids, dx, dy })
+      if (!plan.op.changes.length) return false
+      const moved = new Set(plan.op.changes.map((change) => change.id))
+      commit(plan.op, { coalesce: 'nudge', selection: { before: ids, after: ids } })
+      for (const entry of targets) {
+        if (!moved.has(entry.id)) continue
+        entry.node.set({ x: entry.node.x + dx, y: entry.node.y + dy })
+        refreshBox(entry)
+      }
+      editing.update()
+      return true
+    },
+
+    // Delete: locked objects stay, connectors of a deleted object go with it, a page the removal empties folds back; one step.
+    deleteSelection() {
+      const ids = selectedIds()
+      const plan = planRemove(doc, { ids })
+      if (!plan.op.changes.length) return false
+      const removing = plan.op.changes.map((change) => change.id)
+      commit(plan.op, { selection: { before: ids, after: [] } })
+      editing.clear()
+      selectConnector(null)
+      for (const id of removing) { const entry = entries.get(id); if (entry) dropEntry(entry) }
+      return true
+    },
+
+    // Clear all: every object goes, locked ones too, and the page grid folds back to one page; one undo step.
+    clearAll() {
+      if (overlay.isOpen) overlay.commit()
+      const ids = selectedIds()
+      const changes = doc.objects.filter((object) => object && object.id !== undefined).map((object) => ({ id: object.id, before: object, after: null }))
+      if (!changes.length) return false
+      commit({ label: 'Clear note', changes }, { selection: { before: ids, after: [] } })
+      editing.clear()
+      selectConnector(null)
+      for (const change of changes) { const entry = entries.get(change.id); if (entry) dropEntry(entry) }
+      return true
+    },
+
+    reorderSelection(to) {
+      const ids = editorEntries().map((entry) => entry.id)
+      const plan = planReorder(doc, { ids, to })
+      if (!plan.op.changes.length) return false
+      commit(plan.op, { selection: { before: ids, after: ids } })
+      syncStacking(plan.op.changes.map((change) => change.id))
+      editing.update()
+      return true
+    },
+
+    lockSelection(locked) {
+      const ids = editorEntries().map((entry) => entry.id)
+      const plan = planLock(doc, { ids, locked })
+      if (!plan.op.changes.length) return false
+      commit(plan.op, { selection: { before: ids, after: ids } })
+      for (const change of plan.op.changes) configure(entries.get(change.id))
+      if (ids.length > 1 && locked) editing.clear() // a locked object is only ever selected alone
+      else editing.refresh()
+      return true
+    },
+
+    // ---- ink (F-031): the pen and the eraser put model objects on screen without drawing the note again. ink.js owns the gesture and
+    // the live stroke; these are the three things it needs from the scene.
+    view: () => ({ ...view }),
+    // Draws model objects (a new stroke, the pieces of a split one) as nodes at their place in the stack.
+    inkAdd(objects) {
+      lod.invalidate(touchedRects(objects))
+      for (const object of objects) {
+        const z = object.z ?? 0
+        let at = world.children.length
+        for (let index = 0; index < world.children.length; index += 1) {
+          if ((entryOfNode.get(world.children[index])?.object.z ?? 0) > z) { at = index; break }
+        }
+        addObject(world, object, boxes, at)
+      }
+    },
+    inkRemove(ids) { lod.invalidate(touchedRects(ids.map((id) => entries.get(id)?.object).filter(Boolean))); for (const id of ids) { const entry = entries.get(id); if (entry) dropEntry(entry) } },
+    // Hands the op to the host as one undo step. The nodes are already on screen (inkAdd / inkRemove).
+    inkCommit: (op) => commit(op),
+    // Paints now what changed (so the live stroke can go the moment its final version is on screen).
+    flush() { leafer.renderer.render() },
+
+    // What a finger put down at a window point is on (F-035): 'selection' (the selected objects or their handles), 'object', or 'empty'
+    // (paper, where a finger pans). `slop` is the reach of a fingertip in screen pixels; the handles of a selection reach further.
+    touchHit(clientX, clientY, { slop = 10, handleReach = 16 } = {}) {
+      const rect = host.getBoundingClientRect()
+      const x = clientX - rect.left
+      const y = clientY - rect.top
+      const picked = editorEntries()
+      if (picked.length) {
+        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+        for (const entry of picked) {
+          const b = entry.node.getBounds('box', 'world')
+          const from = gesture.map({ x: b.x, y: b.y })
+          const to = gesture.map({ x: b.x + b.width, y: b.y + b.height })
+          left = Math.min(left, from.x); top = Math.min(top, from.y); right = Math.max(right, to.x); bottom = Math.max(bottom, to.y)
+        }
+        const inFrame = x >= left - handleReach && x <= right + handleReach && y >= top - handleReach && y <= bottom + handleReach
+        const onTurnHandle = Math.abs(x - (left + right) / 2) <= handleReach + 8 && y >= top - 60 && y <= top // the turn handle sits above the middle of the top edge
+        if (inFrame || onTurnHandle) return 'selection'
+      }
+      const point = { x: (x - view.x) / view.scale, y: (y - view.y) / view.scale }
+      const reach = slop / view.scale
+      for (const box of boxes) {
+        if (point.x >= box.left - reach && point.x <= box.left + box.width + reach && point.y >= box.top - reach && point.y <= box.top + box.height + reach) return 'object'
+      }
+      return doc && connectorAt(doc.objects, point, CONNECTOR_HIT / view.scale) ? 'object' : 'empty'
+    },
+    // Where an object is on screen (CSS pixels from the top-left of the Leafer view) and where its box corners are on the page.
+    screenBox(id) {
+      const node = entries.get(id)?.node
+      if (!node) return null
+      const { x, y, width, height } = node.getBounds('box', 'world') // in the canvas's pixels, drawn for an earlier view while a gesture moves it
+      const at = gesture.map({ x, y })
+      return { x: at.x, y: at.y, width: width * gesture.transform.k, height: height * gesture.transform.k }
+    },
+    pageCorners(id) {
+      const entry = entries.get(id)
+      if (!entry) return null
+      const { node } = entry
+      const w = entry.built.sized ? node.width : entry.size.width ?? 0
+      const h = entry.built.sized ? node.height : entry.size.height ?? 0
+      return [[0, 0], [w, 0], [w, h], [0, h]].map(([x, y]) => {
+        const p = node.getWorldPoint({ x, y })
+        const drawn = gesture.committed ?? view
+        return { x: (p.x - margin - drawn.x) / drawn.scale, y: (p.y - margin - drawn.y) / drawn.scale }
+      })
+    },
+    hasNode: (id) => entries.has(id),
+    nodeOrder: () => world.children.map((node) => entryOfNode.get(node)?.id).filter(Boolean),
+
+    // Resolves when pictures have decoded and the frame is on screen.
+    whenSettled() {
+      return new Promise((resolve) => {
+        const finish = () => requestAnimationFrame(() => requestAnimationFrame(resolve))
+        app.waitViewCompleted(finish)
+      })
+    },
+    // Page bitmaps (checks and the benchmark): what they are doing, build them all now, treat this machine as slow.
+    lodState: () => lod.stats(),
+    lodExit: () => lod.exit(),
+    setDrawing(on) { drawingTool = Boolean(on) },
+    // Resolves when the page bitmaps are made for the view as it is (they are made in idle time after a jump or a zoom), or after `maxMs`; at once when
+    // there are none to wait for. The speed test sets a view and waits for this, as a person who pauses before the next pan does.
+    whenBitmapsReady(maxMs = 8000) {
+      return new Promise((resolve) => {
+        const began = performance.now()
+        const check = () => {
+          const state = lod.stats()
+          if (state.mode !== 'always' || state.crisp === false || (state.visibleReady && !state.active) || performance.now() - began > maxMs) resolve()
+          else setTimeout(check, 100)
+        }
+        check()
+      })
+    },
+    lodBuildAll: () => lod.buildAll(),
+    lodForceSlow: () => lod.forceSlow(),
+    lodTest: lod.test,
+    destroy() { for (const [type, fn] of [['pointermove', inputMove], ['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
+  }
+  return api
+}

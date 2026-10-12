@@ -72,14 +72,9 @@ test('the cursor flag only shows for an agent on the open note and clears with p
 })
 
 test('the flag points at the appended block for writes and the first block for reads', () => {
-  const objects = [
-    { text: 'middle', top: 200, left: 10 },
-    { text: 'last', top: 400, left: 10 },
-    { text: 'first', top: 100, left: 10 },
-    { text: '  ', top: 900, left: 0 },
-    { top: 1000 },
-  ]
-  assert.equal(pickFlagBlock('writing', objects).text, 'last')
-  assert.equal(pickFlagBlock('reading', objects).text, 'first')
+  const at = (content, x, y, type = 'text') => ({ type, content, geometry: { x, y } })
+  const objects = [at('middle', 10, 200), at('last', 10, 400, 'sticky'), at('first', 10, 100), at('  ', 0, 900), { type: 'shape', geometry: { x: 0, y: 1000 } }, { type: 'text', content: 'no box' }]
+  assert.equal(pickFlagBlock('writing', objects).content, 'last')
+  assert.equal(pickFlagBlock('reading', objects).content, 'first')
   assert.equal(pickFlagBlock('reading', []), undefined)
 })

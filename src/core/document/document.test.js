@@ -3,17 +3,14 @@ import fs from 'node:fs'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { COLUMNS, ROWS, generateNote } from '../../../scripts/benchmark-note.mjs'
-import { fabricPoints, modelPoints, withoutPlacement } from './oracle.js'
+import { assertSamePoints, frozen } from './oracle.js'
 import { placedPoints } from './placement.js'
 import {
-  DocumentError,
   OBJECT_TYPES,
   SCHEMA_VERSION,
   emptyDocument,
   fromFabric,
-  pageStateOf,
   paletteKeyFor,
-  toFabric,
   validateDocument,
 } from './index.js'
 
@@ -34,39 +31,23 @@ test('the fixture set covers every kind of note the app and its agents produce',
   }
 })
 
-// Exact equality is kept for everything that is not placement; placement is checked by where the points land, with Fabric's own matrices.
-function assertRenderEquivalent(before, after, label) {
-  assert.deepStrictEqual(withoutPlacement(after), withoutPlacement(before), `${label}: non-placement properties`)
-  const a = fabricPoints(before.objects)
-  const b = fabricPoints(after.objects)
-  assert.equal(b.length, a.length, `${label}: number of placed points`)
-  for (let i = 0; i < a.length; i += 1) assert.ok(Math.abs(a[i] - b[i]) <= 1e-6, `${label}: point ${i}: ${a[i]} vs ${b[i]}`)
-}
-
+// Placement is checked by where the points land, against what Fabric did (frozen in tests/fixtures/fabric-oracle.json). The seeded
+// benchmark note is generated rather than stored, and has no frozen points.
 for (const entry of fixtures) {
-  test(`${entry.name}: toFabric(fromFabric(x)) is render-equivalent to x, and the page state comes back`, () => {
+  if (frozen.points[entry.name]) {
+    test(`${entry.name}: the model puts every box corner and ink point where Fabric did`, () => {
+      const doc = fromFabric(entry.content, entry.pageState)
+      assertSamePoints(assert, placedPoints(doc.objects), frozen.points[entry.name], entry.name)
+    })
+  }
+
+  test(`${entry.name}: the page state comes back`, () => {
+    assert.deepStrictEqual(fromFabric(entry.content, entry.pageState).page, entry.pageState)
+  })
+
+  test(`${entry.name}: the model survives being written to JSON and read back`, () => {
     const doc = fromFabric(entry.content, entry.pageState)
-    assertRenderEquivalent(entry.content, toFabric(doc), entry.name)
-    assert.deepStrictEqual(pageStateOf(doc), entry.pageState)
-  })
-
-  test(`${entry.name}: the model alone puts every box corner and ink point where Fabric does`, () => {
-    const doc = fromFabric(entry.content, entry.pageState)
-    const expected = fabricPoints(entry.content.objects)
-    const actual = modelPoints(doc.objects)
-    assert.equal(actual.length, expected.length)
-    for (let i = 0; i < expected.length; i += 1) assert.ok(Math.abs(actual[i] - expected[i]) <= 1e-6, `point ${i}: ${actual[i]} vs ${expected[i]}`)
-  })
-
-  test(`${entry.name}: the round trip survives being written to JSON and read back`, () => {
-    const doc = JSON.parse(JSON.stringify(fromFabric(entry.content, entry.pageState)))
-    assertRenderEquivalent(entry.content, toFabric(doc), entry.name)
-  })
-
-  test(`${entry.name}: converting twice changes nothing more (the Fabric form is a fixed point)`, () => {
-    const once = toFabric(fromFabric(entry.content, entry.pageState))
-    const twice = toFabric(fromFabric(once, entry.pageState))
-    assertRenderEquivalent(once, twice, entry.name)
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(doc)), doc)
   })
 }
 
@@ -97,15 +78,12 @@ function mutationNote() {
   function make(factory, index, extra) { return factory(index, extra) }
 }
 
-test('rotation, scale, flips, skew, stroke, every origin and nested groups all land in the same place after the round trip', () => {
+test('rotation, scale, flips, skew, stroke, every origin and nested groups all land where Fabric put them', () => {
   const content = mutationNote()
   const doc = fromFabric(content, { columns: 3, rows: 3 })
-  assertRenderEquivalent(content, toFabric(doc), 'mutation set')
-  const expected = fabricPoints(content.objects)
-  const actual = modelPoints(doc.objects)
+  const expected = frozen.points['mutation set']
   assert.ok(expected.length > 300)
-  assert.equal(actual.length, expected.length)
-  actual.forEach((value, i) => assert.ok(Math.abs(value - expected[i]) <= 1e-6, `point ${i}: ${value} vs ${expected[i]}`))
+  assertSamePoints(assert, placedPoints(doc.objects), expected, 'mutation set')
   assert.equal(doc.objects.filter((object) => object.type === 'unknown').length, 0)
 })
 
@@ -128,10 +106,6 @@ test('opacity, visibility, strokeUniform and a simple shadow are typed fields', 
   assert.equal(rect.visible, false)
   assert.equal(rect.strokeUniform, true)
   assert.deepEqual(rect.shadow, { color: 'rgba(0,0,0,.3)', blur: 8, x: 2, y: 4, extras: { affectStroke: false, nonScaling: false } })
-  const out = toFabric(fromFabric(content)).objects[0]
-  assert.deepEqual(out.shadow, content.objects[0].shadow)
-  assert.equal(out.visible, false)
-  assert.equal(out.strokeUniform, true)
 })
 
 test('ink points and path are relative to the box top-left, whatever Fabric did to the path since', () => {
@@ -147,7 +121,7 @@ test('an object whose placement is malformed is kept verbatim as unknown', () =>
   const content = { objects: [{ type: 'Textbox', text: 'x', top: '300', left: 5 }, { type: 'Rect', angle: 'turn' }, { type: 'Path', isInk: true, path: [['A', 1, 1, 0, 0, 0, 5, 5]] }] }
   const doc = fromFabric(content)
   assert.deepEqual(doc.objects.map((object) => object.type), ['unknown', 'unknown', 'unknown'])
-  assert.deepStrictEqual(toFabric(doc), content)
+  assert.deepStrictEqual(doc.objects.map((object) => object.raw), content.objects)
 })
 
 test('between them the fixtures use every document object type', () => {
@@ -189,7 +163,7 @@ test('a document carries its schema version and page state', () => {
 test('page state keys the app does not know are kept', () => {
   const doc = fromFabric({ version: '7.4.0', objects: [] }, { columns: 2, rows: 3, zoomHint: 1.5 })
   assert.equal(doc.page.columns, 2)
-  assert.deepEqual(pageStateOf(doc), { columns: 2, rows: 3, zoomHint: 1.5 })
+  assert.deepEqual(doc.page, { columns: 2, rows: 3, zoomHint: 1.5 })
 })
 
 test('text, stickies and shapes carry their content, geometry and palette colours', () => {
@@ -251,15 +225,10 @@ test('images reference their picture through an inline media reference', () => {
   assert.equal('src' in image, false)
 })
 
-test('a media-library reference needs a resolver to become a Fabric image, and then round-trips', () => {
-  const doc = modelOf('app-objects')
-  const dataUrl = byType(doc, 'image')[0].mediaRef.dataUrl
-  const stored = structuredClone(doc)
+test('a media-library reference is a valid picture', () => {
+  const stored = structuredClone(modelOf('app-objects'))
   byType(stored, 'image')[0].mediaRef = { kind: 'media', id: 'med_123' }
   assert.equal(validateDocument(stored).ok, true)
-  assert.throws(() => toFabric(stored), (error) => error instanceof DocumentError && /med_123/.test(error.message))
-  const resolved = toFabric(stored, { resolveMedia: (ref) => (ref.id === 'med_123' ? dataUrl : null) })
-  assert.deepStrictEqual(resolved, fixture('app-objects').content)
 })
 
 test('pen strokes keep their points, path, width and colour; highlighters split colour from alpha', () => {
@@ -297,11 +266,13 @@ test('ink dots are Circles with isInk and keep tool, radius, colour and alpha', 
 })
 
 test('a colour that is not hex-with-alpha is kept as it is, so nothing is rewritten', () => {
-  for (const stroke of ['#20201E55', 'rgba(1,2,3,0.5)', 'red', '#223', '#2020aa']) {
-    const content = { objects: [{ type: 'Path', isInk: true, path: [['M', 0, 0]], stroke, strokeWidth: 2, semanticId: 'a' }] }
-    const doc = fromFabric(content)
-    assert.deepStrictEqual(withoutPlacement(toFabric(doc)), withoutPlacement(content), stroke)
+  for (const stroke of ['rgba(1,2,3,0.5)', 'red', '#223', '#2020aa']) {
+    const [ink] = fromFabric({ objects: [{ type: 'Path', isInk: true, path: [['M', 0, 0]], stroke, strokeWidth: 2, semanticId: 'a' }] }).objects
+    assert.equal(ink.color, stroke)
+    assert.equal(ink.alpha, undefined, stroke)
   }
+  const [alpha] = fromFabric({ objects: [{ type: 'Path', isInk: true, path: [['M', 0, 0]], stroke: '#20201E55', strokeWidth: 2, semanticId: 'a' }] }).objects
+  assert.deepEqual([alpha.color, alpha.alpha], ['#20201E', 0x55 / 255])
 })
 
 test('text written by the agent CLI is a Textbox and keeps its sparse shape', () => {
@@ -330,18 +301,8 @@ test('the benchmark note keeps every object, in the same stacking order', () => 
   assert.equal(byType(doc, 'connector').length, fixture('benchmark-600').content.objects.filter((object) => object.type === 'Connector').length)
 })
 
-test('stacking order follows z, not array position', () => {
-  const doc = modelOf('app-text')
-  const [a, b] = doc.objects
-  const swapped = { ...doc, objects: [{ ...a, z: 1 }, { ...b, z: 0 }] }
-  const out = toFabric(swapped)
-  assert.equal(out.objects[0].semanticId, b.id)
-  assert.equal(out.objects[1].semanticId, a.id)
-})
-
-test('duplicate, missing and empty ids survive the round trip and are reported by validation', () => {
+test('duplicate, missing and empty ids are reported by validation', () => {
   const doc = modelOf('edge-ids')
-  assertRenderEquivalent(fixture('edge-ids').content, toFabric(doc), 'edge-ids')
   const { ok, errors } = validateDocument(doc)
   assert.equal(ok, false)
   const text = errors.map((error) => `${error.path}: ${error.message}`).join('\n')
@@ -387,15 +348,6 @@ test('the model shares nothing with the Fabric JSON it came from', () => {
   byType(doc, 'ink')[0].points[0].x = -999
   byType(doc, 'text')[0].extras.stroke = 'mutated'
   assert.deepStrictEqual(content, before)
-  const out = toFabric(fromFabric(content, pageState))
-  out.objects[0].left = -1
-  assert.deepStrictEqual(content, before)
-})
-
-test('top-level Fabric keys other than objects are kept', () => {
-  const content = { version: '7.4.0', objects: [], background: '#fff', clipPath: { type: 'Rect', width: 3 } }
-  assert.deepStrictEqual(toFabric(fromFabric(content)), content)
-  assert.deepStrictEqual(toFabric(fromFabric({ objects: [] })), { objects: [] })
 })
 
 test('content that is not an object, or has no objects array, becomes an empty document', () => {
@@ -444,33 +396,21 @@ test('validation rejects a document with the wrong schema version, and a non-doc
   assert.equal(validateDocument({ schemaVersion: 1, page: { columns: 1, rows: 1 }, objects: 'no' }).ok, false)
 })
 
-test('toFabric refuses an invalid document with a clear error', () => {
-  assert.throws(() => toFabric({ schemaVersion: 1, page: { columns: 1, rows: 1 }, objects: [{ type: 'sparkle', z: 0 }] }), DocumentError)
-})
-
 test('the placement check really notices a moved, rotated or rescaled object', () => {
-  const content = fixture('app-all-tools').content
+  const entry = fixture('app-all-tools')
+  const expected = frozen.points[entry.name]
+  const placed = (change) => { const doc = fromFabric(entry.content, { columns: 1, rows: 1 }); change(doc.objects[3].geometry); return placedPoints(doc.objects) }
+  assertSamePoints(assert, placed(() => {}), expected, 'unchanged')
   for (const change of [(g) => { g.x += 0.01 }, (g) => { g.rotation += 1 }, (g) => { g.scaleY *= 1.001 }, (g) => { g.flipX = !g.flipX }]) {
-    const doc = fromFabric(content, { columns: 1, rows: 1 })
-    change(doc.objects[3].geometry)
-    assert.throws(() => assertRenderEquivalent(content, toFabric(doc), 'changed'))
+    assert.throws(() => assertSamePoints(assert, placed(change), expected, 'changed'))
   }
 })
 
-// The documented formula (schema.js), written without Fabric or its matrix helpers, must put every point where Fabric puts it.
-test('the documented transform order places every fixture and every mutation like Fabric does', () => {
-  const notes = [...fixtures.map((entry) => [entry.name, entry.content, entry.pageState]), ['mutation set', mutationNote(), { columns: 3, rows: 3 }]]
-  for (const [name, content, pageState] of notes) {
-    const expected = fabricPoints(content.objects)
-    const actual = placedPoints(fromFabric(content, pageState).objects)
-    assert.equal(actual.length, expected.length, name)
-    for (let i = 0; i < expected.length; i += 1) assert.ok(Math.abs(actual[i] - expected[i]) <= 1e-6, `${name}: point ${i}: ${actual[i]} vs ${expected[i]}`)
-  }
-})
-
+// The documented formula (schema.js), written without Fabric or its matrix helpers, must put every point where Fabric put it (the
+// fixtures and the mutation set are covered above, each against its frozen points).
 test('skew order matters: SkewY acts first, so swapping the two skews would move the points', () => {
   const doc = fromFabric({ objects: [{ type: 'Rect', semanticId: 'a', left: 100, top: 100, width: 80, height: 50, strokeWidth: 0, skewX: 30, skewY: 20, angle: 10 }] })
-  const expected = fabricPoints([{ type: 'Rect', left: 100, top: 100, width: 80, height: 50, strokeWidth: 0, skewX: 30, skewY: 20, angle: 10 }])
+  const expected = frozen.points['skew rect']
   const swapped = structuredClone(doc)
   swapped.objects[0].geometry.skewX = 20
   swapped.objects[0].geometry.skewY = 30
@@ -479,7 +419,7 @@ test('skew order matters: SkewY acts first, so swapping the two skews would move
 })
 
 test('a Group, a picture and a connector default to no stroke, everything else to 1, as Fabric does', () => {
-  // The placement oracle takes these defaults from the real classes, so a wrong default would move the points in the mutation set.
+  // The placement oracle was measured with these defaults on the real classes, so a wrong default would move the points in the mutation set.
   const bare = (type, extra = {}) => ({ type, semanticId: type, left: 50, top: 60, width: 100, height: 40, originX: 'left', originY: 'top', ...extra })
   const doc = fromFabric({ objects: [bare('Group', { objects: [] }), bare('Image', { src: 'data:,' }), bare('Connector'), bare('Rect'), bare('Textbox', { text: 'x' })] })
   assert.deepEqual(doc.objects.map((object) => object.geometry.x), [50, 50, 50, 50.5, 50.5])

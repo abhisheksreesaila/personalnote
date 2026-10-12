@@ -6,7 +6,7 @@ const isText = (value) => typeof value === 'string'
 
 // Checks a document and lists every problem as { path, message }. `requireIds` (default on) wants every top-level object to
 // have a unique, non-empty id; notes saved before ids were enforced fail that check but still convert. `strict: false`
-// keeps only the structural checks (what is needed to convert the document back), which is what toFabric uses.
+// keeps only the structural checks (what a reader needs to use the document at all).
 export function validateDocument(doc, { requireIds = true, strict = true } = {}) {
   const errors = []
   const report = (path, message, structural = false) => { if (strict || structural) errors.push({ path, message }) }

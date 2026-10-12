@@ -1,7 +1,16 @@
+// A request that gets no answer is given up after this long, so a hung server never leaves a save "in flight" (and everything waiting on it)
+// for ever. `options.timeout` (ms) changes it for one call.
+export const REQUEST_TIMEOUT_MS = 30000
+
+// Big transfers (an import of a whole workspace or vault, an export) are as slow as the data is large: they are never given up on by the clock.
+const UNTIMED = /^\/(import|export)\//
+
 export async function api(path, options = {}) {
+  const { timeout = UNTIMED.test(path) ? 0 : REQUEST_TIMEOUT_MS, ...rest } = options
   const response = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
+    signal: timeout > 0 && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(timeout) : undefined,
+    ...rest,
   })
   if (!response.ok) {
     let message = 'Request failed'

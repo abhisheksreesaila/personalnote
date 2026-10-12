@@ -4,7 +4,7 @@
 export const COMMAND_NAMES = Object.freeze([
   'new-note', 'quick-note', 'export-backup', 'export-markdown', 'print', 'settings',
   'undo', 'redo', 'zoom-in', 'zoom-out', 'zoom-fit',
-  'skin-crayon', 'skin-paper', 'skin-night', 'speed-meter',
+  'skin-crayon', 'skin-paper', 'skin-night', 'speed-meter', 'speed-test',
 ])
 
 export function createCommandDispatcher(handlers = {}) {

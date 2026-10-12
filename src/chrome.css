@@ -266,8 +266,7 @@
   @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sk-accent) 45%, transparent); } 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--sk-accent) 0%, transparent); } }
 
   .app-shell.mindmap-active .tool-dock { display: flex !important; }
-  .app-shell .workspace.is-object-dragging :is(.page-minimap, .zoom-control) { opacity: .3; pointer-events: none; }
-  .app-shell .workspace.is-object-dragging .tool-dock { opacity: .14; pointer-events: none; transform: translateX(-50%) translateY(6px); }
+  .app-shell .is-clear-of-handles { opacity: .25 !important; pointer-events: none !important; }
 
   .app-shell .workspace.is-drop-target::after { content: ""; position: absolute; inset: 8px; z-index: 6; pointer-events: none; border: 2px dashed var(--sk-accent); border-radius: var(--sk-radius); background: color-mix(in srgb, var(--sk-accent) 6%, transparent); }
   .app-shell .ink-options-popover { position: fixed; bottom: 92px; border-radius: 16px; background: var(--glass-solid); }
@@ -407,7 +406,7 @@
     .app-shell .tool-dock::-webkit-scrollbar { display: none; }
     .app-shell .tool-dock .tool-button { width: 44px; height: 44px; flex-basis: 44px; }
     .app-shell .tool-dock [data-tool="hand"] { order: -1; }
-    .app-shell .tool-dock .ink-options-trigger { width: 32px; height: 32px; flex-basis: 32px; }
+    .app-shell .tool-dock .ink-options-trigger { width: 40px; height: 40px; flex-basis: 40px; }
     .app-shell .voice-button { flex-basis: 46px; width: 46px; height: 46px; }
     .app-shell .ink-options-popover { bottom: 84px; width: min(266px, calc(100vw - 24px)); }
     .app-shell .voice-caption { left: 12px; right: auto; bottom: 84px; max-width: calc(100vw - 24px); transform: none; }
@@ -428,7 +427,9 @@
     .app-shell .scroll-indicator-x { display: none; }
     .app-shell .mobile-capture-controls button { border-radius: 16px; border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); transition: transform 140ms var(--ease-out); }
     .app-shell .mobile-capture-controls button:active { transform: scale(.96); }
-    .app-shell .mobile-draw-button, .app-shell .mobile-connect-button { background: var(--glass-solid); color: var(--sk-ink); }
+    .app-shell .mobile-draw-button, .app-shell .mobile-connect-button, .app-shell .mobile-tool-button { background: var(--glass-solid); color: var(--sk-ink); }
+    .app-shell .mobile-tool-button { min-width: 54px; min-height: 54px; padding: 0; }
+    .app-shell .mobile-tool-button.active, .app-shell .mobile-draw-button.active { background: var(--sk-accent-soft); color: var(--sk-accent); border-color: var(--sk-accent); }
     .app-shell .mobile-connect-button { min-width: 54px; min-height: 54px; padding: 0; }
     .app-shell .mobile-connect-button.active { background: var(--sk-accent-soft); color: var(--sk-accent); border-color: var(--sk-accent); }
     .app-shell .mobile-speak-button { background: var(--accent-fill); color: var(--sk-accent-ink); border-color: var(--accent-fill) !important; white-space: nowrap; }
@@ -466,6 +467,14 @@
     color: var(--sk-ink); font: 500 11px/1.3 var(--sk-mono); pointer-events: none; text-align: right;
   }
   .speed-meter[hidden] { display: none; }
+  /* The speed test panel (F-034): a corner box while it runs, the results in the middle when it is done; the skin's own glass. */
+  .speedtest-panel { position: fixed; inset: auto 16px 16px auto; z-index: 70; margin: 0; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 12px 14px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--glass-solid); color: var(--sk-ink); font-size: 12px; }
+  .speedtest-panel.is-done { inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+  .speedtest-panel h3 { margin: 12px 0 2px; font-size: 12px; }
+  .speedtest-panel .speedtest-compare td, .speedtest-panel .speedtest-compare th { white-space: nowrap; font-size: 11px; }
+  .speedtest-panel table { width: 100%; border-collapse: collapse; }
+  .speedtest-panel td, .speedtest-panel th { padding: 2px 6px; border-bottom: 1px solid var(--sk-line); text-align: right; }
+  .speedtest-panel td:first-child, .speedtest-panel th:first-child { text-align: left; }
   @media (max-width: 640px) { .speed-meter { right: auto; bottom: auto; left: 12px; top: 64px; } }
   .speed-meter small { color: var(--ui-muted); font: inherit; font-size: 10px; }
   .setting-row input[type="checkbox"] { accent-color: var(--sk-accent); width: 16px; height: 16px; margin: 0; }
@@ -489,4 +498,28 @@
     :root.chrome-mac .app-shell .topbar-title { height: var(--mac-bar); }
     :root.chrome-mac-fullscreen .app-shell .topbar { left: 8px; }
   }
+}
+
+/* The Leafer canvas: the Leafer view sits under the transparent input surface, which keeps the pan, zoom and touch gestures. */
+@media screen {
+  #leafer-host { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+  #leafer-host canvas { display: block; }
+  /* F-035: the browser never takes a finger on the canvas for its own scroll, zoom or long-press menu (it would cancel the drag the editor was following). */
+  #leafer-host, #leafer-host canvas { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  /* While the Select tool is on, Leafer takes the pointer; the Hand (or held Space) gives it back to the input surface that does the panning. */
+  .app-shell.leafer-picking .input-surface { pointer-events: none; }
+  .app-shell.leafer-picking #leafer-host { pointer-events: auto; }
+  .leafer-text-editor { z-index: 5; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; } /* (the host is not selectable; the words being typed are) */
+  .connect-surface { position: absolute; inset: 0; z-index: 3; touch-action: none; cursor: crosshair; }
+  .connect-surface[hidden] { display: none; }
+  .ink-surface { position: absolute; inset: 0; z-index: 3; touch-action: none; cursor: crosshair; }
+  .ink-surface[hidden] { display: none; }
+  .ink-surface[data-tool="eraser"] { cursor: none; }
+  .ink-live { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .app-shell.leafer-switching #leafer-host, .app-shell.leafer-switching .ink-surface, .app-shell.leafer-switching .connect-surface, .app-shell.leafer-switching .selection-bar { pointer-events: none; }
+  .selection-bar { position: absolute; z-index: 15; top: 64px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--paper, #fbfaf5) 92%, transparent); border: 1px solid var(--line, #d4cec3); box-shadow: 0 6px 18px rgba(20, 20, 30, .12); }
+  .selection-bar[hidden] { display: none; }
+  .selection-bar button { font: 500 12px/1 "IBM Plex Sans", system-ui, sans-serif; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted, #50505a); cursor: pointer; }
+  .selection-bar button:hover { background: color-mix(in srgb, var(--ink, #20201e) 8%, transparent); color: inherit; }
+  .selection-bar.is-locked [data-selection-action="lock"] { color: #1c70a8; }
 }

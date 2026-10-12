@@ -4,51 +4,42 @@ import './skins.css'
 import './chrome.css'
 import { mountSkinSwitcher, startSkins } from './skins.js'
 import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
-import { ActiveSelection, cache, Canvas, Circle, FabricImage, FabricObject, IText, Path, PencilBrush, Point, Rect, StaticCanvas, Textbox, util } from 'fabric'
-import { createIcons, icons } from 'lucide'
+import { createIcons, icons } from './icons.js'
 import { api, downloadWorkspaceFile } from './core/api.js'
+import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
+import { nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
 import { createMobileHoldController } from './modules/voice/mobile-hold-controller.js'
-import { pageBoundedTextLayout } from './modules/voice/text-layout.js'
-import { flushPendingHistory } from './modules/editor/history.js'
+import { pageBoundedTextLayout, voiceInsertPoint } from './modules/voice/text-layout.js'
+import { contentBounds } from './modules/canvas-leafer/bounds.js'
 import { mountAgentSync } from './modules/sync/index.js'
-import { mergeRemoteAppends, pickFlagBlock } from './modules/sync/changes.js'
-import { prettifySelection } from './modules/editor/prettify.js'
-import { Connector, drawArrow } from './modules/editor/connector-object.js'
-import { Sticky } from './modules/editor/sticky-object.js'
+import { pickFlagBlock } from './modules/sync/changes.js'
 import { dockIcon } from './modules/editor/dock-icons.js'
-import {
-  fitImage,
-  imageEncoding,
-  imageFiles,
-  objectPalette,
-  shapeDefaults,
-  stickyDefaults,
-} from './modules/editor/objects.js'
-import {
-  ConnectorIndex,
-  connectorBox,
-  connectorEndpoints,
-  connectorsLeftDangling,
-} from './modules/editor/connectors.js'
+import { imageFiles, objectPalette, stickyDefaults } from './modules/editor/objects.js'
 import { readPreferences, writePreferences } from './preferences.js'
+import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
+import { RENDER_MODES } from './modules/canvas-leafer/perf.js'
+import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
+import { mergeDocuments } from './core/document/merge.js'
+import { createInk } from './modules/canvas-leafer/ink.js'
+import { pictureFiles, prepareImage, uploadPicture } from './modules/canvas-leafer/media.js'
+import { renderNotePicture, renderSheet } from './modules/canvas-leafer/export.js'
+import { createConnectTool } from './modules/canvas-leafer/connect-tool.js'
+import { EDGE_OVERFLOW, shiftedDocument } from './modules/canvas-leafer/pages.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
-import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './modules/editor/save-flush.js'
+import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
-import { nextPageGhost } from './modules/editor/edge-ghost.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
-import { createLiftEffect } from './modules/editor/lift.js'
 import { chooseOpeningView, fitView, openingView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
 import {
   clampView,
   pageExtents,
   parseBoxShadow,
-  shadowBands,
   shiftExtents,
   viewMargins,
   wheelPanDelta,
@@ -59,10 +50,6 @@ const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
 const CANVAS_ZOOM_MIN = 0.25
 const CANVAS_ZOOM_MAX = 4
-const EDGE_OVERFLOW = 6
-const EDGE_SHRINK = 0
-const TRANSFORM_EDGE_MARGIN = 24
-const ERASER_RADIUS = 13
 // desktop.py opens the Chromium app window with engine=chromium (see createSaveTiming).
 const saveTiming = createSaveTiming({ fast: new URLSearchParams(location.search).get('engine') === 'chromium' })
 const INK_COLORS = [
@@ -86,8 +73,6 @@ const QUICK_INK_COLORS = [
   ['Green', '#3a7d5a'],
   ['Blue', '#1c70a8'],
 ]
-const GHOST_REACH = 160
-const PAGE_FOLD_COLOR = 'rgba(31, 27, 22, .13)' // paper is light in every skin
 const STROKE_WIDTHS = {
   pen: [1, 3, 6, 10],
   highlight: [10, 20, 32, 48],
@@ -104,14 +89,6 @@ const DEFAULT_MINDMAP_DOCUMENT = {
     presentation: 'box', curve: 78,
   }],
 }
-
-FabricObject.customProperties = Array.from(new Set([
-  ...FabricObject.customProperties,
-  'inkPoints',
-  'isInk',
-  'inkTool',
-  'semanticId',
-]))
 
 document.querySelector('#app').innerHTML = `
   <div class="app-shell">
@@ -152,8 +129,10 @@ document.querySelector('#app').innerHTML = `
             <button class="icon-button glass-button share-button" id="share-button" title="Share or export" aria-label="Share or export" aria-haspopup="menu" aria-expanded="false"><i data-lucide="share"></i></button>
             <div class="share-menu" id="share-menu" role="menu" aria-label="Share or export" hidden>
               <button role="menuitem" id="share-print"><i data-lucide="printer"></i><span>Print preview</span><kbd id="print-kbd">Ctrl P</kbd></button>
+              <button role="menuitem" id="share-png"><i data-lucide="image-down"></i><span>Note as picture (PNG)</span></button>
               <button role="menuitem" id="share-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
               <button role="menuitem" id="share-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
+              <button role="menuitem" id="share-vault"><i data-lucide="folder-down"></i><span>Obsidian vault</span></button>
             </div>
           </div>
           <button class="icon-button glass-button" id="clear-note" title="Clear all" aria-label="Clear all"><i data-lucide="eraser"></i></button>
@@ -162,6 +141,12 @@ document.querySelector('#app').innerHTML = `
       </header>
 
       <section class="workspace" id="workspace">
+        <div class="selection-bar" id="selection-bar" role="toolbar" aria-label="Selected objects" hidden>
+          <button type="button" data-selection-action="backward" title="Send backward (Ctrl+[)">Back</button>
+          <button type="button" data-selection-action="forward" title="Bring forward (Ctrl+])">Forward</button>
+          <button type="button" data-selection-action="lock" title="Lock or unlock (Ctrl+Shift+L)">Lock</button>
+          <button type="button" data-selection-action="delete" title="Delete (Delete key)">Delete</button>
+        </div>
         <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
           <div class="dock-canvas" id="dock-canvas">
             <div class="tool-group dock-tools">
@@ -184,11 +169,11 @@ document.querySelector('#app').innerHTML = `
             </div>
             <div class="dock-divider"></div>
             <div class="tool-group dock-history">
-              <button class="tool-button prettify-button" id="prettify" title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
+              <button class="tool-button prettify-button" id="prettify" data-keeps-text-editing title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
               <button class="tool-button" id="undo" title="Undo" aria-label="Undo">${dockIcon("undo")}</button>
               <button class="tool-button" id="redo" title="Redo" aria-label="Redo">${dockIcon("redo")}</button>
             </div>
-            <button class="voice-button" id="voice-button" title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon">${dockIcon("mic", 2)}</span></button>
+            <button class="voice-button" id="voice-button" data-keeps-text-editing title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon">${dockIcon("mic", 2)}</span></button>
           </div>
           <div class="mindmap-dock-actions mindmap-rail-actions" id="mindmap-rail-actions" aria-label="Mind map tools" hidden>
             <button class="tool-button" data-map-action="image" title="Add image" aria-label="Add image"><i data-lucide="image-plus"></i></button>
@@ -204,9 +189,11 @@ document.querySelector('#app').innerHTML = `
           </div>
         </div>
         <div class="mobile-capture-controls" aria-label="Canvas capture controls">
+          <button class="mobile-tool-button" id="mobile-select" title="Select, move and resize" aria-label="Select, move and resize" aria-pressed="false"><i data-lucide="mouse-pointer-2"></i></button>
+          <button class="mobile-tool-button" id="mobile-sticky" title="Sticky note" aria-label="Sticky note" aria-pressed="false"><i data-lucide="sticky-note"></i></button>
           <button class="mobile-connect-button" id="mobile-connect" title="Connect two objects" aria-label="Connect two objects" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
           <button class="mobile-draw-button" id="mobile-draw" aria-label="Enable drawing"><i data-lucide="pencil"></i><span>Draw</span></button>
-          <button class="mobile-speak-button" id="mobile-speak" title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
+          <button class="mobile-speak-button" id="mobile-speak" data-keeps-text-editing title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
         </div>
         <section class="ink-options-popover" id="ink-options-popover" role="dialog" aria-label="Ink options" hidden>
           <div class="ink-options-heading">
@@ -227,7 +214,7 @@ document.querySelector('#app').innerHTML = `
         <div class="eraser-cursor" id="eraser-cursor" hidden></div>
 
         <div class="paper" id="paper">
-          <canvas id="note-canvas"></canvas>
+          <div class="input-surface" id="note-input"></div>
         </div>
         <div class="mindmap-host" id="mindmap-host" hidden></div>
         <div class="scroll-indicator scroll-indicator-y" id="scroll-y" aria-hidden="true"><span></span></div>
@@ -292,6 +279,13 @@ document.querySelector('#app').innerHTML = `
       <section class="settings-section">
         <p class="settings-section-label">Performance</p>
         <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
+        <details class="settings-advanced">
+          <summary>Advanced</summary>
+          <label class="setting-row" for="settings-render-mode"><span>Render mode</span><select id="settings-render-mode"><option value="default">Hybrid (page bitmaps while navigating)</option><option value="classic">Draw every step (before)</option><option value="bitmaps">Page bitmaps always</option><option value="gestureTransform">Slide picture (preview 3)</option><option value="dpr1">Lower resolution (1x)</option></select></label>
+          <p class="portability-help">For trying how the canvas feels on this computer. Changes only how the screen is drawn, never a note. "Page bitmaps always" can make drawing and typing slower.</p>
+        </details>
+        <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
+        <div class="portability-actions speedtest-offer"><button type="button" id="settings-speed-test"><i data-lucide="gauge"></i><span>Run speed test…</span></button></div>
       </section>
       <section class="settings-section">
         <p class="settings-section-label">Built-in modules</p>
@@ -426,6 +420,7 @@ if (readHostChrome(location.search).chrome === 'mac') document.documentElement.c
 
 const elements = {
   shell: document.querySelector('.app-shell'),
+  selectionBar: document.querySelector('#selection-bar'),
   workspace: document.querySelector('#workspace'),
   paper: document.querySelector('#paper'),
   mindmapHost: document.querySelector('#mindmap-host'),
@@ -470,6 +465,7 @@ const elements = {
   fontSizeValue: document.querySelector('#font-size-value'),
   settingsFontSize: document.querySelector('#settings-font-size'),
   settingsSpeedMeter: document.querySelector('#settings-speed-meter'),
+  settingsRenderMode: document.querySelector('#settings-render-mode'),
   settingsFontSizeValue: document.querySelector('#settings-font-size-value'),
   voiceButton: document.querySelector('#voice-button'),
   voiceCaption: document.querySelector('#voice-caption'),
@@ -512,6 +508,7 @@ const state = {
   fontFamily: DEFAULT_FONT_CHOICE,
   fontSize: 24,
   speedMeter: false,
+  renderMode: 'default',
   displayScale: 1,
   canvasZoom: 1,
   recognition: null,
@@ -522,14 +519,8 @@ const state = {
   microphoneCapture: null,
   localFinishTimer: null,
   voiceAttempt: 0,
-  drawingGesture: null,
-  eraserActive: false,
-  eraserChanged: false,
-  eraserLastPoint: null,
   creatingNote: false,
   loading: false,
-  history: [],
-  historyIndex: -1,
 }
 
 let mindmapEditor = null
@@ -575,24 +566,56 @@ function loadPreferences() {
   if (preferences.fontFamily) state.fontFamily = preferences.fontFamily
   if (preferences.fontSize) state.fontSize = preferences.fontSize
   if (preferences.speedMeter) state.speedMeter = true
+  if (preferences.renderMode) state.renderMode = preferences.renderMode
 }
 
 function savePreferences() {
-  writePreferences(undefined, { fontFamily: state.fontFamily, fontSize: state.fontSize, speedMeter: state.speedMeter })
+  writePreferences(undefined, { fontFamily: state.fontFamily, fontSize: state.fontSize, speedMeter: state.speedMeter, renderMode: state.renderMode })
 }
 
-loadPreferences()
+// The canvas's render strategy (perf.js): a benchmark's own `window.__pnPerf` switches stay, the named mode goes on top. The speed test's comparison and
+// Settings > Performance > Advanced > Render mode both come through here.
+const externalPerf = { ...(globalThis.__pnPerf ?? {}) }
+function setPerfSwitches(name) { globalThis.__pnPerf = { ...externalPerf, ...(RENDER_MODES[name] ?? {}) } }
 
-const canvas = new Canvas('note-canvas', {
-  width: elements.workspace.clientWidth || PAGE_WIDTH,
-  height: elements.workspace.clientHeight || PAGE_HEIGHT,
-  backgroundColor: 'transparent',
-  preserveObjectStacking: false,
-  renderOnAddRemove: false,
-  skipOffscreen: true,
-  selectionColor: 'rgba(28, 112, 168, 0.08)',
-  selectionBorderColor: '#1c70a8',
-})
+loadPreferences()
+setPerfSwitches(state.renderMode)
+
+// ADR 0001: Leafer is the canvas. It draws the open note from the document model (JSON Canvas is the stored form, ADR 0002); a transparent
+// input surface over it hosts the pan, zoom and touch gestures and the placing clicks of the text and sticky tools. A note that was not
+// edited is never rewritten: a save (a new title, say) sends the note's own content back untouched, and only for the note that content
+// was loaded from. An edited note is saved from the document model.
+let leaferCanvas = null
+let leaferHost = null
+let leaferInk = null // the pen, highlighter and eraser (F-031)
+let leaferConnect = null // the connect tool (F-032)
+// Saving an edited note writes only what changed: the encoder keeps the JSON of every object it has written (core/note-codec.js).
+const leaferEncoder = createDocumentEncoder()
+// The first save of a note that was just opened would write the JSON of every object (150 ms on 5,000, a stall right after the first edit):
+// it is done ahead, in idle slices of a few milliseconds, and every later save writes only what changed. The scene's layout is done ahead
+// the same way (the first click would pay 80 ms for it).
+let encoderWarmToken = 0
+function warmLeaferEncoder() {
+  const mine = ++encoderWarmToken
+  let layoutWarmed = false
+  const later = (run) => (typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback(run, { timeout: 1500 }) : setTimeout(run, 40))
+  const slice = () => {
+    if (mine !== encoderWarmToken || !leaferEdits.doc) return
+    if (!layoutWarmed) { layoutWarmed = true; leaferCanvas?.warmLayout(); return later(slice) }
+    let done = true
+    try { done = leaferEncoder.warm(leaferEdits.doc, 5) } catch (error) { console.warn('encoder warm-up stopped', error); return }
+    if (!done) later(slice)
+  }
+  later(slice)
+}
+let leaferBase = null // the document as last loaded or last saved: what an agent's merge is measured against
+let leaferSource = { noteId: null, content: { nodes: [], edges: [] }, pageState: { columns: 1, rows: 1 } } // the open note exactly as loaded
+
+// The window the pages are shown in, always exactly as large as the workspace.
+const viewSize = { width: Math.max(1, elements.workspace.clientWidth || PAGE_WIDTH), height: Math.max(1, elements.workspace.clientHeight || PAGE_HEIGHT) }
+// The transparent layer over the Leafer picture: it takes the pointer when the select tool is not the one picking (the hand pans, the text
+// and sticky tools place), and it is where touch pan and pinch begin.
+const inputSurface = document.querySelector('#note-input')
 
 const CANVAS_FONT_SPECS = [
   '400 24px "Source Serif 4"',
@@ -613,13 +636,7 @@ function loadCanvasFonts() {
 }
 
 function refreshCanvasTextMetrics() {
-  cache.clearFontCache()
-  canvas.getObjects().forEach((object) => {
-    if (!isEditableText(object)) return
-    object.initDimensions()
-    object.setCoords()
-  })
-  canvas.requestRenderAll()
+  leaferCanvas?.refreshText()
 }
 
 async function prepareCanvasFonts() {
@@ -629,8 +646,6 @@ async function prepareCanvasFonts() {
   ])
   refreshCanvasTextMetrics()
 }
-
-canvas.freeDrawingBrush = new PencilBrush(canvas)
 
 let inkOptionsCloseTimer
 
@@ -870,6 +885,8 @@ function renderNotebookPicker() {
 const SAVED_LABEL = `Saved on this ${/mac|iphone|ipad/i.test(navigator.platform) ? 'Mac' : 'device'}`
 
 function setSaveState(status, isError = false) {
+  if (status === 'Saving' && !isError && elements.saveState.dataset.state === 'Saving') return // already showing it: leave the spinner running
+  elements.saveState.dataset.state = status
   elements.saveState.classList.toggle('error', isError)
   elements.saveState.innerHTML = status === 'Saving'
     ? '<span class="saving-spinner"></span>Saving'
@@ -877,11 +894,11 @@ function setSaveState(status, isError = false) {
 }
 
 let viewportOffsetX = 0
+const layoutListeners = [] // told when the view or the note's content moved (the agent flag follows it)
+const layoutChanged = () => layoutListeners.forEach((listener) => listener())
 let viewportOffsetY = 0
 let pageExtentsNow = pageExtents(1, 1, PAGE_WIDTH, PAGE_HEIGHT)
 let pageColors = { paper: '#fbfaf5', label: '#6e6e78', radius: 6, edge: '#2c2c34', accent: '#2f6fe0', accentInk: '#ffffff', shadows: [] }
-let edgeGhost = null
-let voiceOutline = false
 
 function getDisplayScale() {
   if (window.innerWidth > 800) return 1
@@ -919,16 +936,17 @@ function refreshPageColors() {
     edge: highContrast ? read('--line', '#2c2c34') : read('--sk-edge', read('--line', '#2c2c34')),
     shadows: parseBoxShadow(read('--sk-shadow', 'none')).map(resolveShadowLayer),
   }
-  Connector.haloColor = pageColors.accent
+  leaferCanvas?.setColors(pageColors)
 }
 
-// The Fabric canvas is always exactly as large as the workspace. Page growth
-// only changes the page count and the tiles drawn behind the objects.
+// The view is always exactly as large as the workspace. Page growth only changes the page count.
 function syncCanvasSize() {
   const width = Math.max(1, elements.workspace.clientWidth)
   const height = Math.max(1, elements.workspace.clientHeight)
-  if (canvas.getWidth() === width && canvas.getHeight() === height) return false
-  canvas.setDimensions({ width, height })
+  if (viewSize.width === width && viewSize.height === height) return false
+  viewSize.width = width
+  viewSize.height = height
+  leaferCanvas?.resize(width, height)
   return true
 }
 
@@ -939,25 +957,34 @@ function pageExtentsTarget() {
 function clampedViewOffset(offsetX, offsetY, keep = false, scale = getCanvasScale()) {
   const target = pageExtentsTarget()
   return clampView({ x: offsetX, y: offsetY }, {
-    viewW: canvas.getWidth(),
-    viewH: canvas.getHeight(),
+    viewW: viewSize.width,
+    viewH: viewSize.height,
     contentW: target.right,
     contentH: target.bottom,
     scale,
     margins: viewMargins(window.innerWidth),
     keep,
+    previous: { x: viewportOffsetX, y: viewportOffsetY },
   })
 }
 
 function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY, keep = false) {
-  const next = clampedViewOffset(offsetX, offsetY, keep)
+  let next = clampedViewOffset(offsetX, offsetY, keep)
+  // A view that no longer overlaps any page (after an undo or a fold-back) goes at once, not animated, to the nearest page edge.
+  if (!keep) {
+    const scale0 = getCanvasScale()
+    const target = pageExtentsTarget()
+    const apart = next.x + target.right * scale0 <= 0 || next.x >= viewSize.width || next.y + target.bottom * scale0 <= 0 || next.y >= viewSize.height
+    if (apart) next = clampView({ x: next.x, y: next.y }, { viewW: viewSize.width, viewH: viewSize.height, contentW: target.right, contentH: target.bottom, scale: scale0, margins: viewMargins(window.innerWidth) })
+  }
   const previousX = viewportOffsetX
   const moved = next.y !== viewportOffsetY
   viewportOffsetX = next.x
   viewportOffsetY = next.y
   const scale = getCanvasScale()
-  canvas.setViewportTransform([scale, 0, 0, scale, next.x, next.y])
-  canvas.requestRenderAll()
+  leaferCanvas?.setView({ x: next.x, y: next.y, scale })
+  scheduleHandleClearance()
+  layoutChanged()
   updateNavigationUi(moved || next.x !== previousX)
 }
 
@@ -969,7 +996,7 @@ function updateMiniGrid() {
   const { columns, rows } = state.pages
   const visible = visiblePages({
     view: { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() },
-    viewW: canvas.getWidth(), viewH: canvas.getHeight(), columns, rows, pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT,
+    viewW: viewSize.width, viewH: viewSize.height, columns, rows, pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT,
   })
   const key = `${columns}x${rows}:${[...visible].join(',')}`
   if (key === miniGridKey) return
@@ -990,7 +1017,7 @@ function updateScrollIndicators(reveal) {
   const target = pageExtentsTarget()
   const thumbs = scrollThumbs({
     view: { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() },
-    viewW: canvas.getWidth(), viewH: canvas.getHeight(),
+    viewW: viewSize.width, viewH: viewSize.height,
     contentW: target.right, contentH: target.bottom, margins: viewMargins(window.innerWidth),
   })
   for (const [axis, element, thumb] of [['x', elements.scrollX, thumbs.x], ['y', elements.scrollY, thumbs.y]]) {
@@ -1022,12 +1049,13 @@ function setViewTo(view) {
   const scale = getCanvasScale()
   viewportOffsetX = view.x
   viewportOffsetY = view.y
-  canvas.setViewportTransform([scale, 0, 0, scale, view.x, view.y])
-  canvas.requestRenderAll()
+  leaferCanvas?.setView({ x: view.x, y: view.y, scale })
+  scheduleHandleClearance()
+  layoutChanged()
   updateNavigationUi(true)
 }
 
-function zoomTarget(nextZoom, point = { x: canvas.getWidth() / 2, y: canvas.getHeight() / 2 }) {
+function zoomTarget(nextZoom, point = { x: viewSize.width / 2, y: viewSize.height / 2 }) {
   const zoom = Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, nextZoom))
   const scale = state.displayScale * zoom
   const view = zoomAtPoint({ x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }, scale, point)
@@ -1044,7 +1072,7 @@ function fitAllPages() {
   const target = pageExtentsTarget()
   const margins = viewMargins(window.innerWidth)
   const fit = fitView({
-    viewW: canvas.getWidth(), viewH: canvas.getHeight(), contentW: target.right, contentH: target.bottom,
+    viewW: viewSize.width, viewH: viewSize.height, contentW: target.right, contentH: target.bottom,
     margins, min: state.displayScale * CANVAS_ZOOM_MIN, max: state.displayScale * 1,
   })
   const clamped = clampedViewOffset(fit.x, fit.y, false, fit.scale)
@@ -1059,7 +1087,7 @@ function goToPage(index) {
   const column = index % state.pages.columns
   const row = Math.floor(index / state.pages.columns)
   const scale = getCanvasScale()
-  const view = viewForPage({ column, row, scale, viewW: canvas.getWidth(), viewH: canvas.getHeight(), pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT })
+  const view = viewForPage({ column, row, scale, viewW: viewSize.width, viewH: viewSize.height, pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT })
   const clamped = clampedViewOffset(view.x, view.y, false, scale)
   setViewTo({ x: clamped.x, y: clamped.y, scale })
 }
@@ -1074,8 +1102,8 @@ function openCanvasView() {
   if (window.innerWidth <= 800) return resetCanvasView()
   const target = pageExtentsTarget()
   const margins = viewMargins(window.innerWidth)
-  const viewW = canvas.getWidth()
-  const viewH = canvas.getHeight()
+  const viewW = viewSize.width
+  const viewH = viewSize.height
   const min = state.displayScale * OPEN_ZOOM_MIN
   const max = state.displayScale
   const whole = openingView({
@@ -1084,7 +1112,7 @@ function openCanvasView() {
   })
   const firstPage = fitView({ viewW, viewH, contentW: PAGE_WIDTH, contentH: PAGE_HEIGHT, margins, min, max })
   const actual = { scale: max, x: (viewW - PAGE_WIDTH * max) / 2, y: margins.top }
-  const boxes = canvas.getObjects().filter((object) => !isConnector(object)).map((object) => object.getBoundingRect())
+  const boxes = leaferCanvas.boxes()
   const view = chooseOpeningView([whole, firstPage, actual], viewW, viewH, boxes, OPEN_OBJECT_LIMIT, { width: target.right, height: target.bottom })
   state.canvasZoom = view.scale / state.displayScale
   setCanvasViewportOffset(view.x, view.y)
@@ -1094,7 +1122,7 @@ function resetCanvasView() {
   const scale = getCanvasScale()
   const target = pageExtentsTarget()
   // Centre the pages when they fit; otherwise start at the first page rather than mid-grid.
-  const freeWidth = canvas.getWidth() - target.right * scale
+  const freeWidth = viewSize.width - target.right * scale
   viewportOffsetX = freeWidth >= 48 ? freeWidth / 2 : 24
   viewportOffsetY = viewMargins(window.innerWidth).top
   setCanvasViewportOffset(viewportOffsetX, viewportOffsetY)
@@ -1111,889 +1139,129 @@ function zoomCanvasAt(nextZoom, point) {
 
 // Retargets the drawn page tiles at once. `shift` is the world distance every object
 // moved when pages were prepended, so the view is compensated and nothing jumps.
-function resizePaper(shiftX = 0, shiftY = 0) {
+// `settle`: pages folded away, so the view is put back inside the content now (the page growth `keep` would leave it for the next pan to
+// snap), F-009.
+function resizePaper(shiftX = 0, shiftY = 0, settle = false) {
   state.displayScale = getDisplayScale()
   syncCanvasSize()
   const target = pageExtentsTarget()
   const from = shiftExtents(pageExtentsNow, shiftX, shiftY)
-  const changed = from.left !== target.left || from.top !== target.top
-    || from.right !== target.right || from.bottom !== target.bottom
+  const changed = !settle && (from.left !== target.left || from.top !== target.top
+    || from.right !== target.right || from.bottom !== target.bottom)
   pageExtentsNow = target
   const scale = getCanvasScale()
   if (shiftX || shiftY) {
     viewportOffsetX -= shiftX * scale
     viewportOffsetY -= shiftY * scale
   }
-  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, Boolean(shiftX || shiftY || changed))
+  setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, !settle && Boolean(shiftX || shiftY || changed))
+  leaferCanvas?.setPages(state.pages)
   elements.pageCount.textContent = pageLabel(state.pages.columns, state.pages.rows)
   updateMiniGrid()
   updateScrollIndicators(false)
 }
 
-// The page that would be added if the dragged object went further: dashed accent outline and a "+ Page N" pill.
-// Painted in the canvas's own before:render pass, so it is never an object and is never saved or printed.
-function drawEdgeGhost(ctx, ghost, scale) {
-  const { left, top, width, height } = ghost.rect
-  ctx.save()
-  ctx.globalAlpha = 0.55
-  ctx.fillStyle = pageColors.paper
-  ctx.fillRect(left, top, width, height)
-  ctx.globalAlpha = 1
-  ctx.strokeStyle = pageColors.accent
-  ctx.lineWidth = 1.5 / scale
-  ctx.setLineDash([8 / scale, 6 / scale])
-  ctx.strokeRect(left, top, width, height)
-  ctx.setLineDash([])
-  const label = `Page ${ghost.pageNumber}`
-  ctx.font = `500 ${11.5 / scale}px Geist, system-ui, sans-serif`
-  const pillHeight = 26 / scale
-  const pillWidth = ctx.measureText(label).width + 34 / scale
-  const pillX = left + 16 / scale
-  const pillY = top + 16 / scale
-  ctx.fillStyle = pageColors.accent
-  ctx.beginPath()
-  ctx.roundRect(pillX, pillY, pillWidth, pillHeight, pillHeight / 2)
-  ctx.fill()
-  ctx.strokeStyle = pageColors.accentInk
-  ctx.lineWidth = 2 / scale
-  ctx.lineCap = 'round'
-  const plusX = pillX + 14 / scale
-  const plusY = pillY + pillHeight / 2
-  ctx.beginPath()
-  ctx.moveTo(plusX - 4 / scale, plusY)
-  ctx.lineTo(plusX + 4 / scale, plusY)
-  ctx.moveTo(plusX, plusY - 4 / scale)
-  ctx.lineTo(plusX, plusY + 4 / scale)
-  ctx.stroke()
-  ctx.fillStyle = pageColors.accentInk
-  ctx.textBaseline = 'middle'
-  ctx.fillText(label, pillX + 24 / scale, plusY + 0.5 / scale)
-  ctx.restore()
-}
-
-// "Page N" under each page of the bottom row; upper rows touch the page below, so theirs sit inside the corner.
-function drawPageLabels(ctx, scale) {
-  const { columns, rows } = state.pages
-  if (columns * rows > 400) return
-  ctx.save()
-  ctx.font = `400 ${10.5 / scale}px "Geist Mono", ui-monospace, monospace`
-  ctx.fillStyle = pageColors.label
-  ctx.textBaseline = 'top'
-  const v = canvas.viewportTransform
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      const screenX = v[4] + column * PAGE_WIDTH * v[0]
-      const screenY = v[5] + (row + 1) * PAGE_HEIGHT * v[3]
-      if (screenX > canvas.getWidth() || screenX + PAGE_WIDTH * v[0] < 0 || screenY > canvas.getHeight() + 40 || screenY < -40) continue
-      const last = row === rows - 1
-      const x = column * PAGE_WIDTH + (last ? 0 : 14 / scale)
-      const y = (row + 1) * PAGE_HEIGHT + (last ? 11 : -26) / scale
-      ctx.fillText(`Page ${row * columns + column + 1}`, x, y)
-    }
-  }
-  ctx.restore()
-}
-
-function drawPageTiles(ctx) {
-  const extents = pageExtentsNow
-  const width = extents.right - extents.left
-  const height = extents.bottom - extents.top
-  if (width <= 0 || height <= 0) return
-  const scale = getCanvasScale()
-  const hairline = 1 / scale
-  const v = canvas.viewportTransform
-  ctx.save()
-  ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5])
-  // The skin's page shadow, as stacked translucent rects (see shadowBands).
-  for (const layer of pageColors.shadows) {
-    ctx.fillStyle = layer.rgb
-    const previousAlpha = ctx.globalAlpha
-    for (const band of shadowBands({ blur: layer.blur, spread: layer.spread, alpha: layer.peak }, 32)) {
-      const grow = band.grow / scale
-      ctx.globalAlpha = band.alpha
-      ctx.fillRect(extents.left - grow + layer.x / scale, extents.top - grow + layer.y / scale, width + grow * 2, height + grow * 2)
-    }
-    ctx.globalAlpha = previousAlpha
-  }
-  const radius = pageColors.radius / scale
-  ctx.fillStyle = pageColors.edge
-  ctx.beginPath()
-  ctx.roundRect(extents.left - hairline, extents.top - hairline, width + hairline * 2, height + hairline * 2, radius + hairline)
-  ctx.fill()
-  ctx.fillStyle = pageColors.paper
-  ctx.beginPath()
-  ctx.roundRect(extents.left, extents.top, width, height, radius)
-  ctx.fill()
-  // Fold lines between pages are dashed, as on the desk in the design.
-  ctx.strokeStyle = PAGE_FOLD_COLOR
-  ctx.lineWidth = 1.5 / scale
-  ctx.setLineDash([6 / scale, 5 / scale])
-  ctx.beginPath()
-  const firstColumn = Math.max(1, Math.ceil((extents.left + 1) / PAGE_WIDTH))
-  for (let x = firstColumn * PAGE_WIDTH; x < extents.right; x += PAGE_WIDTH) {
-    ctx.moveTo(x, extents.top)
-    ctx.lineTo(x, extents.bottom)
-  }
-  const firstRow = Math.max(1, Math.ceil((extents.top + 1) / PAGE_HEIGHT))
-  for (let y = firstRow * PAGE_HEIGHT; y < extents.bottom; y += PAGE_HEIGHT) {
-    ctx.moveTo(extents.left, y)
-    ctx.lineTo(extents.right, y)
-  }
-  ctx.stroke()
-  ctx.setLineDash([])
-  drawPageLabels(ctx, scale)
-  if (edgeGhost) drawEdgeGhost(ctx, edgeGhost, scale)
-  if (voiceOutline) {
-    // Voice-listening outline follows the page extents, not the whole workspace.
-    ctx.strokeStyle = pageColors.accent
-    ctx.lineWidth = 2 / scale
-    ctx.strokeRect(extents.left - 3 / scale, extents.top - 3 / scale, width + 6 / scale, height + 6 / scale)
-  }
-  ctx.restore()
-}
-
-function moveAllObjects(deltaX, deltaY) {
-  canvas.getObjects().forEach((object) => {
-    object.set({ left: object.left + deltaX, top: object.top + deltaY })
-    object.setCoords()
-  })
-}
-
-function boundsOf(objects) {
-  return objects.reduce((bounds, object) => {
-    const rect = object.getBoundingRect()
-    return {
-      left: Math.min(bounds.left, rect.left),
-      top: Math.min(bounds.top, rect.top),
-      right: Math.max(bounds.right, rect.left + rect.width),
-      bottom: Math.max(bounds.bottom, rect.top + rect.height),
-    }
-  }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
-}
-
-function getContentBounds() {
-  // Connectors are derived from their endpoints, so they never decide the page extents.
-  const objects = canvas.getObjects().filter((object) => !isConnector(object))
-  return objects.length ? boundsOf(objects) : null
-}
-
-const LEGACY_TEXT_PLACEHOLDER = 'Start typing'
-
-function isEditableText(object) {
-  return Boolean(object && typeof object.text === 'string' && typeof object.enterEditing === 'function')
-}
-
-function isPlaceholderText(value) {
-  const trimmed = String(value || '').trim()
-  return !trimmed || trimmed === LEGACY_TEXT_PLACEHOLDER
-}
-
-function findEditableTextAt(point) {
-  return [...canvas.getObjects()].reverse().find((object) => (
-    isEditableText(object) && object.containsPoint(point)
-  ))
-}
-
-function bindTextEditingLifecycle(text) {
-  if (text.__personalNoteTextBound) return
-  text.__personalNoteTextBound = true
-  text.on('editing:exited', () => {
-    if (!(text instanceof Sticky) && isPlaceholderText(text.text) && canvas.getObjects().includes(text)) {
-      canvas.remove(text)
-      canvas.discardActiveObject()
-      reconcilePages()
-      recordHistory()
-    }
-  })
-}
-
-function bindCanvasTextObjects() {
-  canvas.getObjects().forEach((object) => {
-    if (isEditableText(object)) bindTextEditingLifecycle(object)
-  })
-}
-
-function normalizeNotebookFonts() {
-  let changed = false
-  canvas.getObjects().forEach((object) => {
-    if (isEditableText(object) && !(object instanceof Sticky) && isPlaceholderText(object.text)) {
-      canvas.remove(object)
-      changed = true
-      return
-    }
-    if (isEditableText(object) && object.fontFamily === 'Georgia') {
-      object.set('fontFamily', 'Source Serif 4')
-      object.setCoords()
-      changed = true
-    }
-  })
-  return changed
-}
-
-function reconcilePages(force = false) {
-  if (state.loading && !force) return false
-  let bounds = getContentBounds()
-  if (!bounds) {
-    const changed = state.pages.columns !== 1 || state.pages.rows !== 1
-    state.pages = { columns: 1, rows: 1 }
-    if (changed) resizePaper()
-    return changed
-  }
-
-  let changed = false
-  let viewportDeltaX = 0
-  let viewportDeltaY = 0
-  const prependColumns = bounds.left < -EDGE_OVERFLOW
-    ? Math.ceil((-EDGE_OVERFLOW - bounds.left) / PAGE_WIDTH)
-    : 0
-  const prependRows = bounds.top < -EDGE_OVERFLOW
-    ? Math.ceil((-EDGE_OVERFLOW - bounds.top) / PAGE_HEIGHT)
-    : 0
-  if (prependColumns || prependRows) {
-    state.pages.columns += prependColumns
-    state.pages.rows += prependRows
-    moveAllObjects(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
-    viewportDeltaX += prependColumns * PAGE_WIDTH
-    viewportDeltaY += prependRows * PAGE_HEIGHT
-    changed = true
-  }
-
-  bounds = getContentBounds()
-  let currentWidth = state.pages.columns * PAGE_WIDTH
-  let currentHeight = state.pages.rows * PAGE_HEIGHT
-  if (bounds.right > currentWidth + EDGE_OVERFLOW) {
-    const appendColumns = Math.ceil((bounds.right - currentWidth - EDGE_OVERFLOW) / PAGE_WIDTH)
-    state.pages.columns += appendColumns
-    currentWidth += appendColumns * PAGE_WIDTH
-    changed = true
-  }
-  if (bounds.bottom > currentHeight + EDGE_OVERFLOW) {
-    const appendRows = Math.ceil((bounds.bottom - currentHeight - EDGE_OVERFLOW) / PAGE_HEIGHT)
-    state.pages.rows += appendRows
-    currentHeight += appendRows * PAGE_HEIGHT
-    changed = true
-  }
-
-  bounds = getContentBounds()
-  if (state.pages.columns > 1 && bounds.left > PAGE_WIDTH + EDGE_SHRINK) {
-    state.pages.columns -= 1
-    moveAllObjects(-PAGE_WIDTH, 0)
-    viewportDeltaX -= PAGE_WIDTH
-    changed = true
-  } else if (state.pages.columns > 1 && bounds.right < (state.pages.columns - 1) * PAGE_WIDTH - EDGE_SHRINK) {
-    state.pages.columns -= 1
-    changed = true
-  }
-  bounds = getContentBounds()
-  if (state.pages.rows > 1 && bounds.top > PAGE_HEIGHT + EDGE_SHRINK) {
-    state.pages.rows -= 1
-    moveAllObjects(0, -PAGE_HEIGHT)
-    viewportDeltaY -= PAGE_HEIGHT
-    changed = true
-  } else if (state.pages.rows > 1 && bounds.bottom < (state.pages.rows - 1) * PAGE_HEIGHT - EDGE_SHRINK) {
-    state.pages.rows -= 1
-    changed = true
-  }
-
-  if (changed) {
-    resizePaper(viewportDeltaX, viewportDeltaY)
-  }
-  canvas.requestRenderAll()
-  return changed
-}
-
-// While one object is dragged, everything else stands still, so the bounds of "everything else" are measured once
-// per drag instead of on every pointer move (that was O(objects) work per move on a dense note).
-let dragRestBounds = null
-function contentBoundsDuringDrag(moving) {
-  if (!moving || moving.type === 'activeselection' || canvas.getActiveObjects().length !== 1) return getContentBounds()
-  if (!dragRestBounds || dragRestBounds.object !== moving) {
-    const rest = canvas.getObjects().filter((object) => object !== moving && !isConnector(object))
-    dragRestBounds = { object: moving, box: rest.length ? boundsOf(rest) : null }
-  }
-  const own = moving.getBoundingRect()
-  const box = { left: own.left, top: own.top, right: own.left + own.width, bottom: own.top + own.height }
-  const rest = dragRestBounds.box
-  if (!rest) return box
-  return {
-    left: Math.min(rest.left, box.left), top: Math.min(rest.top, box.top),
-    right: Math.max(rest.right, box.right), bottom: Math.max(rest.bottom, box.bottom),
-  }
-}
-;['mouse:down', 'mouse:up', 'object:modified'].forEach((eventName) => canvas.on(eventName, () => { dragRestBounds = null }))
-
-function expandPagesDuringTransform({ target } = {}) {
-  if (state.loading) return
-  const bounds = contentBoundsDuringDrag(target)
-  if (!bounds) return
-  elements.workspace.classList.add('is-object-dragging')
-
-  let changed = false
-  const prependColumns = Math.max(0, Math.ceil((TRANSFORM_EDGE_MARGIN - bounds.left) / PAGE_WIDTH))
-  const prependRows = Math.max(0, Math.ceil((TRANSFORM_EDGE_MARGIN - bounds.top) / PAGE_HEIGHT))
-
-  if (prependColumns || prependRows) {
-    state.pages.columns += prependColumns
-    state.pages.rows += prependRows
-    moveAllObjects(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
-    if (dragRestBounds?.box) {
-      const box = dragRestBounds.box
-      box.left += prependColumns * PAGE_WIDTH
-      box.right += prependColumns * PAGE_WIDTH
-      box.top += prependRows * PAGE_HEIGHT
-      box.bottom += prependRows * PAGE_HEIGHT
-    }
-    changed = true
-  }
-
-  const shiftedRight = bounds.right + prependColumns * PAGE_WIDTH
-  const shiftedBottom = bounds.bottom + prependRows * PAGE_HEIGHT
-  let currentWidth = state.pages.columns * PAGE_WIDTH
-  let currentHeight = state.pages.rows * PAGE_HEIGHT
-  while (shiftedRight > currentWidth - TRANSFORM_EDGE_MARGIN) {
-    state.pages.columns += 1
-    currentWidth += PAGE_WIDTH
-    changed = true
-  }
-  while (shiftedBottom > currentHeight - TRANSFORM_EDGE_MARGIN) {
-    state.pages.rows += 1
-    currentHeight += PAGE_HEIGHT
-    changed = true
-  }
-
-  if (changed) {
-    resizePaper(prependColumns * PAGE_WIDTH, prependRows * PAGE_HEIGHT)
-  }
-  elements.paper.classList.add('is-dragging')
-  canvas.requestRenderAll()
-}
-
-function addText(point, value = '', beginEditing = true) {
-  const text = new IText(value, {
-    left: point.x,
-    top: point.y,
-    fill: state.color,
-    fontFamily: canvasFontFamily(state.fontFamily),
-    fontSize: getInputFontSize(),
-    lineHeight: 1.45,
-    padding: 8,
-    cornerColor: '#1c70a8',
-    cornerStyle: 'circle',
-    transparentCorners: false,
-  })
-  bindTextEditingLifecycle(text)
-  canvas.add(text)
-  canvas.setActiveObject(text)
-  if (beginEditing) {
-    text.enterEditing()
-    if (value) {
-      text.setSelectionStart(0)
-      text.setSelectionEnd(0)
-    }
-  }
-  canvas.requestRenderAll()
-  return text
-}
-
-function distanceBetween(first, second) {
-  return Math.hypot(second.x - first.x, second.y - first.y)
-}
-
-function samplePathCommands(path) {
-  const points = []
-  let current = { x: 0, y: 0 }
-  let subpathStart = current
-  const push = (point) => {
-    const previous = points[points.length - 1]
-    if (!previous || distanceBetween(previous, point) > 0.01) points.push(point)
-  }
-  const sampleCurve = (steps, resolver) => {
-    for (let step = 1; step <= steps; step += 1) push(resolver(step / steps))
-  }
-
-  path.path.forEach((command) => {
-    if (command[0] === 'M') {
-      current = { x: command[1], y: command[2] }
-      subpathStart = current
-      push(current)
-    } else if (command[0] === 'L') {
-      current = { x: command[1], y: command[2] }
-      push(current)
-    } else if (command[0] === 'Q') {
-      const start = current
-      const control = { x: command[1], y: command[2] }
-      const end = { x: command[3], y: command[4] }
-      const steps = Math.max(2, Math.ceil((distanceBetween(start, control) + distanceBetween(control, end)) / 5))
-      sampleCurve(steps, (time) => {
-        const inverse = 1 - time
-        return {
-          x: inverse * inverse * start.x + 2 * inverse * time * control.x + time * time * end.x,
-          y: inverse * inverse * start.y + 2 * inverse * time * control.y + time * time * end.y,
-        }
-      })
-      current = end
-    } else if (command[0] === 'C') {
-      const start = current
-      const first = { x: command[1], y: command[2] }
-      const second = { x: command[3], y: command[4] }
-      const end = { x: command[5], y: command[6] }
-      const steps = Math.max(3, Math.ceil((distanceBetween(start, first) + distanceBetween(first, second) + distanceBetween(second, end)) / 5))
-      sampleCurve(steps, (time) => {
-        const inverse = 1 - time
-        return {
-          x: inverse ** 3 * start.x + 3 * inverse ** 2 * time * first.x + 3 * inverse * time ** 2 * second.x + time ** 3 * end.x,
-          y: inverse ** 3 * start.y + 3 * inverse ** 2 * time * first.y + 3 * inverse * time ** 2 * second.y + time ** 3 * end.y,
-        }
-      })
-      current = end
-    } else if (command[0] === 'Z') {
-      current = subpathStart
-      push(current)
-    }
-  })
-  return points
-}
-
-function densifyPoints(points, spacing = 4) {
-  if (points.length < 2) return points
-  const dense = [points[0]]
-  for (let index = 1; index < points.length; index += 1) {
-    const start = points[index - 1]
-    const end = points[index]
-    const steps = Math.max(1, Math.ceil(distanceBetween(start, end) / spacing))
-    for (let step = 1; step <= steps; step += 1) {
-      const amount = step / steps
-      dense.push({
-        x: start.x + (end.x - start.x) * amount,
-        y: start.y + (end.y - start.y) * amount,
-      })
-    }
-  }
-  return dense
-}
-
-function getPathScenePoints(path) {
-  const rawPoints = Array.isArray(path.inkPoints) && path.inkPoints.length > 1
-    ? path.inkPoints
-    : samplePathCommands(path)
-  const matrix = path.calcTransformMatrix()
-  const offset = path.pathOffset
-  const scenePoints = rawPoints.map((point) => new Point(point.x - offset.x, point.y - offset.y).transform(matrix))
-  return densifyPoints(scenePoints)
-}
-
-function createStrokeFragment(points, source) {
-  const pathData = [
-    ['M', points[0].x, points[0].y],
-    ...points.slice(1).map((point) => ['L', point.x, point.y]),
-  ]
-  const strokeScale = (Math.abs(source.scaleX || 1) + Math.abs(source.scaleY || 1)) / 2
-  const fragment = new Path(pathData, {
-    fill: null,
-    stroke: source.stroke,
-    strokeWidth: (source.strokeWidth || 1) * strokeScale,
-    strokeLineCap: 'round',
-    strokeLineJoin: 'round',
-    strokeDashArray: source.strokeDashArray,
-    opacity: source.opacity,
-    globalCompositeOperation: source.globalCompositeOperation,
-    selectable: false,
-    evented: false,
-  })
-  fragment.inkPoints = points.map(({ x, y }) => ({ x, y }))
-  fragment.isInk = true
-  fragment.inkTool = source.inkTool
-  return fragment
-}
-
-function splitStrokeAt(path, point) {
-  const points = getPathScenePoints(path)
-  const strokeScale = (Math.abs(path.scaleX || 1) + Math.abs(path.scaleY || 1)) / 2
-  const radius = ERASER_RADIUS + (path.strokeWidth || 1) * strokeScale / 2
-  if (!points.some((candidate) => distanceBetween(candidate, point) <= radius)) return false
-
-  const runs = []
-  let run = []
-  points.forEach((candidate) => {
-    if (distanceBetween(candidate, point) > radius) {
-      run.push(candidate)
-    } else if (run.length) {
-      if (run.length > 1) runs.push(run)
-      run = []
-    }
-  })
-  if (run.length > 1) runs.push(run)
-
-  const stackIndex = canvas.getObjects().indexOf(path)
-  canvas.remove(path)
-  runs.forEach((points, index) => canvas.insertAt(stackIndex + index, createStrokeFragment(points, path)))
-  return true
-}
-
-function eraseAt(point, render = true) {
-  let changed = false
-  ;[...canvas.getObjects()].forEach((object) => {
-    if (object instanceof Path && object.stroke && object.fill == null) {
-      changed = splitStrokeAt(object, point) || changed
-    } else if (object instanceof Circle && object.isInk) {
-      const center = object.getCenterPoint()
-      const radius = Math.max(object.getScaledWidth(), object.getScaledHeight()) / 2 + ERASER_RADIUS
-      if (distanceBetween(center, point) <= radius) {
-        canvas.remove(object)
-        changed = true
-      }
-    }
-  })
-  if (changed && render) canvas.requestRenderAll()
-  return changed
-}
-
-function eraseBetween(start, end) {
-  const steps = Math.max(1, Math.ceil(distanceBetween(start, end) / (ERASER_RADIUS * 0.45)))
-  let changed = false
-  for (let step = 1; step <= steps; step += 1) {
-    const amount = step / steps
-    changed = eraseAt({
-      x: start.x + (end.x - start.x) * amount,
-      y: start.y + (end.y - start.y) * amount,
-    }, false) || changed
-  }
-  if (changed) canvas.requestRenderAll()
-  return changed
-}
-
-function createInkDot(point, tool) {
-  const width = tool === 'highlight' ? state.highlightWidth : state.penWidth
-  const dot = new Circle({
-    left: point.x - width / 2,
-    top: point.y - width / 2,
-    radius: width / 2,
-    fill: tool === 'highlight' ? `${state.color}55` : state.color,
-    selectable: false,
-    evented: false,
-  })
-  dot.isInk = true
-  dot.inkTool = tool
-  canvas.add(dot)
-  canvas.requestRenderAll()
-  return dot
-}
-
 const temporaryHand = createTemporaryHand()
 let applyingTemporaryHand = false
 
+const toolCursor = () => (state.tool === 'hand' ? 'grab' : state.tool === 'text' ? 'text' : state.tool === 'eraser' ? 'none' : state.tool === 'connect' || state.tool === 'sticky' || state.tool === 'shape' ? 'crosshair' : 'default')
+const TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'shape', 'pen', 'highlight', 'eraser', 'connect'])
 function setTool(tool) {
+  if (!TOOLS.has(tool)) tool = 'select'
   if (!applyingTemporaryHand) temporaryHand.cancel()
   state.tool = tool
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
-  canvas.isDrawingMode = tool === 'pen' || tool === 'highlight'
-  canvas.selection = tool === 'select'
-  canvas.defaultCursor = tool === 'hand' ? 'grab' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : tool === 'connect' || tool === 'sticky' || tool === 'shape' ? 'crosshair' : 'default'
-  canvas.forEachObject((object) => {
-    const textEditable = tool === 'text' && isEditableText(object)
-    object.selectable = tool === 'select' || textEditable
-    object.evented = tool === 'select' || textEditable
-  })
-  if (canvas.isDrawingMode) {
-    canvas.freeDrawingBrush.color = tool === 'highlight' ? `${state.color}55` : state.color
-    canvas.freeDrawingBrush.width = tool === 'highlight' ? state.highlightWidth : state.penWidth
-    canvas.freeDrawingBrush.decimate = 0.8
+  if (tool === 'text' || tool === 'sticky' || tool === 'shape') leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
+  if (tool === 'pen' || tool === 'highlight' || tool === 'eraser' || tool === 'connect') leaferCanvas?.clearSelection()
+  leaferInk?.setTool(tool)
+  leaferCanvas?.setDrawing(tool === 'pen' || tool === 'highlight' || tool === 'eraser')
+  leaferConnect?.setTool(tool)
+  elements.shell.classList.toggle('leafer-picking', tool === 'select') // Leafer takes the pointer to select and move; the hand gives it to the pan
+  inputSurface.style.cursor = toolCursor()
+  for (const [id, name] of [['mobile-select', 'select'], ['mobile-sticky', 'sticky'], ['mobile-draw', 'pen']]) {
+    const button = document.getElementById(id)
+    button?.classList.toggle('active', tool === name)
+    button?.setAttribute('aria-pressed', String(tool === name))
   }
-  canvas.setCursor(canvas.isDrawingMode ? canvas.freeDrawingCursor : canvas.defaultCursor)
   elements.mobileConnect.classList.toggle('active', tool === 'connect')
   elements.mobileConnect.setAttribute('aria-pressed', String(tool === 'connect'))
   updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
-  connectDraft = null
-  connectHover = null
-  if (!applyingTemporaryHand) canvas.discardActiveObject()
-  canvas.requestRenderAll()
 }
 
-// Sticky notes, shapes and images. Each is an ordinary canvas object, so it saves, undoes, prints and
-// takes connectors exactly like text; stickies are Textboxes, so their words are searched and exported.
-function centerOn(object, point) {
-  object.setPositionByOrigin(new Point(point.x, point.y), 'center', 'center')
-  object.setCoords()
-}
-
-function finishPlacing(object) {
-  canvas.add(object)
+// A shape: a rounded rectangle in the chosen object colour, selected, one undo step.
+function placeShape(point) {
   setTool('select')
-  canvas.setActiveObject(object)
-  reconcilePages()
-  canvas.requestRenderAll()
-  recordHistory()
+  leaferCanvas.createShape(point, { fill: currentObjectPalette()[state.objectColor].fill })
 }
 
-function placeObject(kind, point) {
-  const color = currentObjectPalette()[state.objectColor]
-  if (kind === 'sticky') {
-    const sticky = new Sticky('', stickyDefaults(color))
-    centerOn(sticky, point)
-    finishPlacing(sticky)
-    bindTextEditingLifecycle(sticky)
-    sticky.enterEditing()
-    return sticky
-  }
-  const defaults = shapeDefaults(color)
-  const shape = new Rect(defaults)
-  centerOn(shape, point)
-  finishPlacing(shape)
-  return shape
+// A sticky note. (A mouse press opens the overlay on the next tick: the press must finish first, or it takes the focus back. A tap's click is the end already.)
+function placeSticky(point, { now = false } = {}) {
+  const at = { x: point.x, y: point.y }
+  setTool('select')
+  if (now) leaferCanvas.createSticky(at)
+  else setTimeout(() => leaferCanvas.createSticky(at), 0)
 }
 
 function viewCenterPoint() {
   const scale = getCanvasScale()
-  return { x: (canvas.getWidth() / 2 - viewportOffsetX) / scale, y: (canvas.getHeight() / 2 - viewportOffsetY) / scale }
+  return { x: (viewSize.width / 2 - viewportOffsetX) / scale, y: (viewSize.height / 2 - viewportOffsetY) / scale }
 }
 
-function readAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-}
-
-// Pictures are stored inside the note as data URLs, so very large ones are shrunk first.
-async function preparedImageSource(file) {
-  const source = await readAsDataUrl(file)
-  const element = await new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Could not read that picture'))
-    image.src = source
-  })
-  const target = fitImage({ width: element.naturalWidth, height: element.naturalHeight })
-  const resized = target.width !== element.naturalWidth || target.height !== element.naturalHeight
-  const plan = imageEncoding({ dataUrlLength: source.length, resized, hasAlpha: false, type: file.type })
-  if (!plan) return source
-  const scratch = document.createElement('canvas')
-  scratch.width = target.width
-  scratch.height = target.height
-  const context = scratch.getContext('2d', { willReadFrequently: true })
-  context.drawImage(element, 0, 0, target.width, target.height)
-  const { data } = context.getImageData(0, 0, target.width, target.height)
-  let hasAlpha = false
-  for (let index = 3; index < data.length; index += 4) if (data[index] < 255) { hasAlpha = true; break }
-  const encoding = imageEncoding({ dataUrlLength: source.length, resized, hasAlpha, type: file.type })
-  if (!hasAlpha) {
-    context.globalCompositeOperation = 'destination-over'
-    context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, target.width, target.height)
+// Each picture is shrunk off the main thread, stored once in the media library, and placed as a reference to it.
+async function placeLeaferPictures(files, point) {
+  const pictures = pictureFiles(files)
+  const noteId = state.activeNoteId
+  const made = []
+  for (const file of pictures) {
+    try {
+      const { blob, width, height } = await prepareImage(file)
+      const mediaId = await uploadPicture(blob)
+      made.push({ mediaId, url: URL.createObjectURL(blob), width, height })
+    } catch (error) {
+      console.error(error)
+      setSaveState(error?.message || 'Could not add that picture', true)
+    }
   }
-  return scratch.toDataURL(encoding.type, encoding.quality)
+  const dropMade = () => { for (const picture of made) URL.revokeObjectURL(picture.url); return 0 }
+  if (!made.length) return 0
+  // A drag, a stroke, an erase pass or typing in progress when the upload finishes is never interrupted: the pictures wait for it to end.
+  while (gestureBusy()) {
+    if (noteId !== state.activeNoteId || leaferSwitching) return dropMade()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  if (noteId !== state.activeNoteId || leaferSwitching) return dropMade() // the note was left while the pictures were being prepared
+  setTool('select')
+  return leaferCanvas.addImages(made, point).length
 }
+
+// True while the pointer is held down on the page, a pen or eraser stroke is under way, or words are being typed on the canvas.
+let pointerHeld = false
+for (const type of ['pointerdown']) window.addEventListener(type, () => { pointerHeld = true }, true)
+for (const type of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(type, () => { pointerHeld = false }, true)
+const gestureBusy = () => pointerHeld || Boolean(leaferInk?.active) || Boolean(leaferCanvas?.isEditingText())
 
 async function placeImageFiles(files, point = viewCenterPoint()) {
   const pictures = imageFiles(files)
   if (!pictures.length || state.activeNoteType !== 'canvas') return 0
-  let placed = 0
-  for (const file of pictures) {
-    try {
-      const picture = await FabricImage.fromURL(await preparedImageSource(file))
-      const { width, height } = fitImage({ width: picture.width, height: picture.height }, 520)
-      picture.set({ scaleX: width / picture.width, scaleY: height / picture.height })
-      centerOn(picture, { x: point.x + placed * 28, y: point.y + placed * 28 })
-      canvas.add(picture)
-      placed += 1
-    } catch (error) {
-      console.error(error)
-      setSaveState('Could not add that picture', true)
-    }
-  }
-  if (!placed) return 0
-  setTool('select')
-  const last = canvas.getObjects().at(-1)
-  canvas.setActiveObject(last)
-  reconcilePages()
-  canvas.requestRenderAll()
-  recordHistory()
-  return placed
-}
-
-// Connectors: arrows between two canvas objects, joined by semanticId. The index maps
-// an object to its connectors so a drag refreshes only the arrows it owns.
-const connectorIndex = new ConnectorIndex()
-const objectsById = new Map()
-let connectDraft = null
-let connectHover = null
-
-const isConnector = (object) => object instanceof Connector
-
-function ensureObjectId(object) {
-  if (!object.semanticId) object.semanticId = `res_${crypto.randomUUID().replaceAll('-', '')}`
-  return object.semanticId
-}
-
-// `fresh` objects are the ones being transformed; their cached coords are stale.
-// Untouched endpoints keep their cached coords.
-function objectBounds(object, fresh = true) {
-  if (fresh) object.setCoords()
-  return object.getBoundingRect()
-}
-
-function refreshConnector(connector, movingIds = null) {
-  const from = objectsById.get(connector.fromId)
-  const to = objectsById.get(connector.toId)
-  if (!from || !to || connector.group) return
-  const ends = connectorEndpoints(
-    objectBounds(from, !movingIds || movingIds.has(connector.fromId)),
-    objectBounds(to, !movingIds || movingIds.has(connector.toId)),
-  )
-  connector.visible = ends.visible
-  if (!ends.visible) return
-  connector.applyBox(connectorBox(ends.start, ends.end))
-}
-
-// Refresh the connectors of the given objects (an ActiveSelection is unpacked).
-function refreshConnectorsOf(target) {
-  if (!target || !connectorIndex.byId.size) return
-  const objects = target instanceof ActiveSelection ? target.getObjects() : [target]
-  const ids = objects.map((object) => object.semanticId).filter(Boolean)
-  const moving = new Set(ids)
-  connectorIndex.forObjects(ids).forEach((connector) => refreshConnector(connector, moving))
-}
-
-// A connector only ever moves by following its endpoints, so it never joins a group selection.
-function keepConnectorsOutOfSelections() {
-  const active = canvas.getActiveObject()
-  if (!(active instanceof ActiveSelection)) return
-  const members = active.getObjects()
-  if (!members.some(isConnector)) return
-  const keep = members.filter((object) => !isConnector(object))
-  canvas.discardActiveObject()
-  if (keep.length > 1) canvas.setActiveObject(new ActiveSelection(keep, { canvas }))
-  else if (keep.length === 1) canvas.setActiveObject(keep[0])
-}
-
-// After any load: re-index, drop connectors whose endpoints are gone, recompute geometry.
-function rebuildConnectors() {
-  objectsById.clear()
-  const connectors = []
-  canvas.getObjects().forEach((object) => {
-    if (isConnector(object)) {
-      ensureObjectId(object)
-      connectors.push(object)
-    } else if (object.semanticId) {
-      objectsById.set(object.semanticId, object)
-    }
-  })
-  const dangling = new Set(connectorsLeftDangling(connectors, new Set(objectsById.keys())))
-  dangling.forEach((connector) => canvas.remove(connector))
-  const live = connectors.filter((connector) => !dangling.has(connector))
-  connectorIndex.rebuild(live)
-  live.forEach((connector) => {
-    connector.selectable = connector.evented = state.tool === 'select'
-    refreshConnector(connector)
-  })
-  return dangling.size > 0
-}
-
-function createConnector(from, to) {
-  if (!from || !to || from === to || isConnector(from) || isConnector(to)) return null
-  const fromId = ensureObjectId(from)
-  const toId = ensureObjectId(to)
-  if (connectorIndex.has(fromId, toId)) return null
-  objectsById.set(fromId, from)
-  objectsById.set(toId, to)
-  const connector = new Connector({ fromId, toId, color: state.color, semanticId: `res_${crypto.randomUUID().replaceAll('-', '')}` })
-  refreshConnector(connector)
-  if (!connector.visible) return null
-  connector.selectable = connector.evented = state.tool === 'select'
-  connectorIndex.add(connector)
-  canvas.add(connector)
-  return connector
-}
-
-// Topmost non-ink object under the point; ink (whose box is loose) only as a fallback.
-function connectTargetAt(point, exclude = null) {
-  const objects = canvas.getObjects()
-  let ink = null
-  for (let index = objects.length - 1; index >= 0; index -= 1) {
-    const object = objects[index]
-    if (object === exclude || isConnector(object) || !object.visible || !object.containsPoint(point)) continue
-    if (object.isInk) ink ||= object
-    else return object
-  }
-  return ink
-}
-
-function cancelConnectDraft() {
-  if (!connectDraft && !connectHover) return false
-  const wasDrafting = Boolean(connectDraft)
-  connectDraft = null
-  connectHover = null
-  canvas.requestRenderAll()
-  return wasDrafting
-}
-
-function drawConnectOverlay(ctx) {
-  if (state.tool !== 'connect' || (!connectDraft && !connectHover)) return
-  const v = canvas.viewportTransform
-  const scale = v[0]
-  const accent = pageColors.accent
-  ctx.save()
-  ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5])
-  const outline = (object) => {
-    const box = objectBounds(object)
-    ctx.strokeStyle = accent
-    ctx.lineWidth = 2 / scale
-    ctx.strokeRect(box.left - 4 / scale, box.top - 4 / scale, box.width + 8 / scale, box.height + 8 / scale)
-    return box
-  }
-  const dot = (point) => {
-    ctx.fillStyle = accent
-    ctx.beginPath()
-    ctx.arc(point.x, point.y, 5 / scale, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.strokeStyle = '#fff'
-    ctx.lineWidth = 1.5 / scale
-    ctx.stroke()
-  }
-  if (connectDraft) {
-    const source = objectBounds(connectDraft.source)
-    outline(connectDraft.source)
-    const target = connectHover
-    const goal = target ? objectBounds(target) : { left: connectDraft.pointer.x, top: connectDraft.pointer.y, width: 0, height: 0 }
-    const ends = connectorEndpoints(source, goal, target ? undefined : 0)
-    if (target) outline(target)
-    if (ends.visible) {
-      ctx.globalAlpha = 0.75
-      drawArrow(ctx, ends.start, ends.end, { color: accent })
-      ctx.globalAlpha = 1
-      dot(ends.start)
-      if (target) dot(ends.end)
-    }
-  } else if (connectHover) {
-    const box = outline(connectHover)
-    dot({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
-  }
-  ctx.restore()
+  return placeLeaferPictures(pictures, point)
 }
 
 let saveTimer
 let saveInFlight = false
+let speedTestPaused = false // the speed test edits a note of its own and saves nothing while it runs
+let saveSettled = Promise.resolve() // resolves when the save in flight has been answered (or has failed)
+const MERGE_WAIT_MS = 4000 // how long a merge waits for a save that moved the page frame
+const MERGE_RETRY_MS = 3000
+let saveFrame = null // the page frame the save in flight was written in
+let saveDone = () => {}
 let saveQueued = false
-// Agent sync: edits not yet saved, and the object ids the server last agreed on.
+// Agent sync: edits not yet saved.
 let unsavedEdits = false
-let syncedIds = new Set()
 let agentSync = null
 
-function canvasObjectIds(document) {
-  return new Set((document?.objects || []).map((object) => object?.semanticId).filter(Boolean))
-}
-
-function ensureCanvasObjectIds() {
-  canvas.getObjects().forEach((object) => {
-    if (!object.semanticId) object.semanticId = `res_${crypto.randomUUID().replaceAll('-', '')}`
-  })
-}
-
 async function saveActiveNote({ unloading = false } = {}) {
-  if (!state.activeNoteId || state.loading) return
+  if (!state.activeNoteId || state.loading || speedTestPaused) return
   if (saveInFlight && !unloading) {
     saveQueued = true
     return
@@ -2002,38 +1270,54 @@ async function saveActiveNote({ unloading = false } = {}) {
   // revision. Never guess ahead: if the in-flight save lands first this one conflicts and overwrites nothing.
   const parallelUnload = saveInFlight && unloading
   if (parallelUnload) saveQueued = false
-  else saveInFlight = true
+  else { saveInFlight = true; saveSettled = new Promise((resolve) => { saveDone = resolve }) }
   unsavedEdits = false
   setSaveState('Saving')
   const noteId = state.activeNoteId
   const note = state.notes.find((item) => item.id === noteId)
   try {
-    if (state.activeNoteType === 'canvas') ensureCanvasObjectIds()
+    if (state.activeNoteType === 'canvas' && leaferSource.noteId !== noteId) throw Object.assign(new Error('the content on hand belongs to another note'), { refused: true })
     const title = elements.title.value.trim() || 'Untitled note'
     if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(title)
-    const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : canvas.toJSON()
-    const body = JSON.stringify({
+    // A note that was not edited goes back as the server sent it (JSON Canvas), untouched; an edited one is written from the document model.
+    const editedLeafer = state.activeNoteType === 'canvas' && leaferSource.editedDoc
+    const savedShift = leaferSource.shift
+    saveFrame = editedLeafer && savedShift ? savedShift : null
+    const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument() : leaferSource.content
+    const fields = {
       title,
-      content: savedContent,
-      pageState: state.pages,
+      pageState: state.activeNoteType === 'canvas' ? leaferSource.pageState : state.pages,
       notebookId: note?.notebookId,
       revision: note?.revision,
-    })
+    }
+    // An edited Leafer note's text is joined in as it was kept, not walked again (and never searched for: a title can say anything).
+    const body = editedLeafer
+      ? joinSaveBody(leaferSource.contentJson, fields)
+      : JSON.stringify({ ...fields, content: savedContent })
     saveTiming.saved(body)
-    // While the page is going away a keepalive request is the only one guaranteed to be sent.
-    const result = await api(`/notes/${noteId}`, { method: 'PUT', body, keepalive: unloading && canKeepAlive(body) })
+    // While the page is going away a keepalive request is the only one guaranteed to be sent (it takes the text itself). Otherwise the
+    // body goes as a Blob: handing a note of megabytes to fetch as a string copies it on the main thread and stalls a drag for ~100 ms.
+    const mergesBefore = mergeCount
+    const result = await api(`/notes/${noteId}`, { method: 'PUT', body: unloading ? body : new Blob([body]), keepalive: unloading && canKeepAlive(body) })
     if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
-    if (state.activeNoteType === 'canvas') syncedIds = canvasObjectIds(savedContent)
+    // What the server now holds is the base for the next merge, unless the note was left or a merge moved the base on while this save was out.
+    // The server holds what was just saved, in the frame it was saved in, whether or not a merge came meanwhile; the base moves on only when none did.
+    if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && savedShift) leaferServerShift = savedShift
+    if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && mergeCount === mergesBefore) { leaferBase = editedLeafer; if (savedShift) leaferBaseShift = savedShift }
     renderNoteList()
     setSaveState('Saved')
   } catch (error) {
     console.error(error)
-    unsavedEdits = true
-    setSaveState('Could not save', true)
-    // An agent may have written first: keep the user's edits and merge its text in.
-    if (/revision/i.test(error.message)) agentSync?.syncActiveNote().catch(console.error)
+    // A refused save is dropped, not retried: it would be refused again and block switching notes.
+    unsavedEdits = !error.refused
+    if (/revision/i.test(error.message)) {
+      // An agent wrote first: this is not a failure. Merge its changes into the edits and save again on its revision.
+      setSaveState('Saving')
+      const mark = mergeCount
+      agentSync?.syncActiveNote().catch(console.error).finally(() => { if (mergeCount === mark) setSaveState('Could not save', true) })
+    } else setSaveState('Could not save', true)
   } finally {
-    if (!parallelUnload) saveInFlight = false
+    if (!parallelUnload) { saveInFlight = false; saveFrame = null; saveDone() }
     if (saveQueued && !parallelUnload) {
       const unloadingNext = saveQueued === 'unloading'
       saveQueued = false
@@ -2043,7 +1327,7 @@ async function saveActiveNote({ unloading = false } = {}) {
 }
 
 function queueSave() {
-  if (state.loading) return
+  if (state.loading || speedTestPaused) return
   unsavedEdits = true
   // Any edit after Clear all ends its Undo, so Ctrl/Cmd+Z goes back to ordinary undo.
   if (pendingClearUndo) hideToast()
@@ -2057,12 +1341,8 @@ function flushPendingEdits(reason) {
   // Hiding the window may come back (Undo must still work); only a real close sends the held delete.
   if (reason !== 'hidden') void commitPendingDelete({ keepalive: true })
   if (state.loading || !state.activeNoteId) return
-  flushPendingHistory({
-    cancel: () => clearTimeout(historyTimer),
-    commit: () => {
-      if (commitHistorySnapshot()) queueSave()
-    },
-  })
+  leaferCanvas?.finishTextEdit() // words still being typed in the overlay become an edit (and a save) now
+  if (mindmapChanged()) queueSave()
   if (!unsavedEdits) return
   clearTimeout(saveTimer)
   saveActiveNote({ unloading: true })
@@ -2081,12 +1361,8 @@ window.personalNote = {
     flushPending: () => {
       void commitPendingDelete({ keepalive: true })
       if (state.loading || !state.activeNoteId) return
-      flushPendingHistory({
-        cancel: () => clearTimeout(historyTimer),
-        commit: () => {
-          if (commitHistorySnapshot()) queueSave()
-        },
-      })
+      leaferCanvas?.finishTextEdit()
+      if (mindmapChanged()) queueSave()
       clearTimeout(saveTimer)
     },
     isSaving: () => saveInFlight || deleteInFlight,
@@ -2095,60 +1371,26 @@ window.personalNote = {
   }),
 }
 
-let historyTimer
-function snapshot() {
-  if (state.activeNoteType === 'mindmap') return JSON.stringify({ content: mindmapEditor?.getDocument() })
-  ensureCanvasObjectIds()
-  return JSON.stringify({ content: canvas.toJSON(), pages: state.pages })
-}
-
-function commitHistorySnapshot() {
-  const next = snapshot()
-  if (state.history[state.historyIndex] === next) return false
-  state.history = state.history.slice(0, state.historyIndex + 1)
-  state.history.push(next)
-  state.historyIndex = state.history.length - 1
+// A mind map announces its edits through onChange. What it was when it was loaded is kept, so that leaving it unchanged sends nothing and a
+// change that was not announced still goes out. A canvas note needs none of this: the Leafer scene queues a save for every edit it records.
+let mindmapSnapshot = null
+function mindmapChanged() {
+  if (state.activeNoteType !== 'mindmap') return false
+  const next = JSON.stringify({ content: mindmapEditor?.getDocument() })
+  if (next === mindmapSnapshot) return false
+  mindmapSnapshot = next
   return true
 }
 
-function recordHistory() {
-  if (state.loading) return
-  clearTimeout(historyTimer)
-  historyTimer = setTimeout(() => {
-    if (commitHistorySnapshot()) queueSave()
-  }, saveTiming.historyDelay())
-}
-
-async function restoreHistory(index) {
-  if (state.activeNoteType === 'mindmap') return
-  if (state.loading || index < 0 || index >= state.history.length) return
-  state.loading = true
-  state.historyIndex = index
-  const entry = JSON.parse(state.history[index])
-  state.pages = entry.pages
-  resizePaper()
-  await canvas.loadFromJSON(entry.content)
-  bindCanvasTextObjects()
-  rebuildConnectors()
-  setTool('text')
-  state.loading = false
-  canvas.requestRenderAll()
-  queueSave()
-}
-
-// Lands the outgoing note's pending history and save, with its own confirmed revision, before another note loads.
+// Lands the outgoing note's pending edits and save, with its own confirmed revision, before another note loads.
 // Waits at most SWITCH_SAVE_LIMIT; returns false when the save did not land, and the edits stay marked unsaved.
 const SWITCH_SAVE_LIMIT = 3000
 async function settleOutgoingNote() {
   if (state.loading || !state.activeNoteId) return true
+  leaferCanvas?.finishTextEdit()
   const settled = settleSaves({
     flushPending: () => {
-      flushPendingHistory({
-        cancel: () => clearTimeout(historyTimer),
-        commit: () => {
-          if (commitHistorySnapshot()) queueSave()
-        },
-      })
+      if (mindmapChanged()) queueSave()
       clearTimeout(saveTimer)
     },
     isSaving: () => saveInFlight,
@@ -2167,9 +1409,219 @@ async function settleOutgoingNote() {
   return landed
 }
 
+// Undo and redo (F-030): the history lives in modules/canvas-leafer/edits.js; this puts each new document on screen and saves it.
+// The stored form is made when a save asks for it (a held arrow key makes many edits for one save).
+// How far the page frame has moved since the note was last loaded (pages added or folded on the top or left shift every object), and what it
+// was when the server's copy was written: an agent's write is in the server's frame, so a merge moves it into ours first.
+let leaferFrameShift = { x: 0, y: 0 }
+let leaferServerShift = { x: 0, y: 0 }
+let leaferBaseShift = { x: 0, y: 0 } // the frame leaferBase is written in (a merge's base is what the server held, which was in the server's frame)
+function leaferSourceOf(noteId, doc) {
+  return { noteId, editedDoc: doc, shift: { ...leaferFrameShift }, get contentJson() { const json = leaferEncoder.encode(doc); Object.defineProperty(this, 'contentJson', { value: json }); return json }, pageState: { ...doc.page } }
+}
+const leaferEdits = createLeaferEdits({
+  sizeOf: (object) => leaferCanvas?.sizeOf(object) ?? {},
+  onChange(doc, { kind, changed, page, pageShift, viewShift, selection }) {
+    if (leaferSource.noteId !== state.activeNoteId) return
+    if (pageShift) leaferFrameShift = { x: leaferFrameShift.x + pageShift.x, y: leaferFrameShift.y + pageShift.y }
+    // Pages added or folded on the top or left moved every object; the view moves by the same amount, so what is on screen stays where it is.
+    if ((page || viewShift) && (viewShift?.x || viewShift?.y || !samePageGrid(doc.page, state.pages))) {
+      const folded = doc.page.columns < state.pages.columns || doc.page.rows < state.pages.rows || kind === 'undo' || kind === 'redo' // F-009: after a fold-back or an undo the view settles inside the content now, not at the next pan
+      state.pages = { ...doc.page }
+      resizePaper(viewShift?.x ?? 0, viewShift?.y ?? 0, folded)
+    }
+    // An edit made on the canvas is already on screen (the scene recorded it); any other change (an undo, a redo, an edit recorded
+    // from elsewhere) draws the document again, with the objects the step names selected.
+    if (!leaferCanvas.isCommitting()) {
+      // An undo or a redo draws again only the objects the step names; a step that moved the page frame, and any other change, draws the note again.
+      if ((kind === 'undo' || kind === 'redo') && !pageShift) leaferCanvas.applyChanged(doc, changed)
+      else leaferCanvas.load(doc)
+      leaferCanvas.select(selection)
+    }
+    leaferSource = leaferSourceOf(leaferSource.noteId, doc)
+    queueSave()
+    layoutChanged()
+  },
+})
+// Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, Ctrl+Y, the dock buttons and the desktop menu all arrive here. (A mind map has undo of its own.)
+function stepHistory(direction) {
+  if (state.activeNoteType === 'mindmap' || state.loading) return
+  if (direction < 0) leaferEdits.undo()
+  else leaferEdits.redo()
+}
+
+// Note JSON -> document model -> Leafer nodes, and the view and page grid to match.
+let leaferShowSequence = 0
+let leaferShowFixed = false
+// Returns false when a later selection or refresh superseded this one while the note was being converted: nothing is drawn then.
+async function showLeaferNote(note, { openView = true } = {}) {
+  // The stored JSON Canvas is read straight into the document model; the note's own content is kept to save back until it is edited.
+  const showing = ++leaferShowSequence
+  const decoded = await decodeNoteDocument(note)
+  if (showing !== leaferShowSequence || note.id !== state.activeNoteId) return false
+  leaferInk?.documentChanged() // the document is replaced: an erase pass planned on the old one is dropped
+  leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.doc.page }
+  state.pages = { ...decoded.doc.page } // a copy: the document the history holds is never edited through the paper state
+  resizePaper()
+  leaferFrameShift = { x: 0, y: 0 } // the document as the server holds it is the frame the page rules count from
+  leaferServerShift = { x: 0, y: 0 }
+  leaferBaseShift = { x: 0, y: 0 }
+  const shown = leaferCanvas.showDocument(decoded.doc, { resolveMedia: decoded.resolveMedia })
+  if (openView) leaferEdits.open(note.id, shown) // a newly opened note starts a new undo history; an agent's newer content does not (undo never reverts it)
+  else leaferEdits.remote(note.id, shown)
+  leaferCanvas.adopt(leaferEdits.doc) // the scene edits the document the history holds
+  leaferBase = leaferEdits.doc
+  warmLeaferEncoder()
+  // An arrow the note was stored with out of line (an agent moved what it joins) was brought in line on screen; what is stored is not, yet.
+  leaferShowFixed = shown !== decoded.doc
+  if (leaferShowFixed && !openView) leaferSource = leaferSourceOf(note.id, leaferEdits.doc) // (a note just opened keeps its stored content until it is edited)
+  if (openView) openCanvasView()
+  leaferCanvas.setColors(pageColors)
+  leaferCanvas.whenSettled().then(() => { document.documentElement.dataset.leaferSettled = String(state.activeNoteId) })
+  return true
+}
+
+// While the text editor is open the page may not zoom (iOS zooms in on a field with small text when it takes the focus); the rest of the
+// time the viewport allows the person's own pinch-zoom.
+function setPageZoomLocked(locked) {
+  const meta = document.querySelector('meta[name="viewport"]')
+  if (!meta) return
+  const base = 'width=device-width, initial-scale=1.0'
+  meta.setAttribute('content', locked ? `${base}, maximum-scale=1.0` : base)
+}
+
+function mountLeaferCanvas() {
+  const host = document.createElement('div')
+  leaferHost = host
+  host.id = 'leafer-host'
+  elements.paper.prepend(host)
+  leaferCanvas = createLeaferCanvas({ host, width: viewSize.width, height: viewSize.height, onOperation: (op, options) => leaferEdits.record(op, options),
+    onBegin: (label) => leaferEdits.begin(label),
+    onEnd: () => leaferEdits.end(),
+    // A drag, a resize or a turn brought an object near an edge: the page grid grows in every direction.
+    onPages: ({ columns, rows, shiftX, shiftY }) => { state.pages = { ...state.pages, columns, rows }; resizePaper(shiftX, shiftY) },
+    onTextEvent: (type) => {
+      if (type === 'escape') setTool('select')
+      if (type === 'start' || type === 'end') setPageZoomLocked(type === 'start')
+    },
+    // What a new text and a new sticky look like, in the model's words.
+    defaults: {
+      text: () => ({ fontFamily: canvasFontFamily(state.fontFamily), fontSize: getInputFontSize(), color: state.color }),
+      sticky: () => {
+        const { fill, ink } = currentObjectPalette()[state.objectColor]
+        const { fontFamily, fontSize, fontWeight, lineHeight } = stickyDefaults({ fill, ink })
+        return { fill, ink, style: { fontFamily, fontSize, fontWeight, lineHeight } }
+      },
+    },
+  })
+}
+mountLeaferCanvas()
+
+// The pen, highlighter and eraser (F-031). The stroke is a model object recorded as one undo step; a page grows when the pen
+// goes past the right or bottom edge.
+leaferInk = createInk({
+  host: elements.paper,
+  scene: leaferCanvas,
+  getDoc: () => leaferEdits.doc,
+  getBrush: () => ({ color: state.color, width: state.tool === 'highlight' ? state.highlightWidth : state.penWidth }),
+  getPages: () => state.pages,
+  growPages(point) {
+    let { columns, rows } = state.pages
+    if (point.x > columns * PAGE_WIDTH + EDGE_OVERFLOW) columns += 1
+    if (point.y > rows * PAGE_HEIGHT + EDGE_OVERFLOW) rows += 1
+    if (columns === state.pages.columns && rows === state.pages.rows) return false
+    state.pages = { ...state.pages, columns, rows } // a new object: the document the history holds shares the old one
+    resizePaper()
+    return true
+  },
+  setPages(pages) { state.pages = { ...pages }; resizePaper() },
+  cursor: elements.eraserCursor,
+})
+
+// The connect tool (F-032): press on an object, drag to another, and an arrow joins them (one undo step).
+leaferConnect = createConnectTool({ host: elements.paper, scene: leaferCanvas, getColor: () => state.color })
+
+// The bar over the canvas that does with the mouse what the keys do (Back, Forward, Lock, Delete); it shows while something is selected.
+leaferCanvas.onSelection(() => { updateSelectionBar(); syncTypographyControls(); scheduleHandleClearance() })
+// A floating control (zoom, pages, dock) that sits right over one of the selection's handles stands aside (faint, no pointer) so the handle can be grabbed.
+let clearanceFrame = 0
+function scheduleHandleClearance() {
+  if (clearanceFrame) return
+  clearanceFrame = requestAnimationFrame(() => {
+    clearanceFrame = 0
+    const controls = [...document.querySelectorAll('.zoom-control, .page-minimap')]
+    const ids = leaferCanvas?.selection() ?? []
+    const host = leaferHost?.getBoundingClientRect()
+    let handles = []
+    if (ids.length && host) {
+      let left = Infinity; let top = Infinity; let right = -Infinity; let bottom = -Infinity
+      for (const id of ids) {
+        const box = leaferCanvas.screenBox(id)
+        if (!box) continue
+        left = Math.min(left, box.x); top = Math.min(top, box.y); right = Math.max(right, box.x + box.width); bottom = Math.max(bottom, box.y + box.height)
+      }
+      if (left !== Infinity) {
+        const midX = (left + right) / 2; const midY = (top + bottom) / 2
+        handles = [[left, top], [midX, top], [right, top], [left, midY], [right, midY], [left, bottom], [midX, bottom], [right, bottom], [midX, top - 22]].map(([x, y]) => ({ x: host.left + x, y: host.top + y }))
+      }
+    }
+    for (const control of controls) {
+      const rect = control.getBoundingClientRect()
+      const under = rect.width > 0 && handles.some((p) => p.x > rect.left - 10 && p.x < rect.right + 10 && p.y > rect.top - 10 && p.y < rect.bottom + 10)
+      control.classList.toggle('is-clear-of-handles', under)
+    }
+  })
+}
+window.addEventListener('pointerup', () => setTimeout(scheduleHandleClearance, 30), true)
+function updateSelectionBar() {
+  const selection = leaferCanvas.selection()
+  elements.selectionBar.hidden = !selection.length
+  const locked = selection.some((id) => leaferCanvas.isLocked(id))
+  const lockButton = elements.selectionBar.querySelector('[data-selection-action="lock"]')
+  lockButton.textContent = locked ? 'Unlock' : 'Lock'
+  elements.selectionBar.classList.toggle('is-locked', locked)
+}
+elements.selectionBar.addEventListener('pointerdown', (event) => event.stopPropagation())
+elements.selectionBar.addEventListener('click', (event) => {
+  const action = event.target.closest('[data-selection-action]')?.dataset.selectionAction
+  if (action === 'forward' || action === 'backward') leaferCanvas.reorderSelection(action)
+  else if (action === 'lock') toggleLeaferLock()
+  else if (action === 'delete') leaferCanvas.deleteSelection()
+  updateSelectionBar()
+})
+
 let selectSequence = 0
+// From the moment a switch to another note starts until it has landed, the old note takes no more input on the Leafer canvas: an edit
+// made then would land on a note that is being left (and be dropped).
+let leaferSwitching = 0
+// Dictation ends when a switch to another note starts: the words already final stay in the note being left (and go out with its save);
+// an interim result still being heard is dropped, and nothing more arrives for the new note.
+async function stopDictationForSwitch() {
+  if (!state.listening) return
+  if (dictationSession.active && dictationSession.partial) updateVoiceTextBox(dictationSession.preview(''), { create: false }) // the interim words go first (before anything is awaited)
+  if (state.voiceMode === 'browser') {
+    state.recognition?.abort?.()
+    removeEmptyVoiceTextBox()
+    dictationSession.cancel()
+    setVoiceListening(false)
+    state.voiceMode = null
+  } else await stopLocalDictation({ cancel: true })
+  leaferCanvas?.finishTextEdit()
+}
+
 async function selectNote(id) {
   if (id === state.activeNoteId) return
+  leaferSwitching += 1
+  await stopDictationForSwitch()
+  leaferCanvas.clearSelection()
+  leaferInk.cancel()
+  leaferConnect.cancel()
+  elements.shell.classList.add('leafer-switching')
+  try { await selectNoteNow(id) } finally {
+    if (!--leaferSwitching) elements.shell.classList.remove('leafer-switching')
+  }
+}
+async function selectNoteNow(id) {
   hideToast()
   const sequence = ++selectSequence
   // Stay on the current note rather than drop its edits when they cannot be saved in time.
@@ -2182,7 +1634,6 @@ async function selectNote(id) {
   state.loading = true
   mindmapEditor?.destroy()
   mindmapEditor = null
-  let normalizedNote = false
   try {
     const note = await api(`/notes/${id}`)
     // A newer pick superseded this one while it loaded: its content must not land under another note's id.
@@ -2199,22 +1650,10 @@ async function selectNote(id) {
     setActiveNoteType(note.noteType)
     if (state.activeNoteType === 'mindmap') {
       await mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
-      state.history = []
-      state.historyIndex = -1
+      mindmapSnapshot = JSON.stringify({ content: mindmapEditor?.getDocument() }) // what the map was when it was loaded: leaving it unchanged sends nothing
     } else {
-      state.pages = note.pageState || { columns: 1, rows: 1 }
-      resizePaper()
-      openCanvasView()
-      await canvas.loadFromJSON(note.content || { objects: [] })
-      saveTiming.noteLoaded(note.content)
-      bindCanvasTextObjects()
-      normalizedNote = normalizeNotebookFonts()
-      normalizedNote = rebuildConnectors() || normalizedNote
-      normalizedNote = reconcilePages(true) || normalizedNote
-      state.history = [snapshot()]
-      state.historyIndex = 0
-      syncedIds = canvasObjectIds(note.content)
-      setTool('text')
+      if (!(await showLeaferNote(note)) || sequence !== selectSequence) return
+      setTool('text') // a note opens ready for typing
     }
     setSaveState('Saved')
     renderNoteList()
@@ -2224,7 +1663,6 @@ async function selectNote(id) {
     setSaveState('Could not load', true)
   } finally {
     if (sequence === selectSequence) state.loading = false
-    if (normalizedNote) queueSave()
   }
 }
 
@@ -2244,54 +1682,74 @@ async function refreshWorkspaceLists() {
 
 async function applyRemoteNote(note) {
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
-  state.loading = true
-  let reconciled = false
-  try {
-    elements.title.value = note.title
-    state.pages = note.pageState || { columns: 1, rows: 1 }
-    resizePaper()
-    await canvas.loadFromJSON(note.content || { objects: [] })
-    saveTiming.noteLoaded(note.content)
-    bindCanvasTextObjects()
-    rebuildConnectors()
-    setTool(state.tool)
-    state.history = [snapshot()]
-    state.historyIndex = 0
-    syncedIds = canvasObjectIds(note.content)
-    const summary = state.notes.find((item) => item.id === note.id)
-    if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
-    reconciled = reconcilePages(true)
-    setSaveState('Saved')
-    renderNoteList()
-  } finally {
-    state.loading = false
-    if (reconciled) queueSave()
-  }
+  elements.title.value = note.title
+  if (!(await showLeaferNote(note, { openView: false }))) return
+  if (leaferShowFixed) queueSave() // the stored arrows follow what the agent moved
+  const summary = state.notes.find((item) => item.id === note.id)
+  if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
+  setSaveState('Saved')
+  renderNoteList()
+  layoutChanged() // the agent's flag sits over text that may have moved
 }
 
-// Unsaved local edits win: add only the objects an agent appended, then save on top of the newer revision.
-async function mergeRemoteNote(note) {
-  if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
-  const remoteObjects = note.content?.objects || []
-  const added = mergeRemoteAppends({ syncedIds, localObjects: canvas.getObjects(), remoteObjects })
-  const enlivened = added.length ? await util.enlivenObjects(added) : []
+let mergeCount = 0
+// Unsaved local edits win. A three-way merge against the note as last loaded or saved (core/document/merge.js). What the agent changed, rewrote,
+// deleted or appended arrives; what the user changed (words being typed included) stays; the editor stays open on its text. The
+// note is then saved on the agent's revision.
+async function mergeLeaferNote(note) {
+  const decoded = await decodeNoteDocument(note)
+  // A save in flight that moved the page frame has not told us yet which frame the server's copy is in (the server applies it before it
+  // answers), so a merge waits for the answer; what was fetched meanwhile is the user's own save, or older, and there is nothing in it to merge.
+  // A save that left the frame as it was (the usual one) changes nothing about how the server's copy is read: the merge goes ahead.
+  if (saveInFlight && saveFrame && (saveFrame.x !== leaferServerShift.x || saveFrame.y !== leaferServerShift.y)) {
+    // Not for ever: a save that gets no answer must not hold the changes feed. The merge is dropped and tried again a little later.
+    const gaveUp = Symbol('gave up')
+    let timer
+    const outcome = await Promise.race([(async () => { while (saveInFlight) await saveSettled })(), new Promise((resolve) => { timer = setTimeout(() => resolve(gaveUp), MERGE_WAIT_MS) })])
+    clearTimeout(timer)
+    if (outcome === gaveUp) { setTimeout(() => agentSync?.syncActiveNote().catch(console.error), MERGE_RETRY_MS); return 0 }
+    if (note.id !== state.activeNoteId) return 0
+    const known = state.notes.find((item) => item.id === note.id)
+    if (known && note.revision <= known.revision) return 0
+  }
   if (note.id !== state.activeNoteId) return 0
+  mergeCount += 1
+  leaferInk.documentChanged() // an erase pass was planned on the document as it was; it is dropped rather than committed against the merged one (a pen stroke only adds, so it carries on)
+  const typing = leaferCanvas.flushText() // words typed so far are in the document now; that text counts as the user's whatever the agent did to it
+  const local = leaferEdits.doc
+  // The agent wrote in the server's page frame and our base is in its own; both are moved into ours before they are compared.
+  const frame = { x: leaferFrameShift.x - leaferServerShift.x, y: leaferFrameShift.y - leaferServerShift.y }
+  const baseFrame = { x: leaferFrameShift.x - leaferBaseShift.x, y: leaferFrameShift.y - leaferBaseShift.y }
+  const moved = Boolean(frame.x || frame.y)
+  const { doc: joined, added } = mergeDocuments({ base: shiftedDocument(leaferBase ?? local, baseFrame.x, baseFrame.y), local, remote: shiftedDocument(decoded.doc, frame.x, frame.y), touched: typing ? [typing] : [] })
+  // The grid the agent grew (it wrote in the server's frame, so its pages are counted from there) and the grid we have are both kept.
+  const grid = moved ? { columns: Math.max(joined.page.columns, decoded.doc.page.columns + frame.x / PAGE_WIDTH), rows: Math.max(joined.page.rows, decoded.doc.page.rows + frame.y / PAGE_HEIGHT) } : null
+  const merged = grid && (grid.columns !== joined.page.columns || grid.rows !== joined.page.rows) ? { ...joined, page: { ...joined.page, ...grid } } : joined
   const summary = state.notes.find((item) => item.id === note.id)
   if (summary) summary.revision = note.revision
-  syncedIds = new Set([...syncedIds, ...canvasObjectIds(note.content)])
-  const remotePages = note.pageState || {}
-  const columns = Math.max(state.pages.columns, remotePages.columns || 1)
-  const rows = Math.max(state.pages.rows, remotePages.rows || 1)
-  if (columns !== state.pages.columns || rows !== state.pages.rows) {
-    state.pages = { columns, rows }
-    resizePaper()
+  leaferBase = decoded.doc // what the server holds now; the next save moves it on
+  leaferBaseShift = { ...leaferServerShift }
+  if (merged !== local) {
+    leaferEdits.remote(note.id, merged) // a merge, not an edit: undo stays safe
+    const next = leaferEdits.doc
+    if (next.page && !samePageGrid(next.page, state.pages)) { state.pages = { ...next.page }; resizePaper() }
+    leaferCanvas.applyMerged(next, { resolveMedia: decoded.resolveMedia })
+    // An agent that moved an object leaves its arrows where they were: they follow what is on screen now (derived, not an edit).
+    const followed = leaferCanvas.followConnectors(next)
+    if (followed !== next) {
+      leaferEdits.remote(note.id, followed)
+      leaferCanvas.applyMerged(leaferEdits.doc)
+    }
+    leaferSource = leaferSourceOf(note.id, leaferEdits.doc)
   }
-  enlivened.forEach((object) => canvas.add(object))
-  bindCanvasTextObjects()
-  rebuildConnectors()
-  canvas.requestRenderAll()
   queueSave()
-  return enlivened.length
+  layoutChanged()
+  return added.length
+}
+const samePageGrid = (a, b) => a.columns === b.columns && a.rows === b.rows
+async function mergeRemoteNote(note) {
+  if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
+  return mergeLeaferNote(note)
 }
 
 async function createNote(notebookId, noteType = 'canvas') {
@@ -2313,7 +1771,6 @@ async function createNote(notebookId, noteType = 'canvas') {
     state.activeNoteId = null
     await selectNote(note.id)
     setSidebarOpen(false)
-    if (noteType === 'canvas') addText({ x: 72, y: 72 })
   } finally {
     state.creatingNote = false
   }
@@ -2533,13 +1990,9 @@ async function importWorkspaceFile(file) {
   }
 }
 
-function selectedTextObject() {
-  const active = canvas.getActiveObject()
-  return isEditableText(active) ? active : null
-}
-
 function syncTypographyControls() {
-  const text = selectedTextObject()
+  const picked = leaferCanvas?.selectedText()[0]
+  const text = picked ? { fontFamily: picked.style.fontFamily, fontSize: picked.style.fontSize } : null
   const fontFamily = fontChoice(text?.fontFamily || state.fontFamily)
   const fontSize = Math.round(text?.fontSize || state.fontSize)
   document.querySelector('#text-selection-status').textContent = text ? 'Selected text' : 'New text'
@@ -2552,65 +2005,22 @@ function syncTypographyControls() {
 
 function prettifyActiveNote() {
   if (state.activeNoteType !== 'canvas') return
-  const activeText = selectedTextObject()
-  const hasSelection = activeText && activeText.selectionStart !== activeText.selectionEnd
-  const textObjects = hasSelection ? [activeText] : canvas.getObjects().filter(isEditableText)
-  let changed = false
-  let historyFlushed = false
-  textObjects.forEach((text) => {
-    const selection = prettifySelection(text.text, text.selectionStart, text.selectionEnd)
-    if (selection.text === text.text) return
-    if (!historyFlushed) {
-      flushPendingHistory({
-        cancel: () => clearTimeout(historyTimer),
-        commit: commitHistorySnapshot,
-      })
-      historyFlushed = true
-    }
-    text.set('text', selection.text)
-    text.initDimensions()
-    text.setCoords()
-    if (text === activeText && text.isEditing) {
-      const caret = hasSelection ? selection.start : Math.min(text.selectionStart, selection.text.length)
-      text.setSelectionStart(caret)
-      text.setSelectionEnd(hasSelection ? selection.end : caret)
-    }
-    changed = true
-  })
-  if (!changed) return
-  reconcilePages()
-  canvas.requestRenderAll()
-  if (commitHistorySnapshot()) queueSave()
+  leaferCanvas.prettify() // the document model: the same tidy per text, one undo step
 }
 
 function applyTypography(property, value) {
-  const text = selectedTextObject()
+  // The selected text and stickies change; the choice is also what the next new text gets.
   state[property] = value
-  if (text) {
-    text.set(property, property === 'fontFamily' ? canvasFontFamily(value) : value)
-    text.setCoords()
-    canvas.requestRenderAll()
-    if (!isPlaceholderText(text.text)) recordHistory()
-  }
+  leaferCanvas.setTextStyle({ style: { [property]: property === 'fontFamily' ? canvasFontFamily(value) : value } })
   syncTypographyControls()
 }
 
+// Print sheets are drawn from the document model on a leafer of their own (white paper, no page furniture), as blob URLs.
+let printSheetUrls = []
 async function renderPrintSheet(column, row) {
-  const element = document.createElement('canvas')
-  const printCanvas = new StaticCanvas(element, {
-    width: PAGE_WIDTH,
-    height: PAGE_HEIGHT,
-    backgroundColor: '#ffffff',
-    enableRetinaScaling: false,
-    renderOnAddRemove: false,
-  })
-  await printCanvas.loadFromJSON(canvas.toJSON())
-  printCanvas.backgroundColor = '#ffffff'
-  printCanvas.setViewportTransform([1, 0, 0, 1, -column * PAGE_WIDTH, -row * PAGE_HEIGHT])
-  printCanvas.renderAll()
-  const dataUrl = printCanvas.toDataURL({ format: 'png', multiplier: 2 })
-  printCanvas.dispose()
-  return dataUrl
+  const url = URL.createObjectURL(await renderSheet(leaferCanvas, { column, row }))
+  printSheetUrls.push(url)
+  return url
 }
 
 let printRenderSequence = 0
@@ -2640,8 +2050,29 @@ async function renderPrintPreview(sequence) {
   }
 }
 
+// The whole note as one PNG (white paper, no page furniture).
+async function downloadNotePicture() {
+  if (state.activeNoteType !== 'canvas') return
+  leaferCanvas.finishTextEdit()
+  try {
+    const blob = await renderNotePicture(leaferCanvas, state.pages)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${(elements.title.value.trim() || 'note').replace(/[\\/:*?"<>|]+/g, '-')}.png`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    console.error(error)
+    showToast('Could not make the picture')
+  }
+}
+
 async function openPrintPreview() {
   if (state.activeNoteType !== 'canvas') return
+  leaferCanvas?.finishTextEdit() // words still being typed are on the sheets
   const sequence = ++printRenderSequence
   setSidebarOpen(false)
   setPropertiesOpen(false)
@@ -2670,6 +2101,8 @@ function closePrintPreview() {
   elements.printPreview.setAttribute('aria-hidden', 'true')
   elements.printPreview.hidden = true
   elements.printSheetList.innerHTML = ''
+  for (const url of printSheetUrls) URL.revokeObjectURL(url)
+  printSheetUrls = []
   elements.shell.inert = false
   document.body.classList.remove('print-preview-open')
   elements.shareButton.focus()
@@ -2695,73 +2128,41 @@ function setVoiceListening(listening, message = 'Listening') {
   elements.mobileSpeak.classList.toggle('active', listening)
   elements.mobileSpeak.setAttribute('aria-pressed', String(listening))
   elements.mobileSpeak.setAttribute('aria-label', listening ? 'Release to finish speaking' : 'Hold to speak')
-  voiceOutline = listening
-  canvas.requestRenderAll()
+  leaferCanvas?.setListening(listening)
   elements.voiceCaption.hidden = !listening
   elements.voiceStatus.textContent = message
 }
 
-function voiceInsertPoint() {
-  const bounds = getContentBounds()
-  if (!bounds) return { x: 96, y: 96 }
-  return {
-    x: Math.max(64, Math.min(bounds.left, state.pages.columns * PAGE_WIDTH - 260)),
-    y: bounds.bottom + 42,
-  }
-}
 
+// The words go into the text being edited through the overlay (the selected text, the open one, or a new text box).
+// The "target" is only what the dictation session reads: the words in the editor now.
+// Where a new dictation box goes when nothing is being edited: under the note's content.
+const currentVoiceInsertPoint = () => voiceInsertPoint(contentBounds(leaferEdits.doc.objects, (object) => leaferCanvas.sizeOf(object) ?? {}), { columns: state.pages.columns, pageWidth: PAGE_WIDTH })
+let leaferVoiceShown = '' // the words last put in the editor
 function createVoiceTextBox() {
-  const selected = selectedTextObject()
-  if (selected) return selected
-  const layout = pageBoundedTextLayout(voiceInsertPoint(), { pageWidth: PAGE_WIDTH })
-  const text = new Textbox('', {
-    left: layout.x,
-    top: layout.y,
-    width: layout.width,
-    fill: state.color,
-    fontFamily: canvasFontFamily(state.fontFamily),
-    fontSize: getInputFontSize(),
-    lineHeight: 1.45,
-    padding: 8,
-    cornerColor: '#1c70a8',
-    cornerStyle: 'circle',
-    transparentCorners: false,
-  })
-  text.__voiceDictationBox = true
-  bindTextEditingLifecycle(text)
-  canvas.add(text)
-  canvas.setActiveObject(text)
-  text.enterEditing()
-  canvas.requestRenderAll()
-  return text
+  const layout = pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH })
+  const { fresh } = leaferCanvas.beginDictation({ x: layout.x, y: layout.y }, { width: layout.width })
+  leaferVoiceShown = leaferCanvas.dictationText() ?? ''
+  return { __voiceDictationBox: fresh, get text() { return leaferCanvas.dictationText() ?? '' } }
 }
 
 function removeEmptyVoiceTextBox() {
   const target = dictationSession.target
-  if (dictationSession.active && dictationSession.partial) {
-    updateVoiceTextBox(dictationSession.preview(''), { create: false })
-  }
-  if (!target?.__voiceDictationBox || target.text.trim() || !canvas.getObjects().includes(target)) return
-  target.exitEditing()
-  canvas.remove(target)
-  canvas.discardActiveObject()
-  reconcilePages()
+  if (dictationSession.active && dictationSession.partial) updateVoiceTextBox(dictationSession.preview(''), { create: false })
+  if (target?.__voiceDictationBox && !target.text.trim() && leaferCanvas.isEditingText()) leaferCanvas.finishTextEdit() // a new box nothing was said into is never made
 }
 
 function updateVoiceTextBox(text, { record = false, create = true } = {}) {
-  if (!dictationSession.target || !canvas.getObjects().includes(dictationSession.target)) {
+  if (!dictationSession.target || !leaferCanvas.isEditingText()) { // the editor was closed meanwhile: what comes next goes in a new text box
     if (!create) return
+    const shown = leaferVoiceShown
     dictationSession.target = createVoiceTextBox()
     dictationSession.committed = ''
+    text = text.startsWith(shown) ? text.slice(shown.length).trim() : text
   }
-  dictationSession.target.set('text', text)
-  dictationSession.target.initDimensions()
-  dictationSession.target.setSelectionStart(text.length)
-  dictationSession.target.setSelectionEnd(text.length)
-  dictationSession.target.setCoords()
-  canvas.requestRenderAll()
-  reconcilePages()
-  if (record) recordHistory()
+  leaferCanvas.setDictation(text)
+  leaferVoiceShown = text
+  if (record) leaferCanvas.flushText() // final words are in the document (and a save) now, inside the same typing session
 }
 
 function previewVoiceTranscript(transcript, options) {
@@ -3115,9 +2516,7 @@ async function undoClear() {
   if (pending.mindmap) {
     await mountActiveMindMap(pending.mindmap)
     queueSave()
-  } else if (state.historyIndex === pending.historyIndex) {
-    await restoreHistory(pending.historyIndex - 1)
-  }
+  } else if (pending.canvas) stepHistory(-1) // the clear is the last step: no other edit has been made since (an edit ends the Undo)
 }
 
 async function clearActiveNote() {
@@ -3131,40 +2530,16 @@ async function clearActiveNote() {
     showToast('Note cleared', 'Undo', undoClear)
     return
   }
-  if (!canvas.getObjects().length) return
-  flushPendingHistory({ cancel: () => clearTimeout(historyTimer), commit: commitHistorySnapshot })
-  canvas.discardActiveObject()
-  canvas.clear()
-  state.pages = { columns: 1, rows: 1 }
-  resizePaper()
+  if (!leaferCanvas.clearAll()) return
   setTool('text')
-  if (commitHistorySnapshot()) queueSave()
-  pendingClearUndo = { noteId: state.activeNoteId, historyIndex: state.historyIndex }
+  pendingClearUndo = { noteId: state.activeNoteId, canvas: true }
   showToast('Note cleared', 'Undo', undoClear)
-}
-
-function updateEraserCursor(event) {
-  if (state.tool !== 'eraser' || !event.e) return
-  elements.eraserCursor.hidden = false
-  elements.eraserCursor.style.left = `${event.e.clientX}px`
-  elements.eraserCursor.style.top = `${event.e.clientY}px`
-}
-
-function finishErasing() {
-  if (!state.eraserActive) return
-  state.eraserActive = false
-  state.eraserLastPoint = null
-  if (state.eraserChanged) {
-    reconcilePages()
-    recordHistory()
-  }
-  state.eraserChanged = false
 }
 
 // A touch that starts in the gutter around the pages scrolls the view with one
 // finger, as the old padded workspace did; touches on the page keep drawing.
 function isOutsidePages(event) {
-  const rect = canvas.upperCanvasEl.getBoundingClientRect()
+  const rect = inputSurface.getBoundingClientRect()
   const scale = getCanvasScale()
   const worldX = (event.clientX - rect.left - viewportOffsetX) / scale
   const worldY = (event.clientY - rect.top - viewportOffsetY) / scale
@@ -3172,6 +2547,13 @@ function isOutsidePages(event) {
   return worldX < 0 || worldY < 0 || worldX > target.right || worldY > target.bottom
 }
 
+// Touch pinch and pan and the middle-button pan work from every layer that takes the pointer: the input surface (the hand, Space, text,
+// sticky), Leafer's own (the select tool) and the ink surface.
+function onCanvasInput(type, handler, options) {
+  inputSurface.addEventListener(type, handler, options)
+  leaferHost.addEventListener(type, handler, options)
+  leaferInk?.surface.addEventListener(type, handler, options)
+}
 const canvasTouchPointers = new Map()
 let canvasPinchGesture = null
 let canvasPanGesture = null
@@ -3179,7 +2561,7 @@ let canvasPanGesture = null
 function beginCanvasPinch() {
   const [first, second] = [...canvasTouchPointers.values()]
   if (!first || !second) return
-  const rect = canvas.upperCanvasEl.getBoundingClientRect()
+  const rect = inputSurface.getBoundingClientRect()
   const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 }
   const scale = getCanvasScale()
   canvasPinchGesture = {
@@ -3188,19 +2570,16 @@ function beginCanvasPinch() {
     zoom: state.canvasZoom,
     worldX: (center.x - rect.left - viewportOffsetX) / scale,
     worldY: (center.y - rect.top - viewportOffsetY) / scale,
-    drawing: canvas.isDrawingMode,
   }
-  state.drawingGesture = null
   canvasPanGesture = null
-  canvas.isDrawingMode = false
-  canvas.clearContext(canvas.contextTop)
-  finishErasing()
+  leaferInk?.cancel() // a second finger is a pinch: the stroke the first one began is dropped
+  leaferConnect?.cancel()
 }
 
 function updateCanvasPinch() {
   if (!canvasPinchGesture || canvasTouchPointers.size < 2) return false
   const [first, second] = [...canvasTouchPointers.values()]
-  const rect = canvas.upperCanvasEl.getBoundingClientRect()
+  const rect = inputSurface.getBoundingClientRect()
   const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 }
   const ratio = Math.hypot(second.x - first.x, second.y - first.y) / canvasPinchGesture.distance
   state.canvasZoom = Math.min(2.5, Math.max(0.75, canvasPinchGesture.zoom * ratio))
@@ -3211,17 +2590,33 @@ function updateCanvasPinch() {
   return true
 }
 
-canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
-  if (event.pointerType !== 'touch' || window.innerWidth > 800) return
+// Whether a pen has touched this window (F-035). An Apple Pencil (pointerType 'pen') draws; once one has
+// touched, a finger is for panning and pinching, never for drawing, so a resting palm leaves no marks.
+let penLastAt = -Infinity // when a pen last touched the screen (a hovering pen does not count)
+const penInUse = () => performance.now() - penLastAt < 10000 // after ten seconds without a pen a finger may draw again
+for (const type of ['pointerdown', 'pointermove']) window.addEventListener(type, (event) => { if (event.pointerType === 'pen' && event.buttons > 0) penLastAt = performance.now() }, true)
+
+// Does a finger put down here pan the view, or is it for the tool? Off the pages, with the Hand, or (palm rejection) with a drawing tool
+// while a pen is in use: it pans. With the Select, Text or Sticky tool, a finger on paper (not on an object or the handles of
+// the selection) pans too, as on every phone canvas; there is no marquee by finger.
+function fingerPans(event) {
+  if (state.tool === 'hand' || isOutsidePages(event)) return true
+  if (penInUse() && (state.tool === 'pen' || state.tool === 'highlight' || state.tool === 'eraser')) return true
+  if (state.tool === 'select' || state.tool === 'text' || state.tool === 'sticky') return leaferCanvas.touchHit(event.clientX, event.clientY) === 'empty'
+  return false
+}
+
+onCanvasInput('pointerdown', (event) => {
+  if (event.pointerType !== 'touch') return
   canvasTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
   if (canvasTouchPointers.size === 2) {
     beginCanvasPinch()
-    canvas.upperCanvasEl.setPointerCapture(event.pointerId)
+    event.currentTarget.setPointerCapture(event.pointerId)
     event.preventDefault()
     event.stopImmediatePropagation()
     return
   }
-  if (state.tool !== 'hand' && !isOutsidePages(event)) return
+  if (!fingerPans(event)) return
   canvasPanGesture = {
     pointerId: event.pointerId,
     startX: event.clientX,
@@ -3229,12 +2624,12 @@ canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
     offsetX: viewportOffsetX,
     offsetY: viewportOffsetY,
   }
-  canvas.upperCanvasEl.setPointerCapture(event.pointerId)
+  event.currentTarget.setPointerCapture(event.pointerId)
   event.preventDefault()
   event.stopImmediatePropagation()
 }, { capture: true })
 
-canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
+onCanvasInput('pointermove', (event) => {
   if (!canvasTouchPointers.has(event.pointerId)) return
   canvasTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
   if (canvasPinchGesture) updateCanvasPinch()
@@ -3248,33 +2643,23 @@ canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
   event.stopImmediatePropagation()
 }, { capture: true })
 
-canvas.upperCanvasEl.addEventListener('pointerup', (event) => {
+onCanvasInput('pointerup', (event) => {
   if (!canvasTouchPointers.has(event.pointerId)) return
+  // Only a lift that ends a pan or a pinch of ours is swallowed; any other finger's lift belongs to the tool (the editor must see it end).
+  const owned = canvasPanGesture?.pointerId === event.pointerId || Boolean(canvasPinchGesture)
   canvasTouchPointers.delete(event.pointerId)
   if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
-  if (canvasPinchGesture && !canvasTouchPointers.size) {
-    canvasPinchGesture = null
-    canvas.isDrawingMode = state.tool === 'pen' || state.tool === 'highlight'
-  }
+  if (canvasPinchGesture && !canvasTouchPointers.size) canvasPinchGesture = null
+  if (!owned) return
   event.preventDefault()
   event.stopImmediatePropagation()
 }, { capture: true })
 
-canvas.upperCanvasEl.addEventListener('pointercancel', (event) => {
+onCanvasInput('pointercancel', (event) => {
   canvasTouchPointers.delete(event.pointerId)
   if (canvasPanGesture?.pointerId === event.pointerId) canvasPanGesture = null
-  if (canvasPinchGesture && !canvasTouchPointers.size) {
-    canvasPinchGesture = null
-    canvas.isDrawingMode = state.tool === 'pen' || state.tool === 'highlight'
-  }
+  if (canvasPinchGesture && !canvasTouchPointers.size) canvasPinchGesture = null
 }, { capture: true })
-
-canvas.on('before:render', ({ ctx }) => drawPageTiles(ctx))
-// renderOnAddRemove is off so bulk loads do not repaint per object; one batched
-// repaint per frame covers every add and remove.
-;['object:added', 'object:removed'].forEach((eventName) => {
-  canvas.on(eventName, () => canvas.requestRenderAll())
-})
 
 elements.workspace.addEventListener('wheel', (event) => {
   if (state.activeNoteType !== 'canvas' || event.target.closest?.('.tool-dock, .page-minimap, .zoom-control, .properties-panel, .sidebar')) return
@@ -3289,48 +2674,38 @@ elements.workspace.addEventListener('wheel', (event) => {
   setCanvasViewportOffset(viewportOffsetX - dx, viewportOffsetY - dy)
 }, { passive: false })
 
-let handPanKeep = null
-// Fabric deselects on a press over empty canvas; remember the selection so a hand pan (held Space or
-// the sticky hand) gives it back when the drag ends.
-canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
-  handPanKeep = state.tool === 'hand' && event.button === 0 ? canvas.getActiveObjects() : null
-}, { capture: true })
+// The hand (a held Space or the sticky hand) pans with the mouse or a pen; a finger's pan is the touch gesture above.
 let mousePan = null
-canvas.on('mouse:down', ({ e }) => {
-  if (state.tool !== 'hand' || e.pointerType === 'touch' || e.touches) return
-  mousePan = { x: e.clientX, y: e.clientY, offsetX: viewportOffsetX, offsetY: viewportOffsetY }
-  canvas.setCursor('grabbing')
+inputSurface.addEventListener('pointerdown', (event) => {
+  if (state.tool !== 'hand' || event.pointerType === 'touch') return
+  mousePan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: viewportOffsetX, offsetY: viewportOffsetY }
+  try { inputSurface.setPointerCapture(event.pointerId) } catch {}
+  inputSurface.style.cursor = 'grabbing'
 })
-canvas.on('mouse:move', ({ e }) => {
-  if (!mousePan) return
-  setCanvasViewportOffset(mousePan.offsetX + e.clientX - mousePan.x, mousePan.offsetY + e.clientY - mousePan.y)
+inputSurface.addEventListener('pointermove', (event) => {
+  if (mousePan?.pointerId !== event.pointerId) return
+  setCanvasViewportOffset(mousePan.offsetX + event.clientX - mousePan.x, mousePan.offsetY + event.clientY - mousePan.y)
 })
-function restorePanSelection() {
-  const keep = handPanKeep
-  handPanKeep = null
-  if (!keep?.length || canvas.getActiveObjects().length) return
-  const live = keep.filter((object) => canvas.getObjects().includes(object))
-  if (live.length) canvas.setActiveObject(live.length > 1 ? new ActiveSelection(live, { canvas }) : live[0])
-}
-canvas.on('mouse:up', () => {
-  restorePanSelection()
-  if (!mousePan) return
+function endMousePan(event) {
+  if (mousePan?.pointerId !== event.pointerId) return
   mousePan = null
-  canvas.setCursor('grab')
-})
+  inputSurface.style.cursor = toolCursor()
+}
+inputSurface.addEventListener('pointerup', endMousePan)
+inputSurface.addEventListener('pointercancel', endMousePan)
 
-// Middle-mouse drag pans from any tool. Fabric ignores the middle button, so this listens itself and
-// keeps the press away from drawing, selecting and placing.
+
+// Middle-mouse drag pans from any tool, and keeps the press away from drawing, selecting and placing.
 let middlePan = null
-canvas.upperCanvasEl.addEventListener('pointerdown', (event) => {
+onCanvasInput('pointerdown', (event) => {
   if (event.button !== 1 || event.pointerType === 'touch' || state.activeNoteType !== 'canvas') return
   middlePan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: viewportOffsetX, offsetY: viewportOffsetY }
-  canvas.upperCanvasEl.setPointerCapture(event.pointerId)
-  canvas.upperCanvasEl.style.cursor = 'grabbing'
+  event.currentTarget.setPointerCapture(event.pointerId)
+  event.currentTarget.style.cursor = 'grabbing'
   event.preventDefault()
   event.stopImmediatePropagation()
 }, { capture: true })
-canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
+onCanvasInput('pointermove', (event) => {
   if (middlePan?.pointerId !== event.pointerId) return
   setCanvasViewportOffset(middlePan.offsetX + event.clientX - middlePan.x, middlePan.offsetY + event.clientY - middlePan.y)
   event.preventDefault()
@@ -3339,166 +2714,41 @@ canvas.upperCanvasEl.addEventListener('pointermove', (event) => {
 function endMiddlePan(event) {
   if (middlePan?.pointerId !== event.pointerId) return
   middlePan = null
-  canvas.upperCanvasEl.style.cursor = ''
+  event.currentTarget.style.cursor = event.currentTarget === inputSurface ? toolCursor() : ''
   event.stopImmediatePropagation()
 }
-canvas.upperCanvasEl.addEventListener('pointerup', endMiddlePan, { capture: true })
-canvas.upperCanvasEl.addEventListener('pointercancel', endMiddlePan, { capture: true })
-canvas.upperCanvasEl.addEventListener('mousedown', (event) => { if (event.button === 1) event.preventDefault() })
+onCanvasInput('pointerup', endMiddlePan, { capture: true })
+onCanvasInput('pointercancel', endMiddlePan, { capture: true })
+onCanvasInput('mousedown', (event) => { if (event.button === 1) event.preventDefault() })
 
-canvas.on('before:path:created', ({ path }) => {
-  const points = canvas.freeDrawingBrush?._points || []
-  path.inkPoints = points.map(({ x, y }) => ({ x, y }))
-  path.isInk = true
-  path.inkTool = state.tool
-  path.selectable = false
-  path.evented = false
-})
-
-canvas.on('path:created', () => {
-  if (state.drawingGesture) state.drawingGesture.created = true
-})
-
-canvas.on('mouse:down', (event) => {
-  if (canvas.isDrawingMode) {
-    state.drawingGesture = {
-      point: { x: event.scenePoint.x, y: event.scenePoint.y },
-      tool: state.tool,
-      created: false,
-    }
-  } else if (state.tool === 'eraser') {
-    updateEraserCursor(event)
-    state.eraserActive = true
-    state.eraserLastPoint = { x: event.scenePoint.x, y: event.scenePoint.y }
-    state.eraserChanged = eraseAt(state.eraserLastPoint)
-  } else if (state.tool === 'sticky' || state.tool === 'shape') {
-    if (event.e.button > 0) return
-    placeObject(state.tool, event.scenePoint)
-  } else if (state.tool === 'text') {
-    const textTarget = isEditableText(event.target) ? event.target : findEditableTextAt(event.scenePoint)
-    if (textTarget) {
-      canvas.setActiveObject(textTarget)
-      if (!textTarget.isEditing) textTarget.enterEditing()
-      canvas.requestRenderAll()
-    } else {
-      addText(event.scenePoint)
-    }
+// A press with the mouse places a sticky or starts a text where the page is pressed. A finger or a pen places on the click that ends the
+// tap (below): a phone only raises its keyboard for focus given at the end of a gesture, and the compatibility mouse events a tap sends
+// are not relied on.
+inputSurface.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || event.pointerType !== 'mouse') return
+  if (state.tool === 'sticky') placeSticky(leaferCanvas.pageAt(event.clientX, event.clientY))
+  else if (state.tool === 'shape') placeShape(leaferCanvas.pageAt(event.clientX, event.clientY))
+  else if (state.tool === 'text') {
+    const at = leaferCanvas.pageAt(event.clientX, event.clientY)
+    setTimeout(() => { if (!leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false }) }, 0)
   }
 })
 
-canvas.on('mouse:dblclick', (event) => {
-  if (state.tool === 'select' && !event.target) addText(event.scenePoint)
-})
+let tapStart = null
+window.addEventListener('pointerdown', (event) => {
+  tapStart = event.pointerType !== 'mouse' && event.isPrimary && event.target === inputSurface ? { id: event.pointerId, x: event.clientX, y: event.clientY, time: performance.now() } : null
+}, true)
+window.addEventListener('pointerup', (event) => {
+  const start = tapStart
+  tapStart = null
+  if (!start || start.id !== event.pointerId || state.activeNoteType !== 'canvas' || canvasPinchGesture) return
+  if (performance.now() - start.time > 600 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) return
+  const at = leaferCanvas.pageAt(event.clientX, event.clientY)
+  if (state.tool === 'sticky') placeSticky(at, { now: true })
+  else if (state.tool === 'shape') placeShape(at)
+  else if (state.tool === 'text' && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
+}, true)
 
-canvas.on('mouse:move', (event) => {
-  if (state.tool === 'eraser') {
-    updateEraserCursor(event)
-    if (state.eraserActive && event.e.buttons) {
-      const point = { x: event.scenePoint.x, y: event.scenePoint.y }
-      state.eraserChanged = eraseBetween(state.eraserLastPoint, point) || state.eraserChanged
-      state.eraserLastPoint = point
-    }
-    return
-  }
-  if (!canvas.isDrawingMode || !event.e.buttons) return
-  const width = state.pages.columns * PAGE_WIDTH
-  const height = state.pages.rows * PAGE_HEIGHT
-  let changed = false
-  if (event.scenePoint.x > width + EDGE_OVERFLOW) {
-    state.pages.columns += 1
-    changed = true
-  }
-  if (event.scenePoint.y > height + EDGE_OVERFLOW) {
-    state.pages.rows += 1
-    changed = true
-  }
-  if (changed) resizePaper()
-})
-
-;['object:modified', 'path:created'].forEach((eventName) => {
-  canvas.on(eventName, () => {
-    elements.paper.classList.remove('is-dragging')
-    elements.workspace.classList.remove('is-object-dragging')
-    reconcilePages()
-    recordHistory()
-  })
-})
-canvas.on('text:changed', () => {
-  elements.paper.classList.remove('is-dragging')
-  elements.workspace.classList.remove('is-object-dragging')
-  reconcilePages()
-  recordHistory()
-})
-;['object:moving', 'object:scaling', 'object:rotating'].forEach((eventName) => {
-  canvas.on(eventName, expandPagesDuringTransform)
-})
-// Registered after page growth so arrows see the final, prepend-compensated positions.
-;['object:moving', 'object:scaling', 'object:rotating', 'object:resizing', 'object:modified', 'text:changed'].forEach((eventName) => {
-  canvas.on(eventName, ({ target }) => refreshConnectorsOf(target))
-})
-canvas.on('object:removed', ({ target }) => {
-  if (!target) return
-  if (isConnector(target)) {
-    connectorIndex.remove(target.id)
-    return
-  }
-  if (state.loading || !target.semanticId) return
-  objectsById.delete(target.semanticId)
-  connectorIndex.forObjects([target.semanticId]).forEach((connector) => canvas.remove(connector))
-})
-;['selection:created', 'selection:updated'].forEach((eventName) => canvas.on(eventName, keepConnectorsOutOfSelections))
-canvas.on('after:render', ({ ctx }) => drawConnectOverlay(ctx))
-canvas.on('mouse:down', ({ e, scenePoint }) => {
-  if (state.tool !== 'connect' || e.button > 0) return
-  const source = connectTargetAt(scenePoint)
-  if (!source) return
-  connectDraft = { source, pointer: { x: scenePoint.x, y: scenePoint.y } }
-  connectHover = null
-  canvas.requestRenderAll()
-})
-canvas.on('mouse:move', ({ scenePoint }) => {
-  if (state.tool !== 'connect') return
-  const hover = connectTargetAt(scenePoint, connectDraft?.source)
-  if (connectDraft) connectDraft.pointer = { x: scenePoint.x, y: scenePoint.y }
-  if (hover === connectHover && !connectDraft) return
-  connectHover = hover
-  canvas.requestRenderAll()
-})
-canvas.on('mouse:up', ({ scenePoint }) => {
-  if (state.tool !== 'connect' || !connectDraft) return
-  const { source } = connectDraft
-  const target = connectTargetAt(scenePoint, source)
-  connectDraft = null
-  connectHover = null
-  if (target && createConnector(source, target)) {
-    reconcilePages()
-    recordHistory()
-  }
-  canvas.requestRenderAll()
-})
-canvas.on('mouse:up', () => {
-  elements.paper.classList.remove('is-dragging')
-  elements.workspace.classList.remove('is-object-dragging')
-  finishErasing()
-  if (state.drawingGesture) {
-    const gesture = state.drawingGesture
-    state.drawingGesture = null
-    queueMicrotask(() => {
-      if (gesture.created) return
-      canvas.clearContext(canvas.contextTop)
-      createInkDot(gesture.point, gesture.tool)
-      reconcilePages()
-      recordHistory()
-    })
-  }
-})
-canvas.on('mouse:out', () => {
-  if (!state.eraserActive) elements.eraserCursor.hidden = true
-})
-document.addEventListener('pointerup', finishErasing)
-;['selection:created', 'selection:updated', 'selection:cleared'].forEach((eventName) => {
-  canvas.on(eventName, syncTypographyControls)
-})
 
 document.querySelectorAll('[data-tool]').forEach((button) => button.addEventListener('click', () => {
   if (suppressedToolClicks.has(button)) {
@@ -3512,12 +2762,7 @@ document.querySelectorAll('[data-tool]').forEach((button) => button.addEventList
 }))
 document.querySelectorAll('[data-color]').forEach((button) => button.addEventListener('click', () => {
   state.color = button.dataset.color
-  const active = canvas.getActiveObject()
-  if (active) {
-    active.set('fill', state.color)
-    canvas.requestRenderAll()
-    recordHistory()
-  }
+  leaferCanvas.setTextStyle({ style: { color: state.color } })
   setTool(state.tool)
   updateInkOptions()
   if (state.tool === 'text') closeInkOptions()
@@ -3528,13 +2773,8 @@ elements.objectPalette.addEventListener('click', (event) => {
   if (!swatch) return
   state.objectColor = Number(swatch.dataset.objectColor)
   const color = currentObjectPalette()[state.objectColor]
-  const active = canvas.getActiveObject()
-  if (active instanceof Sticky) active.set({ stickyColor: color.fill, fill: color.ink })
-  else if (active instanceof Rect) active.set('fill', color.fill)
-  if (active) {
-    canvas.requestRenderAll()
-    recordHistory()
-  }
+  leaferCanvas.setTextStyle({ paper: { fill: color.fill, ink: color.ink } })
+  leaferCanvas.setShapeFill(color.fill)
   updateInkOptions()
   scheduleInkOptionsClose()
 })
@@ -3558,7 +2798,15 @@ elements.workspace.addEventListener('drop', (event) => {
   elements.workspace.classList.remove('is-drop-target')
   if (state.activeNoteType !== 'canvas' || !hasFiles(event)) return
   event.preventDefault()
-  placeImageFiles(event.dataTransfer.files, canvas.getScenePoint(event))
+  placeImageFiles(event.dataTransfer.files, leaferCanvas.pageAt(event.clientX, event.clientY))
+})
+// A picture on the clipboard (a screenshot, a copied image) is pasted where the view is centred; words keep pasting into whatever is typed in.
+document.addEventListener('paste', (event) => {
+  if (state.activeNoteType !== 'canvas' || event.target.closest?.('input, textarea, select, [contenteditable]')) return
+  const files = pictureFiles(event.clipboardData?.files)
+  if (!files.length) return
+  event.preventDefault()
+  void placeImageFiles(files)
 })
 elements.inkOptionsTrigger.addEventListener('click', toggleInkOptions)
 document.querySelector('#close-ink-options').addEventListener('click', closeInkOptions)
@@ -3576,8 +2824,8 @@ document.querySelector('#clear-note').addEventListener('click', clearActiveNote)
 elements.toastAction.addEventListener('click', () => elements.toast.onAction?.())
 document.querySelector('#delete-note').addEventListener('click', deleteActiveNote)
 document.querySelector('#prettify').addEventListener('click', prettifyActiveNote)
-document.querySelector('#undo').addEventListener('click', () => restoreHistory(state.historyIndex - 1))
-document.querySelector('#redo').addEventListener('click', () => restoreHistory(state.historyIndex + 1))
+document.querySelector('#undo').addEventListener('click', () => stepHistory(-1))
+document.querySelector('#redo').addEventListener('click', () => stepHistory(1))
 const mobileLayout = window.matchMedia('(max-width: 800px)')
 
 function setSidebarOpen(open) {
@@ -3690,7 +2938,12 @@ elements.mobileSpeak.addEventListener('pointerup', async (event) => {
 })
 elements.mobileSpeak.addEventListener('pointercancel', async () => mobileHoldController.cancel())
 elements.mobileSpeak.addEventListener('contextmenu', (event) => event.preventDefault())
-document.querySelector('#mobile-draw').addEventListener('click', () => setTool('pen'))
+// A finger choosing a drawing tool says a finger is going to draw: pen use is forgotten at once.
+for (const selector of ['#mobile-draw', '[data-tool="pen"]', '[data-tool="highlight"]', '[data-tool="eraser"]']) document.querySelectorAll(selector).forEach((button) => button.addEventListener('pointerdown', (event) => { if (event.pointerType === 'touch') penLastAt = -Infinity }))
+document.querySelector('#mobile-draw').addEventListener('click', () => setTool(state.tool === 'pen' ? 'text' : 'pen'))
+// Phones have no dock: Select (to move and resize by finger; the default Text tool edits what a finger taps) and Sticky sit beside Draw.
+document.querySelector('#mobile-select').addEventListener('click', () => setTool(state.tool === 'select' ? 'text' : 'select'))
+document.querySelector('#mobile-sticky').addEventListener('click', () => setTool(state.tool === 'sticky' ? 'text' : 'sticky'))
 // Phones have no dock, so the Connect tool sits beside Draw: tap to arm it, tap again to go back to typing.
 elements.mobileConnect.addEventListener('click', () => setTool(state.tool === 'connect' ? 'text' : 'connect'))
 const searchButton = elements.searchButton
@@ -3706,8 +2959,10 @@ elements.shareMenu.addEventListener('click', (event) => {
   if (!item || item.disabled) return
   setShareMenuOpen(false)
   if (item.id === 'share-print') openPrintPreview()
+  else if (item.id === 'share-png') void downloadNotePicture()
   else if (item.id === 'share-backup') void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
   else if (item.id === 'share-markdown') void downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip')
+  else if (item.id === 'share-vault') void downloadWorkspaceExport('/export/vault', 'personal-note-obsidian-vault.zip')
 })
 elements.shareMenu.addEventListener('keydown', (event) => {
   if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
@@ -3787,11 +3042,115 @@ function setSpeedMeter(visible) {
   }
 }
 
+// Takes the switches into the open canvas and draws the open note again with them (the sticky shadows are made at load).
+// `document` (the speed test's comparison): the document every mode starts from; it replaces what the canvas and the history hold. Changes are applied one
+// after another, and the note is drawn again only when the canvas shows a loaded canvas note (otherwise the next load picks the switches up).
+let renderModeQueue = Promise.resolve()
+function applyRenderMode(name, document = null) {
+  renderModeQueue = renderModeQueue.catch(() => {}).then(async () => {
+    setPerfSwitches(name)
+    if (!leaferCanvas) return
+    leaferCanvas.finishTextEdit()
+    leaferCanvas.applyPerf()
+    if (!state.loading && state.activeNoteId && state.activeNoteType === 'canvas' && leaferSource.noteId === state.activeNoteId && leaferEdits?.doc) {
+      if (document) {
+        leaferEdits.open(state.activeNoteId, JSON.parse(JSON.stringify(document)))
+        leaferBase = leaferEdits.doc
+      }
+      leaferCanvas.load(leaferEdits.doc)
+      leaferCanvas.adopt(leaferEdits.doc)
+      await leaferCanvas.whenSettled()
+    }
+  })
+  return renderModeQueue
+}
+elements.settingsRenderMode.value = state.renderMode
+elements.settingsRenderMode.addEventListener('change', () => {
+  state.renderMode = elements.settingsRenderMode.value
+  savePreferences()
+  void applyRenderMode(state.renderMode)
+})
+
 elements.settingsSpeedMeter.addEventListener('change', () => {
   setSpeedMeter(elements.settingsSpeedMeter.checked)
   savePreferences()
 })
 if (state.speedMeter) setSpeedMeter(true)
+
+// The speed test (F-034): Settings, the View menu of the desktop app, or the page opened with ?speedtest=1. The code is loaded when it runs.
+// The test never runs in the person's own notebook: from the app it starts a separate instance (temporary notebook, own profile, own port);
+// the page that runs it is that instance, which says so itself (/speedtest/status).
+let speedTestRunning = false
+let speedTestInstance = false
+let speedTestCanLaunch = false
+const speedTestStatus = api('/speedtest/status').then((status) => {
+  speedTestInstance = Boolean(status?.instance)
+  speedTestCanLaunch = Boolean(status?.canLaunch)
+  // Only the desktop app starts the test (it has a window to open it in); elsewhere the button is not offered.
+  if (!speedTestCanLaunch && !speedTestInstance) document.querySelectorAll('.speedtest-offer').forEach((node) => { node.hidden = true })
+}).catch(() => {})
+async function startSpeedTest() {
+  if (speedTestRunning) return
+  await speedTestStatus
+  setPropertiesOpen(false)
+  if (!speedTestInstance) {
+    try {
+      await api('/speedtest/launch', { method: 'POST', headers: { 'x-personal-note': '1' } })
+      showToast('The speed test opens in a window of its own and leaves your notes alone. Its results show there.')
+    } catch (error) {
+      console.error('The speed test could not be started', error)
+      showToast(error?.message || 'The speed test could not be started.') // (the server says why: already running, or what stopped it)
+    }
+    return
+  }
+  if (!leaferCanvas || state.loading) return
+  speedTestRunning = true
+  const previous = state.activeNoteId
+  try {
+    const { runSpeedTest } = await import('./modules/speedtest/index.js')
+    const standalone = typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches
+    await runSpeedTest({
+      api,
+      notebookId: state.selectedNotebookId || state.notebooks[0]?.id,
+      engine: detectEngine({ userAgentData: navigator.userAgentData, userAgent: navigator.userAgent }),
+      hostName: detectHost({ pywebview: window.pywebview, hostFlag, standalone, menubarVisible: window.menubar?.visible }),
+      pageCount: () => `${state.pages.columns}x${state.pages.rows}`,
+      pause: (on) => { speedTestPaused = on },
+      activeNoteId: () => state.activeNoteId,
+      openNote: async (id) => {
+        const { content: _content, pageState: _pageState, ...summary } = await api(`/notes/${id}`)
+        state.notes.unshift(summary)
+        renderNoteList()
+        await selectNote(id)
+        setTool('select') // the speed test selects and drags
+        await leaferCanvas.whenSettled()
+      },
+      restore: async () => {
+        const back = state.notes.find((note) => note.id === previous) ?? state.notes.find((note) => note.title !== 'Speed test (safe to delete)')
+        if (back) await selectNote(back.id)
+      },
+      forgetNote: (id) => { state.notes = state.notes.filter((note) => note.id !== id); renderNoteList() },
+      host: {
+        workspace: elements.workspace,
+        canvasHost: leaferHost,
+        scene: leaferCanvas,
+        edits: leaferEdits,
+        get inkSurface() { return leaferInk.surface },
+        setTool: (name) => setTool(name),
+        setRenderMode: (name, document) => applyRenderMode(name === 'saved' ? state.renderMode : name, document),
+        setView: async ({ zoom, wait = true }) => {
+          if (zoom === 'fit') fitAllPages()
+          else { state.canvasZoom = zoom; setCanvasViewportOffset(viewSize.width / 2 - 430 * getCanvasScale(), 104) }
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+          if (wait) await leaferCanvas.whenBitmapsReady() // (hybrid: the page bitmaps of the new view are made in idle time, as for a person who pauses before the next pan)
+        },
+      },
+    })
+  } catch (error) {
+    console.error('Speed test failed to start', error)
+  } finally { speedTestRunning = false }
+}
+document.querySelector('#settings-speed-test')?.addEventListener('click', () => void startSpeedTest())
 
 elements.settingsFontSize.addEventListener('input', () => {
   state.fontSize = Number(elements.settingsFontSize.value)
@@ -3917,24 +3276,14 @@ elements.searchResults.addEventListener('keydown', (event) => {
   else results[Math.max(0, Math.min(results.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus()
 })
 
-document.addEventListener('keydown', (event) => {
-  const activeText = canvas.getActiveObject()
-  if (event.key === 'Escape' && isEditableText(activeText) && activeText.isEditing) {
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    activeText.exitEditing()
-    setTool('select')
-  }
-}, true)
-
 // Native scrolling is gone (the canvas is window-sized), so the keyboard pans it. Only when focus is
 // on the page itself, never while typing or on a control that uses these keys (buttons, radios, menus).
 function canPanFromKeyboard(activeElement) {
   return keyboardCanPan({
     activeElement,
     body: document.body,
-    canvasElement: canvas.upperCanvasEl,
-    editingText: canvas.getObjects().some((object) => object.isEditing),
+    canvasElement: inputSurface,
+    editingText: Boolean(leaferCanvas?.isEditingText()),
     dialogOpen: Boolean(document.querySelector('dialog[open]')) || !elements.searchBackdrop.hidden,
   })
 }
@@ -4001,19 +3350,59 @@ document.addEventListener('keyup', (event) => { if (event.key === ' ') { spaceHe
 window.addEventListener('blur', () => { spaceHeld = false; activePointers.clear(); endTemporaryHand() })
 
 function panWithKeyboard(event) {
-  const delta = keyboardPan(event, { viewH: canvas.getHeight() })
+  const delta = keyboardPan(event, { viewH: viewSize.height })
   if (!delta) return false
   setCanvasViewportOffset(viewportOffsetX + delta.dx, viewportOffsetY + delta.dy)
   updateNavigationUi(true)
   return true
 }
 
+// Keys for the selection on the Leafer canvas (F-028). Returns true when the key was used. Only called when nothing is being typed.
+const NUDGE_KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+function handleLeaferKey(event) {
+  if (state.activeNoteType !== 'canvas' || state.tool === 'hand' || leaferSwitching) return false
+  const mod = event.ctrlKey || event.metaKey
+  if (mod && !event.shiftKey && !event.altKey && event.code === 'KeyA') {
+    leaferCanvas.selectAll()
+    return true
+  }
+  const selection = leaferCanvas.selection()
+  if (!selection.length) return false
+  if (!mod && !event.altKey && NUDGE_KEYS[event.key]) {
+    const step = nudgeDistance(event)
+    leaferCanvas.nudge(NUDGE_KEYS[event.key][0] * step, NUDGE_KEYS[event.key][1] * step)
+    return true
+  }
+  if (!mod && !event.altKey && (event.key === 'Delete' || event.key === 'Backspace')) {
+    leaferCanvas.deleteSelection()
+    return true
+  }
+  if (!mod && event.key === 'Escape') {
+    leaferCanvas.clearSelection()
+    return true
+  }
+  if (mod && !event.altKey && (event.code === 'BracketRight' || event.code === 'BracketLeft')) {
+    const forward = event.code === 'BracketRight'
+    leaferCanvas.reorderSelection(event.shiftKey ? (forward ? 'front' : 'back') : (forward ? 'forward' : 'backward'))
+    return true
+  }
+  if (mod && event.shiftKey && !event.altKey && event.code === 'KeyL') {
+    toggleLeaferLock()
+    return true
+  }
+  return false
+}
+
+// Lock the selection, or unlock it when anything in it is locked.
+function toggleLeaferLock() {
+  const selection = leaferCanvas.selection()
+  if (selection.length) leaferCanvas.lockSelection(!selection.some((id) => leaferCanvas.isLocked(id)))
+}
+
 document.addEventListener('keydown', (event) => {
   const activeElement = document.activeElement
-  const activeText = isEditableText(canvas.getActiveObject()) ? canvas.getActiveObject() : null
   const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement?.tagName)
     || activeElement?.isContentEditable
-    || activeText?.isEditing
   if (!elements.printPreview.hidden) {
     if (event.key === 'Escape') closePrintPreview()
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
@@ -4054,30 +3443,20 @@ document.addEventListener('keydown', (event) => {
     undoClear()
   } else if (state.activeNoteType === 'mindmap') {
     return
-  } else if (event.key === 'Escape' && activeText?.isEditing) {
+  } else if (!isTyping && canPanFromKeyboard(activeElement) && handleLeaferKey(event)) {
     event.preventDefault()
-    activeText.exitEditing()
-    setTool('select')
-  } else if (event.key === 'Escape' && connectDraft) {
-    cancelConnectDraft()
+  } else if (event.key === 'Escape' && leaferConnect?.active) {
+    leaferConnect.cancel()
   } else if (event.key === 'Escape' && !isTyping && state.tool !== 'select') {
     setTool('select')
   } else if (isTyping && (event.ctrlKey || event.metaKey)) {
     return
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
     event.preventDefault()
-    restoreHistory(state.historyIndex + (event.shiftKey ? 1 : -1))
+    stepHistory(event.shiftKey ? 1 : -1)
   } else if (event.ctrlKey && event.key.toLowerCase() === 'y') {
     event.preventDefault()
-    restoreHistory(state.historyIndex + 1)
-  } else if (!isTyping && (event.key === 'Delete' || event.key === 'Backspace')) {
-    const activeObjects = canvas.getActiveObjects()
-    if (activeObjects.length) {
-      activeObjects.forEach((object) => canvas.remove(object))
-      canvas.discardActiveObject()
-      reconcilePages()
-      recordHistory()
-    }
+    stepHistory(1)
   } else if (!isTyping && event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey && canPanFromKeyboard(activeElement)) {
     event.preventDefault()
     spaceHeld = true
@@ -4109,9 +3488,8 @@ if (hostFlag === 'desktop') {
       print: () => { if (canvasNote()) void openPrintPreview() },
       settings: () => setPropertiesOpen(true),
       history: (name) => {
-        const step = name === 'undo' ? -1 : 1
         if (state.activeNoteType === 'mindmap') clickWhenPresent(`[data-map-action="${name}"]`)
-        else restoreHistory(state.historyIndex + step)
+        else stepHistory(name === 'undo' ? -1 : 1)
       },
       zoom: (direction) => {
         if (direction === 'fit') (canvasNote() ? fitAllPages() : clickWhenPresent('[data-map-action="fit"]'))
@@ -4119,6 +3497,7 @@ if (hostFlag === 'desktop') {
       },
       skin: (id) => { startSkins().select(id); skinSwitcher.sync() },
       speedMeter: () => { setSpeedMeter(!state.speedMeter); savePreferences() },
+      speedTest: () => void startSpeedTest(),
     },
   }))
 }
@@ -4131,33 +3510,6 @@ elements.miniGrid.addEventListener('click', (event) => {
   const tile = event.target.closest('[data-page-index]')
   if (tile) goToPage(Number(tile.dataset.pageIndex))
 })
-
-// Dragging an object lifts it (tilt + deeper shadow) and, near the edge of the page grid,
-// previews the page that would be added. Both are paint-only and never reach the saved note.
-const lift = createLiftEffect({
-  requestRender: () => canvas.requestRenderAll(),
-  reducedMotion: () => true, // the lifted look lands at once; no tilt-in animation
-})
-function endDragPreview() {
-  lift.end()
-  if (edgeGhost) {
-    edgeGhost = null
-    canvas.requestRenderAll()
-  }
-}
-canvas.on('object:moving', ({ target }) => {
-  if (!target || state.loading) return
-  lift.begin(target)
-  const rect = target.getBoundingRect()
-  const ghost = nextPageGhost(
-    { left: rect.left, top: rect.top, right: rect.left + rect.width, bottom: rect.top + rect.height },
-    { columns: state.pages.columns, rows: state.pages.rows, pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT, reach: GHOST_REACH },
-  )
-  const changed = JSON.stringify(ghost) !== JSON.stringify(edgeGhost)
-  edgeGhost = ghost
-  if (changed) canvas.requestRenderAll()
-})
-;['mouse:up', 'object:modified', 'selection:cleared'].forEach((eventName) => canvas.on(eventName, endDragPreview))
 
 async function initialize() {
   await prepareCanvasFonts()
@@ -4180,23 +3532,21 @@ async function initialize() {
         const note = state.notes.find((item) => item.id === state.activeNoteId)
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
       },
-      // Also true while typing is not yet in history or a text object is being edited.
-      hasUnsavedEdits: () => unsavedEdits || saveInFlight || canvas.getObjects().some((object) => object.isEditing)
-        || (state.activeNoteType === 'canvas' && snapshot() !== state.history[state.historyIndex]),
+      // Also true while words are being typed in the editor.
+      hasUnsavedEdits: () => unsavedEdits || saveInFlight || Boolean(leaferCanvas?.isEditingText()),
+      // Where the flag over the block an agent is writing sits: that text's top-left corner on screen, or null when it is off screen.
       locateFlagBlock: (action) => {
-        const block = pickFlagBlock(action, canvas.getObjects())
+        const block = pickFlagBlock(action, leaferEdits.doc?.objects ?? [])
         if (!block) return null
-        const corner = block.aCoords?.tl || { x: block.left, y: block.top }
-        const [a, b, c, d, e, f] = canvas.viewportTransform
-        const box = canvas.upperCanvasEl.getBoundingClientRect()
-        const ratio = box.width / canvas.getWidth()
-        const point = { x: box.left + (a * corner.x + c * corner.y + e) * ratio, y: box.top + (b * corner.x + d * corner.y + f) * ratio }
-        const view = elements.workspace.getBoundingClientRect()
-        const inside = point.x >= view.left && point.x <= view.right && point.y >= view.top && point.y <= view.bottom
+        const box = leaferHost.getBoundingClientRect()
+        const { x, y, scale } = leaferCanvas.view()
+        const point = { x: box.left + x + block.geometry.x * scale, y: box.top + y + block.geometry.y * scale }
+        const area = elements.workspace.getBoundingClientRect()
+        const inside = point.x >= area.left && point.x <= area.right && point.y >= area.top && point.y <= area.bottom
         return inside ? point : null
       },
       onLayout: (callback) => {
-        canvas.on('after:render', callback)
+        layoutListeners.push(callback)
         elements.workspace.addEventListener('scroll', callback, { passive: true })
         window.addEventListener('resize', callback)
       },
@@ -4227,21 +3577,38 @@ function handleWorkspaceResize() {
   state.displayScale = getDisplayScale()
   syncCanvasSize()
   refreshPageColors()
-  const center = { x: canvas.getWidth() / 2, y: canvas.getHeight() / 2 }
+  const center = { x: viewSize.width / 2, y: viewSize.height / 2 }
   const next = zoomAtPoint(previous, getCanvasScale(), center)
   setCanvasViewportOffset(next.x, next.y)
 }
 // Page colors and shadow come from skin tokens, so repaint when the skin changes.
-const repaintPageColors = () => {
-  refreshPageColors()
-  canvas.requestRenderAll()
-}
+const repaintPageColors = () => refreshPageColors()
 new MutationObserver(repaintPageColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-skin'] })
 window.matchMedia('(prefers-contrast: more)').addEventListener('change', repaintPageColors)
 window.addEventListener('resize', handleWorkspaceResize)
+
+// F-035: the on-screen keyboard takes the lower part of the window (visualViewport shrinks, or the window does). The text being typed stays
+// in the part still showing: the view moves up just far enough, never pushing the first line under the top bar.
+let keyboardTimer = 0
+function keepEditorAboveKeyboard() {
+  clearTimeout(keyboardTimer)
+  keyboardTimer = setTimeout(() => {
+    const area = leaferCanvas.isEditingText() ? document.querySelector('.leafer-text-editor') : null
+    if (!area) return
+    const vv = window.visualViewport
+    const rect = area.getBoundingClientRect()
+    const delta = Math.min(rect.bottom - ((vv ? vv.offsetTop + vv.height : window.innerHeight) - 16), rect.top - ((vv ? vv.offsetTop : 0) + 70))
+    if (delta > 0) setCanvasViewportOffset(viewportOffsetX, viewportOffsetY - delta, true)
+  }, 120)
+}
+window.visualViewport?.addEventListener('resize', keepEditorAboveKeyboard)
+window.visualViewport?.addEventListener('scroll', keepEditorAboveKeyboard)
+window.addEventListener('resize', keepEditorAboveKeyboard)
+document.addEventListener('input', (event) => { if (event.target?.classList?.contains('leafer-text-editor')) keepEditorAboveKeyboard() }, true)
+document.addEventListener('focusin', (event) => { if (event.target?.classList?.contains('leafer-text-editor')) keepEditorAboveKeyboard() })
 if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResize).observe(elements.workspace)
 setupVoiceInput()
 setupToolOptionGestures()
-// Dev-only handle used by scripts/benchmark-canvas.mjs; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { canvas, state, setTool, fabric: { Rect, ActiveSelection }, getCanvasScale, setCanvasViewportOffset, reconcilePages, snapshot, getContentBounds, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
-initialize()
+// Dev-only handle used by the scripts/ checks; stripped from production builds.
+if (import.meta.env.DEV) window.__personalNote = { voiceBoxPoint: () => pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH }), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+initialize().then(async () => { await speedTestStatus; if (speedTestInstance && new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way

@@ -20,7 +20,7 @@ V1 is a notebook product, not an assistant product. It ships no automatic sugges
 ## Product principles
 
 - Capture must remain immediate and must not depend on an optional module.
-- Fabric JSON is canonical for canvas notes; normalized map JSON is canonical for mind maps.
+- JSON Canvas (with the `pn` extensions) is canonical for canvas notes (ADR 0002); normalized map JSON is canonical for mind maps.
 - SQLite is the source of truth for notes, notebooks, revisions, and the local search index.
 - Optional modules communicate through narrow internal contracts and cannot redefine note persistence.
 - Audio is ephemeral transport input. Only final transcript text may become durable product data.
@@ -33,7 +33,7 @@ V1 is a notebook product, not an assistant product. It ships no automatic sugges
 
 | Area | V1 behavior |
 |---|---|
-| Canvas | Fabric.js text and ink, selection, transforms, erasing, undo/redo, and multi-page growth |
+| Canvas | LeaferJS text, stickies, pictures, arrows and ink, selection, transforms, erasing, undo/redo, and multi-page growth |
 | Mind maps | Optional native SVG editor with direct node editing, history, layout cleanup, image support, JSON export, and PNG export |
 | Storage | FastHTML JSON API, SQLite canonical documents, immutable note types, revision checks |
 | Search | FTS5 over note titles, canvas text, and mind-map node labels |

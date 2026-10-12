@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createChangePoller, describeAgentPresence, mergeRemoteAppends, planChangeSync } from './changes.js'
+import { createChangePoller, describeAgentPresence, planChangeSync } from './changes.js'
 
 const noteChange = (resourceId, revision, changeType = 'updated') => ({
   resourceKind: 'note',
@@ -62,21 +62,6 @@ test('a remote delete of the active note is reported', () => {
 test('overflowing feeds refresh lists and re-check the active note', () => {
   const plan = planChangeSync({ changes: [], overflow: true, activeResourceId: 'res_a', activeRevision: 3, hasUnsavedEdits: false })
   assert.deepEqual(plan, { refreshLists: true, activeNote: 'check' })
-})
-
-test('merging keeps local edits and adds only objects the user has not seen or deleted', () => {
-  const local = [{ semanticId: 's1', text: 'edited by user' }, { semanticId: 's3', text: 'local new' }]
-  const remote = [
-    { semanticId: 's1', text: 'original' },
-    { semanticId: 's2', text: 'user deleted this' },
-    { semanticId: 's4', text: 'agent added' },
-  ]
-  const added = mergeRemoteAppends({
-    syncedIds: new Set(['s1', 's2']),
-    localObjects: local,
-    remoteObjects: remote,
-  })
-  assert.deepEqual(added.map((item) => item.semanticId), ['s4'])
 })
 
 test('presence prefers writing over reading and names the agent', () => {

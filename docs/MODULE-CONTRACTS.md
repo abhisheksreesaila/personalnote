@@ -8,7 +8,7 @@ These boundaries keep the v1 notebook core small and testable. They are implemen
 
 A note has one immutable type:
 
-- `canvas`: Fabric-compatible document JSON and page state
+- `canvas`: JSON Canvas 1.0 with `pn` extensions (ADR 0002) and page state; a row not yet converted from the old Fabric JSON is read with `fromFabric`
 - `mindmap`: normalized map JSON
 
 All built-in editors use the same `POST /api/notes`, `GET /api/notes/{id}`, and `PUT /api/notes/{id}` lifecycle. Optional modules never open SQLite directly.

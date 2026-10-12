@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   clampView,
-  lerpExtents,
   parseBoxShadow,
   pageExtents,
   shadowBands,
@@ -13,9 +12,20 @@ import {
 
 const desktop = { viewW: 1400, viewH: 900, margins: viewMargins(1400) }
 
-test('a page narrower than the window is centred and cannot be panned sideways', () => {
-  const view = clampView({ x: -500, y: 92 }, { ...desktop, contentW: 860, contentH: 1080, scale: 1 })
-  assert.equal(view.x, (1400 - 860) / 2)
+test('a page narrower than the window stays between the margins; wherever it sits inside them it is left alone (no re-centring)', () => {
+  const size = { ...desktop, contentW: 860, contentH: 1080, scale: 1 }
+  assert.equal(clampView({ x: 300, y: 104 }, size).x, 300)
+  assert.equal(clampView({ x: 252.5, y: 104 }, size).x, 252.5)
+  assert.equal(clampView({ x: -500, y: 92 }, size).x, 140)
+  assert.equal(clampView({ x: 9000, y: 92 }, size).x, 1400 - 140 - 860)
+})
+
+test('a view that pages added on the top or left left outside the range stays put, may move back toward it, and never further out', () => {
+  const size = { ...desktop, contentW: 1720, contentH: 1080, scale: 0.5, previous: { x: -83, y: 104 } }
+  assert.equal(clampView({ x: -83, y: 104 }, size).x, -83)
+  assert.equal(clampView({ x: -82, y: 104 }, size).x, -82)
+  assert.equal(clampView({ x: -90, y: 104 }, size).x, -83)
+  assert.equal(clampView({ x: 9000, y: 104 }, size).x, 1400 - 140 - 860)
 })
 
 test('a tall grid can be panned from its top margin to its bottom margin and no further', () => {
@@ -51,14 +61,6 @@ test('page growth changes extents by whole pages only', () => {
 test('prepending a page shifts the old extents by exactly that page', () => {
   const old = pageExtents(1, 1, 860, 1080)
   assert.deepEqual(shiftExtents(old, 860, 0), { left: 860, top: 0, right: 1720, bottom: 1080 })
-})
-
-test('extent animation interpolates both edges and lands exactly on the target', () => {
-  const from = { left: 860, top: 0, right: 1720, bottom: 1080 }
-  const to = pageExtents(2, 1, 860, 1080)
-  assert.deepEqual(lerpExtents(from, to, 0), from)
-  assert.deepEqual(lerpExtents(from, to, 1), to)
-  assert.equal(lerpExtents(from, to, 0.5).left, 430)
 })
 
 test('a CSS box-shadow token is parsed into canvas shadow layers', () => {

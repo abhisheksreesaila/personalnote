@@ -7,7 +7,7 @@
 // ("sparse"): a field is present only when the stored note had it, so converting back never invents data. The defaults below are
 // what a reader assumes for an absent field; they are not written into the document.
 //
-// Coordinate frames (the engine-neutral part; fromFabric and toFabric own every Fabric convention):
+// Coordinate frames (the engine-neutral part; legacy-fabric.js owns every Fabric convention):
 //   page frame    x right, y down, in page pixels, origin at the top-left of the first page. A page is PAGE.width x PAGE.height;
 //                 the note is `page.columns` x `page.rows` pages.
 //   geometry      { x, y, width, height, rotation, scaleX, scaleY, flipX, flipY, skewX, skewY }

@@ -19,7 +19,8 @@ from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
-from services import ConflictError, NoteService, NotFoundError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
+from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
+from vault import PortabilityVaultError, export_vault_directory, import_vault_archive, import_vault_directory
 
 ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
@@ -151,10 +152,17 @@ def build_parser() -> argparse.ArgumentParser:
     markdown = export_commands.add_parser("markdown", help="Write a readable Markdown ZIP")
     markdown.add_argument("--output", required=True)
     markdown.set_defaults(handler=command_export_markdown)
+    vault = export_commands.add_parser("vault", help="Write an Obsidian vault folder (.canvas files + attachments); never overwrites")
+    vault.add_argument("--output", required=True, help="Folder to write into (created if missing; must not contain files of the same names)")
+    vault.set_defaults(handler=command_export_vault)
 
     imported = subcommands.add_parser("import", help="Merge a lossless workspace backup")
     imported.add_argument("input", help="Workspace backup JSON file")
     imported.set_defaults(handler=command_import)
+
+    import_vault = subcommands.add_parser("import-vault", help="Import an Obsidian vault folder or ZIP (.canvas and .md files) as new notes")
+    import_vault.add_argument("input", help="Vault folder or ZIP archive")
+    import_vault.set_defaults(handler=command_import_vault)
 
     migrate = subcommands.add_parser(
         "migrate-data",
@@ -277,6 +285,23 @@ def command_import(service: NoteService, args: argparse.Namespace) -> dict:
     return import_workspace_backup(service, read_json(args.input))
 
 
+def command_export_vault(service: NoteService, args: argparse.Namespace) -> dict:
+    try:
+        return export_vault_directory(service, args.output)
+    except OSError as error:
+        raise CliError(f"Cannot write {args.output}: {error}") from error
+
+
+def command_import_vault(service: NoteService, args: argparse.Namespace) -> dict:
+    source = Path(args.input)
+    try:
+        if source.is_file():
+            return import_vault_archive(service, source.read_bytes())
+        return import_vault_directory(service, source)
+    except OSError as error:
+        raise CliError(f"Cannot read {args.input}: {error}") from error
+
+
 def command_migrate_data(_service: None, args: argparse.Namespace) -> dict:
     source = Path(args.source) if args.source else LEGACY_DATABASE
     destination = Path(args.destination) if args.destination else app_data_dir() / DATABASE_FILENAME
@@ -303,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         if result is not None:
             emit(result)
         return 0
-    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, PortabilityError, WorkspaceImportError, PluginManifestError, MigrationError) as error:
+    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, InvalidNoteContentError, PortabilityError, PortabilityVaultError, WorkspaceImportError, PluginManifestError, MigrationError) as error:
         emit({"ok": False, "error": str(error)})
         return 2
     except Exception:

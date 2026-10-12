@@ -16,14 +16,6 @@ export function planChangeSync({ changes = [], overflow = false, activeResourceI
   return { refreshLists, activeNote }
 }
 
-// Objects the remote note has gained since the last sync that the user neither has
-// nor deliberately deleted. Local edits are never touched.
-export function mergeRemoteAppends({ syncedIds, localObjects, remoteObjects }) {
-  const known = new Set(syncedIds)
-  for (const object of localObjects) if (object?.semanticId) known.add(object.semanticId)
-  return remoteObjects.filter((object) => typeof object?.semanticId === 'string' && !known.has(object.semanticId))
-}
-
 export function describeAgentPresence(agents) {
   if (!Array.isArray(agents) || !agents.length) return null
   const chosen = agents.find((agent) => agent.action === 'writing') || agents[0]
@@ -45,11 +37,11 @@ export function agentFlagFor(agents, activeNoteId) {
   return { agent: chosen.agent, action: chosen.action, label: `${name} · ${chosen.action}` }
 }
 
-// Writes point at the last (appended) text block, reads at the first one.
+// The text or sticky the flag points at, from the model's objects: writes point at the last (appended) block in reading order, reads at the first.
 export function pickFlagBlock(action, objects) {
   const texts = objects
-    .filter((object) => typeof object?.text === 'string' && object.text.trim())
-    .sort((a, b) => (a.top ?? 0) - (b.top ?? 0) || (a.left ?? 0) - (b.left ?? 0))
+    .filter((object) => (object?.type === 'text' || object?.type === 'sticky') && typeof object.content === 'string' && object.content.trim() && object.geometry)
+    .sort((a, b) => (a.geometry.y ?? 0) - (b.geometry.y ?? 0) || (a.geometry.x ?? 0) - (b.geometry.x ?? 0))
   return action === 'writing' ? texts.at(-1) : texts[0]
 }
 

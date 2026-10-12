@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { KEEPALIVE_LIMIT, bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './save-flush.js'
+import { KEEPALIVE_LIMIT, bindPageLifecycle, bodyBytes, joinSaveBody, canKeepAlive, confirmedRevision, createSaveTiming, settleSaves } from './save-flush.js'
 
 function targets() {
   const listeners = new Map()
@@ -74,21 +74,11 @@ test('settleSaves reports false when the save did not land', async () => {
 
 test('save timing is normal outside the Chromium window', () => {
   const timing = createSaveTiming({ fast: false })
-  timing.noteLoaded({ objects: [] })
-  assert.deepEqual([timing.historyDelay(), timing.saveDelay()], [180, 650])
+  assert.equal(timing.saveDelay(), 650)
 })
 
 test('save timing is fast in the Chromium window for a small note', () => {
   const timing = createSaveTiming({ fast: true })
-  timing.noteLoaded({ objects: [{}] })
-  assert.deepEqual([timing.historyDelay(), timing.saveDelay()], [100, 150])
-})
-
-test('a dense note starts on the normal delays until a small save is measured', () => {
-  const timing = createSaveTiming({ fast: true })
-  timing.noteLoaded({ objects: new Array(41).fill({}) })
-  assert.equal(timing.saveDelay(), 650)
-  timing.saved('{"a":1}')
   assert.equal(timing.saveDelay(), 150)
 })
 
@@ -99,5 +89,18 @@ test('a body over the keepalive limit keeps the normal delays, measured in UTF-8
   // 25,000 three-byte characters are 25,000 characters but 75,000 bytes.
   timing.saved('€'.repeat(25000))
   assert.equal(timing.saveDelay(), 650)
-  assert.equal(timing.historyDelay(), 180)
+})
+
+test('bodyBytes counts a small body exactly and never calls a big one small', () => {
+  assert.equal(bodyBytes('é'), 2)
+  assert.ok(bodyBytes('é'.repeat(KEEPALIVE_LIMIT)) > KEEPALIVE_LIMIT)
+  assert.equal(canKeepAlive('é'.repeat(KEEPALIVE_LIMIT)), false)
+})
+
+test('joinSaveBody puts the kept note text in whatever the other fields say, even a title that looks like a placeholder', () => {
+  const content = '{"nodes":[],"edges":[],"pn":{}}'
+  for (const title of ['__content__', '"__content__"', 'a "quoted" $& title']) {
+    const body = joinSaveBody(content, { title, pageState: { columns: 1, rows: 1 }, notebookId: undefined, revision: 3 })
+    assert.deepEqual(JSON.parse(body), { content: JSON.parse(content), title, pageState: { columns: 1, rows: 1 }, revision: 3 })
+  }
 })

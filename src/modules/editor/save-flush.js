@@ -46,7 +46,9 @@ export async function settleSaves({ flushPending, isSaving, hasUnsaved, save, wa
   return !hasUnsaved()
 }
 
-export const bodyBytes = (body) => new TextEncoder().encode(body).length
+// A body longer than the keepalive limit in characters is longer in bytes: every caller only asks whether it fits, so a note of
+// megabytes is not walked just to count them.
+export const bodyBytes = (body) => (body.length > KEEPALIVE_LIMIT ? body.length : new TextEncoder().encode(body).length)
 
 /**
  * Debounce delays for the Chromium app window, which has no pre-close hook and so saves sooner (about 250ms
@@ -57,10 +59,13 @@ export function createSaveTiming({ fast }) {
   let lastBytes = 0
   const useFast = () => fast && lastBytes <= KEEPALIVE_LIMIT
   return {
-    // Until a save measures the real size, a note with many objects is assumed too big.
-    noteLoaded: (content) => { lastBytes = (content?.objects?.length ?? 0) > 40 ? Infinity : 0 },
     saved: (body) => { lastBytes = bodyBytes(body) },
-    historyDelay: () => (useFast() ? 100 : 180),
     saveDelay: () => (useFast() ? 150 : 650),
   }
+}
+
+/** The body of a note save: `contentJson` is the note's text, already JSON, joined in without being parsed or searched for. */
+export function joinSaveBody(contentJson, fields) {
+  const rest = JSON.stringify(fields)
+  return `{"content":${contentJson}${rest === '{}' ? '}' : `,${rest.slice(1)}`}`
 }

@@ -85,7 +85,7 @@ test('undo goes to the focused field, else to the note history', () => {
 test('every command name is wired to a main.js handler', () => {
   const calls = []
   const record = (name) => (...args) => calls.push([name, ...args])
-  const handlers = { newNote: record('newNote'), exportBackup: record('exportBackup'), exportMarkdown: record('exportMarkdown'), print: record('print'), settings: record('settings'), history: record('history'), zoom: record('zoom'), skin: record('skin'), speedMeter: record('speedMeter') }
+  const handlers = { newNote: record('newNote'), exportBackup: record('exportBackup'), exportMarkdown: record('exportMarkdown'), print: record('print'), settings: record('settings'), history: record('history'), zoom: record('zoom'), skin: record('skin'), speedMeter: record('speedMeter'), speedTest: record('speedTest') }
   const wired = menuHandlers(handlers, (name, { noteHistory }) => noteHistory(name))
   assert.deepEqual(Object.keys(wired).sort(), [...COMMAND_NAMES].sort())
   for (const name of COMMAND_NAMES) wired[name]()
@@ -96,7 +96,7 @@ test('every command name is wired to a main.js handler', () => {
 
 test('installDesktopHost publishes the page API for desktop.py', () => {
   const doc = fakeDoc(); const root = fakeRoot(doc); const api = {}
-  const handlers = { newNote: () => {}, exportBackup: () => {}, exportMarkdown: () => {}, print: () => {}, settings: () => {}, history: () => {}, zoom: () => {}, skin: () => {}, speedMeter: () => {} }
+  const handlers = { newNote: () => {}, exportBackup: () => {}, exportMarkdown: () => {}, print: () => {}, settings: () => {}, history: () => {}, zoom: () => {}, skin: () => {}, speedMeter: () => {}, speedTest: () => {} }
   installDesktopHost({ root, search: '?host=desktop&chrome=mac', api, handlers })
   assert.equal(typeof api.command, 'function')
   assert.equal(api.command('zoom-in'), true)

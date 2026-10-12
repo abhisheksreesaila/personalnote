@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from document_model import DocumentError, from_fabric, plain_text
+from json_canvas import from_json_canvas, is_json_canvas
+
 
 def _number(value) -> float:
     try:
@@ -10,20 +13,18 @@ def _number(value) -> float:
         return 0.0
 
 
-def canvas_plain_text(document: dict) -> str:
-    """Canvas text blocks ordered top to bottom, then left to right, like the Markdown export."""
-    objects = document.get("objects", []) if isinstance(document, dict) else []
-    if not isinstance(objects, list):
+def canvas_plain_text(document: dict, page_state: dict | None = None) -> str:
+    """The Markdown projection of a canvas: text blocks by the top edge of their box, then the left edge, blank-line separated.
+
+    Reads either stored format (JSON Canvas or old Fabric JSON); both go through the document model so the order is the same.
+    """
+    if not isinstance(document, dict):
         return ""
-    blocks = sorted(
-        (item for item in objects if isinstance(item, dict)),
-        key=lambda item: (_number(item.get("top")), _number(item.get("left"))),
-    )
-    return "\n\n".join(
-        item["text"].strip()
-        for item in blocks
-        if isinstance(item.get("text"), str) and item["text"].strip()
-    )
+    try:
+        doc = from_json_canvas(document) if is_json_canvas(document) else from_fabric(document, page_state)
+    except DocumentError:
+        return ""
+    return plain_text(doc)
 
 
 def mindmap_outline(document: dict) -> str:
@@ -64,4 +65,4 @@ def note_plain_text(note: dict) -> str:
     content = note.get("content") or {}
     if note.get("noteType") == "mindmap":
         return mindmap_outline(content)
-    return canvas_plain_text(content)
+    return canvas_plain_text(content, note.get("pageState"))

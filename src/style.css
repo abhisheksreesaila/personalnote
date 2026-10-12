@@ -1,4 +1,4 @@
-/* Source Serif 4 must be pinned to a single optical size (opsz 24): Fabric measures
+/* Source Serif 4 must be pinned to a single optical size (opsz 24): a canvas measures
    text at a large cache size where auto optical sizing picks different glyph widths
    than the rendered 24px text, misplacing the caret and shrinking the text box. */
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,24,400;0,24,600;1,24,400;1,24,600&display=swap');
@@ -121,14 +121,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   overflow: hidden;
   background-color: var(--canvas);
 }
-/* The canvas fills the workspace; page tiles are painted by the canvas itself. */
+/* The canvas fills the workspace; the Leafer view draws the page tiles. */
 .paper {
   position: absolute;
   inset: 0;
 }
-.paper.is-dragging { z-index: auto; }
-.canvas-container { position: absolute !important; inset: 0; z-index: 2; }
-.paper.is-dragging .canvas-container { z-index: 20; }
+/* The transparent layer over the Leafer view that takes the pointer for the hand, text and sticky tools, and for touch pan and pinch. */
+.input-surface { position: absolute; inset: 0; z-index: 2; touch-action: none; -webkit-user-select: none; user-select: none; }
 
 /* Mind-map notes share the notebook shell, but own their editing surface. */
 .mindmap-host { position: absolute; inset: 0; min-width: 0; min-height: 0; color: #292a25; background: #f8f6ef; }
@@ -325,6 +324,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .delete-note-action:hover { background: #f4dedb; }
 .delete-note-action svg { width: 15px; }
 .settings-section { padding: 18px 6px; border-bottom: 1px solid rgba(99,86,67,.13); }
+.settings-advanced { margin: 4px 0 8px; font-size: 11px; color: #5F584F; }
+.settings-advanced summary { cursor: pointer; padding: 6px 0; }
+.settings-advanced select { font: inherit; max-width: 170px; }
 .settings-section-label { margin: 0 0 9px; color: #766e63; font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .setting-field-heading { min-height: 28px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; color: #5f584f; font-size: 11px; }
 .setting-field-heading small { color: #9a9185; font-size: 9px; }
@@ -555,7 +557,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 @media (max-width: 800px) {
   .note-create-menu { display: none; }
-  .canvas-container { touch-action: none; }
   .mindmap-active .workspace { padding: 0; }
   .mindmap-minimap { display: none; }
   .mindmap-hint { display: none; }
@@ -580,7 +581,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 @media (max-width: 560px) {
   .mobile-capture-controls { position: fixed; z-index: 22; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 8px; }
   .mobile-capture-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; font: 600 12px/1 var(--ui-font, "IBM Plex Mono", monospace); cursor: pointer; }
-  .mobile-draw-button { min-width: 54px; min-height: 54px; color: var(--ink); background: var(--surface); }
+  .mobile-draw-button, .mobile-tool-button { min-width: 54px; min-height: 54px; color: var(--ink); background: var(--surface); }
+  .mobile-tool-button.active, .mobile-draw-button.active { background: var(--accent-soft, #e5eef5); border-color: var(--accent) !important; }
+  @media (max-width: 440px) { .mobile-capture-controls { gap: 6px; } .mobile-capture-controls button { padding: 0 10px; } .mobile-draw-button, .mobile-tool-button, .mobile-connect-button { min-width: 46px !important; min-height: 46px !important; padding: 0 !important; } .mobile-draw-button span { display: none; } }
   .mobile-speak-button { min-height: 56px; color: var(--rail); background: var(--accent); border-color: var(--accent) !important; touch-action: none; }
   .mobile-speak-button.active { background: var(--focus); }
   .mobile-capture-controls svg { width: 18px; height: 18px; }
@@ -618,7 +621,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 @media print {
   html, body, #app { width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 0; overflow: visible; background: white; }
   #app > :not(.print-preview) { display: none !important; }
-  .speed-meter { display: none !important; }
+  .speed-meter, body > :not(#app):not(script):not(style) { display: none !important; }
   .print-preview { position: static; display: block; color: black; background: white; }
   .print-preview-bar, .print-summary, .print-sheet-number, .print-sheet-card footer { display: none !important; }
   .print-preview-body, .print-sheet-list { display: block; overflow: visible; margin: 0; padding: 0; }

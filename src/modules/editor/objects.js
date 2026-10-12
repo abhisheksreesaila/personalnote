@@ -1,5 +1,4 @@
-// Pure helpers for the dock's Sticky note, Shape and Image tools. No DOM or Fabric here so the
-// rules (palette, defaults, image sizing) are easy to test; main.js turns them into canvas objects.
+// Pure helpers for the dock's Sticky note, Shape and Image tools. No DOM here so the rules (palette, defaults, image sizing) are easy to test.
 
 export const IMAGE_MAX_SIDE = 1400
 export const IMAGE_MAX_DATA_URL = 300 * 1024
@@ -57,22 +56,11 @@ export function stickyDefaults({ fill, ink }) {
   }
 }
 
-export function shapeDefaults({ fill }) {
-  return { ...SHAPE_SIZE, fill, rx: SHAPE_RADIUS, ry: SHAPE_RADIUS, strokeWidth: 0 }
-}
-
 export function fitImage({ width, height }, maxSide = IMAGE_MAX_SIDE) {
   const longest = Math.max(width, height)
   if (longest <= maxSide) return { width, height }
   const ratio = maxSide / longest
   return { width: Math.round(width * ratio), height: Math.round(height * ratio) }
-}
-
-// Null when the picture can be stored as it is; otherwise how to re-encode it. Photos become JPEG; pictures with
-// transparency stay lossless-capable (WebP) so they keep their see-through parts.
-export function imageEncoding({ dataUrlLength, resized, hasAlpha, type }) {
-  if (!resized && dataUrlLength <= IMAGE_MAX_DATA_URL && type !== 'image/gif') return null
-  return hasAlpha ? { type: 'image/webp', quality: 0.85 } : { type: 'image/jpeg', quality: 0.85 }
 }
 
 export function imageFiles(files) {

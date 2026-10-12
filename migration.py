@@ -9,18 +9,32 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
 from app_paths import instance_file, marker_path, write_migration_marker
+from media_store import MEDIA_NAME
 from portability import import_workspace_backup, workspace_backup
 from services import NoteService
 
 
 class MigrationError(Exception):
     """Expected, user-fixable problem."""
+
+
+def copy_media(source: Path, target: Path) -> None:
+    """Copy the content-addressed media files the copied notes point at; a file already there is never replaced."""
+    if not source.is_dir():
+        return
+    target.mkdir(parents=True, exist_ok=True)
+    for file in source.iterdir():
+        if file.is_file() and not file.is_symlink() and MEDIA_NAME.match(file.name) and not (target / file.name).exists():
+            partial = target / (file.name + ".part")
+            shutil.copyfile(file, partial)
+            os.replace(partial, target / file.name)
 
 
 def _answers_health(url: str) -> bool:
@@ -88,6 +102,7 @@ def migrate_legacy_database(
             target_connection.close()
             source_connection.close()
         os.replace(partial, destination)
+        copy_media(legacy.parent / "media", destination.parent / "media")
         result = {"mode": "copied"}
     write_migration_marker(legacy, destination)
     return {"ok": True, "from": str(legacy), "to": str(destination), "legacyKept": True, **result}

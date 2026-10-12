@@ -1,0 +1,488 @@
+// F-034: the hybrid render mode (the default; src/modules/canvas-leafer/tiles.js, perf.js), in the real app (Vite dev server on port 4850, mocked
+// /api, proxy to a dead port, headless Chromium at devicePixelRatio 2, the software rasteriser):
+//   - navigation (pan, wheel zoom) shows page bitmaps at every zoom level from the first step, and the vectors come back when it settles
+//   - the settled picture is the picture a plain vector render gives (pixel check), and a bitmap at 100% is not blurry (measured, numbers printed)
+//   - editing is live vectors; an edit makes only the pages it touched out of date; they are made again in idle time
+//   - a drag of a crowd (more than 3 objects) is drawn at 1x on the drag layer and is sharp on drop
+//   - a view too far in for crisp bitmaps does not use them; the bitmap memory stays inside the budget (printed for a 3420x2214 screen at dpr 2)
+//
+//   TMPDIR=/var/tmp/x node scripts/verify-leafer-hybrid.mjs
+import { createServer } from 'vite'
+import { chromium } from 'playwright'
+import { generateStressDocument } from '../src/modules/speedtest/stress-note.js'
+import { writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
+
+const PORT = 4850
+const now = new Date().toISOString()
+const doc = generateStressDocument(Number(process.env.HYB_COUNT ?? 1500), { columns: 4, rows: 4 })
+// one shape whose stroke keeps its screen width at every zoom (the bitmaps must not leave it at a stale width)
+doc.objects.push({ id: 'uniform', type: 'shape', kind: 'rect', z: doc.objects.length, fill: '#ffffff', stroke: '#cc0000', strokeWidth: 6, strokeUniform: true, geometry: { x: 300, y: 300, width: 200, height: 120, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 } })
+const stress = { content: writeJsonCanvas(doc, { derived: 'omit' }), pageState: { columns: doc.page.columns, rows: doc.page.rows } }
+const summary = { id: 1, resourceId: 'r1', revision: 1, noteType: 'canvas', title: 'Stress', notebookId: 1, createdAt: now, updatedAt: now }
+const results = []
+const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
+const info = (text) => console.log(`INFO  ${text}`)
+
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4859' } }, logLevel: 'error' })
+await server.listen()
+const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
+
+async function open(perf, viewport = { width: 1440, height: 900 }) {
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 2 })
+  const page = await context.newPage()
+  const errors = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  if (perf) await page.addInitScript((value) => { window.__pnPerf = value }, perf)
+  await page.route('**/api/**', async (route) => {
+    const p = new URL(route.request().url()).pathname.replace(/^\/api/, '')
+    const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+    if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'N', color: '#76669a', noteCount: 1 }])
+    if (p === '/notes') return json([summary])
+    if (p === '/notes/1' && route.request().method() === 'GET') return json({ ...summary, content: stress.content, pageState: stress.pageState })
+    return json({ revision: 2, resourceId: 'r1' })
+  })
+  await page.goto(`http://127.0.0.1:${PORT}/notes`)
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 120000 })
+  await page.waitForTimeout(500)
+  await page.evaluate(() => window.__personalNote.setTool('select'))
+  return { context, page, errors }
+}
+const zoomTo = (page, zoom, offset) => page.evaluate(([z, at]) => {
+  const { state, getCanvasScale, setCanvasViewportOffset, viewSize } = window.__personalNote
+  state.canvasZoom = z === 1 ? 1 : z / state.displayScale
+  const scale = getCanvasScale()
+  setCanvasViewportOffset(at ? at[0] : z === 1 ? viewSize.width / 2 - 430 * scale : 24, at ? at[1] : z === 1 ? 104 : 24)
+  return scale
+}, [zoom, offset ?? null])
+const lod = (page) => page.evaluate(() => window.__personalNote.leaferCanvas().lodState())
+const stage = (page) => page.evaluate(() => window.__personalNote.leaferCanvas().leafer.children.map((node) => node.tag + (node.children ? `(${node.children.length})` : '')))
+const vectorsOn = async (page) => (await stage(page)).some((entry) => /Group\(\d{3,}\)/.test(entry))
+const rafs = (page, n = 2) => page.evaluate((count) => new Promise((resolve) => { let left = count; const tick = () => (--left <= 0 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick) }), n)
+// Until the pages on screen have their bitmaps (they are made in idle time after a settle).
+const idle = async (page) => {
+  await page.waitForFunction(() => { const s = window.__personalNote.leaferCanvas().lodState(); return !s.active && s.visibleReady }, null, { timeout: 90000 })
+  await page.waitForTimeout(200)
+}
+const wheel = async (page, count, dy, x = 700, y = 450) => { await page.mouse.move(x, y); for (let i = 0; i < count; i += 1) { await page.mouse.wheel(0, dy); await rafs(page, 1) } }
+const shot = (page) => page.screenshot({ clip: { x: 230, y: 100, width: 1000, height: 640 } })
+const compare = (page, a, b) => page.evaluate(async ([one, two]) => {
+  const read = async (data) => { const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob()); const c = new OffscreenCanvas(image.width, image.height); const x = c.getContext('2d'); x.drawImage(image, 0, 0); return x.getImageData(0, 0, image.width, image.height) }
+  const [first, second] = [await read(one), await read(two)]
+  let total = 0
+  let strong = 0
+  let any = 0
+  let box = null
+  for (let i = 0; i < first.data.length; i += 4) {
+    const level = Math.max(Math.abs(first.data[i] - second.data[i]), Math.abs(first.data[i + 1] - second.data[i + 1]), Math.abs(first.data[i + 2] - second.data[i + 2]))
+    total += level
+    if (level > 0) any += 1
+    if (level > 64) { strong += 1; const px = (i / 4) % first.width; const py = Math.floor(i / 4 / first.width); box = box ? [Math.min(box[0], px), Math.min(box[1], py), Math.max(box[2], px), Math.max(box[3], py)] : [px, py, px, py] }
+  }
+  const pixels = first.data.length / 4
+  return { mean: total / pixels, strong: strong / pixels, any: any / pixels, box }
+}, [a.toString('base64'), b.toString('base64')])
+const MB = (bytes) => (bytes / 1048576).toFixed(1)
+const PLAIN = { hybrid: false, dragCrowd: 0, gestureTransform: false, pageBitmaps: 'off' }
+
+try {
+  // ---------------------------------------------------------------- the idle page build, driven step by step: never drawn twice, never loses its page
+  {
+    const { context, page, errors } = await open(null)
+    const warnings = []
+    page.on('console', (message) => { if (/page bitmaps are off/.test(message.text())) warnings.push(message.text()) })
+    const t = (fn, arg) => page.evaluate(([code, a]) => new Function('test', 'scene', 'arg', `return (${code})(test, scene, arg)`)(window.__personalNote.leaferCanvas().lodTest, window.__personalNote.leaferCanvas(), a), [fn.toString(), arg])
+    await zoomTo(page, 1)
+    await page.waitForTimeout(500)
+    await idle(page)
+    await page.waitForTimeout(400)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    await t((test, scene) => scene.lodExit())
+    // a page on screen with plenty on it: the page of the middle of the window
+    const target = await t((test, scene) => { const v = scene.view(); const size = { w: document.querySelector('#leafer-host').clientWidth, h: document.querySelector('#leafer-host').clientHeight }; return { c: Math.max(0, Math.floor((-v.x + size.w / 2) / v.scale / 860)), r: Math.max(0, Math.floor((-v.y + size.h / 2) / v.scale / 1080)) } })
+    const diffCount = (a, b) => t((test, scene, [x, y]) => { const A = window.__snaps[x]; const B = window.__snaps[y]; let n = 0; for (let i = 0; i < A.data.length; i += 1) if (A.data[i] !== B.data[i]) n += 1; return n }, [a, b])
+    const snap = (name) => t((test, scene, [n, c, r]) => { window.__snaps = window.__snaps || {}; window.__snaps[n] = test.snapshot(c, r); return true }, [name, target.c, target.r])
+
+    // (1) the build of a page is cut by a navigation that enters the bitmaps: the page is made whole on the spot, and the rest of the idle build does not
+    // draw over it (a page drawn twice is darker where it is translucent and has doubled edges)
+    await t((test, scene, c) => { test.begin(c.c, c.r); test.idle(); return test.idle() }, target) // two bands of four are drawn
+    const cut = await t((test) => test.idle().job, null)
+    check('(setup) the idle build of a page is in the middle of its bands', Boolean(cut) && cut.band >= 2 && cut.band < 4, JSON.stringify(cut))
+    const entered = await t((test, scene) => test.enter({ ...scene.view() }), null)
+    check('(setup) a navigation enters the bitmaps with that page lacking: it is made whole on the spot', entered === true)
+    await snap('afterEnter')
+    await t((test, scene) => scene.lodExit(), null)
+    for (let i = 0; i < 8; i += 1) await t((test) => test.idle(), null)
+    await snap('afterIdle')
+    const changed = await diffCount('afterEnter', 'afterIdle')
+    await t((test, scene, c) => test.redraw(c.c, c.r), target)
+    await snap('clean')
+    const unlike = await diffCount('afterIdle', 'clean')
+    info(`the page made on the spot, then idle time: ${changed} bytes changed since; against a clean whole draw: ${unlike} bytes differ`)
+    check('the rest of the cut idle build is not drawn over the finished page (its pixels do not change in idle time)', changed === 0, String(changed))
+    check('and the page is the same as a clean whole draw of it', unlike === 0, String(unlike))
+
+    // (2) a view change that does not enter the bitmaps drops a build that is half drawn (its bands must all be drawn at one placement of the note)
+    await t((test, scene, c) => { test.begin(c.c, c.r); test.idle(); }, target)
+    const before = await t((test) => test.idle().job, null)
+    await t((test, scene) => test.viewWithoutEntering({ ...scene.view() }), null)
+    const after = await t((test) => { const st = window.__personalNote.leaferCanvas().lodState(); return st.jobActive }, null)
+    check('a view change that does not enter the bitmaps drops a half-drawn idle build', Boolean(before) && after === false, JSON.stringify([before, after]))
+
+    // (3) the page being drawn is never the one let go for the memory budget
+    const far = await t((test) => test.farthest(), null)
+    check('(setup) there is a page far from the window to build', Boolean(far), JSON.stringify(far))
+    await t((test, scene, c) => { test.begin(c.c, c.r); test.idle() }, far)
+    await t((test) => test.evict(1e12), null) // as much memory wanted as there can be: everything that may be let go is
+    const kept = await t((test, scene, c) => { const st = scene.lodState(); return { jobActive: st.jobActive, tiles: st.tiles, hasPage: test.has(c.c, c.r) } }, far)
+    check('when memory is short every page that may go does, except the page being drawn (its bitmap is kept and the job is still on)', kept.jobActive === true && kept.hasPage === true && kept.tiles < 8, JSON.stringify(kept))
+    let done = null
+    for (let i = 0; i < 12 && !(done?.job === null); i += 1) done = await t((test) => test.idle(), null)
+    const finished = await t((test, scene, c) => ({ mode: scene.lodState().mode, current: scene.lodState().current }), far)
+    check('and its idle build completes (the bitmaps stay on)', done?.job === null && finished.mode === 'always' && warnings.length === 0, JSON.stringify([done, finished, warnings]))
+
+    // (4) the page of a build that is on went (a pruned grid, a let-go page): the build is dropped, nothing is drawn into a lost canvas, the bitmaps stay on
+    await t((test, scene, c) => { test.begin(c.c, c.r); test.idle() }, far)
+    await t((test, scene, c) => test.dropTile(c.c, c.r), far)
+    const gone = await t((test) => test.idle(), null)
+    check('when the page of an idle build is gone the build is dropped, and the bitmaps stay on (this guards a crash that turns them off for the session)', (!gone.job || gone.job.c !== far.c || gone.job.r !== far.r) && gone.mode === 'always' && warnings.length === 0 && errors.length === 0, JSON.stringify([gone, warnings, errors]))
+    await context.close()
+  }
+  if (process.env.HYB_ONLY) { await browser.close(); await server.close(); const bad = results.filter((ok) => !ok).length; console.log(bad ? `${bad} FAILED` : `all ${results.length} checks passed`); process.exit(bad ? 1 : 0) }
+
+  // ---------------------------------------------------------------- the default is the hybrid mode; navigation uses bitmaps at every zoom
+  {
+    const { context, page, errors } = await open(null)
+    const state0 = await lod(page)
+    check('the default render mode is hybrid: page bitmaps at every zoom', state0.hybrid && state0.mode === 'always', JSON.stringify(state0))
+    for (const zoom of [1, 0.5]) {
+      await zoomTo(page, zoom)
+      await page.waitForTimeout(400)
+      await idle(page)
+      const rest = await lod(page)
+      check(`at ${zoom * 100}% the pages on screen have bitmaps made for this zoom, at rest, with the vectors on the stage`, rest.visibleReady && !rest.active && await vectorsOn(page), JSON.stringify(rest))
+      const enters = rest.enters
+      await wheel(page, 1, 40)
+      const first = await lod(page)
+      check(`at ${zoom * 100}% the FIRST step of a pan shows the bitmaps (no vector frame first)`, first.active && first.enters === enters + 1 && !(await vectorsOn(page)), JSON.stringify(first))
+      await wheel(page, 5, 40)
+      await page.keyboard.down('Control')
+      await wheel(page, 3, -30)
+      await wheel(page, 3, 30)
+      await page.keyboard.up('Control')
+      await page.waitForTimeout(700)
+      const after = await lod(page)
+      check(`at ${zoom * 100}% the vectors are back when the movement stops`, !after.active && await vectorsOn(page), JSON.stringify(after))
+    }
+    check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- the settled view is a plain vector render; a bitmap at 100% is crisp
+  {
+    const run = async (perf) => {
+      const { context, page, errors } = await open(perf)
+      await zoomTo(page, 1)
+      await page.waitForTimeout(500)
+      if (!perf) await idle(page)
+      await wheel(page, 8, 40, 250, 130)
+      await wheel(page, 8, -40, 250, 130)
+      await page.keyboard.down('Control')
+      await wheel(page, 4, -30, 250, 130)
+      await wheel(page, 4, 30, 250, 130)
+      await page.keyboard.up('Control')
+      await page.waitForTimeout(900)
+      await page.waitForTimeout(200)
+      const settled = await shot(page)
+      info(`stroke after the gestures (${perf ? 'plain' : 'hybrid'}): ${JSON.stringify(await page.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth, lod: window.__personalNote.leaferCanvas().lodState().active })))}`)
+      return { context, page, errors, settled }
+    }
+    const hybrid = await run(null)
+    const plain = await run(PLAIN)
+    if (process.env.HYB_SHOTS) { (await import('node:fs')).writeFileSync(`${process.env.HYB_SHOTS}/hybrid.png`, hybrid.settled); (await import('node:fs')).writeFileSync(`${process.env.HYB_SHOTS}/plain.png`, plain.settled) }
+    const same = await compare(hybrid.page, hybrid.settled, plain.settled)
+    info(`settled hybrid view vs plain vector render (100%, after a pan and a zoom out and in): mean ${same.mean.toFixed(4)} of 255, ${(same.strong * 100).toFixed(3)}% far off, ${(same.any * 100).toFixed(3)}% differ at all`)
+    check('after a pan and a zoom, the settled hybrid view equals a plain vector render (under 25 pixels of 2.5 million far off, mean under 0.05 of 255)', same.strong < 1e-5 && same.mean < 0.05, JSON.stringify(same))
+    check('(and the vectors are what is on the stage)', await vectorsOn(hybrid.page))
+    // the hover outline of the object under the pointer is back after navigating (the pointer did not move meanwhile)
+    {
+      const { page } = hybrid
+      await zoomTo(page, 1)
+      await page.waitForTimeout(500)
+      await idle(page)
+      const at = await page.evaluate(() => { const b = window.__personalNote.leaferCanvas().screenBox('uniform'); const h = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: h.left + b.x + b.width / 2, y: h.top + b.y + b.height / 2 } })
+      await page.mouse.move(at.x, at.y)
+      await page.waitForTimeout(300)
+      await wheel(page, 3, 30, at.x, at.y)
+      await wheel(page, 3, -30, at.x, at.y)
+      await page.waitForTimeout(900)
+      const restored = await shot(page)
+      await page.mouse.move(at.x + 1, at.y + 1) // a real move over it: the outline the engine draws then
+      await page.waitForTimeout(400)
+      const real = await shot(page)
+      const same = await compare(page, restored, real)
+      info(`hover outline after navigating vs after a real pointer move: mean ${same.mean.toFixed(4)}, ${(same.strong * 100).toFixed(4)}% far off`)
+      check('the hover outline of the object under the pointer is back when the vectors are (no pointer move needed)', same.strong < 1e-5 && same.mean < 0.05, JSON.stringify(same))
+    }
+    await plain.context.close()
+
+    // a bitmap against the vector render of the same view, at 100%, on a whole-pixel offset (the best case) and a half-pixel one (the worst)
+    const { page } = hybrid
+    for (const [label, shift] of [['whole-pixel offset', 0], ['half-pixel offset', 0.25]]) {
+      await zoomTo(page, 1, [150, 104])
+      await page.waitForTimeout(500)
+      await idle(page)
+      if (shift) { // a view that is not on a device pixel: the bitmaps are resampled, the vectors are not
+        await page.evaluate((by) => { const s = window.__personalNote.leaferCanvas(); const v = s.view(); s.setView({ ...v, x: v.x + by, y: v.y + by }) }, shift)
+        await page.waitForTimeout(700)
+      }
+      const vector = await shot(page)
+      // a view change that does not move the picture puts the bitmaps on the stage; the screenshot is taken before the quiet wait ends
+      await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); s.setView({ ...s.view() }) })
+      const showing = await page.evaluate(() => window.__personalNote.leaferCanvas().lodState().active)
+      const bitmap = await shot(page)
+      const d = await compare(page, vector, bitmap)
+      info(`100% bitmap (showing: ${showing}) vs vector, ${label}: mean ${d.mean.toFixed(3)} of 255, ${(d.strong * 100).toFixed(3)}% of pixels far off, ${(d.any * 100).toFixed(1)}% differ at all`)
+      check(`a bitmap at 100% is not blurry against the vector render (${label}: mean under ${label.startsWith('whole') ? 1 : 4} of 255, under ${label.startsWith('whole') ? 0.5 : 2.5}% of pixels far off)`, showing && d.mean < (label.startsWith('whole') ? 1 : 4) && d.strong < (label.startsWith('whole') ? 0.005 : 0.025), JSON.stringify(d))
+    }
+    check('page errors', hybrid.errors.length === 0 && plain.errors.length === 0, hybrid.errors.join(' | '))
+    await hybrid.context.close()
+  }
+
+  // ---------------------------------------------------------------- editing is live; an edit makes only the pages it touched out of date
+  {
+    const { context, page, errors } = await open(null)
+    await zoomTo(page, 0.3)
+    await page.waitForTimeout(500)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    const full = await lod(page)
+    check('(setup) every page of the 4 x 4 note has a current bitmap', full.tiles === 16 && full.current === 16, JSON.stringify(full))
+    // an object that sits wholly inside one page, away from its edges
+    const target = await page.evaluate(() => {
+      const { leaferEdits } = window.__personalNote
+      return leaferEdits.doc.objects.filter((o) => o.type === 'sticky').map((o) => ({ id: o.id, x: o.geometry.x, y: o.geometry.y, w: o.geometry.width, h: o.geometry.height })).find((o) => o.x % 860 > 120 && o.x % 860 < 600 && o.y % 1080 > 120 && o.y % 1080 < 800)
+    })
+    check('(setup) a sticky well inside one page', Boolean(target))
+    await page.evaluate((id) => { const s = window.__personalNote.leaferCanvas(); s.select([id]); s.nudge(30, 20) }, target.id)
+    const afterEdit = await lod(page)
+    check('an edit makes only the bitmap of the page it touched out of date (15 of 16 stay current)', afterEdit.current === 15, JSON.stringify(afterEdit))
+    await wheel(page, 3, 30)
+    await page.waitForFunction(() => { const s = window.__personalNote.leaferCanvas().lodState(); const g = window.__personalNote.leaferEdits.doc.page; return s.current === s.tiles && s.tiles === g.columns * g.rows }, null, { timeout: 30000 }).catch(() => {})
+    const rebuilt = await lod(page)
+    const grid = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page)
+    check('the touched page is made again in idle time (every bitmap of the grid is current again)', rebuilt.current === rebuilt.tiles && rebuilt.tiles === grid.columns * grid.rows, JSON.stringify([rebuilt, grid]))
+    check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+  // ---------------------------------------------------------------- a crowd dragged: 1x on the drag layer while it moves, sharp on drop
+  {
+    const { context, page, errors } = await open(null)
+    await zoomTo(page, 1)
+    await page.waitForTimeout(500)
+    await idle(page)
+    const picked = await page.evaluate(() => {
+      const { leaferCanvas, leaferEdits } = window.__personalNote
+      const host = document.querySelector('#leafer-host').getBoundingClientRect()
+      const v = leaferCanvas().view()
+      const onScreen = leaferEdits.doc.objects.filter((o) => o.type === 'sticky').map((o) => ({ id: o.id, x: host.left + v.x + (o.geometry.x + o.geometry.width / 2) * v.scale, y: host.top + v.y + (o.geometry.y + o.geometry.height / 2) * v.scale, gx: o.geometry.x, gy: o.geometry.y })).filter((p) => p.x > host.left + 150 && p.x < host.left + host.width - 200 && p.y > host.top + 100 && p.y < host.top + host.height - 150)
+      return onScreen.slice(0, 6)
+    })
+    check('(setup) six stickies on screen', picked.length === 6, String(picked.length))
+    await page.evaluate((ids) => window.__personalNote.leaferCanvas().select(ids), picked.map((p) => p.id))
+    const rest = await page.evaluate(() => window.__personalNote.leaferCanvas().gestureState())
+    check('at rest the drag layer is drawn at the screen\'s own resolution (2x)', rest.skyPixelRatio === 2 && rest.treePixelRatio === 2, JSON.stringify([rest.skyPixelRatio, rest.treePixelRatio]))
+    const from = picked[0]
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    for (let i = 1; i <= 6; i += 1) { await page.mouse.move(from.x + i * 12, from.y + i * 8); await rafs(page, 1) }
+    const during = await page.evaluate(() => window.__personalNote.leaferCanvas().gestureState())
+    check('while six objects are dragged the drag layer is drawn at 1x (and the note at 2x)', during.skyPixelRatio === 1 && during.treePixelRatio === 2, JSON.stringify([during.skyPixelRatio, during.treePixelRatio]))
+    await page.mouse.up()
+    await page.waitForTimeout(500)
+    const dropped = await page.evaluate(() => window.__personalNote.leaferCanvas().gestureState())
+    check('on drop the drag layer is back at 2x', dropped.skyPixelRatio === 2, String(dropped.skyPixelRatio))
+    const moved = await page.evaluate((ids) => window.__personalNote.leaferEdits.doc.objects.filter((o) => ids.includes(o.id)).map((o) => [o.geometry.x, o.geometry.y]), picked.map((p) => p.id))
+    check('and the six moved together by the drag (one step)', moved.every(([x, y], i) => Math.abs(x - picked[i].gx - 72) < 3 && Math.abs(y - picked[i].gy - 48) < 3), JSON.stringify([moved, picked.map((p) => [p.gx, p.gy])]))
+    // one object: no change of resolution
+    await page.evaluate((id) => window.__personalNote.leaferCanvas().select([id]), picked[0].id)
+    const one = await page.evaluate(() => { const v = window.__personalNote.leaferCanvas().view(); const o = window.__personalNote.leaferEdits.doc.objects.find((x) => x.type === 'sticky'); return { x: o.geometry.x, y: o.geometry.y, v } })
+    check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- zoomed far in, the bitmaps cannot be crisp: the vectors carry the view; memory
+  {
+    const { context, page, errors } = await open(null)
+    await zoomTo(page, 4)
+    await page.waitForTimeout(500)
+    const s0 = await lod(page)
+    check('zoomed in to 400% the bitmaps cannot be made crisp inside the budget, so a pan does not use them', s0.crisp === false, JSON.stringify(s0))
+    await wheel(page, 4, 40)
+    const s1 = await lod(page)
+    check('and the pan is drawn as vectors (no bitmap on the stage)', !s1.active && await vectorsOn(page), JSON.stringify(s1))
+    check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+  {
+    // the Mac screen of the comparison: 3420 x 2214 device pixels at dpr 2 = 1710 x 1107 CSS pixels; the budget is 128 MB for the note
+    const { context, page, errors } = await open(null, { width: 1710, height: 1107 })
+    for (const zoom of [0.25, 0.5, 1, 1.5]) {
+      await zoomTo(page, zoom)
+      await page.waitForTimeout(500)
+      await page.waitForFunction(() => { const s = window.__personalNote.leaferCanvas().lodState(); return !s.crisp || (!s.active && s.visibleReady) }, null, { timeout: 90000 }).catch(() => {})
+      await page.waitForTimeout(2500) // the rest of the pages, in idle time
+      const s = await lod(page)
+      info(`3420x2214 at dpr 2, ${zoom * 100}% zoom: ${s.tiles} bitmaps, ${MB(s.bytes)} MB (budget 128 MB), scales on screen / near / far ${s.scales?.map((x) => x.toFixed(2)).join(' / ')}, crisp ${s.crisp}`)
+      check(`bitmap memory at ${zoom * 100}% is inside the 128 MB budget`, s.bytes <= 128 * 1048576 * 1.1, MB(s.bytes))
+    }
+    check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- a bitmap is never stale: after each kind of edit, the next pan shows the edited note
+  {
+    // The bitmaps are held on screen (a long quiet wait) so the picture of the pan can be set against the vector picture of the same view.
+    const { context, page, errors } = await open({ lodQuiet: 60000 })
+    await zoomTo(page, 0.5)
+    await page.waitForTimeout(500)
+    const scene = (fn, arg) => page.evaluate(([code, a]) => new Function('scene', 'edits', 'arg', `return (${code})(scene, edits, arg)`)(window.__personalNote.leaferCanvas(), window.__personalNote.leaferEdits, a), [fn.toString(), arg])
+    const stickies = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'sticky').map((o) => ({ id: o.id, x: o.geometry.x, y: o.geometry.y })))
+    const near = stickies.find((o) => o.x % 860 > 560 && o.x % 860 < 620 && o.y % 1080 > 200 && o.y % 1080 < 800) ?? stickies[5]
+    const rebuildAll = () => scene((s) => s.lodBuildAll())
+    // the picture of a pan right after an edit (bitmaps if they may show, else vectors) against the vector picture of the same view
+    const panVersusVectors = async (label) => {
+      await wheel(page, 3, 30)
+      const panned = await shot(page)
+      const state = await lod(page)
+      await scene((s) => s.lodExit())
+      await rafs(page, 3)
+      const vector = await shot(page)
+      const d = await compare(page, panned, vector)
+      return { d, state }
+    }
+    await rebuildAll()
+    const control = await panVersusVectors('control')
+    info(`control (no edit): the pan shows bitmaps ${control.state.active}, mean ${control.d.mean.toFixed(3)}, ${(control.d.strong * 100).toFixed(3)}% far off`)
+    const tolerance = (d) => d.mean <= control.d.mean + 0.5 && d.strong <= control.d.strong + 0.0015
+    const scenario = async (name, action) => {
+      await rebuildAll()
+      await action()
+      const { d, state } = await panVersusVectors(name)
+      info(`${name}: pan right after it ${state.active ? 'shows bitmaps' : 'shows vectors'}, mean ${d.mean.toFixed(3)}, ${(d.strong * 100).toFixed(3)}% far off`)
+      check(`${name}: the next pan matches the vector render (a stale bitmap would show the old note)`, tolerance(d), JSON.stringify([d, control.d]))
+      return state
+    }
+    await scenario('a move across a page boundary', () => scene((s, e, a) => { s.select([a.id]); s.nudge(300, 160) }, near))
+    await scenario('undo of it', () => scene((s, e) => e.undo()))
+    await scenario('redo of it', () => scene((s, e) => e.redo()))
+    await scenario('an agent merge', () => scene((s, e) => {
+      const document = e.doc
+      const target = document.objects.filter((o) => o.type === 'sticky')[3]
+      s.applyMerged({ ...document, objects: document.objects.map((o) => (o.id === target.id ? { ...o, geometry: { ...o.geometry, x: o.geometry.x + 500, y: o.geometry.y + 260 } } : o)) })
+    }))
+    await scenario('a page added on the top and left (every object shifts)', () => scene((s, e, a) => { s.select([a.id]); s.nudge(-a.x - 500, -a.y - 400) }, near))
+    // typing past the bottom edge of the last page row grows the grid
+    await scenario('typing that grows the page grid across an edge', async () => {
+      const grid = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page)
+      const lowest = await page.evaluate(() => { const texts = window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'text' && o.mode === 'box'); return texts.sort((a, b) => b.geometry.y - a.geometry.y)[0]?.id })
+      await scene((s, e, id) => s.editText(id), lowest)
+      await page.waitForSelector('.leafer-text-editor', { timeout: 10000 })
+      await page.keyboard.press('Control+End')
+      for (let i = 0; i < 40; i += 1) await page.keyboard.type('line of words\n')
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(300)
+      const after = await page.evaluate(() => window.__personalNote.leaferEdits.doc.page)
+      info(`typing: the grid went from ${grid.columns} x ${grid.rows} to ${after.columns} x ${after.rows}`)
+    })
+
+    // Mixed: a navigation that starts right after an edit shows the bitmaps of every untouched page and makes only the touched pages on the spot
+    await scene((s) => s.setView({ x: 24, y: 24, scale: 0.5 }))
+    await page.waitForTimeout(300)
+    await rebuildAll()
+    await scene((s) => s.lodExit())
+    const stickyNow = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const near = window.__personalNote.leaferEdits.doc.objects.filter((x) => x.type === 'sticky').map((x) => ({ id: x.id, b: s.screenBox(x.id) })).filter((x) => x.b).sort((p, q) => Math.hypot(p.b.x - 400, p.b.y - 300) - Math.hypot(q.b.x - 400, q.b.y - 300)); return { id: near[0].id } })
+    await scene((s, e, a) => { s.select([a.id]); s.nudge(20, 12) }, stickyNow)
+    const before = await lod(page)
+    await page.evaluate(() => { window.__gaps = []; let last = performance.now(); const tick = (t) => { window.__gaps.push(t - last); last = t; window.__raf = requestAnimationFrame(tick) }; window.__raf = requestAnimationFrame(tick) })
+    await wheel(page, 1, 30)
+    const mixed = await lod(page)
+    await wheel(page, 30, 30)
+    const gaps = await page.evaluate(() => { cancelAnimationFrame(window.__raf); return window.__gaps.slice(1).sort((x, y) => x - y) })
+    info(`frame gaps over a 30-step pan right after the edit: p50 ${gaps[Math.floor(gaps.length / 2)].toFixed(1)}, p95 ${gaps[Math.floor(gaps.length * 0.95)].toFixed(1)}, max ${gaps.at(-1).toFixed(1)} ms; bitmaps still showing ${(await lod(page)).active}`)
+    const jit = mixed.jitBuilds - before.jitBuilds
+    info(`a pan right after an edit: bitmaps on the first step ${mixed.active}, ${jit} page(s) made on the spot (${(mixed.jitMs - before.jitMs).toFixed(0)} ms), ${mixed.builds - before.builds} made in all, ${mixed.tiles} pages in the note`)
+    check('a pan right after an edit shows bitmaps from its first step', mixed.active && mixed.enters === before.enters + 1, JSON.stringify(mixed))
+    check('and only the touched page is made on the spot (every other page shows its bitmap as it is)', jit >= 1 && jit <= 2 && mixed.builds - before.builds === jit, JSON.stringify([before, mixed]))
+    // right after a zoom: the pages on screen that are soft are made on the spot, the first step shows bitmaps
+    await scene((s) => s.lodExit())
+    const beforeZoom = await lod(page)
+    await scene((s) => { const v = s.view(); s.setView({ ...v, scale: v.scale * 1.6 }) }) // (the first step of the navigation is this view change)
+    const afterZoom = await lod(page)
+    info(`a pan right after a zoom to 80%: bitmaps ${afterZoom.active}, ${afterZoom.jitBuilds - beforeZoom.jitBuilds} page(s) made on the spot (${(afterZoom.jitMs - beforeZoom.jitMs).toFixed(0)} ms)`)
+    check('a pan right after a zoom shows bitmaps too, the soft pages on screen made on the spot', afterZoom.active && afterZoom.jitBuilds - beforeZoom.jitBuilds >= 1 && afterZoom.jitBuilds - beforeZoom.jitBuilds <= 12, JSON.stringify([beforeZoom.lacking, afterZoom.lacking, afterZoom.scales, afterZoom.tiles]))
+
+    check('page errors', errors.length === 0, errors.join(' | '))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- a small budget: pages are let go while others are being drawn, and the bitmaps stay on
+  {
+    const { context, page, errors } = await open({ tileBudget: 70 })
+    const warnings = []
+    page.on('console', (message) => { if (/page bitmaps are off/.test(message.text())) warnings.push(message.text()) })
+    await zoomTo(page, 1)
+    await page.waitForTimeout(500)
+    for (let round = 0; round < 6; round += 1) { await wheel(page, 3, 120); await page.waitForTimeout(700); await wheel(page, 3, -60); await page.waitForTimeout(700) }
+    await page.waitForTimeout(2500)
+    const state = await lod(page)
+    info(`budget 70 MB: ${state.tiles} bitmaps, ${MB(state.bytes)} MB, ${state.evicted} let go, mode ${state.mode}`)
+    check('with a tiny budget pages are let go and the bitmaps stay on (a page being drawn is never the one let go)', state.mode === 'always' && warnings.length === 0 && state.evicted > 0 && errors.length === 0, JSON.stringify([state.mode, warnings, state.evicted, errors]))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- the failure path and the uniform stroke, under the hybrid default
+  {
+    const { context, page, errors } = await open(null)
+    await zoomTo(page, 0.5)
+    await page.waitForTimeout(500)
+    await idle(page)
+    await wheel(page, 4, 30)
+    await page.keyboard.down('Control')
+    await wheel(page, 6, -30)
+    await wheel(page, 6, 30)
+    await page.keyboard.up('Control')
+    await page.waitForTimeout(900)
+    const stroke = await page.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth, active: window.__personalNote.leaferCanvas().lodState().active }))
+    check('hybrid: after navigating through the bitmaps a stroke that keeps its screen width has the width of the zoom it ends at', !stroke.active && Math.abs(stroke.width - 6 * stroke.scale) < 1e-6, JSON.stringify(stroke))
+    await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const v = s.view(); s.setView({ ...v, scale: v.scale * 1.3 }) })
+    await page.waitForTimeout(700)
+    const stroke2 = await page.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth }))
+    check('and after a zoom step too', Math.abs(stroke2.width - 6 * stroke2.scale) < 1e-6, JSON.stringify(stroke2))
+    // a failure inside the engine turns the bitmaps off for good and leaves the vectors
+    await page.evaluate(() => { const world = window.__personalNote.leaferCanvas().leafer.children[1]; const real = world.__render.bind(world); world.__render = (canvas, options) => { if (options?.bounds) throw new Error('engine said no'); return real(canvas, options) } })
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodBuildAll())
+    const failed = await lod(page)
+    check('hybrid: a bitmap that cannot be made turns the bitmaps off, with no error shown, and the vectors carry on', failed.mode === 'off' && !failed.active && failed.tiles === 0 && errors.length === 0 && await vectorsOn(page), JSON.stringify([failed, errors]))
+    await wheel(page, 3, 30)
+    check('and a pan afterwards is vectors, not a blank', !(await lod(page)).active && await vectorsOn(page))
+    await context.close()
+  }
+
+  // ---------------------------------------------------------------- the longest synchronous stretch of making a page, on the 1,500-object note (the speed test report gives the 5,400-object numbers)
+  {
+    const { context, page } = await open(null)
+    await page.evaluate(() => window.__personalNote.leaferCanvas().lodExit())
+    await zoomTo(page, 1)
+    await page.waitForTimeout(500)
+    await idle(page)
+    const s = await lod(page)
+    info(`page bitmaps: ${s.builds} made, worst whole page ${s.maxBuildMs.toFixed(0)} ms, worst single synchronous band ${s.maxBandMs.toFixed(0)} ms, ${MB(s.bytes)} MB`)
+    check('no single synchronous stretch of making a page is longer than a quarter-page band (under 120 ms here on 1,500 objects)', s.maxBandMs < 120, JSON.stringify(s))
+    await context.close()
+  }
+} finally {
+  await browser.close()
+  await server.close()
+}
+const failed = results.filter((ok) => !ok).length
+console.log(failed ? `${failed} FAILED` : `all ${results.length} checks passed`)
+process.exit(failed ? 1 : 0)
