@@ -47,6 +47,12 @@ def page_text(content: str) -> str:
 
 
 # ---------- re-anchoring after an agent rewrites the Markdown (mirrors src/page/ink-state.js) ----------
+# Stored positions count UTF-16 units, as the editor (CodeMirror) does: an emoji is two. Python strings count code points, so every
+# position this module writes goes through utf16().
+def utf16(text: str) -> int:
+    """The length of `text` in UTF-16 units."""
+    return len(text.encode("utf-16-le")) // 2
+
 def _is_word_char(char: str) -> bool:
     return char.isalnum() or char in "_'"
 
@@ -77,9 +83,9 @@ def find_quote(text: str, quote) -> int | None:
 
 
 def _under_line(text: str, at: int) -> dict:
-    """Where a drawing goes to sit under the line holding `at`: before the next line, or after the last one."""
+    """Where a drawing goes to sit under the line holding `at` (a code-point index): before the next line, or after the last one."""
     newline = text.find("\n", at)
-    return {"pos": newline + 1, "side": -1} if newline != -1 else {"pos": len(text), "side": 1}
+    return {"pos": utf16(text[: newline + 1]), "side": -1} if newline != -1 else {"pos": utf16(text), "side": 1}
 
 
 def reanchor_ink(ink: dict, markdown: str) -> dict:
@@ -99,7 +105,8 @@ def reanchor_ink(ink: dict, markdown: str) -> dict:
         if found is None:
             marks.append({**rest, "loose": True, "anchor": {**anchor, "pos": None, "end": None}})
         else:
-            marks.append({**rest, "anchor": {**anchor, "pos": found, "end": found + len(anchor["quote"]["exact"])}})
+            start = utf16(markdown[:found])
+            marks.append({**rest, "anchor": {**anchor, "pos": start, "end": start + utf16(anchor["quote"]["exact"])}})
     drawings = []
     for drawing in ink.get("drawings", []):
         link = drawing.get("link") if isinstance(drawing.get("link"), dict) else None
@@ -108,11 +115,12 @@ def reanchor_ink(ink: dict, markdown: str) -> dict:
             if found is None:
                 drawings.append({**drawing, "link": None, "folded": False, **_under_line(markdown, len(markdown))})
             else:
-                drawings.append({**drawing, "link": {**link, "pos": found, "end": found + len(link["quote"]["exact"])}, **_under_line(markdown, found)})
+                start = utf16(markdown[:found])
+                drawings.append({**drawing, "link": {**link, "pos": start, "end": start + utf16(link["quote"]["exact"])}, **_under_line(markdown, found)})
             continue
         found = find_quote(markdown, drawing.get("quote"))
         if found is not None:
             drawings.append({**drawing, **_under_line(markdown, found)})
         else:
-            drawings.append({**drawing, "pos": min(int(drawing.get("pos") or 0), len(markdown))})
+            drawings.append({**drawing, "pos": min(int(drawing.get("pos") or 0), utf16(markdown))})
     return {**ink, "marks": marks, "drawings": drawings}

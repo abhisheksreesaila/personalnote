@@ -1800,7 +1800,18 @@ const samePageGrid = (a, b) => a.columns === b.columns && a.rows === b.rows
 async function mergeRemoteNote(note) {
   if (note.id === state.activeNoteId && state.activeNoteType === 'page' && pageEditor) {
     // An agent changed the page while you were typing: its change is merged into your text, your edits stay, and the result is saved
-    // on the agent's revision.
+    // on the agent's revision. A save still out is waited for first: until it answers, the base it moves the merge onto isn't known,
+    // and what was fetched may be that very save coming back.
+    if (saveInFlight) {
+      const gaveUp = Symbol('gave up')
+      let timer
+      const outcome = await Promise.race([(async () => { while (saveInFlight) await saveSettled })(), new Promise((resolve) => { timer = setTimeout(() => resolve(gaveUp), MERGE_WAIT_MS) })])
+      clearTimeout(timer)
+      if (outcome === gaveUp) { setTimeout(() => agentSync?.syncActiveNote().catch(console.error), MERGE_RETRY_MS); return 0 }
+      if (note.id !== state.activeNoteId || !pageEditor) return 0
+      const known = state.notes.find((item) => item.id === note.id)
+      if (known && note.revision <= known.revision) return 0
+    }
     const changed = pageEditor.mergeRemote(note.content)
     const summary = state.notes.find((item) => item.id === note.id)
     if (summary) Object.assign(summary, { revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })

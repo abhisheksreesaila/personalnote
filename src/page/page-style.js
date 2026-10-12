@@ -67,7 +67,7 @@ const CSS = `
 .page-tray { position: absolute; right: 8px; top: 96px; z-index: 3; width: 94px; display: flex; flex-direction: column; gap: 8px; font: 11px var(--page-ui); }
 .page-tray[hidden] { display: none; }
 .page-tray > p { margin: 0; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--page-agent); }
-.page-loose { position: relative; padding: 6px; border: 1.5px dashed var(--page-agent); border-radius: 8px; background: #f3eefc; color: var(--page-agent); }
+.page-loose { position: relative; padding: 6px; border: 1.5px dashed var(--page-agent); border-radius: 8px; background: color-mix(in srgb, var(--page-agent) 8%, var(--page-paper)); color: var(--page-agent); }
 .page-loose svg { display: block; width: 100%; height: 40px; }
 .page-loose button { position: absolute; top: 2px; right: 4px; border: 0; background: none; color: var(--page-agent); font: 600 14px var(--page-ui); cursor: pointer; }
 @media (max-width: 900px) { .page-tray { position: static; width: auto; margin-top: 16px; } }

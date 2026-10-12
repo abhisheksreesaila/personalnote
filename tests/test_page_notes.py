@@ -158,5 +158,64 @@ class PageNoteCliTests(unittest.TestCase):
         self.assertEqual(text, "Day one.\n")
 
 
+    def test_write_replaces_the_markdown_and_marks_find_their_words_again(self):
+        code, out = self.cli("notes", "create", "--title", "Trip", "--type", "page", "--text", "The harbour walk at dusk. A tram ride later.")
+        note = json.loads(out)
+        service = NoteService(self.database)
+        current = service.get_note(note["id"])
+        text = current["content"]["markdown"]
+        def mark(word, mid):
+            pos = text.index(word)
+            return {"id": mid, "tool": "red", "points": [[0, 0], [9, 3]], "anchor": {"pos": pos, "end": pos + len(word), "quote": {"exact": word, "prefix": text[max(0, pos - 32):pos], "suffix": text[pos + len(word):pos + len(word) + 32]}}, "dx": -4, "dy": -2}
+        sketch = {"id": "d1", "pos": len(text), "side": 1, "height": 120, "quote": None, "folded": True, "strokes": [], "items": [],
+                  "link": mark("walk", "x")["anchor"]}
+        service.update_note(note["id"], {"title": "Trip", "revision": current["revision"], "content": {"version": 1, "markdown": text, "ink": {"marks": [mark("harbour", "h"), mark("tram", "t")], "drawings": [sketch]}}})
+
+        code, out = self.cli("notes", "write", str(note["id"]), "--text", "Dinner first.\n\nThen the harbour walk at dusk.\n\nThe end.")
+        self.assertEqual(code, 0)
+        page = service.get_note(note["id"])["content"]
+        markdown = page["markdown"]
+        harbour, tram = page["ink"]["marks"]
+        self.assertEqual(markdown[harbour["anchor"]["pos"]:harbour["anchor"]["end"]], "harbour")
+        self.assertTrue(tram["loose"])
+        self.assertIsNone(tram["anchor"]["pos"])
+        drawing = page["ink"]["drawings"][0]
+        self.assertEqual(markdown[drawing["link"]["pos"]:drawing["link"]["end"]], "walk")
+        self.assertTrue(drawing["folded"])
+        # the drawing sits under the paragraph holding its word
+        self.assertEqual(markdown[drawing["pos"]:].split("\n")[0], "")
+        self.assertEqual(markdown.rfind("\n", 0, drawing["pos"] - 1) < markdown.index("walk") < drawing["pos"], True)
+
+    def test_write_refuses_a_stale_revision_and_other_note_types(self):
+        code, out = self.cli("notes", "create", "--title", "P", "--type", "page", "--text", "One.")
+        page = json.loads(out)
+        code, _ = self.cli("notes", "write", str(page["id"]), "--text", "Two.", "--revision", "1")
+        self.assertNotEqual(code, 0)
+        code, out = self.cli("notes", "create", "--title", "C", "--text", "Canvas words")
+        canvas = json.loads(out)
+        code, _ = self.cli("notes", "write", str(canvas["id"]), "--text", "Nope")
+        self.assertNotEqual(code, 0)
+        code, text = self.cli("notes", "read", str(page["id"]), "--text")
+        self.assertEqual(text, "One.\n")
+
+
+    def test_after_write_positions_count_like_the_editor_so_emoji_dont_shift_marks(self):
+        # The editor counts positions in UTF-16 units: an emoji is two. Marks placed by the server must use the same count.
+        code, out = self.cli("notes", "create", "--title", "Emoji", "--type", "page", "--text", "Fun 🙂 harbour walk")
+        note = json.loads(out)
+        service = NoteService(self.database)
+        current = service.get_note(note["id"])
+        utf16 = lambda text: len(text.encode("utf-16-le")) // 2
+        text = current["content"]["markdown"]
+        pos = utf16(text[: text.index("harbour")])
+        mark = {"id": "h", "tool": "red", "points": [[0, 0]], "anchor": {"pos": pos, "end": pos + 7, "quote": {"exact": "harbour", "prefix": "Fun 🙂 ", "suffix": " walk"}}, "dx": 0, "dy": 0}
+        service.update_note(note["id"], {"title": "Emoji", "revision": current["revision"], "content": {"version": 1, "markdown": text, "ink": {"marks": [mark], "drawings": []}}})
+        self.cli("notes", "write", str(note["id"]), "--text", "🙂🙂 Then the harbour walk")
+        page = service.get_note(note["id"])["content"]
+        moved = page["ink"]["marks"][0]["anchor"]
+        expected = utf16("🙂🙂 Then the ")
+        self.assertEqual((moved["pos"], moved["end"]), (expected, expected + 7))
+
+
 if __name__ == "__main__":
     unittest.main()
