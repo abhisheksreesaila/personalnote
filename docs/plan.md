@@ -260,14 +260,15 @@ Captain: "explore the idea of using WebGPU… if Leafer JS supports something, t
 - [ ] the engine race gains a WebGPU lane if a candidate exists, with numbers vs today's Leafer
 ## Milestone 1: two-layer pages (approved 2026-10-11; brief docs/briefs/two-layer-pages.md, ADR 0003, feel: prototype branch `prototype/two-layers`)
 Order: F-040 → F-041 → F-042 → F-043 → F-044 → F-045 → F-046. Frontend tickets share `src/page/`, so they go one after another.
-## F-040 Page note: write Markdown, saved [todo]
+## F-040 Page note: write Markdown, saved [done]
 Brief: docs/briefs/two-layer-pages.md · Needs: none
-- [ ] New note creates a page note by default (canvas and mind map stay in the menu); existing notes open as before
-- [ ] a page note opens in CodeMirror 6 (lazy-loaded, like the mind map), typing saves, reload shows the same text, revision conflicts behave like other notes
-- [ ] stored as note type `page`, content `{version, markdown, ink}`, content_format `page`; search finds its words; backup/import round-trips it; Markdown export writes its Markdown
-- [ ] CLI: `create --type page --text`, `read` prints the Markdown, `append` adds a paragraph at the end
-- [ ] the page editor is its own lazy chunk with its own size budget; the main app stays under 240 KiB gzip
-## F-041 The paper look [todo]
+- [x] New note creates a page note by default (canvas and mind map stay in the menu); existing notes open as before
+- [x] a page note opens in CodeMirror 6 (lazy-loaded, like the mind map), typing saves, reload shows the same text, revision conflicts behave like other notes
+- [x] stored as note type `page`, content `{version, markdown, ink}`, content_format `page`; search finds its words; backup/import round-trips it; Markdown export writes its Markdown
+- [x] CLI: `create --type page --text`, `read` prints the Markdown, `append` adds a paragraph at the end
+- [x] the page editor is its own lazy chunk with its own size budget; the main app stays under 240 KiB gzip
+Reviewed: PASS (05ddb80, fixes 4251f00).
+## F-041 The paper look [review]
 Brief: Look and feel · Needs: F-040
 - [ ] page notes look like the prototype: ivory paper (860 px sheet) on a warm desk, Literata 18 px / 1.65, Bricolage headings, Figtree controls, faint "Page N" marks every 1080 px
 - [ ] heading marks (#) and list marks are quiet; the page grows as you write
@@ -292,6 +293,7 @@ Brief: What it does 3 · Needs: F-043
 Brief: What it does, also in v1 · Needs: F-040 (backend), F-044 (UI)
 - [ ] CLI `write` replaces a page's Markdown with a revision check; the server re-finds each mark and linked drawing by its quoted words; marks it can't place become loose ink, never deleted
 - [ ] the open page reloads an agent's change when you have no unsaved edits; loose ink shows in a tray on the page
+- [ ] an agent writing to a page you are typing in never traps or loses your typing (today a page conflicts like a mind map: every save 409s and switching notes is refused; F-040 review)
 ## F-046 Preview build for the captain [todo]
 Needs: F-040..F-045
 - [ ] runs as a local web server (`npm run dev`) for a first play
