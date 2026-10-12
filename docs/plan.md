@@ -351,10 +351,10 @@ Review (4239908): NEEDS WORK, fixed: dot marks kept; one-letter words found by t
 Needs: F-050
 - [x] the CLI reads and writes a canvas note's Markdown texts (`notes write`, `--object`; `append` adds Markdown text); marks and links re-find their words after an agent edit, never lost (a mark whose words are gone becomes ink beside the text)
 - [x] the open note merges an agent's change as it does today (object-level canvas merge, unchanged)
-## F-053 Preview build 2 [doing]
+## F-053 Preview build 2 [done]
 Needs: F-048..F-051 (F-052 if ready)
 - [x] the Page type leaves the New note menu (old page notes still open)
-- [ ] Mac and Linux packages as a GitHub pre-release
+- [x] Mac and Linux packages as a GitHub pre-release: v0.5.0-preview.2 https://github.com/abhisheksreesaila/personalnote/releases/tag/v0.5.0-preview.2
 ## F-054 Focus write mode [todo]
 Captain (2026-10-12, queued for the release after preview 2): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."
 - [ ] a Focus write mode: drawing and ink input off, the canvas chrome quiet, typing goes straight into Markdown text with nothing else in the way
