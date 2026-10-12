@@ -301,10 +301,10 @@ Brief: What it does, also in v1 · Needs: F-040 (backend), F-044 (UI)
 - [x] the open page reloads an agent's change when you have no unsaved edits; loose ink shows in a tray on the page
 - [x] an agent writing to a page you are typing in never traps or loses your typing (today a page conflicts like a mind map: every save 409s and switching notes is refused; F-040 review)
 Reviewed: PASS (9756c37).
-## F-046 Preview build for the captain [doing]
+## F-046 Preview build for the captain [done]
 Needs: F-040..F-045
-- [ ] runs as a local web server (`npm run dev`) for a first play
-- [ ] Mac and Linux packages published as a GitHub pre-release
+- [x] runs as a local web server (`npm run dev`) for a first play (skipped for the captain's first try at their request: straight to the Mac build)
+- [x] Mac and Linux packages published as a GitHub pre-release: v0.5.0-preview.1 https://github.com/abhisheksreesaila/personalnote/releases/tag/v0.5.0-preview.1
 ## F-047 Page follow-ups [todo]
 Found while building Milestone 1; none blocks using pages.
 - [ ] voice dictation into a page (the mic is hidden on pages today; it types into canvas notes)
