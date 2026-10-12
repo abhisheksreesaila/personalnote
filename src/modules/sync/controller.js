@@ -7,7 +7,7 @@ import { agentFlagFor, describeAgentPresence, planChangeSync } from './changes.j
 export function createAgentSyncController({ host, ui }) {
   async function syncActiveNote() {
     const active = host.getActive()
-    if (!active || active.noteType !== 'canvas') return
+    if (!active || (active.noteType !== 'canvas' && active.noteType !== 'page')) return
     const note = await host.api(`/notes/${active.id}`)
     const current = host.getActive()
     if (!current || current.id !== active.id || note.revision <= current.revision) return

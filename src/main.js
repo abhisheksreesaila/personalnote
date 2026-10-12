@@ -1331,6 +1331,8 @@ async function saveActiveNote({ unloading = false } = {}) {
     // The server holds what was just saved, in the frame it was saved in, whether or not a merge came meanwhile; the base moves on only when none did.
     if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && savedShift) leaferServerShift = savedShift
     if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && mergeCount === mergesBefore) { leaferBase = editedLeafer; if (savedShift) leaferBaseShift = savedShift }
+    // A page's base for merging an agent's change is what the server now holds, unless a merge moved it on meanwhile.
+    if (state.activeNoteType === 'page' && noteId === state.activeNoteId && mergeCount === mergesBefore) pageEditor?.markSaved(savedContent?.markdown)
     renderNoteList()
     setSaveState('Saved')
   } catch (error) {
@@ -1718,6 +1720,17 @@ async function refreshWorkspaceLists() {
 }
 
 async function applyRemoteNote(note) {
+  if (note.id === state.activeNoteId && state.activeNoteType === 'page' && pageEditor) {
+    // An agent changed the open page and nothing here is unsaved: show its version (ink placed by the server).
+    elements.title.value = note.title
+    pageEditor.setDocument(note.content)
+    mindmapSnapshot = JSON.stringify({ content: pageEditor.getDocument() })
+    const summary = state.notes.find((item) => item.id === note.id)
+    if (summary) Object.assign(summary, { title: note.title, revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
+    setSaveState('Saved')
+    renderNoteList()
+    return
+  }
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
   elements.title.value = note.title
   if (!(await showLeaferNote(note, { openView: false }))) return
@@ -1785,6 +1798,16 @@ async function mergeLeaferNote(note) {
 }
 const samePageGrid = (a, b) => a.columns === b.columns && a.rows === b.rows
 async function mergeRemoteNote(note) {
+  if (note.id === state.activeNoteId && state.activeNoteType === 'page' && pageEditor) {
+    // An agent changed the page while you were typing: its change is merged into your text, your edits stay, and the result is saved
+    // on the agent's revision.
+    const changed = pageEditor.mergeRemote(note.content)
+    const summary = state.notes.find((item) => item.id === note.id)
+    if (summary) Object.assign(summary, { revision: note.revision, resourceId: note.resourceId, updatedAt: note.updatedAt })
+    mergeCount += 1
+    queueSave()
+    return changed
+  }
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return 0
   return mergeLeaferNote(note)
 }

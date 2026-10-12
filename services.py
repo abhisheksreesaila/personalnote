@@ -14,7 +14,7 @@ from app_schema import initialize_schema
 from document_model import DocumentError, empty_document, from_fabric, plain_text
 from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
 from media_store import MediaStore, data_url_of
-from page_note import empty_page_document, normalize_page_document, page_document_of, page_text
+from page_note import empty_page_document, normalize_page_document, page_document_of, page_text, reanchor_ink
 
 logger = logging.getLogger(__name__)
 
@@ -803,6 +803,19 @@ class NoteService:
         characters_per_line = max(1, int(width / (APPEND_FONT_SIZE * 0.5)))
         lines = sum(max(1, -(-len(line) // characters_per_line)) for line in text.split("\n"))
         return lines * APPEND_FONT_SIZE * APPEND_LINE_HEIGHT + APPEND_PADDING * 2
+
+    def write_page(self, note_id: int, markdown: str, revision: int | None = None) -> dict:
+        """Replace a page note's Markdown (an agent's rewrite). Marks and linked drawings find their words again; none are dropped."""
+        if len(markdown) > APPEND_MAX_LENGTH * 10:
+            raise AppendTextError("Text is too long")
+        note = self.get_note(note_id)
+        if note["noteType"] != "page":
+            raise UnsupportedNoteTypeError("Only page notes can be rewritten as Markdown")
+        document = note["content"]
+        if markdown != document["markdown"]:
+            document = {**document, "markdown": markdown, "ink": reanchor_ink(document["ink"], markdown)}
+        expected = note["revision"] if revision is None else revision
+        return self.update_note(note_id, {"title": note["title"], "content": document, "revision": expected, "notebookId": note["notebookId"]})
 
     def append_text(self, note_id: int, text: str, revision: int | None = None) -> dict:
         """Add a text block below a canvas note's content, growing pages as needed.

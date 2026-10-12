@@ -4,19 +4,23 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 
+// PN_VERIFY_PORT moves both servers (UI on it, API on it + 1) so two runs can't collide.
+const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4830)
+const API_PORT = UI_PORT + 1
+const API = `http://127.0.0.1:${API_PORT}`
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'pn-verify-page-'))
 const python = fs.existsSync('.venv/bin/python') ? '.venv/bin/python' : 'python3'
-const api = spawn(python, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '4831'], {
+const api = spawn(python, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(API_PORT)], {
   env: { ...process.env, PERSONAL_NOTE_DB: path.join(scratch, 'verify.db') }, stdio: 'ignore',
 })
-const apiUp = async () => { for (let i = 0; i < 100; i++) { try { if ((await fetch('http://127.0.0.1:4831/api/notebooks')).ok) return } catch {} await new Promise((r) => setTimeout(r, 150)) } throw new Error('API did not start') }
-const server = await createServer({ server: { port: 4830, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4831' } }, logLevel: 'error' })
+const apiUp = async () => { for (let i = 0; i < 100; i++) { try { if ((await fetch(`${API}/api/notebooks`)).ok) return } catch {} await new Promise((r) => setTimeout(r, 150)) } throw new Error('API did not start') }
+const server = await createServer({ server: { port: UI_PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': API } }, logLevel: 'error' })
 let browser
 try {
   await apiUp()
@@ -25,7 +29,7 @@ try {
   const page = await (await browser.newContext({ viewport: { width: 1360, height: 900 } })).newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.goto('http://127.0.0.1:4830/notes')
+  await page.goto(`http://127.0.0.1:${UI_PORT}/notes`)
   await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
   const pn = (fn, arg) => page.evaluate(fn, arg)
 
@@ -37,18 +41,18 @@ try {
   await page.click('.page-host .cm-content')
   await page.keyboard.type('# Lisbon\n\nThe harbour walk at dusk.')
   await page.waitForTimeout(1500)
-  const stored = await (await fetch(`http://127.0.0.1:4831/api/notes/${pageId}`)).json()
+  const stored = await (await fetch(`${API}/api/notes/${pageId}`)).json()
   check('typing saves the Markdown', stored.content.markdown === '# Lisbon\n\nThe harbour walk at dusk.', JSON.stringify(stored.content.markdown))
   await page.reload()
   await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
   await pn((id) => window.__personalNote.selectNote(id), pageId)
   await page.waitForSelector('.page-host:not([hidden]) .cm-content')
   check('after a reload the page shows the same text', (await page.textContent('.page-host .cm-content')).includes('The harbour walk at dusk.'))
-  const hits = await (await fetch('http://127.0.0.1:4831/api/search?q=harbour')).json()
+  const hits = await (await fetch(`${API}/api/search?q=harbour`)).json()
   check('search finds the page', hits.some((hit) => hit.id === pageId))
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
   // F-042: marks on words
-  const stored2 = async () => (await (await fetch(`http://127.0.0.1:4831/api/notes/${pageId}`)).json()).content
+  const stored2 = async () => (await (await fetch(`${API}/api/notes/${pageId}`)).json()).content
   const wordBox = (word) => pn((w) => {
     const range = document.createRange()
     const walker = document.createTreeWalker(document.querySelector('.page-host .cm-content'), NodeFilter.SHOW_TEXT)
@@ -137,6 +141,16 @@ try {
   const d0 = ink.drawings[0]
   check('more strokes, a rectangle and a text object join the same drawing', ink.drawings.length === 1 && d0.strokes.length === 2 && d0.items.some((i) => i.kind === 'rect') && d0.items.some((i) => i.kind === 'text' && i.text === 'Big idea' && i.size === 'xl'), JSON.stringify(ink.drawings.map((d) => ({ s: d.strokes.length, i: d.items.map((x) => x.kind + ':' + (x.text ?? '')) }))))
   check('a new drawing is linked to no word', d0.link === null)
+  // an empty text object adds nothing at all
+  const drawingsBefore = (await stored2()).ink.drawings.length
+  await page.click('.page-toolbar [data-page-tool="text"]')
+  const blank = await pn(() => { const r = document.querySelector('.page-host .cm-content').getBoundingClientRect(); return { x: r.right - 40, y: Math.min(r.bottom + 40, window.innerHeight - 60) } })
+  await page.mouse.click(blank.x, blank.y)
+  await page.waitForSelector('.page-text-edit')
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(1300)
+  check('a text object left empty adds no drawing', (await stored2()).ink.drawings.length === drawingsBefore && await pn(() => document.querySelectorAll('.page-host .page-drawing').length) === drawingsBefore)
   // F-044: link to a word, fold behind it, slide out
   await freshBox()
   await page.hover('.page-host .page-drawing')
@@ -177,6 +191,26 @@ try {
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
   await page.waitForTimeout(300)
   check('deleting the link word deletes its drawing; undo brings both back', goneDrawing === null && (await drawingBox()) !== null, JSON.stringify(goneDrawing))
+  // F-045: an agent writes to the open page through the CLI
+  const agent = (...args) => spawnSync(python, ['personal_note_cli.py', '--database', path.join(scratch, 'verify.db'), 'notes', ...args], { encoding: 'utf8' })
+  await page.waitForTimeout(1500) // let the last save land
+  let run = agent('write', String(pageId), '--text', '# Lisbon\n\nA new opening line.\n\nThen The harbour walk at dusk.')
+  await page.waitForTimeout(3500) // the app polls for agent changes every two seconds
+  check('an agent rewrite shows in the open page', (await page.textContent('.page-host .cm-content')).includes('A new opening line.'), run.stderr)
+  check('marks on words that are still there follow them', await pn(() => document.querySelectorAll('.page-host g.page-mark').length) === 2 && await pn(() => !document.querySelector('.page-tray:not([hidden])')))
+  run = agent('write', String(pageId), '--text', '# Lisbon\n\nA new opening line.\n\nWe walked at dusk.')
+  await page.waitForTimeout(3500)
+  check('ink whose words the agent removed waits in the loose-ink tray', await pn(() => document.querySelectorAll('.page-tray .page-loose').length) === 2, run.stderr)
+  check('a drawing whose link word is gone is unlinked and shown, not hidden', await pn(() => { const d = document.querySelector('.page-host .page-drawing'); return Boolean(d && d.offsetHeight > 40 && !d.classList.contains('linked')) }))
+  // typing and an agent append at the same time: both survive
+  const end = await wordBox('dusk')
+  await page.mouse.click(end.x + end.w + 2, end.y + end.h / 2)
+  await page.keyboard.press('End')
+  await page.keyboard.type(' Typed here.')
+  run = agent('append', String(pageId), '--text', 'Agent paragraph.')
+  await page.waitForTimeout(4500)
+  const merged = await stored2()
+  check('an agent append while typing keeps both the typing and the agent text', merged.markdown.includes('Typed here.') && merged.markdown.includes('Agent paragraph.') && (await page.textContent('.page-host .cm-content')).includes('Agent paragraph.'), JSON.stringify(merged.markdown) + run.stderr)
   if (process.env.PN_SHOT) { await page.click('.page-toolbar [data-fold-all]'); await page.waitForTimeout(900); await pn(() => document.querySelector('.page-host .page-drawing')?.scrollIntoView({ block: 'center' })); await page.mouse.move(5, 5); await page.waitForTimeout(800); await page.screenshot({ path: process.env.PN_SHOT.replace('.png', '-drawing.png') }) }
   if (process.env.PN_SHOT) { await page.keyboard.type('\n\nSome **bold** words, a list:\n\n- one\n- two\n\n## A second heading\n\nMore text to see how a long paragraph wraps across the column of the page, roomy and calm.'); await page.waitForTimeout(400); await page.screenshot({ path: process.env.PN_SHOT }) }
   check('no errors on the page', errors.length === 0, errors.join(' | '))

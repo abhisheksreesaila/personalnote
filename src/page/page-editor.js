@@ -8,7 +8,8 @@ import { parser as markdownParser, GFM } from '@lezer/markdown'
 import { tags as t } from '@lezer/highlight'
 import { normalizePageDocument } from './document.js'
 import { installPageStyle } from './page-style.js'
-import { inkState, readInk, setMarks, setDrawings } from './ink-state.js'
+import { mergeText } from './merge.js'
+import { inkState, readInk, setMarks, setDrawings, agentEdit } from './ink-state.js'
 import { isInkTransaction, mountInkLayer } from './ink.js'
 
 // Markdown with GitHub's tables, task lists and strike-through. Built from the Lezer parser directly: @codemirror/lang-markdown would
@@ -58,6 +59,7 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
   const paper = host.querySelector('.page-paper')
   const sheets = host.querySelector('.page-sheets')
   let silent = false
+  let base = initial.markdown // what the server holds: the common ancestor when an agent's change meets unsaved typing
 
   const view = new EditorView({
     parent: host.querySelector('.page-editor'),
@@ -115,7 +117,19 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
           effects: [setMarks.of(next.ink.marks), setDrawings.of(next.ink.drawings)],
           annotations: Transaction.addToHistory.of(false),
         })
+        base = next.markdown
       } finally { silent = false }
+    },
+    // The server now holds `markdown` (a save landed).
+    markSaved(markdown) { if (typeof markdown === 'string') base = markdown },
+    // An agent's change arriving while there are unsaved edits: both survive. The agent's change (relative to what the server held)
+    // is mapped over the local edits and applied; marks whose words it rewrote look for them again. Returns 0 when it changed nothing.
+    mergeRemote(documentValue) {
+      const next = normalizePageDocument(documentValue)
+      if (next.markdown === base) return 0
+      view.dispatch({ changes: mergeText(base, view.state.doc.toString(), next.markdown), annotations: [agentEdit.of(true), Transaction.addToHistory.of(false)] })
+      base = next.markdown
+      return 1
     },
     setTitle() {},
     // The dock's and the menu's Undo/Redo: one history for text and ink.

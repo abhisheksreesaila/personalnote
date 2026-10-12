@@ -291,7 +291,7 @@ Brief: What it does 3 · Needs: F-043
 - [ ] "Link to text" then a click on a word links a drawing; it moves under that paragraph; the word turns into a teal link
 - [ ] clicking the word folds/unfolds the drawing with a smooth ~0.6 s slide; text and marks below glide; Fold all / Unfold all
 - [ ] a linked drawing is deleted with its word (undo restores both); fold state is saved with the note
-## F-045 Agents and pages [todo]
+## F-045 Agents and pages [review]
 Brief: What it does, also in v1 · Needs: F-040 (backend), F-044 (UI)
 - [ ] CLI `write` replaces a page's Markdown with a revision check; the server re-finds each mark and linked drawing by its quoted words; marks it can't place become loose ink, never deleted
 - [ ] the open page reloads an agent's change when you have no unsaved edits; loose ink shows in a tray on the page

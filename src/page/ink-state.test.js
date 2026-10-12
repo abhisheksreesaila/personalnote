@@ -215,3 +215,37 @@ test('only a linked drawing can fold', () => {
   page.update({ effects: foldDrawing.of({ ids: ['d1'], folded: true }) })
   assert.equal(drawings(page)[0].folded, false)
 })
+
+test('backspacing into a link word and undoing gives the link its whole word back', () => {
+  const page = editor('See the sketch here\n\nNext')
+  page.update({ effects: addDrawing.of({ ...drawingBefore(page.state, 'Next'), link: linkTo(page.state, 'sketch') }) })
+  const h = page.state.doc.toString().indexOf('h here')
+  page.update({ changes: { from: h, to: h + 1 }, userEvent: 'delete.backward' })
+  undo(page)
+  const { link } = drawings(page)[0]
+  assert.equal(page.state.doc.sliceString(link.pos, link.end), 'sketch')
+})
+
+test('undo never flips a fold: undoing a stroke keeps the drawing folded as it is now', () => {
+  const page = editor('See the sketch\n\nNext')
+  page.update({ effects: addDrawing.of({ ...drawingBefore(page.state, 'Next'), link: linkTo(page.state, 'sketch') }) })
+  page.update({ effects: updateDrawing.of({ id: 'd1', strokes: [...drawings(page)[0].strokes, { id: 's2', tool: 'red', points: [[0, 0], [5, 5]], dx: 1, dy: 1 }] }) })
+  page.update({ effects: foldDrawing.of({ ids: ['d1'], folded: true }), annotations: Transaction.addToHistory.of(false) })
+  undo(page)
+  assert.equal(drawings(page)[0].strokes.length, 1)
+  assert.equal(drawings(page)[0].folded, true)
+})
+
+test('after an agent rewrite a linked drawing follows its word, or is unlinked and unfolded when the word is gone', () => {
+  const page = editor('Intro\n\nSee the sketch here\n\nTail')
+  page.update({ effects: addDrawing.of({ ...drawingBefore(page.state, 'Tail'), link: linkTo(page.state, 'sketch'), folded: true }) })
+  page.update({ changes: { from: 0, to: page.state.doc.length, insert: 'Tail first\n\nThe sketch moved\n\nEnd' }, annotations: agentEdit.of(true) })
+  let [drawing] = drawings(page)
+  assert.equal(page.state.doc.sliceString(drawing.link.pos, drawing.link.end), 'sketch')
+  assert.equal(page.state.doc.lineAt(drawing.pos).text, '')
+  assert.equal(drawing.folded, true)
+  page.update({ changes: { from: 0, to: page.state.doc.length, insert: 'Nothing about it now' }, annotations: agentEdit.of(true) })
+  ;[drawing] = drawings(page)
+  assert.equal(drawing.link, null)
+  assert.equal(drawing.folded, false)
+})

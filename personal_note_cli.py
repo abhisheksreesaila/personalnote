@@ -129,6 +129,13 @@ def build_parser() -> argparse.ArgumentParser:
     append_note.add_argument("--text", help="Text to append; omit or use - to read standard input")
     append_note.add_argument("--revision", type=int, help="Fail if the note is no longer at this revision")
     append_note.set_defaults(handler=command_notes_append)
+    write_note = note_commands.add_parser(
+        "write", help="Replace a page note's Markdown; its ink finds its words again (marks it can't place are kept as loose ink)", parents=[agent_option]
+    )
+    write_note.add_argument("note_id", type=int)
+    write_note.add_argument("--text", help="The new Markdown; omit or use - to read standard input")
+    write_note.add_argument("--revision", type=int, help="Fail if the note is no longer at this revision")
+    write_note.set_defaults(handler=command_notes_write)
     create_note = note_commands.add_parser("create", help="Create a canvas, mind-map or page note", parents=[agent_option])
     create_note.add_argument("--title", required=True)
     create_note.add_argument("--notebook-id", type=int)
@@ -233,6 +240,13 @@ def command_notes_read(service: NoteService, args: argparse.Namespace) -> dict |
 def command_notes_append(service: NoteService, args: argparse.Namespace) -> dict:
     text = args.text if args.text not in (None, "-") else read_stdin_text()
     result = service.append_text(args.note_id, text, revision=args.revision)
+    service.record_agent_activity(args.agent, args.note_id, "writing")
+    return result
+
+
+def command_notes_write(service: NoteService, args: argparse.Namespace) -> dict:
+    text = args.text if args.text not in (None, "-") else read_stdin_text()
+    result = service.write_page(args.note_id, text, revision=args.revision)
     service.record_agent_activity(args.agent, args.note_id, "writing")
     return result
 

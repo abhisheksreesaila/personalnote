@@ -9,13 +9,13 @@ import { EditorSelection, StateEffect } from '@codemirror/state'
 import { ViewPlugin } from '@codemirror/view'
 import { isolateHistory, undo, redo } from '@codemirror/commands'
 import { Transaction } from '@codemirror/state'
-import { addDrawing, addMark, eraseInk, drawingField, foldDrawing, markField, quoteAt, setDrawings, setMarks, updateDrawing } from './ink-state.js'
+import { addDrawing, addMark, eraseInk, drawingField, foldDrawing, markField, quoteAt, restoreDrawings, setDrawings, setMarks, updateDrawing } from './ink-state.js'
 import { drawingDecorations, placementAt } from './drawings.js'
 import { INK_COLOR, SVG, TEXT_SIZES, TOOLS, bounds, pathOf, round, shapeElement, strokeElement } from './strokes.js'
 
 export { TOOLS, pathOf, strokeElement }
 
-const INK_EFFECTS = [addMark, eraseInk, setMarks, addDrawing, updateDrawing, setDrawings, foldDrawing]
+const INK_EFFECTS = [addMark, eraseInk, setMarks, addDrawing, updateDrawing, setDrawings, restoreDrawings, foldDrawing]
 export const isInkTransaction = (tr) => tr.effects.some((effect) => INK_EFFECTS.some((type) => effect.is(type)))
 
 const DRAWING_PADDING = 20
@@ -51,6 +51,11 @@ export function mountInkLayer({ view, host, paper, desk }) {
   art.setAttribute('class', 'page-ink')
   art.setAttribute('aria-hidden', 'true')
   paper.append(art)
+  // Loose ink: marks whose words an agent's rewrite removed. Kept here, never dropped silently; × discards one (undoable).
+  const tray = document.createElement('div')
+  tray.className = 'page-tray'
+  tray.hidden = true
+  paper.append(tray)
 
   let tool = 'pen'
   let textSize = 'l'
@@ -91,6 +96,25 @@ export function mountInkLayer({ view, host, paper, desk }) {
     write: (items) => {
       art.querySelectorAll('g.page-mark').forEach((node) => node.remove())
       placed.clear()
+      const loose = view.state.field(markField).filter((mark) => mark.loose)
+      tray.hidden = !loose.length
+      tray.replaceChildren(...(loose.length ? [Object.assign(document.createElement('p'), { textContent: 'Loose ink' })] : []), ...loose.map((mark) => {
+        const card = document.createElement('div')
+        card.className = 'page-loose'
+        const { minX, minY, maxX, maxY } = bounds(mark.points)
+        const picture = document.createElementNS(SVG, 'svg')
+        picture.setAttribute('viewBox', `${minX - 4} ${minY - 4} ${maxX - minX + 8} ${maxY - minY + 8}`)
+        picture.append(strokeElement(mark.tool, mark.points))
+        const label = document.createElement('span')
+        label.textContent = `was on “${mark.anchor?.quote?.exact?.trim() ?? ''}”`
+        const discard = document.createElement('button')
+        discard.type = 'button'
+        discard.dataset.discardLoose = mark.id
+        discard.setAttribute('aria-label', 'Discard this loose ink')
+        discard.textContent = '×'
+        card.append(picture, label, discard)
+        return card
+      }))
       let lowest = 0
       for (const { mark, origin } of items) {
         if (!origin) continue
@@ -350,12 +374,11 @@ export function mountInkLayer({ view, host, paper, desk }) {
   }
 
   // ---------- text objects (word art) ----------
+  // A new text object is only an editor until it has words: committing empty text adds nothing (no blank drawing, no undo step).
   function startText(point, inside) {
+    commitText()
     const size = TEXT_SIZES[textSize]
-    const box = { minX: point[0], minY: point[1] - size * 0.2, maxX: point[0] + size * 4, maxY: point[1] + size * 1.4 }
-    const id = newId('t')
-    const drawingId = addToDrawing('item', { id, kind: 'text', x: point[0], y: point[1] - size * 0.2, text: '', size: textSize, color: INK_COLOR }, box, inside)
-    requestAnimationFrame(() => editText(drawingId, id))
+    openTextEditor({ x: point[0], y: point[1] - size * 0.2, size: `${size}px`, color: INK_COLOR, text: '' }, { create: { point, inside, size: textSize } })
   }
   function editText(drawingId, itemId) {
     commitText()
@@ -364,12 +387,15 @@ export function mountInkLayer({ view, host, paper, desk }) {
     const item = drawingById(drawingId)?.items?.find((entry) => entry.id === itemId)
     if (!target || !item) return
     const origin = drawingOrigin(element)
+    target.style.visibility = 'hidden'
+    openTextEditor({ x: origin.x + item.x, y: origin.y + item.y, size: target.style.fontSize, color: target.style.color, text: item.text }, { drawingId, itemId, target })
+  }
+  function openTextEditor(at, job) {
     const field = document.createElement('textarea')
     field.className = 'page-text-edit'
-    field.value = item.text
+    field.value = at.text
     field.setAttribute('aria-label', 'Text object')
-    Object.assign(field.style, { left: `${origin.x + item.x}px`, top: `${origin.y + item.y}px`, fontSize: target.style.fontSize, color: target.style.color })
-    target.style.visibility = 'hidden'
+    Object.assign(field.style, { left: `${at.x}px`, top: `${at.y}px`, fontSize: at.size, color: at.color })
     paper.append(field)
     const fit = () => { field.style.width = '1px'; field.style.height = '1px'; field.style.width = `${Math.max(60, field.scrollWidth + 8)}px`; field.style.height = `${field.scrollHeight}px` }
     field.addEventListener('input', fit)
@@ -377,17 +403,27 @@ export function mountInkLayer({ view, host, paper, desk }) {
       if (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey)) { event.preventDefault(); event.stopPropagation(); commitText() }
     })
     field.addEventListener('blur', () => commitText())
-    editingText = { field, drawingId, itemId, target }
+    editingText = { field, ...job }
     fit()
     field.focus()
   }
   function commitText() {
     if (!editingText) return
-    const { field, drawingId, itemId, target } = editingText
+    const { field, drawingId, itemId, target, create } = editingText
     editingText = null
     const hadFocus = document.activeElement === field
+    const typed = { width: field.offsetWidth, height: field.offsetHeight }
     field.remove()
     if (hadFocus) host.focus({ preventScroll: true }) // Esc and Undo keep working after the text is done
+    if (create) {
+      const text = field.value.replace(/\s+$/, '')
+      if (!text) return
+      const size = TEXT_SIZES[create.size]
+      const [x, y] = [create.point[0], create.point[1] - size * 0.2]
+      const box = { minX: x, minY: y, maxX: x + Math.max(typed.width, size * 2), maxY: y + Math.max(typed.height, size * 1.2) }
+      addToDrawing('item', { kind: 'text', x, y, text, size: create.size, color: INK_COLOR }, box, create.inside)
+      return
+    }
     target.style.visibility = ''
     const entry = drawingById(drawingId)
     if (!entry) return
@@ -399,7 +435,7 @@ export function mountInkLayer({ view, host, paper, desk }) {
   }
   function removeItem(entry, itemId) {
     const rest = [...(entry.strokes ?? []), ...(entry.items ?? []).filter((each) => each.id !== itemId)]
-    view.dispatch({ effects: eraseInk.of({ strokes: [{ drawing: entry.id, id: itemId }], drawings: rest.length ? [] : [entry.id] }) })
+    view.dispatch({ effects: eraseInk.of({ strokes: [{ drawing: entry.id, id: itemId }], drawings: rest.length ? [] : [entry.id] }), annotations: isolateHistory.of('full') })
   }
 
   // ---------- link and fold (F-044) ----------
@@ -445,6 +481,8 @@ export function mountInkLayer({ view, host, paper, desk }) {
       else setLinking(entry.id)
       return
     }
+    const discard = event.target.closest?.('[data-discard-loose]')
+    if (discard) { view.dispatch({ effects: eraseInk.of({ marks: [discard.dataset.discardLoose] }), annotations: isolateHistory.of('full') }); return }
     const foldButton = event.target.closest?.('[data-drawing-fold]')
     if (foldButton) { event.preventDefault(); fold([foldButton.dataset.drawingFold], true); return }
     const word = event.target.closest?.('.page-link-word')
@@ -507,6 +545,7 @@ export function mountInkLayer({ view, host, paper, desk }) {
       commitText()
       for (const off of listeners) off()
       art.remove()
+      tray.remove()
       toolbar.remove()
     },
   }
