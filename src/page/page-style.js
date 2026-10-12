@@ -33,8 +33,8 @@ const CSS = `
 .page-sheet-mark[hidden] { display: none; }
 .page-ink { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; overflow: visible; }
 .page-draw-cursor, .page-draw-cursor * { cursor: crosshair !important; }
-.page-drawing .page-paper, .page-drawing .page-paper * { cursor: crosshair !important; }
-.page-drawing .page-desk { box-shadow: inset 0 0 0 3px var(--page-accent); }
+.page-drawing-mode .page-paper, .page-drawing-mode .page-paper * { cursor: crosshair !important; }
+.page-drawing-mode .page-desk { box-shadow: inset 0 0 0 3px var(--page-accent); }
 .page-toolbar {
   position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; width: max-content;
   max-width: 100%; margin: -16px auto 14px; padding: 6px 8px; border: 1px solid var(--page-line); border-radius: 12px;
@@ -55,7 +55,54 @@ const CSS = `
   display: none; position: sticky; top: 52px; z-index: 5; width: max-content; max-width: 100%; margin: -8px auto 8px; padding: 6px 14px;
   border-radius: 99px; color: var(--page-paper); background: var(--page-ink); font: 12.5px var(--page-ui);
 }
-.page-drawing .page-draw-hint { display: block; }
+.page-drawing-mode .page-draw-hint { display: block; }
+.page-link-hint {
+  display: none; position: sticky; top: 52px; z-index: 5; width: max-content; max-width: 100%; margin: -8px auto 8px; padding: 6px 14px;
+  border-radius: 99px; color: #fff; background: var(--page-agent); font: 12.5px var(--page-ui);
+}
+.page-linking .page-link-hint { display: block; }
+.page-linking .page-paper, .page-linking .page-paper * { cursor: alias !important; }
+.page-text-sizes { display: inline-flex; gap: 4px; }
+.page-text-sizes[hidden] { display: none; }
+/* drawings (F-043) and folding (F-044) */
+.page-drawing {
+  position: relative; margin: 6px 0; border: 1.5px dashed transparent; border-radius: 8px;
+  transition: height .62s cubic-bezier(.22, 1, .36, 1), margin .62s cubic-bezier(.22, 1, .36, 1), border-color .3s, background-color .4s;
+}
+.page-drawing:hover { border-color: #d8cfbe; }
+.page-drawing-art { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;
+  transition: opacity .45s ease .12s, transform .62s cubic-bezier(.22, 1, .36, 1), filter .45s ease; }
+.page-drawing-items { position: absolute; inset: 0; transition: opacity .45s ease .12s, transform .62s cubic-bezier(.22, 1, .36, 1), filter .45s ease; }
+.page-text-object { position: absolute; white-space: pre; font-family: var(--page-display); font-weight: 700; line-height: 1.1; cursor: text; }
+.page-text-edit {
+  position: absolute; z-index: 4; margin: 0; padding: 0; border: 0; outline: 1.5px dashed var(--page-accent); outline-offset: 4px; resize: none;
+  overflow: hidden; background: transparent; font-family: var(--page-display); font-weight: 700; line-height: 1.1; white-space: pre;
+}
+.page-drawing-tag {
+  position: absolute; right: 8px; bottom: 6px; display: flex; gap: 6px; align-items: center; opacity: 0; transition: opacity .2s;
+  font: 11px var(--page-ui); color: #a39a88;
+}
+.page-drawing:hover .page-drawing-tag, .page-drawing:focus-within .page-drawing-tag { opacity: 1; }
+.page-drawing-tag button {
+  font: 600 11px var(--page-ui); padding: 3px 8px; border-radius: 99px; border: 1px solid var(--page-line); background: var(--page-paper);
+  color: var(--page-ink); cursor: pointer;
+}
+.page-drawing.linked { border-style: solid; border-color: #bfe3df; background-color: #f4fbfa; }
+.page-drawing.linked .page-drawing-tag { color: var(--page-link); }
+.page-drawing.folded { height: 0 !important; margin: 0; border-width: 0; overflow: hidden; }
+.page-drawing.folded .page-drawing-art, .page-drawing.folded .page-drawing-items { opacity: 0; transform: translateY(-18px) scale(.97); filter: blur(3px); }
+.page-drawing.folded .page-drawing-tag { opacity: 0; }
+.page-link-word {
+  color: var(--page-link); background: rgba(11, 122, 117, .08); border-radius: 4px; padding: 0 2px; cursor: pointer;
+  box-shadow: inset 0 -2px 0 rgba(11, 122, 117, .45); transition: background .25s;
+}
+.page-link-word:hover { background: rgba(11, 122, 117, .16); }
+.page-link-word::after {
+  content: "\\25B8"; display: inline-block; font-size: .62em; margin-left: 3px; vertical-align: .18em; transition: transform .4s cubic-bezier(.22, 1, .36, 1);
+}
+.page-link-word.open { background: rgba(11, 122, 117, .14); }
+.page-link-word.open::after { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .page-drawing, .page-drawing-art, .page-drawing-items, .page-link-word::after { transition: none; } }
 @media (max-width: 900px) {
   .app-shell .page-host { inset: 0; border: 0; border-radius: 0; }
   .page-desk { padding: 0 0 96px; }

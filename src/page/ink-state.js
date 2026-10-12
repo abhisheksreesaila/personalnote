@@ -42,8 +42,11 @@ export function findQuote(text, quote) {
 // ---------- marks ----------
 // A mark is anchored to its whole word, [pos, end): it lives while any of the word is left and goes when all of it is deleted.
 const wordEnd = (anchor) => anchor.end ?? anchor.pos + (anchor.quote?.exact?.length ?? 0)
+// Positions are clamped to the document the change applies to: undo history can map ink saved against a longer document.
 function mapAnchor(anchor, changes) {
-  const end = wordEnd(anchor)
+  const size = changes.length
+  if (anchor.pos > size) anchor = { ...anchor, pos: size, end: size }
+  const end = Math.min(wordEnd(anchor), size)
   if (end <= anchor.pos) {
     const pos = changes.mapPos(anchor.pos, 1, MapMode.TrackDel)
     return pos == null ? null : { ...anchor, pos, end: pos }
@@ -52,7 +55,7 @@ function mapAnchor(anchor, changes) {
   const to = changes.mapPos(end, -1)
   return to > pos ? { ...anchor, pos, end: to } : null
 }
-const mapMark = (mark, mapping) => (mark.anchor?.pos == null ? mark : { ...mark, anchor: mapAnchor(mark.anchor, mapping) ?? { ...mark.anchor, pos: mapping.mapPos(mark.anchor.pos, 1) } })
+const mapMark = (mark, mapping) => (mark.anchor?.pos == null ? mark : { ...mark, anchor: mapAnchor(mark.anchor, mapping) ?? { ...mark.anchor, pos: mapping.mapPos(Math.min(mark.anchor.pos, mapping.length), 1) } })
 export const addMark = StateEffect.define({ map: mapMark })
 export const setMarks = StateEffect.define({ map: (list, mapping) => list.map((mark) => mapMark(mark, mapping)) })
 // { marks: [ids], drawings: [ids], strokes: [{ drawing, id }] }: what the eraser touched.
@@ -92,14 +95,17 @@ export const markField = StateField.define({
 })
 
 // ---------- drawings (F-043) ----------
+const mapLink = (link, mapping) => (link?.pos != null ? mapAnchor(link, mapping) ?? { ...link, pos: mapping.mapPos(Math.min(link.pos, mapping.length), 1) } : link)
 const mapDrawing = (drawing, mapping) => ({
   ...drawing,
-  pos: mapping.mapPos(drawing.pos, -1),
-  ...(drawing.link?.pos != null ? { link: { ...drawing.link, pos: mapping.mapPos(drawing.link.pos, 1) } } : {}),
+  pos: mapping.mapPos(Math.min(drawing.pos, mapping.length), -1),
+  ...(drawing.link ? { link: mapLink(drawing.link, mapping) } : {}),
 })
 export const addDrawing = StateEffect.define({ map: mapDrawing })
 // { id, ...fields }: changes some fields of one drawing (its height, link, fold, strokes, items).
-export const updateDrawing = StateEffect.define({ map: (value, mapping) => ({ ...value, ...(value.pos != null ? { pos: mapping.mapPos(value.pos, -1) } : {}), ...(value.link?.pos != null ? { link: { ...value.link, pos: mapping.mapPos(value.link.pos, 1) } } : {}) }) })
+export const updateDrawing = StateEffect.define({ map: (value, mapping) => ({ ...value, ...(value.pos != null ? { pos: mapping.mapPos(value.pos, -1) } : {}), ...(value.link ? { link: mapLink(value.link, mapping) } : {}) }) })
+// Folding or unfolding a linked drawing: saved with the note, but not an edit Undo steps through.
+export const foldDrawing = StateEffect.define()
 export const setDrawings = StateEffect.define({ map: (list, mapping) => list.map((drawing) => mapDrawing(drawing, mapping)) })
 
 // Where a block goes after an agent's rewrite: under the line holding `at`.
@@ -109,7 +115,7 @@ function underLine(doc, at) {
 }
 
 function drawingLost(drawing, changes) {
-  return drawing.link?.pos != null && changes.mapPos(drawing.link.pos, 1, MapMode.TrackDel) == null
+  return drawing.link?.pos != null && mapAnchor(drawing.link, changes) == null
 }
 
 export const drawingField = StateField.define({
@@ -120,15 +126,16 @@ export const drawingField = StateField.define({
       const text = agent ? tr.newDoc.toString() : ''
       drawings = drawings.flatMap((drawing) => {
         if (drawing.link?.pos != null) {
-          const linkPos = tr.changes.mapPos(drawing.link.pos, 1, MapMode.TrackDel)
-          if (linkPos == null) {
+          const link = mapAnchor(drawing.link, tr.changes)
+          if (link == null) {
             if (!agent) return [] // linked: it goes when its word goes (undo brings both back)
             const found = findQuote(text, drawing.link.quote)
-            if (found == null) return [{ ...drawing, link: { ...drawing.link, pos: null }, loose: true, ...underLine(tr.newDoc, tr.newDoc.length) }]
-            return [{ ...drawing, link: { ...drawing.link, pos: found }, ...underLine(tr.newDoc, found) }]
+            // Its word is gone from the agent's text: the drawing stays, unfolded and unlinked, at the end, so nothing is hidden or lost.
+            if (found == null) return [{ ...drawing, link: null, folded: false, ...underLine(tr.newDoc, tr.newDoc.length) }]
+            return [{ ...drawing, link: { ...drawing.link, pos: found, end: found + drawing.link.quote.exact.length }, ...underLine(tr.newDoc, found) }]
           }
-          drawing = { ...drawing, link: { ...drawing.link, pos: linkPos } }
-          if (agent) return [{ ...drawing, ...underLine(tr.newDoc, linkPos) }]
+          drawing = { ...drawing, link }
+          if (agent) return [{ ...drawing, ...underLine(tr.newDoc, link.pos) }]
         } else if (agent && drawing.quote) {
           const found = findQuote(text, drawing.quote)
           if (found != null) return [{ ...drawing, ...underLine(tr.newDoc, found) }]
@@ -140,6 +147,7 @@ export const drawingField = StateField.define({
       if (effect.is(addDrawing)) drawings = [...drawings, effect.value]
       else if (effect.is(updateDrawing)) drawings = drawings.map((drawing) => (drawing.id === effect.value.id ? { ...drawing, ...effect.value } : drawing))
       else if (effect.is(setDrawings)) drawings = effect.value
+      else if (effect.is(foldDrawing)) drawings = drawings.map((drawing) => (effect.value.ids.includes(drawing.id) && drawing.link ? { ...drawing, folded: effect.value.folded } : drawing))
       else if (effect.is(eraseInk)) {
         const { drawings: gone = [], strokes = [] } = effect.value
         drawings = drawings.filter((drawing) => !gone.includes(drawing.id)).map((drawing) => {
@@ -162,7 +170,9 @@ const inkHistory = invertedEffects.of((tr) => {
   const drawingEffect = tr.effects.some((e) => e.is(addDrawing) || e.is(updateDrawing) || e.is(setDrawings) || e.is(eraseInk))
   const agent = Boolean(tr.annotation(agentEdit))
   const before = tr.startState.field(markField, false) ?? []
-  if (inkEffect || agent || (tr.docChanged && before.some((mark) => markLost(mark, tr.changes)))) inverted.push(setMarks.of(before))
+  // A change inside a mark's word (a backspace) also stores the marks, so undo gives back the whole word's range, not a shrunk one.
+  const touched = tr.docChanged && before.some((mark) => mark.anchor?.pos != null && (markLost(mark, tr.changes) || tr.changes.touchesRange(mark.anchor.pos, wordEnd(mark.anchor))))
+  if (inkEffect || agent || touched) inverted.push(setMarks.of(before))
   const drawingsBefore = tr.startState.field(drawingField, false) ?? []
   if (drawingEffect || agent || (tr.docChanged && drawingsBefore.some((drawing) => drawingLost(drawing, tr.changes)))) inverted.push(setDrawings.of(drawingsBefore))
   return inverted

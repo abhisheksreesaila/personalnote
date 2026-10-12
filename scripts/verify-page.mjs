@@ -50,7 +50,6 @@ try {
   // F-042: marks on words
   const stored2 = async () => (await (await fetch(`http://127.0.0.1:4831/api/notes/${pageId}`)).json()).content
   const wordBox = (word) => pn((w) => {
-    const view = document.querySelector('.page-host .cm-content').cmView?.view ?? null
     const range = document.createRange()
     const walker = document.createTreeWalker(document.querySelector('.page-host .cm-content'), NodeFilter.SHOW_TEXT)
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -75,7 +74,6 @@ try {
   check('a circle drawn with Alt over a word becomes a mark anchored to that word', ink.marks.length === 1 && ink.marks[0].anchor.quote.exact === 'harbour', JSON.stringify(ink.marks.map((m) => m.anchor?.quote?.exact)))
   const before = await pn(() => document.querySelector('.page-host g.page-mark').getBoundingClientRect().left)
   await page.click('.page-host .cm-content')
-  await pn(() => { const v = window.__pageView; return !!v })
   const lineStart = await wordBox('The harbour')
   await page.mouse.click(lineStart.x + 1, lineStart.y + lineStart.h / 2)
   await page.keyboard.press('Home')
@@ -92,9 +90,9 @@ try {
   check('a stroke in the margin in Write mode is a margin mark', ink.marks.length === 2 && ink.marks[1].margin === true, JSON.stringify(ink.marks.map((m) => m.margin)))
   // the pen tool switches to Draw; Esc goes back to Write
   await page.click('.page-toolbar [data-page-tool="red"]')
-  const drawingMode = await pn(() => document.querySelector('.page-host').classList.contains('page-drawing'))
+  const drawingMode = await pn(() => document.querySelector('.page-host').classList.contains('page-drawing-mode'))
   await page.keyboard.press('Escape')
-  const writing = await pn(() => !document.querySelector('.page-host').classList.contains('page-drawing'))
+  const writing = await pn(() => !document.querySelector('.page-host').classList.contains('page-drawing-mode'))
   check('picking a pen switches to Draw and Esc returns to Write', drawingMode && writing)
   // deleting the line deletes its marks; undo brings both back
   const count = () => pn(() => document.querySelectorAll('.page-host g.page-mark').length)
@@ -113,6 +111,73 @@ try {
   await page.waitForSelector('.page-host:not([hidden]) .cm-content')
   await page.waitForTimeout(500)
   check('marks come back after a reload', await count() === 2, String(await count()))
+  // F-043: drawings on empty space, shapes, text objects
+  const content = await pn(() => { const r = document.querySelector('.page-host .cm-content').getBoundingClientRect(); return { x: r.left, y: r.bottom, w: r.width } })
+  await drag([[content.x + 60, content.y + 80], [content.x + 120, content.y + 120], [content.x + 200, content.y + 100]])
+  await page.waitForTimeout(400)
+  const drawingBox = () => pn(() => { const d = document.querySelector('.page-host .page-drawing'); if (!d) return null; const r = d.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height } })
+  // Drawing near the bottom edge scrolls the page: bring the drawing to the middle and measure it again before each step.
+  const freshBox = async () => { await pn(() => document.querySelector('.page-host .page-drawing')?.scrollIntoView({ block: 'center' })); await page.waitForTimeout(100); return drawingBox() }
+  let box = await freshBox()
+  check('a stroke below the text becomes a drawing of its own', Boolean(box && box.h > 40), JSON.stringify(box))
+  await drag([[box.x + 250, box.y + 20], [box.x + 300, box.y + 40], [box.x + 340, box.y + 30]])
+  await page.click('.page-toolbar [data-page-tool="rect"]')
+  box = await freshBox()
+  await drag([[box.x + 380, box.y + 10], [box.x + 440, box.y + 50], [box.x + 470, box.y + 60]])
+  await page.click('.page-toolbar [data-page-tool="text"]')
+  await page.click('.page-toolbar [data-text-size="xl"]')
+  box = await freshBox()
+  await page.mouse.click(box.x + 40, box.y + 50)
+  await page.waitForSelector('.page-text-edit')
+  await page.keyboard.type('Big idea')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(1400)
+  ink = (await stored2()).ink
+  const d0 = ink.drawings[0]
+  check('more strokes, a rectangle and a text object join the same drawing', ink.drawings.length === 1 && d0.strokes.length === 2 && d0.items.some((i) => i.kind === 'rect') && d0.items.some((i) => i.kind === 'text' && i.text === 'Big idea' && i.size === 'xl'), JSON.stringify(ink.drawings.map((d) => ({ s: d.strokes.length, i: d.items.map((x) => x.kind + ':' + (x.text ?? '')) }))))
+  check('a new drawing is linked to no word', d0.link === null)
+  // F-044: link to a word, fold behind it, slide out
+  await freshBox()
+  await page.hover('.page-host .page-drawing')
+  await page.click('.page-host .page-drawing [data-drawing-link]')
+  harbour = await wordBox('harbour')
+  await page.mouse.click(harbour.x + 5, harbour.y + harbour.h / 2)
+  await page.waitForTimeout(900)
+  ink = (await stored2()).ink
+  check('Link to text then a click on a word links the drawing to that word', ink.drawings[0].link?.quote?.exact === 'harbour', JSON.stringify(ink.drawings[0].link))
+  check('the linked word turns into a link', await pn(() => document.querySelector('.page-host .page-link-word')?.textContent) === 'harbour')
+  await page.keyboard.press('Escape')
+  check('Esc after finishing a text object goes back to Write', await pn(() => !document.querySelector('.page-host').classList.contains('page-drawing-mode')))
+  const heights = []
+  await page.click('.page-host .page-link-word')
+  for (let i = 0; i < 6; i++) { heights.push(Math.round((await drawingBox()).h)); await page.waitForTimeout(90) }
+  await page.waitForTimeout(500)
+  heights.push(Math.round((await drawingBox()).h))
+  check('clicking the word folds the drawing smoothly (height glides to 0)', heights[heights.length - 1] === 0 && heights.some((h) => h > 0 && h < heights[0]), heights.join(' '))
+  await page.click('.page-host .page-link-word')
+  await page.waitForTimeout(800)
+  check('clicking it again slides the drawing back out', (await drawingBox()).h > 40)
+  await page.click('.page-toolbar [data-fold-all]')
+  await page.waitForTimeout(800)
+  check('Fold all folds every linked drawing', (await drawingBox()).h === 0 && await pn(() => document.querySelector('[data-fold-all]').textContent) === 'Unfold all drawings')
+  await page.waitForTimeout(1300)
+  check('the fold is saved with the note', (await stored2()).ink.drawings[0].folded === true)
+  await page.reload()
+  await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+  await pn((id) => window.__personalNote.selectNote(id), pageId)
+  await page.waitForSelector('.page-host:not([hidden]) .page-link-word')
+  check('after a reload the drawing is still folded behind its word', (await drawingBox()).h === 0)
+  harbour = await wordBox('harbour')
+  await page.mouse.click(harbour.x + harbour.w + 40, harbour.y + harbour.h / 2)
+  await page.keyboard.press('Home'); await page.keyboard.down('Shift'); await page.keyboard.press('End'); await page.keyboard.up('Shift')
+  await page.keyboard.press('Backspace')
+  await page.waitForTimeout(300)
+  const goneDrawing = await drawingBox()
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
+  await page.waitForTimeout(300)
+  check('deleting the link word deletes its drawing; undo brings both back', goneDrawing === null && (await drawingBox()) !== null, JSON.stringify(goneDrawing))
+  if (process.env.PN_SHOT) { await page.click('.page-toolbar [data-fold-all]'); await page.waitForTimeout(900); await pn(() => document.querySelector('.page-host .page-drawing')?.scrollIntoView({ block: 'center' })); await page.mouse.move(5, 5); await page.waitForTimeout(800); await page.screenshot({ path: process.env.PN_SHOT.replace('.png', '-drawing.png') }) }
   if (process.env.PN_SHOT) { await page.keyboard.type('\n\nSome **bold** words, a list:\n\n- one\n- two\n\n## A second heading\n\nMore text to see how a long paragraph wraps across the column of the page, roomy and calm.'); await page.waitForTimeout(400); await page.screenshot({ path: process.env.PN_SHOT }) }
   check('no errors on the page', errors.length === 0, errors.join(' | '))
 } finally {

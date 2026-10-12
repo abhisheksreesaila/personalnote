@@ -268,23 +268,25 @@ Brief: docs/briefs/two-layer-pages.md · Needs: none
 - [x] CLI: `create --type page --text`, `read` prints the Markdown, `append` adds a paragraph at the end
 - [x] the page editor is its own lazy chunk with its own size budget; the main app stays under 240 KiB gzip
 Reviewed: PASS (05ddb80, fixes 4251f00).
-## F-041 The paper look [review]
+## F-041 The paper look [done]
 Brief: Look and feel · Needs: F-040
-- [ ] page notes look like the prototype: ivory paper (860 px sheet) on a warm desk, Literata 18 px / 1.65, Bricolage headings, Figtree controls, faint "Page N" marks every 1080 px
-- [ ] heading marks (#) and list marks are quiet; the page grows as you write
-- [ ] the app chrome uses the same warm palette by default (other skins still selectable)
+- [x] page notes look like the prototype: ivory paper (860 px sheet) on a warm desk, Literata 18 px / 1.65, Bricolage headings, Figtree controls, faint "Page N" marks every 1080 px
+- [x] heading marks (#) and list marks are quiet; the page grows as you write
+- [x] the app chrome uses the same warm palette by default (other skins still selectable)
+Reviewed: PASS (fce7fae).
 ## F-042 Marks on words [review]
 Brief: What it does 2 · Needs: F-040
 - [ ] Write/Draw switch (Esc returns to writing); pen, red, highlighter, eraser; Pencil always draws, fingers scroll; drag on empty margins draws in Write mode
 - [ ] a mark on words anchors to its word and follows it through typing, split/merge, wrapping and zoom; a margin mark follows its line
 - [ ] deleting the words deletes the mark; one undo history for text and ink
 - [ ] marks are saved and come back after reload
-## F-043 Drawings on empty space [todo]
+## F-043 Drawings on empty space [review]
+Built together with F-044 in one commit: the drawing's Link/Fold buttons and its block widget are the same code.
 Brief: What it does 2 · Needs: F-042
 - [ ] drawing on empty space creates a standalone drawing in the flow (linked to no word); more strokes join it; it grows as you draw past its edge; the page grows past its bottom
 - [ ] shapes (rectangle, ellipse) and text objects (word art: placed text, sizes S–XL) inside drawings
 - [ ] saved, undoable, erasable
-## F-044 Link and fold [todo]
+## F-044 Link and fold [review]
 Brief: What it does 3 · Needs: F-043
 - [ ] "Link to text" then a click on a word links a drawing; it moves under that paragraph; the word turns into a teal link
 - [ ] clicking the word folds/unfolds the drawing with a smooth ~0.6 s slide; text and marks below glide; Fold all / Unfold all
