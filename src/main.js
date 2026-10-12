@@ -649,6 +649,9 @@ const CANVAS_FONT_SPECS = [
   '600 24px "IBM Plex Sans"',
   '500 34px "Caveat"',
   '400 24px "Geist Mono"',
+  '600 24px "Geist Mono"', // Markdown bold and headings (F-048)
+  'italic 400 24px "Source Serif 4"',
+  '600 24px "IBM Plex Mono"',
 ]
 let canvasFontLoadPromise
 

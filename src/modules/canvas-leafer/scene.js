@@ -25,6 +25,7 @@ import { createTileLod } from './tiles.js'
 import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
 import { newImage } from './media.js'
 import { createTextOverlay } from './text.js'
+import { clearMarkdownLayouts, layoutMarkdown } from './markdown-layout.js'
 import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal } from './text-ops.js'
 import { prettifySelection } from '../editor/prettify.js'
 
@@ -88,6 +89,46 @@ function textProps(object, { width, padding = 0, offsetY = 0 }) {
     props.textWrap = object.mode === 'point' ? 'none' : 'normal'
   } else props.textWrap = 'none'
   return props
+}
+
+// Markdown text (F-048, ADR 0004): a text object whose words are Markdown, drawn formatted. Older texts are plain.
+export const isMarkdownText = (object) => object?.type === 'text' && object.format === 'markdown'
+const MARKDOWN_LINE_HEIGHT = 1.45
+function markdownBase(object) {
+  const style = object.style ?? {}
+  return {
+    fontFamily: canvasFamily(!style.fontFamily ? TEXT_DEFAULTS.fontFamily : style.fontFamily === 'Georgia' ? 'Source Serif 4' : style.fontFamily),
+    fontSize: style.fontSize ?? TEXT_DEFAULTS.fontSize,
+    fontWeight: style.fontWeight ?? 'normal',
+    italic: style.fontStyle === 'italic',
+    lineHeight: style.lineHeight ?? MARKDOWN_LINE_HEIGHT,
+    color: isColor(style.color) ? style.color : TEXT_DEFAULTS.color,
+  }
+}
+const markdownWidth = (object) => (object.mode === 'point' ? undefined : object.geometry.width)
+const markdownLayout = (object) => layoutMarkdown(object.content ?? '', { width: markdownWidth(object), base: markdownBase(object) })
+
+// What the layout measured, as Leafer nodes in the text's own frame: the paper behind code, bullets, checkboxes, bars and rules, then the words.
+function markdownNodes(layout) {
+  const group = new Group({ hittable: false })
+  for (const shape of layout.shapes) {
+    if (shape.kind === 'dot') group.add(new Ellipse({ x: shape.x, y: shape.y, width: shape.size, height: shape.size, fill: shape.color, hittable: false }))
+    else if (shape.kind === 'check') {
+      group.add(new Rect({ x: shape.x, y: shape.y, width: shape.size, height: shape.size, cornerRadius: shape.size * 0.22, stroke: shape.color, strokeWidth: 1.5, fill: shape.checked ? shape.color : undefined, hittable: false }))
+      if (shape.checked) {
+        const u = shape.size
+        group.add(new Path({ path: `M ${shape.x + u * 0.24} ${shape.y + u * 0.52} L ${shape.x + u * 0.43} ${shape.y + u * 0.7} L ${shape.x + u * 0.77} ${shape.y + u * 0.3}`, stroke: '#ffffff', strokeWidth: 1.8, strokeCap: 'round', strokeJoin: 'round', hittable: false }))
+      }
+    } else group.add(new Rect({ x: shape.x, y: shape.y, width: Math.max(0, shape.width), height: shape.height, fill: shape.color, cornerRadius: shape.kind === 'paper' ? 4 : 0, hittable: false }))
+  }
+  for (const piece of layout.pieces) {
+    group.add(new Text({
+      text: piece.text, x: piece.x, y: piece.baseline - (piece.lineHeight + 0.7 * piece.fontSize) / 2, lineHeight: piece.lineHeight, textWrap: 'none',
+      fontFamily: piece.fontFamily, fontSize: piece.fontSize, fontWeight: piece.fontWeight, italic: piece.italic, fill: piece.color,
+      textDecoration: piece.decoration, hittable: false,
+    }))
+  }
+  return group
 }
 
 const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y2}`).join(' ')
@@ -178,6 +219,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   let boxes = new Set() // the placement boxes of the note's own objects (a set: taking one away is not a search)
   let stats = { drawn: 0, skipped: 0, unknown: 0, images: 0 }
   const textNodes = []
+  const markdownEntries = new Set() // ids of the Markdown texts drawn, made again when web fonts arrive
   const measuredText = []
   const uniformStrokes = [] // strokeScaleFixed keeps a stroke a constant number of SCREEN pixels; Fabric's uniform stroke still follows the zoom
   let resolveMedia = null
@@ -271,6 +313,16 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       case 'text': {
         // The former Fabric engine drops empty and legacy placeholder text blocks when it opens a note; so does this one.
         if (isPlaceholderText(object.content)) return null
+        if (isMarkdownText(object)) {
+          const layout = markdownLayout(object)
+          const words = markdownNodes(layout)
+          const size = { width: object.mode === 'point' ? layout.width : g.width, height: layout.height }
+          const holder = object.mode === 'point' ? new Group({ ...base, hitChildren: false }) : new Box({ ...base, width: size.width, height: size.height, hitFill: 'all', hitChildren: false })
+          if (object.mode === 'point') holder.add(new Rect({ width: size.width, height: size.height, fill: 'rgba(0,0,0,0)', hittable: false }))
+          holder.add(words)
+          markdownEntries.add(object.id)
+          return { node: holder, text: words, size, markdown: true, sized: object.mode !== 'point', lockRatio: object.mode === 'point', relayout: () => {} }
+        }
         const text = new Text(textProps(object, { width: g.width }))
         textNodes.push(text)
         // Measure before any turn: a block saved without a height (an agent-written Textbox) is placed from what the engine lays out.
@@ -809,6 +861,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
 
   // How big the words are once laid out ({ width, height }, inside a sticky's padding), measured on a scratch node.
   function contentSize(object) {
+    if (isMarkdownText(object)) { const layout = markdownLayout(object); return { width: layout.width, height: layout.height } }
     const props = textProps(object, { width: wrapWidth(object) })
     const scratch = new Text({ ...props, x: 0, y: 0 })
     const size = measure(scratch)
@@ -817,7 +870,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   }
 
   const viewMatrix = () => ({ a: view.scale, b: 0, c: 0, d: view.scale, e: view.x, f: view.y })
-  const textOffset = (object) => { const props = textProps(object, { width: wrapWidth(object), padding: object.type === 'sticky' ? STICKY_PADDING : 0 }); return { x: props.x, y: props.y } }
+  const textOffset = (object) => { if (isMarkdownText(object)) return { x: 0, y: 0 }; const props = textProps(object, { width: wrapWidth(object), padding: object.type === 'sticky' ? STICKY_PADDING : 0 }); return { x: props.x, y: props.y } }
   // The overlay sits over the text node: its frame is the text's own (the node's offset inside the object, then the object's matrix, then the view).
   function overlayMatrix() {
     const { object, size } = textEdit
@@ -826,6 +879,11 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   }
 
   function overlayFont(object) {
+    if (isMarkdownText(object)) {
+      const base = markdownBase(object)
+      const lineHeight = Math.round(base.fontSize * base.lineHeight * 100) / 100
+      return { family: base.fontFamily, size: base.fontSize, weight: base.fontWeight, italic: base.italic, lineHeight, letterSpacing: 0, align: 'left', color: base.color, decoration: 'none', baseline: null }
+    }
     const props = textProps(object, { width: wrapWidth(object) })
     return { family: props.fontFamily, size: props.fontSize, weight: props.fontWeight, italic: props.italic, lineHeight: props.lineHeight, letterSpacing: props.letterSpacing, align: props.textAlign, color: props.fill, decoration: props.textDecoration === 'under' ? 'underline' : props.textDecoration === 'delete' ? 'line-through' : 'none', baseline: (props.lineHeight + 0.7 * props.fontSize) / 2 }
   }
@@ -972,6 +1030,13 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     }
   }
 
+  // From a page point to the right margin of its page (never narrower than a short line: past the margin the pages grow as usual).
+  const PAGE_MARGIN = 56
+  const writingWidth = (point) => {
+    const column = Math.max(0, Math.floor(point.x / PAGE.width))
+    return Math.max(200, Math.round((column + 1) * PAGE.width - PAGE_MARGIN - point.x))
+  }
+
   const newId = () => `res_${globalThis.crypto.randomUUID().replaceAll('-', '')}`
 
   // Puts the overlay back over its text (the view moved or was resized).
@@ -1010,7 +1075,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // A new text at a page point (typed in the overlay; nothing is made until there are words).
     createText(point, options = {}) {
       let object = newText({ id: newId(), z: nextZ(doc), point, style: defaults.text?.() ?? {} })
-      if (options.width) object = { ...object, mode: 'box', geometry: { ...object.geometry, width: options.width } } // a text box that wraps at this width
+      // F-048: new text is Markdown, in a box that wraps at this width: by default at the right margin of the page it starts on, so writing
+      // flows down the page. `plain` makes the plain point text made before (as wide as its words; still edited in notes that have one).
+      if (!options.plain) object = { ...object, format: 'markdown', mode: 'box', geometry: { ...object.geometry, width: options.width ?? writingWidth(point) } }
+      else if (options.width) object = { ...object, mode: 'box', geometry: { ...object.geometry, width: options.width } }
       return startTextEdit(object, { select: options.select ?? true })
     },
     // A new shape centred on a page point: made at once and selected, one undo step.
@@ -1075,9 +1143,25 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       keepingSelection(() => { for (const change of plan.op.changes) { const entry = entries.get(change.id); if (entry) { refreshBox(entry); rebuild(entry) } } })
       return true
     },
+    // What was drawn for a Markdown text (for checks): its pieces of words with their look, and its size.
+    markdownInfo(id) {
+      const entry = entries.get(id)
+      if (!entry?.built.markdown) return null
+      const layout = markdownLayout(entry.object)
+      return { width: layout.width, height: layout.height, visible: entry.built.text.visible !== false, pieces: layout.pieces.map((piece) => ({ text: piece.text, fontSize: piece.fontSize, fontWeight: piece.fontWeight, italic: piece.italic, decoration: piece.decoration, fontFamily: piece.fontFamily })), shapes: layout.shapes.map((shape) => shape.kind), drawn: entry.built.text.children.length }
+    },
     // What Leafer drew for a text or sticky (for checks): its lines, and the font it used.
     textInfo(id) {
-      const node = entries.get(id)?.built.text
+      const entry = entries.get(id)
+      if (entry?.built.markdown) { // the Markdown source of each drawn row, and the text's own font
+        const layout = markdownLayout(entry.object)
+        const rows = new Map()
+        for (const piece of layout.pieces) if (!piece.marker) { const row = rows.get(piece.rowTop); if (row) { row.from = Math.min(row.from, piece.from); row.to = Math.max(row.to, piece.to) } else rows.set(piece.rowTop, { from: piece.from, to: piece.to }) }
+        const source = entry.object.content ?? ''
+        const base = markdownBase(entry.object)
+        return { rows: layout.rowTops.map((top) => (rows.has(top) ? source.slice(rows.get(top).from, rows.get(top).to) : '')), fontSize: base.fontSize, fontFamily: base.fontFamily, fill: base.color, visible: entry.built.text.visible !== false, lineHeight: Math.round(base.fontSize * base.lineHeight * 100) / 100, height: layout.height, markdown: true }
+      }
+      const node = entry?.built.text
       if (!node) return null
       const rows = node.__?.__textDrawData?.rows ?? []
       return { rows: rows.map((row) => row.text), fontSize: node.fontSize, fontFamily: node.fontFamily, fill: node.fill, visible: node.visible, lineHeight: node.lineHeight, height: node.getBounds('box', 'inner').height }
@@ -1212,6 +1296,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       entries.clear()
       linked.clear()
       textNodes.length = 0
+      markdownEntries.clear()
       measuredText.length = 0
       uniformStrokes.length = 0
       boxes = new Set()
@@ -1330,6 +1415,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // web fonts finish loading: layout is redone, such text is measured and placed again, and its placement box follows.
     refreshText() {
       lod.invalidate()
+      clearMarkdownLayouts()
+      keepingSelection(() => { for (const id of [...markdownEntries]) { const entry = entries.get(id); if (entry) { refreshBox(entry); rebuild(entry) } else markdownEntries.delete(id) } })
       textNodes.forEach((node) => node.forceUpdate?.())
       for (const item of measuredText) {
         const g = item.object.geometry

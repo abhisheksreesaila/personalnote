@@ -317,13 +317,13 @@ Found while building Milestone 1; none blocks using pages.
 ## Milestone 1, second pass: the two layers inside the canvas (captain, 2026-10-12, after preview 1; ADR 0004)
 Captain: "all the existing functionality should remain.. only add should be 2 layer stuff we discussed, so that its text native but can be drawn." Choice: inside the canvas (one note type).
 Order: F-048 → F-049 → F-050 → F-051 → F-052 → F-053. All touch the canvas scene, so one after another.
-## F-048 Markdown text on the canvas [doing]
+## F-048 Markdown text on the canvas [review]
 Brief: docs/briefs/two-layer-pages.md · ADR 0004 · Needs: none
 - [x] New note opens a canvas again (a411316)
-- [ ] a new text is Markdown (`format: 'markdown'`) and is drawn formatted: headings, bold, italic, inline code, strikethrough, links, bullet/numbered/task lists, quotes, code blocks, rules; older texts look exactly as before
-- [ ] a new text made with the Text tool wraps at the page's right margin, so writing flows down and the pages grow as before
-- [ ] save, reload, undo, backup/import, Markdown export, search and print keep it (print shows it formatted)
-- [ ] selection, move, resize (rewraps), delete, style controls and every verify script still pass
+- [x] a new text is Markdown (`format: 'markdown'`) and is drawn formatted: headings, bold, italic, inline code, strikethrough, links, bullet/numbered/task lists, quotes, code blocks, rules; older texts look exactly as before
+- [x] a new text made with the Text tool wraps at the page's right margin, so writing flows down and the pages grow as before
+- [x] save, reload, undo, backup/import, Markdown export, search and print keep it (print draws the same nodes)
+- [x] selection, move, resize (rewraps), delete, style controls and every verify script still pass (scripts/verify-markdown-text.mjs; text and pages checks updated for Markdown)
 ## F-049 Writing in place [todo]
 Needs: F-048
 - [ ] editing a Markdown text keeps it formatted while you type (heading sizes, emphasis); the marks of the line being typed show, others stay hidden

@@ -726,7 +726,7 @@ try {
     await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
 
     // right: a point text typed toward the right edge widens the grid like a dragged object
-    await scene(tp, 'createText', { x: 600, y: 200 })
+    await scene(tp, 'createText', { x: 600, y: 200 }, { plain: true }) // a plain point text (Markdown text wraps at the page margin instead)
     await tp.waitForSelector('.leafer-text-editor')
     let widened = null
     for (let i = 0; i < 80 && !widened; i += 1) {
@@ -794,7 +794,7 @@ try {
     check('undo removes it', !(await doc(tp)).objects.some((o) => o.type === 'text' && o.content === 'x'))
 
     // mid input method: a composition near the right edge grows the page, and the composed words come out once
-    await scene(tp, 'createText', { x: 640, y: 200 })
+    await scene(tp, 'createText', { x: 640, y: 200 }, { plain: true })
     await tp.waitForSelector('.leafer-text-editor')
     const cdp = await typeContext.newCDPSession(tp)
     await cdp.send('Input.imeSetComposition', { text: 'こんにちは世界こんにちは世界こんにちは', selectionStart: 19, selectionEnd: 19 })

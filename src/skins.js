@@ -10,7 +10,7 @@ export const DEFAULT_SKIN = 'paper'
 export const SKIN_STORAGE_KEY = 'personal-note:skin'
 export const CROSSFADE_MS = 400
 
-const SHARED_FONTS = 'Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Caveat:wght@500;600'
+const SHARED_FONTS = 'Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Caveat:wght@500;600'
 
 export function resolveSkin(value) {
   return SKINS.some((skin) => skin.id === value) ? value : DEFAULT_SKIN

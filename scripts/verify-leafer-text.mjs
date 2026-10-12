@@ -247,15 +247,15 @@ try {
     await page.keyboard.press('Control+End')
     await page.keyboard.type(' and more')
     await page.keyboard.press('Home')
-    await page.keyboard.type('>> ')
+    await page.keyboard.type('++ ')
     await deselect() // click away ends the edit
   })
-  check('click-away ends the edit and keeps what was typed', objectOf(await live(page), N1)?.content === '>> Hello text and more', objectOf(await live(page), N1)?.content)
+  check('click-away ends the edit and keeps what was typed', objectOf(await live(page), N1)?.content === '++ Hello text and more', objectOf(await live(page), N1)?.content)
   check('a whole typing session is one undo step', (await steps(page)) === stepsBefore + 1, `${stepsBefore} -> ${await steps(page)}`)
   await page.click('#undo')
   check('undo takes back the whole session', objectOf(await live(page), N1)?.content === 'Hello text')
   await page.click('#redo')
-  check('redo puts it back', objectOf(await live(page), N1)?.content === '>> Hello text and more')
+  check('redo puts it back', objectOf(await live(page), N1)?.content === '++ Hello text and more')
   await page.waitForTimeout(900)
 
   // ---- a double click on empty paper makes a text; deleting every word removes the text
@@ -638,7 +638,7 @@ try {
     check('a double click at the start of line 2 puts the caret there', start2 === 11, String(start2))
     const mid4 = await caretAfterDblClick(m.geometry.x + 80, m.geometry.y + pitch * 3.5)
     check('a double click in the middle of line 4 puts the caret inside that line', mid4 >= 24 + 3 && mid4 <= 24 + 12, String(mid4))
-    const end1 = await caretAfterDblClick(m.geometry.x + m.geometry.width - 1, m.geometry.y + pitch * 0.5)
+    const end1 = await caretAfterDblClick(m.geometry.x + Math.min(m.geometry.width - 1, 320), m.geometry.y + pitch * 0.5) // (a Markdown text reaches the page margin: past its words, not into what lies to the right)
     check('a double click past the end of line 1 puts the caret at its end', end1 === 10, String(end1))
   }
 

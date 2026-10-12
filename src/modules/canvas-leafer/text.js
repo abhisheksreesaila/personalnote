@@ -158,7 +158,7 @@ export function createTextOverlay({ host }) {
       area.setAttribute('autocapitalize', 'off')
       area.setAttribute('aria-label', 'Edit text')
       area.rows = 1
-      const shift = font.baseline - cssBaseline({ ...font, css: css(font) })
+      const shift = font.baseline == null ? 0 : font.baseline - cssBaseline({ ...font, css: css(font) }) // (Markdown text is laid out by the browser: no shift)
       session = { matrix, wrap, width, shift, lineHeight: font.lineHeight, onInput, onCommit, onEscape }
       Object.assign(area.style, {
         position: 'absolute', left: '0px', top: '0px', margin: '0', padding: '0', border: '0', outline: '0', boxSizing: 'content-box',
