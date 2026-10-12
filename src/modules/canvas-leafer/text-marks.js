@@ -11,23 +11,45 @@ export const quoteOf = (source, pos, end) => ({ exact: source.slice(pos, end), p
 
 const meets = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
-// The anchor for a stroke whose box (in the text's frame) is `box`, given the laid-out words, or null when it touches no word.
-export function anchorStroke(box, words, source) {
-  // The words whose middle the stroke encloses (a circle, a box, a highlight over them); else the one word nearest the stroke's middle
-  // among those it touches (an underline, a tick beside a word).
-  const inside = (word) => { const x = word.x + word.width / 2; const y = word.y + word.height / 2; return x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height }
-  let touched = words.filter(inside)
-  if (!touched.length) {
-    const near = words.filter((word) => meets(box, { x: word.x, y: word.y - word.height * UNDERLINE_REACH, width: word.width, height: word.height * (1 + 2 * UNDERLINE_REACH) }))
-    if (!near.length) return null
-    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-    const gap = (word) => Math.hypot(word.x + word.width / 2 - mid.x, word.y + word.height / 2 - mid.y)
-    touched = [near.reduce((best, word) => (gap(word) < gap(best) ? word : best))]
+// The anchor for a stroke, or null when it is not a mark on words (it stays ordinary ink). `box` is the stroke's box and `points` its
+// points, both in the text's frame; `words` the laid-out words. A mark is a stroke that encloses words (a circle, a box), or runs over or
+// just under words of one line (a highlight, an underline, a strike); most of its points stay close to those words, so a big arrow, a
+// diagonal or a sketch drawn across a paragraph is not taken for a mark.
+export function anchorStroke(box, words, source, points = [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }]) {
+  const reach = (word) => ({ x: word.x, y: word.y - word.height * UNDERLINE_REACH, width: word.width, height: word.height * (1 + 2 * UNDERLINE_REACH) })
+  const contains = (rect, point) => point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
+  const first = points[0]
+  const last = points.at(-1)
+  const closed = points.length > 4 && Math.hypot(last.x - first.x, last.y - first.y) <= Math.max(box.width, box.height) * 0.35
+  let chosen = closed ? words.filter((word) => insidePolygon(points, { x: word.x + word.width / 2, y: word.y + word.height / 2 })) : []
+  if (!chosen.length) {
+    const touched = words.filter((word) => points.some((point) => contains(reach(word), point)))
+    if (!touched.length) return null
+    const line = touched[0].y
+    chosen = touched.every((word) => Math.abs(word.y - line) < word.height / 2) ? touched : [touched.reduce((best, word) => (gap(word, box) < gap(best, box) ? word : best))]
   }
-  touched.sort((a, b) => a.from - b.from)
-  const first = touched[0]
-  const last = touched.at(-1)
-  return { pos: first.from, end: last.to, quote: quoteOf(source, first.from, last.to), dx: box.x - first.x, dy: box.y - first.y }
+  // Most of the stroke stays near the words it marks.
+  const near = chosen.reduce((all, word) => ({ left: Math.min(all.left, word.x), top: Math.min(all.top, word.y), right: Math.max(all.right, word.x + word.width), bottom: Math.max(all.bottom, word.y + word.height) }), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
+  const margin = Math.max(24, (near.bottom - near.top) * 1.2)
+  const zone = { x: near.left - margin, y: near.top - margin, width: near.right - near.left + 2 * margin, height: near.bottom - near.top + 2 * margin }
+  if (points.filter((point) => !contains(zone, point)).length > points.length * 0.2) return null
+  chosen.sort((a, b) => a.from - b.from)
+  const start = chosen[0]
+  const end = chosen.at(-1)
+  return { pos: start.from, end: end.to, quote: quoteOf(source, start.from, end.to), dx: box.x - start.x, dy: box.y - start.y }
+}
+
+const gap = (word, box) => Math.hypot(word.x + word.width / 2 - (box.x + box.width / 2), word.y + word.height / 2 - (box.y + box.height / 2))
+
+// Whether a point is inside the polygon the points make (even-odd).
+function insidePolygon(points, point) {
+  let inside = false
+  for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
+    const a = points[i]
+    const b = points[j]
+    if ((a.y > point.y) !== (b.y > point.y) && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
 }
 
 // The whole word(s) around [pos, end) in `source`.

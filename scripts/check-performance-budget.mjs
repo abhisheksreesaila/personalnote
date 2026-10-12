@@ -7,8 +7,9 @@ const DIST_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url))
 const KIB = 1024
 const budgets = {
   javascriptGzip: 240 * KIB,
-  // The editors built on CodeMirror load only when they are needed (a page note opens, F-040; a Markdown text is edited, F-049), so they
-  // have their own budget instead of eating the app's: the two editors and the CodeMirror chunk they share.
+  // The editors built on CodeMirror are not in the first load: the page editor comes when a page note opens (F-040), the Markdown text
+  // editor is fetched once a canvas has opened and the window is idle (F-049). They have their own budget instead of eating the app's:
+  // the two editors and the CodeMirror chunk they share.
   pageEditorGzip: 150 * KIB,
   cssGzip: 16 * KIB,
   largestJavascriptRaw: 850 * KIB,
@@ -48,7 +49,7 @@ const largestJavascript = javascript.reduce((largest, asset) => asset.raw > larg
 
 const checks = [
   ['JavaScript gzip (app, without the editors loaded on demand)', javascriptGzip, budgets.javascriptGzip],
-  ['Editors gzip (CodeMirror, loaded when a page opens or a Markdown text is edited)', pageEditorGzip, budgets.pageEditorGzip],
+  ['Editors gzip (CodeMirror, fetched after the first paint: on idle once a canvas opens, or with a page note)', pageEditorGzip, budgets.pageEditorGzip],
   ['CSS gzip', cssGzip, budgets.cssGzip],
   ['Largest JavaScript chunk', largestJavascript.raw, budgets.largestJavascriptRaw],
 ]

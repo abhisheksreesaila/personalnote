@@ -33,6 +33,7 @@ try {
   await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
   const pn = (fn, arg) => page.evaluate(fn, arg)
 
+  await page.waitForFunction(() => !window.__personalNote.state.creatingNote) // (the first note of an empty workspace may still be on its way)
   await pn(() => window.__personalNote.createNote())
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
   await page.waitForTimeout(500)
@@ -137,6 +138,11 @@ try {
   check('a pen stroke around a word becomes a mark of that word, not loose ink', marked.marks?.length === 1 && marked.marks[0].anchor.quote.exact === 'harbour' && (await objectsNow()).filter((object) => object.type === 'ink').length === inkBefore, JSON.stringify(marked.marks?.map((mark) => mark.anchor)))
   await stroke([{ x: host.x + 300, y: host.y + 700 }, { x: host.x + 380, y: host.y + 720 }, { x: host.x + 420, y: host.y + 690 }])
   check('a stroke away from the words stays ordinary ink', (await objectsNow()).filter((object) => object.type === 'ink').length === inkBefore + 1)
+  const arrowFrom = wordBox(info2, 'Lisbon')
+  await stroke(Array.from({ length: 12 }, (_, i) => ({ x: arrowFrom.x - 60 + i * 50, y: arrowFrom.y - 20 + i * 22 })))
+  check('a big diagonal across the words stays ordinary ink (not a mark)', (await objectsNow()).filter((object) => object.type === 'ink').length === inkBefore + 2 && (await textNow()).marks?.length === 1)
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(400)
   info2 = await infoNow()
   const markBefore = info2.placed[0]
   // typing before the word moves the mark with it
@@ -208,6 +214,12 @@ try {
   await page.waitForTimeout(400)
   let link = (await linkedNow()).link
   check('Link to words, then a click on a word, links the drawing to it', link?.textId === text.id && link.quote.exact === 'quiet', JSON.stringify(link))
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(500)
+  check('undo of the link takes the teal off the word', (await infoNow()).pieces.find((p) => p.text.includes('quiet'))?.color !== '#0f8b8d' && !(await linkedNow()).link)
+  await page.keyboard.press('Control+Shift+z')
+  await page.waitForTimeout(500)
+  link = (await linkedNow()).link
   info2 = await infoNow()
   check('the word is drawn teal', info2.pieces.find((p) => p.text === 'quiet')?.color === '#0f8b8d', JSON.stringify(info2.pieces.find((p) => p.text.includes('quiet'))))
   check('the top bar offers Fold all', await pn(() => !document.querySelector('#fold-all').hidden))
@@ -260,6 +272,16 @@ try {
   await page.keyboard.press('Control+z')
   await page.waitForTimeout(600)
   check('undo brings the word, the link and the fold back', (await linkedNow()).link?.quote.exact === 'quiet' && (await linkedNow()).folded === true)
+  // deleting the whole text shows what was folded into it; undo folds it back
+  await pn((id) => { window.__personalNote.setTool('select'); window.__personalNote.leaferCanvas().select([id]) }, text.id)
+  await page.waitForTimeout(200)
+  await page.keyboard.press('Delete')
+  await page.waitForTimeout(500)
+  const shownAgain = await linkedNow()
+  check('deleting the text unlinks and shows what was folded into it', shownAgain && !shownAgain.link && shownAgain.folded === false && !(await textNow()), JSON.stringify(shownAgain && [shownAgain.link, shownAgain.folded]))
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(600)
+  check('undo brings the text back with the drawing folded into its word', Boolean(await textNow()) && (await linkedNow()).folded === true && (await infoNow()).pieces.find((p) => p.text.includes('quiet'))?.color === '#0f8b8d')
 
   // Pages grow as the writing goes down the page, and fold back when it is removed
   await pn(() => window.__personalNote.setTool('text'))

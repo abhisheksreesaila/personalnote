@@ -34,6 +34,7 @@ try {
   const pn = (fn, arg) => page.evaluate(fn, arg)
 
   // F-040: a page note; typing saves; reload brings it back
+  await page.waitForFunction(() => !window.__personalNote.state.creatingNote) // (the first note of an empty workspace may still be on its way)
   await pn(() => window.__personalNote.createNote(undefined, 'page'))
   await page.waitForSelector('.page-host:not([hidden]) .cm-content', { timeout: 20000 })
   check('a page note opens', await pn(() => window.__personalNote.state.activeNoteType) === 'page')

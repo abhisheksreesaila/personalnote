@@ -839,6 +839,11 @@ class NoteService:
         expected = note["revision"] if revision is None else revision
         if markdown != target.get("content"):
             self._reanchor_canvas_text(document, target, markdown)
+            # The new words' height, as append measures it (the app measures them again when it draws them), and pages for them.
+            geometry = target["geometry"]
+            geometry["height"] = round(self.estimate_text_height(markdown, geometry.get("width") or PAGE_WIDTH - 2 * APPEND_LEFT), 2)
+            self.normalize_page(document)
+            document["page"]["rows"] = max(document["page"]["rows"], -(-int(geometry.get("y", 0) + geometry["height"] + APPEND_LEFT) // PAGE_HEIGHT))
         return self.update_note(note_id, {"title": note["title"], "notebookId": note["notebookId"], "revision": expected, "content": to_json_canvas(document, media=self.media)})
 
     def _reanchor_canvas_text(self, document: dict, target: dict, markdown: str) -> None:
@@ -846,15 +851,10 @@ class NoteService:
         marks = []
         for mark in target.get("marks") or []:
             anchor = mark.get("anchor") if isinstance(mark.get("anchor"), dict) else None
-            found = find_quote(markdown, anchor.get("quote")) if anchor else None
-            if found is None:  # its words are gone: the stroke stays on the canvas as ordinary ink, where it was drawn
-                if anchor and isinstance(mark.get("path"), list):
-                    document["objects"].append({
-                        **{key: value for key, value in mark.items() if key not in ("anchor", "id")},
-                        "id": self.new_resource_id(), "type": "ink", "z": len(document["objects"]),
-                        "geometry": {**g, "x": g.get("x", 0) + anchor.get("dx", 0), "y": g.get("y", 0) + anchor.get("dy", 0), "width": 1, "height": 1},
-                        "extras": {},
-                    })
+            found = self._find_words(markdown, anchor)
+            if found is None:  # its words are gone: the stroke stays on the canvas as ordinary ink, where it was last drawn
+                if anchor:
+                    document["objects"].append(self._loose_ink(mark, g, len(document["objects"])))
                 continue
             start = utf16(markdown[:found])
             marks.append({**mark, "anchor": {**anchor, "pos": start, "end": start + utf16(anchor["quote"]["exact"])}})
@@ -864,13 +864,59 @@ class NoteService:
             link = item.get("link") if isinstance(item, dict) and isinstance(item.get("link"), dict) else None
             if not link or link.get("textId") != target.get("id"):
                 continue
-            found = find_quote(markdown, link.get("quote"))
+            found = self._find_words(markdown, link)
             if found is None:
                 item["link"] = None
                 item["folded"] = False
             else:
                 start = utf16(markdown[:found])
                 item["link"] = {**link, "pos": start, "end": start + utf16(link["quote"]["exact"])}
+
+    @staticmethod
+    def _find_words(markdown: str, anchor: dict | None) -> int | None:
+        """Where an anchor's words are in the new Markdown (a code-point index), found by their quote. A one-letter word ("I", "a"),
+        which a quote alone can't find safely, is found when enough of its context still surrounds it."""
+        quote = (anchor or {}).get("quote") or {}
+        exact = quote.get("exact")
+        if not isinstance(exact, str) or not exact.strip():
+            return None
+        if len(exact.strip()) >= 2:
+            return find_quote(markdown, quote)
+        prefix, suffix = quote.get("prefix") or "", quote.get("suffix") or ""
+        best, best_score = None, 2  # at least three characters of context must agree
+        at = markdown.find(exact)
+        while at != -1:
+            end = at + len(exact)
+            before = markdown[at - 1] if at > 0 else " "
+            after = markdown[end] if end < len(markdown) else " "
+            if not (before.isalnum() or before in "_'") and not (after.isalnum() or after in "_'"):
+                left = 0
+                while left < len(prefix) and at - 1 - left >= 0 and markdown[at - 1 - left] == prefix[len(prefix) - 1 - left]:
+                    left += 1
+                right = 0
+                while right < len(suffix) and end + right < len(markdown) and markdown[end + right] == suffix[right]:
+                    right += 1
+                if left + right > best_score:
+                    best, best_score = at, left + right
+            at = markdown.find(exact, at + 1)
+        return best
+
+    def _loose_ink(self, mark: dict, text_geometry: dict, z: int) -> dict:
+        """A mark whose words are gone, as an ordinary ink object where the mark was last drawn: its box from its path (or its dot)."""
+        at = mark.get("at") if isinstance(mark.get("at"), dict) else {"x": mark["anchor"].get("dx", 0), "y": mark["anchor"].get("dy", 0)}
+        if mark.get("kind") == "dot":
+            size = {"width": 2 * float(mark.get("radius") or 1), "height": 2 * float(mark.get("radius") or 1)}
+        else:
+            numbers = [value for command in mark.get("path") or [] for value in command[1:] if isinstance(value, (int, float))]
+            xs, ys = numbers[0::2] or [0], numbers[1::2] or [0]
+            size = {"width": max(xs) - min(0, min(xs)), "height": max(ys) - min(0, min(ys))}
+        identity = {"rotation": 0, "scaleX": 1, "scaleY": 1, "flipX": False, "flipY": False, "skewX": 0, "skewY": 0}
+        return {
+            **{key: value for key, value in mark.items() if key not in ("anchor", "id", "at")},
+            "id": self.new_resource_id(), "type": "ink", "z": z,
+            "geometry": {**identity, "x": text_geometry.get("x", 0) + at["x"], "y": text_geometry.get("y", 0) + at["y"], **size},
+            "opacity": 1, "visible": True, "strokeUniform": False, "blend": "source-over", "extras": {},
+        }
 
     def append_text(self, note_id: int, text: str, revision: int | None = None) -> dict:
         """Add a text block below a canvas note's content, growing pages as needed.

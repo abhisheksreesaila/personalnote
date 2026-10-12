@@ -118,6 +118,24 @@ class CanvasAgentTests(unittest.TestCase):
         self.assertIsNone(nodes["res_b"]["pn"].get("link"))
         self.assertFalse(nodes["res_b"]["pn"]["folded"], "an object whose words are gone is shown, never left hidden")
 
+    def test_lost_marks_become_ink_where_they_were_drawn_and_short_words_keep_theirs(self):
+        stroke = {"id": "m1", "kind": "stroke", "tool": "pen", "width": 2, "color": "#1d3f9e", "path": [["M", 0, 4], ["L", 60, 0], ["L", 30, 20]],
+                  "anchor": {"pos": 20, "end": 27, "quote": {"exact": "harbour"}, "dx": -2, "dy": 18}, "at": {"x": 40, "y": 30}}
+        dot = {"id": "m2", "kind": "dot", "tool": "pen", "radius": 3, "color": "#1d3f9e", "anchor": {"pos": 30, "end": 34, "quote": {"exact": "walk"}, "dx": 0, "dy": 0}, "at": {"x": 100, "y": 30}}
+        letter = {"id": "m3", "kind": "dot", "tool": "pen", "radius": 3, "color": "#1d3f9e", "anchor": {"pos": 46, "end": 47, "quote": {"exact": "a", "prefix": "dusk.\n- ", "suffix": " loaf"}, "dx": 0, "dy": 0}, "at": {"x": 0, "y": 60}}
+        source = "# Lisbon trip\nThe **harbour** walk at dusk.\n- a loaf"
+        text = {"id": "res_md", "type": "text", "x": 80, "y": 90, "width": 700, "height": 100, "text": source,
+                "pn": {"type": "text", "mode": "box", "z": 0, "format": "markdown", "geometry": GEOMETRY, "style": {"fontSize": 24}, "marks": [stroke, dot, letter]}}
+        note_id = self.canvas([text])
+        self.cli("notes", "write", str(note_id), "--text", "# Lisbon trip\nWe stayed in.\n- a loaf")
+        nodes = self.nodes(note_id)
+        self.assertEqual([mark["id"] for mark in nodes["res_md"]["pn"]["marks"]], ["m3"], "a mark on a one-letter word that is still there stays")
+        loose = sorted((node for node in nodes.values() if node["pn"].get("type") == "ink"), key=lambda node: node["pn"]["geometry"]["x"])
+        self.assertEqual(len(loose), 2, "both lost marks are kept, the dot too")
+        self.assertEqual([(ink["pn"]["geometry"]["x"], ink["pn"]["geometry"]["y"]) for ink in loose], [(120, 120), (180, 120)])
+        self.assertEqual((loose[0]["pn"]["geometry"]["width"], loose[0]["pn"]["geometry"]["height"]), (60, 20))
+        self.assertEqual((loose[1]["pn"]["geometry"]["width"], loose[1]["pn"]["geometry"]["height"]), (6, 6))
+
     def test_write_can_pick_the_text_and_makes_one_when_there_is_none(self):
         note_id = self.canvas([])
         self.cli("notes", "write", str(note_id), "--text", "first words")

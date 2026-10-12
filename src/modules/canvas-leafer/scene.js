@@ -96,11 +96,15 @@ function textProps(object, { width, padding = 0, offsetY = 0 }) {
 
 // Markdown text (F-048, ADR 0004): a text object whose words are Markdown, drawn formatted. Older texts are plain.
 export const isMarkdownText = (object) => object?.type === 'text' && object.format === 'markdown'
+// Marks and link words work on Markdown text that is upright and at its own size (as nearly all is); a turned text keeps them, drawn, as they are.
+const isUpright = (g) => !(g.rotation ?? 0) && (g.scaleX ?? 1) === 1 && (g.scaleY ?? 1) === 1 && !g.flipX && !g.flipY && !g.skewX && !g.skewY
 const MARKDOWN_LINE_HEIGHT = 1.45
+const SAFE_FAMILY = /^[\w\s"',-]{1,120}$/ // font names and fallbacks only: the family goes into CSS for the layout and the editor
 function markdownBase(object) {
   const style = object.style ?? {}
+  const family = typeof style.fontFamily === 'string' && SAFE_FAMILY.test(style.fontFamily) ? style.fontFamily : ''
   return {
-    fontFamily: canvasFamily(!style.fontFamily ? TEXT_DEFAULTS.fontFamily : style.fontFamily === 'Georgia' ? 'Source Serif 4' : style.fontFamily),
+    fontFamily: canvasFamily(!family ? TEXT_DEFAULTS.fontFamily : family === 'Georgia' ? 'Source Serif 4' : family),
     fontSize: style.fontSize ?? TEXT_DEFAULTS.fontSize,
     fontWeight: style.fontWeight ?? 'normal',
     italic: style.fontStyle === 'italic',
@@ -601,6 +605,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   function commit(op, { coalesce, selection, floor = null } = {}) {
     if (floor) op = { ...op, page: { before: doc.page, after: { ...doc.page, columns: Math.max(doc.page.columns, floor.columns), rows: Math.max(doc.page.rows, floor.rows) } } }
     if (!op.changes.length && !op.page) return false
+    // F-051: objects linked to a Markdown text that goes are unlinked and shown in the same step (undo brings the text and the fold back)
+    const going = new Set(op.changes.filter((change) => !change.after && isMarkdownText(change.before)).map((change) => change.id))
+    const freed = going.size ? doc.objects.filter((object) => object?.link && going.has(object.link.textId) && !op.changes.some((change) => change.id === object.id)) : []
+    if (freed.length) op = { ...op, changes: [...op.changes, ...freed.map((object) => ({ id: object.id, before: object, after: { ...object, link: null, folded: false } }))] }
     lod.exit() // the vectors are on screen from here: an edit is always live
     const named = new Set(op.changes.map((change) => change.id))
     const { op: whole, shift } = finalizeOp(doc, op, { sizeOf, floor })
@@ -633,8 +641,18 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       if (entry.object.type === 'connector') syncConnector(entry)
       else if (entry.rect) entry.rect = boundingRect(entry.object, entry.size)
     }
+    for (const object of freed) { const entry = entries.get(object.id); if (entry) rebuild(entry) }
+    redrawLinkedTexts(whole.changes)
     placeEditor()
     return true
+  }
+
+  // F-051: the texts whose link words a change touches (an object linked, unlinked, folded, opened, removed or brought back) are drawn
+  // again, so their teal words follow. `skip`: ids drawn again by the caller already.
+  function redrawLinkedTexts(changes, skip = new Set()) {
+    const texts = new Set()
+    for (const change of changes) for (const object of [change.before, change.after]) if (object?.link?.textId) texts.add(object.link.textId)
+    keepingSelection(() => { for (const id of texts) { if (skip.has(id) || id === textEdit?.id) continue; const entry = entries.get(id); if (entry) rebuild(entry) } })
   }
 
   const editorEntries = () => editing.nodes().map((node) => entryOfNode.get(node)).filter(Boolean) // the editor's own (never a connector)
@@ -957,6 +975,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       markdown: isMarkdownText(object),
       base: isMarkdownText(object) ? markdownBase(object) : null,
       marks: isMarkdownText(object) ? object.marks ?? [] : [],
+      links: isMarkdownText(object) ? linkRanges(doc, object.id) : [],
       font: overlayFont(object),
       wrap: width !== undefined,
       width: width ?? 0,
@@ -1035,7 +1054,11 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     if (object.marks?.length) next.marks = mapMarks(object.marks, object.content ?? '', value) // F-050: marks follow their words
     const plan = planSetContent(doc, { id: entry.id, content: value, geometry: fitGeometry(next, contentSize(next)) })
     if (!plan.op.changes.length) return false
-    if (next.marks) plan.op.changes = plan.op.changes.map((change) => (change.id === entry.id ? { ...change, after: { ...change.after, marks: next.marks } } : change))
+    if (next.marks) { // each keeps where it is drawn now, for an agent's rewrite that loses its words
+      const placed = placeMarks(next.marks, layoutOf(next).words)
+      next.marks = next.marks.map((mark, index) => ({ ...mark, at: { x: placed[index].x, y: placed[index].y } }))
+      plan.op.changes = plan.op.changes.map((change) => (change.id === entry.id ? { ...change, after: { ...change.after, marks: next.marks } } : change))
+    }
     const linked = isMarkdownText(object) ? followLinks(doc, entry.id, object.content ?? '', value) : [] // F-051: link words follow too
     plan.op.changes.push(...linked)
     commit(plan.op, { selection: { before: [entry.id], after: [entry.id] }, floor: final ? null : edit.floor })
@@ -1114,7 +1137,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     for (const object of [...stacking(doc)].reverse()) {
       if (!isMarkdownText(object) || object.folded || !entries.has(object.id)) continue
       const g = object.geometry
-      if ((g.rotation ?? 0) || (g.scaleX ?? 1) !== 1 || (g.scaleY ?? 1) !== 1 || g.flipX || g.flipY) continue
+      if (!isUpright(g)) continue
       const local = { x: point.x - g.x, y: point.y - g.y }
       const layout = layoutOf(object)
       if (local.x < 0 || local.y < 0 || local.x > layout.width || local.y > layout.height) continue
@@ -1131,16 +1154,21 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // Folds (or opens) objects as one step, with the motion: they slide out of their words, or back into them, in about 0.6 s.
   const FOLD_MS = 620
   const liquid = (t) => { const c = 1.35; return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2 } // eases out with a soft overshoot
+  const folding = new Set() // ids in the middle of a fold or an open: a second press waits for the first to land
+  const reducedMotion = () => Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
   function setFolded(ids, folded, from) {
-    const targets = ids.map((id) => entries.get(id)).filter(Boolean)
-    if (!targets.length) return
-    const textIds = new Set(targets.map((entry) => entry.object.link?.textId).filter(Boolean))
+    ids = ids.filter((id) => entries.has(id) && !folding.has(id))
+    if (!ids.length) return
+    // The step is made from the objects as they are when it lands (a merge or an undo may have changed them meanwhile).
     const apply = () => {
-      commit({ label: folded ? 'Fold' : 'Open', changes: targets.map((entry) => ({ id: entry.id, before: entry.object, after: { ...entry.object, folded } })) }, { selection: { before: selectedIds(), after: selectedIds().filter((id) => !folded || !ids.includes(id)) } })
-      keepingSelection(() => { for (const id of [...ids, ...textIds]) { const entry = entries.get(id); if (entry) rebuild(entry) } })
+      const live = ids.map((id) => entries.get(id)?.object).filter((object) => object && Boolean(object.folded) !== folded && object.link)
+      if (!live.length) return
+      commit({ label: folded ? 'Fold' : 'Open', changes: live.map((object) => ({ id: object.id, before: object, after: { ...object, folded } })) }, { selection: { before: selectedIds(), after: selectedIds().filter((id) => !folded || !ids.includes(id)) } })
+      keepingSelection(() => { for (const object of live) { const entry = entries.get(object.id); if (entry) rebuild(entry) } })
     }
     if (folded) editing.clear()
     if (!folded) apply()
+    if (reducedMotion()) { if (folded) apply(); return }
     const moving = ids.map((id) => entries.get(id)).filter(Boolean).map((entry) => {
       const node = entry.node
       const word = from ?? (() => { const text = doc.objects.find((object) => object?.id === entry.object.link?.textId); return text ? wordCentre(text, layoutOf(text), entry.object.link) : null })()
@@ -1148,22 +1176,27 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const rect = entry.rect ?? boundingRect(entry.object, entry.size)
       const centre = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
       node.visible = true
-      return { node, start, centre, word: word ?? centre }
+      return { id: entry.id, node, start, centre, rect, word: word ?? centre }
     })
+    for (const id of ids) folding.add(id)
     lod.exit()
     const began = performance.now()
     const frame = (now) => {
       const t = Math.min(1, (now - began) / FOLD_MS)
       const open = folded ? 1 - liquid(t) : liquid(t) // 1 = where it lives, 0 = inside its word
       for (const item of moving) {
+        if (entries.get(item.id)?.node !== item.node) continue // drawn anew meanwhile (an undo, a merge): that node is not moved
         const s = Math.max(0.04, open)
         const cx = item.word.x + (item.centre.x - item.word.x) * open
         const cy = item.word.y + (item.centre.y - item.word.y) * open
         item.node.set({ scaleX: item.start.scaleX * s, scaleY: item.start.scaleY * s, x: cx - (item.centre.x - item.start.x) * s, y: cy - (item.centre.y - item.start.y) * s, opacity: item.start.opacity * Math.min(1, Math.max(0, open * 1.4)) })
       }
       if (t < 1) { requestAnimationFrame(frame); return }
-      for (const item of moving) item.node.set(item.start)
+      for (const item of moving) if (entries.get(item.id)?.node === item.node) item.node.set(item.start)
+      for (const id of ids) folding.delete(id)
       if (folded) apply()
+      // the page bitmaps are made again where the motion passed (the object's place and its word)
+      lod.invalidate(moving.map((item) => ({ left: Math.min(item.rect.left, item.word.x) - TOUCH_PAD, top: Math.min(item.rect.top, item.word.y) - TOUCH_PAD, right: Math.max(item.rect.left + item.rect.width, item.word.x) + TOUCH_PAD, bottom: Math.max(item.rect.top + item.rect.height, item.word.y) + TOUCH_PAD })))
     }
     requestAnimationFrame(frame)
   }
@@ -1471,6 +1504,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         }
         for (const object of stacking(doc)) if (object?.id !== undefined && !before.has(object.id) && !entries.has(object.id)) addObject(world, object, boxes)
       })
+      const moved = [...before.keys(), ...after.keys()].filter((id) => before.get(id) !== after.get(id))
+      redrawLinkedTexts(moved.map((id) => ({ before: before.get(id), after: after.get(id) })), new Set(moved))
       placeEditor()
       pages = { columns: doc.page?.columns ?? pages.columns, rows: doc.page?.rows ?? pages.rows }
       // the grid a typing session made room for stays until the session settles, whatever the merged document holds
@@ -1485,6 +1520,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // note's 600 or 5,000 other nodes are not touched). The page frame did not move (a step that moves it draws the whole note again).
     applyChanged(next, ids) {
       const after = objectsById(next)
+      const previous = objectsById(doc)
       lod.invalidate(next.page?.columns !== doc.page?.columns || next.page?.rows !== doc.page?.rows ? undefined : touchedRects(ids.flatMap((id) => [entries.get(id)?.object, after.get(id)])))
       doc = next
       const editingId = textEdit?.id
@@ -1504,6 +1540,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         syncStacking(ids)
         for (const entry of entries.values()) entry.object = after.get(entry.id) ?? entry.object // (stacking values may have been renumbered without the object being named)
       })
+      redrawLinkedTexts(ids.map((id) => ({ before: previous.get(id), after: after.get(id) })), new Set(ids))
       placeEditor()
       pages = { columns: doc.page?.columns ?? pages.columns, rows: doc.page?.rows ?? pages.rows }
       drawChrome()
@@ -1576,7 +1613,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       selectConnector(arrow && !editorEntries().length ? arrow : null)
     },
     clearSelection() { editing.clear(); selectConnector(null) },
-    selectAll() { editing.select([...entries.values()].filter((entry) => entry.object.type !== 'connector' && !isLocked(entry.object)).map((entry) => entry.node)) },
+    selectAll() { editing.select([...entries.values()].filter((entry) => entry.object.type !== 'connector' && !isLocked(entry.object) && !(entry.object.folded && entry.object.link)).map((entry) => entry.node)) }, // (what is folded into a word is not on the page)
     isLocked: (id) => isLocked(entries.get(id)?.object),
 
     // ---- connectors and the connect tool (F-032)
@@ -1727,14 +1764,15 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       for (const object of [...stacking(doc)].reverse()) {
         if (!isMarkdownText(object) || isLocked(object) || !entries.has(object.id)) continue
         const og = object.geometry
-        if ((og.rotation ?? 0) || (og.scaleX ?? 1) !== 1 || (og.scaleY ?? 1) !== 1 || og.flipX || og.flipY || og.skewX || og.skewY) continue
+        if (!isUpright(og)) continue
         const layout = layoutOf(object)
         const box = { x: g.x - og.x, y: g.y - og.y, width: g.width, height: g.height }
         if (box.x > layout.width || box.y > layout.height || box.x + box.width < 0 || box.y + box.height < 0) continue
-        const anchor = anchorStroke(box, layout.words, object.content ?? '')
+        const trail = (ink.points ?? [{ x: g.width / 2, y: g.height / 2 }]).map((point) => ({ x: point.x + box.x, y: point.y + box.y }))
+        const anchor = anchorStroke(box, layout.words, object.content ?? '', trail)
         if (!anchor) continue
         const { type, z, geometry, opacity, visible, strokeUniform, blend, extras, points, ...look } = ink
-        const mark = { ...look, anchor }
+        const mark = { ...look, anchor, at: { x: box.x, y: box.y } } // `at`: where it was last drawn in the text (what an agent's rewrite falls back to)
         return { label: ink.tool === 'highlight' ? 'Highlight' : 'Mark', changes: [{ id: object.id, before: object, after: { ...object, marks: [...(object.marks ?? []), mark] } }], selection: { before: [], after: [] } }
       }
       return null
@@ -1753,7 +1791,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         const object = entry.object
         if (!isMarkdownText(object) || !object.marks?.length || isLocked(object)) continue
         const og = object.geometry
-        if ((og.rotation ?? 0) || (og.scaleX ?? 1) !== 1 || (og.scaleY ?? 1) !== 1) continue
+        if (!isUpright(og)) continue
         const layout = layoutOf(object)
         const near = (point, mark) => {
           const reach = ERASER_RADIUS + (mark.width ?? 2) / 2
@@ -1787,16 +1825,14 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const ids = selectedIds().filter((id) => id !== text.id && entries.get(id)?.object.type !== 'connector')
       if (!ids.length) return false
       const changes = ids.map((id) => { const object = entries.get(id).object; return { id, before: object, after: { ...object, link: { textId: text.id, pos, end, quote: quoteOf(source, pos, end) }, folded: false } } })
-      commit({ label: 'Link', changes }, { selection: { before: ids, after: ids } })
-      keepingSelection(() => { const entry = entries.get(text.id); if (entry) rebuild(entry) })
+      commit({ label: 'Link', changes }, { selection: { before: ids, after: ids } }) // (the text is drawn again with its new teal words)
       return true
     },
     unlinkSelection() {
       const ids = selectedIds().filter((id) => entries.get(id)?.object.link)
       if (!ids.length) return false
-      const texts = new Set(ids.map((id) => entries.get(id).object.link.textId))
       commit({ label: 'Unlink', changes: ids.map((id) => { const object = entries.get(id).object; return { id, before: object, after: { ...object, link: null, folded: false } } }) }, { selection: { before: ids, after: ids } })
-      keepingSelection(() => { for (const id of [...ids, ...texts]) { const entry = entries.get(id); if (entry) rebuild(entry) } })
+      keepingSelection(() => { for (const id of ids) { const entry = entries.get(id); if (entry) rebuild(entry) } })
       return true
     },
     selectionLinked: () => selectedIds().some((id) => Boolean(entries.get(id)?.object.link)),

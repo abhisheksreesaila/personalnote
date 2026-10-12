@@ -7,6 +7,7 @@ import { EditorSelection, EditorState, RangeSetBuilder } from '@codemirror/state
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { parseMarkdown } from './markdown.js'
+import { withLinks } from './text-links.js'
 import { CODE_PAPER, QUIET_COLOR, lineLook, runLook } from './markdown-layout.js'
 
 const cssFont = ({ italic, fontWeight, fontSize, fontFamily }) => `${italic ? 'italic ' : ''}${fontWeight} ${fontSize}px ${fontFamily}`
@@ -87,14 +88,14 @@ function markElement(mark) {
 }
 
 // Every line styled as the canvas draws it; the marks hidden except on the lines the selection touches.
-function decorationsFor(state, base) {
+function decorationsFor(state, base, links = []) {
   const source = state.doc.toString()
   const active = new Set()
   for (const range of state.selection.ranges) {
     for (let at = state.doc.lineAt(range.from).number; at <= state.doc.lineAt(range.to).number; at += 1) active.add(at)
   }
   const builder = new RangeSetBuilder()
-  parseMarkdown(source).forEach((line, index) => {
+  withLinks(parseMarkdown(source), links).forEach((line, index) => { // (link words look as on the canvas: they take the same room)
     const look = lineLook(line, base)
     const raw = active.has(index + 1)
     const classes = [`md-${line.kind}`]
@@ -199,9 +200,9 @@ export function createMarkdownEditor({ host }) {
     get composing() { return Boolean(view?.composing) },
     // As text.js open(), plus `base`: the text's look (markdown-layout.js) that each line is styled from.
     // `marks`: the text's marks (text-marks.js), drawn over the words while they are typed.
-    open({ value, font, base, wrap, width, matrix, caret = null, marks = [], onInput = () => {}, onCommit, onEscape }) {
+    open({ value, font, base, wrap, width, matrix, caret = null, marks = [], links = [], onInput = () => {}, onCommit, onEscape }) {
       if (view) finish(true)
-      session = { matrix, wrap, width, lineHeight: font.lineHeight, onInput, onCommit, onEscape, marks: marks.map((mark) => ({ mark, pos: mark.anchor.pos, end: mark.anchor.end })) }
+      session = { matrix, wrap, width, lineHeight: font.lineHeight, onInput, onCommit, onEscape, marks: marks.map((mark) => ({ mark, pos: mark.anchor.pos, end: mark.anchor.end })), links: links.map((link) => ({ ...link })) }
       holder = document.createElement('div')
       holder.className = 'md-editor'
       Object.assign(holder.style, { width: wrap ? `${width}px` : 'max-content', font: cssFont({ italic: base.italic, fontWeight: base.fontWeight, fontSize: base.fontSize, fontFamily: quoteFamily(base.fontFamily) }), color: base.color, caretColor: base.color })
@@ -228,8 +229,11 @@ export function createMarkdownEditor({ host }) {
         },
       })
       const decorations = ViewPlugin.fromClass(class {
-        constructor(editor) { this.decorations = decorationsFor(editor.state, base) }
-        update(update) { if (update.docChanged || update.selectionSet) this.decorations = decorationsFor(update.state, base) }
+        constructor(editor) { this.decorations = decorationsFor(editor.state, base, session.links) }
+        update(update) {
+          if (update.docChanged && session) session.links = session.links.map((link) => ({ ...link, pos: update.changes.mapPos(link.pos, 1), end: update.changes.mapPos(link.end, -1) })).filter((link) => link.end > link.pos)
+          if (update.docChanged || update.selectionSet) this.decorations = decorationsFor(update.state, base, session?.links ?? [])
+        }
       }, { decorations: (plugin) => plugin.decorations })
       view = new EditorView({
         parent: holder,
