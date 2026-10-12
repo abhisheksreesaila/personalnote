@@ -294,12 +294,13 @@ Brief: What it does 3 · Needs: F-043
 - [x] clicking the word folds/unfolds the drawing with a smooth ~0.6 s slide; text and marks below glide; Fold all / Unfold all
 - [x] a linked drawing is deleted with its word (undo restores both); fold state is saved with the note
 Reviewed: PASS after fixes (7e66333, bc82e41).
-## F-045 Agents and pages [review]
+## F-045 Agents and pages [done]
 Fixes after review: a179cab (multi-hunk merge, wait for saves, UTF-16 positions), 9756c37 (long notes).
 Brief: What it does, also in v1 · Needs: F-040 (backend), F-044 (UI)
-- [ ] CLI `write` replaces a page's Markdown with a revision check; the server re-finds each mark and linked drawing by its quoted words; marks it can't place become loose ink, never deleted
-- [ ] the open page reloads an agent's change when you have no unsaved edits; loose ink shows in a tray on the page
-- [ ] an agent writing to a page you are typing in never traps or loses your typing (today a page conflicts like a mind map: every save 409s and switching notes is refused; F-040 review)
+- [x] CLI `write` replaces a page's Markdown with a revision check; the server re-finds each mark and linked drawing by its quoted words; marks it can't place become loose ink, never deleted
+- [x] the open page reloads an agent's change when you have no unsaved edits; loose ink shows in a tray on the page
+- [x] an agent writing to a page you are typing in never traps or loses your typing (today a page conflicts like a mind map: every save 409s and switching notes is refused; F-040 review)
+Reviewed: PASS (9756c37).
 ## F-046 Preview build for the captain [doing]
 Needs: F-040..F-045
 - [ ] runs as a local web server (`npm run dev`) for a first play
@@ -310,5 +311,6 @@ Found while building Milestone 1; none blocks using pages.
 - [ ] after an agent write conflicts with a save, "Could not save" can flash until the merged save lands (F-045 review)
 - [ ] zoom on pages; check pen, IME and the fold slide in the Mac app (WebKit) and on an iPad
 - [ ] pages keep their ivory look under the Night skin: decide whether pages follow skins
+- [ ] merge edge cases: you and an agent inserting different text at the same spot keep both; deleting a line an agent just edited drops the agent's edit (typing wins). Show a notice when an agent edit is dropped
 - [ ] agents can't draw yet (create drawings or marks through the CLI): later, with Milestone 2
 
