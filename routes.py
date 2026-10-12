@@ -43,6 +43,7 @@ def runtime_capabilities() -> dict:
         },
         "modules": {
             "mindmap": {"available": True, "loading": "on-demand"},
+            "page": {"available": True, "loading": "on-demand"},
             "voice": {
                 "available": True,
                 "localServiceRequired": True,

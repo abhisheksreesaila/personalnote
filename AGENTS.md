@@ -24,7 +24,7 @@ These are internal contracts, not a public plugin SDK.
 ## Invariants
 
 1. Capture must not wait on an optional service.
-2. JSON Canvas 1.0 plus the namespaced `pn` extensions (`json_canvas.py`, `src/core/document/jsoncanvas.js`) is canonical for `canvas`; normalized map JSON is canonical for `mindmap`. The editor reads and writes that document model directly (`src/core/note-codec.js`); there is no second engine format. Fabric JSON is a legacy input only: `fromFabric` (`src/core/document/legacy-fabric.js`, mirrored by `document_model.py`) reads notes the old engine saved, and a version 1 backup. A note's `content_format` says which one a row holds; old `fabric` rows convert once at startup.
+2. JSON Canvas 1.0 plus the namespaced `pn` extensions (`json_canvas.py`, `src/core/document/jsoncanvas.js`) is canonical for `canvas`; normalized map JSON is canonical for `mindmap`; for `page` the Markdown is canonical and its ink rides beside it in the same `{version, markdown, ink}` document (ADR 0003), never inside the Markdown. The editor reads and writes that document model directly (`src/core/note-codec.js`); there is no second engine format. Fabric JSON is a legacy input only: `fromFabric` (`src/core/document/legacy-fabric.js`, mirrored by `document_model.py`) reads notes the old engine saved, and a version 1 backup. A note's `content_format` says which one a row holds; old `fabric` rows convert once at startup.
 3. A note's `noteType` is immutable after creation.
 4. Voice may persist final editable transcript text only. Do not add IndexedDB, SQLite, filesystem, backup, or export storage for PCM/audio.
 5. Local transcription failure must be visible and must leave the note intact.

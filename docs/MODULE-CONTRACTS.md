@@ -10,6 +10,7 @@ A note has one immutable type:
 
 - `canvas`: JSON Canvas 1.0 with `pn` extensions (ADR 0002) and page state; a row not yet converted from the old Fabric JSON is read with `fromFabric`
 - `mindmap`: normalized map JSON
+- `page`: `{version, markdown, ink}` (ADR 0003, `page_note.py`): canonical Markdown plus an ink layer (marks anchored to words, standalone drawings); `content_format = 'page'`
 
 All built-in editors use the same `POST /api/notes`, `GET /api/notes/{id}`, and `PUT /api/notes/{id}` lifecycle. Optional modules never open SQLite directly.
 
@@ -26,7 +27,7 @@ The shell owns when calls occur. A module receives callbacks rather than importi
 
 `personal_note_cli.py` (run as `bin/personal-note`) is the local agent and automation boundary, not a remote endpoint. It calls `NoteService`, `note_text.py` and `portability.py` directly through their established public methods, emits JSON on stdout by default (`--text` on `notes read` and `search` prints readable text), and uses stable exit codes (`0` success, `2` expected input/resource errors). It never accesses SQLite outside `NoteService`, bypasses revision checks, or grants any plugin additional authority.
 
-Agent-facing commands: `search`, `notes read` (canvas text in reading order, mind maps as an outline), `notes create --text`, and `notes append` (adds a text block below existing content, growing pages; `--revision N` fails on a stale note). Each accepts `--agent NAME` (default `Claude Code`) and records the agent's latest activity (`reading` or `writing`, note, timestamp) through `NoteService.record_agent_activity`; activity expires after `AGENT_ACTIVITY_WINDOW` seconds. Append refuses mind-map notes and never rewrites existing objects.
+Agent-facing commands: `search`, `notes read` (canvas text in reading order, mind maps as an outline, pages as their Markdown), `notes create --type canvas|mindmap|page --text`, and `notes append` (a canvas gets a text block below existing content, growing pages; a page gets a new paragraph at the end of its Markdown, ink untouched; `--revision N` fails on a stale note). Each accepts `--agent NAME` (default `Claude Code`) and records the agent's latest activity (`reading` or `writing`, note, timestamp) through `NoteService.record_agent_activity`; activity expires after `AGENT_ACTIVITY_WINDOW` seconds. Append refuses mind-map notes and never rewrites existing objects.
 
 ## Agent sync contract
 
@@ -47,6 +48,10 @@ mountMindMapModule(host, {
 ```
 
 The returned editor supports `getDocument()`, `setTitle(title)`, and `destroy()`. The wrapper dynamically imports `src/mindmap/editor.js`; opening and editing ordinary canvas notes does not load the mind-map implementation.
+
+## Page contract
+
+`src/modules/page.js` exports `mountPageModule(host, { documentValue, onChange }) -> Promise<editor>`. The editor supports `getDocument()`, `setDocument(document)` (an agent's change, not announced as an edit), `setTitle(title)`, `history(direction)`, `clear()`, `focus()` and `destroy()`. It dynamically imports `src/page/page-editor.js` (CodeMirror 6 and the ink layer), which has its own bundle budget; canvas and mind-map notes never load it. Ink state lives inside CodeMirror's state (`src/page/ink-state.js`) so text and ink share one undo history.
 
 ## Voice contract
 

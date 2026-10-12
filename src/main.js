@@ -558,14 +558,21 @@ function setActiveNoteType(noteType) {
     mindmapEditor = null
   }
   if (!isPage) {
+    pageMountTicket += 1
     pageEditor?.destroy()
     pageEditor = null
   }
 }
 
+// The editor chunk loads asynchronously: a mount that finishes after another note was picked is thrown away, never left running.
+let pageMountTicket = 0
 async function mountActivePage(documentValue) {
   pageEditor?.destroy()
-  pageEditor = await mountPageModule(elements.pageHost, { documentValue, onChange: () => queueSave() })
+  pageEditor = null
+  const ticket = ++pageMountTicket
+  const editor = await mountPageModule(elements.pageHost, { documentValue, onChange: () => queueSave() })
+  if (ticket !== pageMountTicket || state.activeNoteType !== 'page') { editor.destroy(); return }
+  pageEditor = editor
 }
 
 async function mountActiveMindMap(documentValue) {
@@ -1656,6 +1663,7 @@ async function selectNoteNow(id) {
   state.loading = true
   mindmapEditor?.destroy()
   mindmapEditor = null
+  pageMountTicket += 1
   pageEditor?.destroy()
   pageEditor = null
   try {
@@ -2416,7 +2424,7 @@ function renderSearchResults(allResults, query = '') {
       <p class="search-results-label">${query ? `${results.length} ${results.length === 1 ? 'result' : 'results'}` : 'Recently edited'}</p>
       ${results.map((result) => `
         <button class="search-result" data-search-note-id="${result.id}">
-          <span class="search-result-icon" style="--notebook-color:${result.notebookColor}"><i data-lucide="${result.noteType === 'mindmap' ? 'git-fork' : 'file-text'}"></i></span>
+          <span class="search-result-icon" style="--notebook-color:${result.notebookColor}"><i data-lucide="${result.noteType === 'mindmap' ? 'git-fork' : result.noteType === 'page' ? 'file-pen' : 'file-text'}"></i></span>
           <span class="search-result-copy">
             <strong>${escapeHtml(result.title || 'Untitled note')}</strong>
             ${result.excerpt ? `<small>${escapeHtml(result.excerpt)}</small>` : ''}

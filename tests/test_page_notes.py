@@ -11,6 +11,7 @@ from starlette.testclient import TestClient
 
 from personal_note_cli import main
 from routes import create_app
+from services import NoteService
 
 
 class PageNoteApiTests(unittest.TestCase):
@@ -138,10 +139,23 @@ class PageNoteCliTests(unittest.TestCase):
     def test_append_adds_a_paragraph_at_the_end_and_keeps_the_ink(self):
         code, out = self.cli("notes", "create", "--title", "Log", "--type", "page", "--text", "Day one.")
         note = json.loads(out)
+        service = NoteService(self.database)
+        current = service.get_note(note["id"])
+        ink = {"marks": [{"id": "m1", "tool": "red", "points": [[0, 0], [9, 3]], "anchor": {"pos": 4, "quote": {"exact": "one", "prefix": "Day ", "suffix": "."}}, "dx": 0, "dy": 0}], "drawings": []}
+        service.update_note(note["id"], {"title": "Log", "revision": current["revision"], "content": {"version": 1, "markdown": "Day one.", "ink": ink}})
         code, out = self.cli("notes", "append", str(note["id"]), "--text", "Day two.")
         self.assertEqual(code, 0)
         code, text = self.cli("notes", "read", str(note["id"]), "--text")
         self.assertEqual(text, "Day one.\n\nDay two.\n")
+        self.assertEqual(service.get_note(note["id"])["content"]["ink"], ink)
+
+    def test_append_with_a_stale_revision_changes_nothing(self):
+        code, out = self.cli("notes", "create", "--title", "Log", "--type", "page", "--text", "Day one.")
+        note = json.loads(out)
+        code, _ = self.cli("notes", "append", str(note["id"]), "--text", "Day two.", "--revision", "1")
+        self.assertNotEqual(code, 0)
+        code, text = self.cli("notes", "read", str(note["id"]), "--text")
+        self.assertEqual(text, "Day one.\n")
 
 
 if __name__ == "__main__":
