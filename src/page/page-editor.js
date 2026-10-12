@@ -7,6 +7,7 @@ import { Language, defineLanguageFacet, syntaxHighlighting, HighlightStyle } fro
 import { parser as markdownParser, GFM } from '@lezer/markdown'
 import { tags as t } from '@lezer/highlight'
 import { normalizePageDocument } from './document.js'
+import { installPageStyle } from './page-style.js'
 
 // Markdown with GitHub's tables, task lists and strike-through. Built from the Lezer parser directly: @codemirror/lang-markdown would
 // also pull in the HTML, CSS and JavaScript parsers for embedded code, which a notes page doesn't need.
@@ -25,7 +26,6 @@ const pageHighlight = HighlightStyle.define([
   { tag: t.url, color: 'var(--page-markup)' },
   { tag: t.monospace, fontFamily: 'var(--page-mono)', fontSize: '.9em' },
   { tag: t.quote, color: 'var(--page-muted)', fontStyle: 'italic' },
-  { tag: t.list, color: 'var(--page-ink)' },
 ])
 
 const pageTheme = EditorView.theme({
@@ -41,6 +41,7 @@ const pageTheme = EditorView.theme({
 export const PAGE_SHEET_HEIGHT = 1080
 
 export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
+  installPageStyle()
   const initial = normalizePageDocument(documentValue)
   host.innerHTML = `
     <div class="page-desk">
@@ -120,7 +121,8 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length }, userEvent: 'delete' })
       return true
     },
-    focus() { view.focus() },
+    // Opening a page puts the caret at the end of its text, ready to carry on writing.
+    focus() { view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true }); view.focus() },
     destroy() {
       resize.disconnect()
       ink?.destroy()

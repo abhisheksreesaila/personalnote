@@ -88,7 +88,7 @@ test('loads the fonts of the active skin only', () => {
   assert.match(fontUrl('night'), /Instrument\+Serif/)
   assert.doesNotMatch(fontUrl('night'), /Fraunces|Bricolage/)
   assert.match(fontUrl('crayon'), /Bricolage/)
-  assert.match(fontUrl('paper'), /Fraunces/)
+  assert.match(fontUrl('paper'), /Bricolage/)
 })
 
 function fakeElement() {
@@ -168,6 +168,10 @@ test('Crayon accent is the softened blue and keeps 4.5:1 for white on it and for
   assert.ok(contrast(crayon.accent, crayon.panel) >= 4.5)
 })
 
-test('Paper keeps its red accent', () => {
-  assert.equal(skinTokens('paper').accent, '#e5533d')
+test('Paper takes the two-layer prototype look: ink-dark accent on ivory, readable both ways', () => {
+  const paper = skinTokens('paper')
+  assert.equal(paper.accent, '#1f1b16')
+  assert.equal(paper.desk, '#e9e4da')
+  assert.equal(SKINS.find((s) => s.id === 'paper').swatch, paper.accent)
+  assert.ok(contrast(paper['accent-ink'], paper.accent) >= 4.5)
 })

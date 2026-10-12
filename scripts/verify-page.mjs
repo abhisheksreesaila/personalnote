@@ -47,6 +47,7 @@ try {
   const hits = await (await fetch('http://127.0.0.1:4831/api/search?q=harbour')).json()
   check('search finds the page', hits.some((hit) => hit.id === pageId))
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
+  if (process.env.PN_SHOT) { await page.keyboard.type('\n\nSome **bold** words, a list:\n\n- one\n- two\n\n## A second heading\n\nMore text to see how a long paragraph wraps across the column of the page, roomy and calm.'); await page.waitForTimeout(400); await page.screenshot({ path: process.env.PN_SHOT }) }
   check('no errors on the page', errors.length === 0, errors.join(' | '))
 } finally {
   await browser?.close()
