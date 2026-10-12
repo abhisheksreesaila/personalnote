@@ -33,10 +33,10 @@ try {
   await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
   const pn = (fn, arg) => page.evaluate(fn, arg)
 
-  // F-040: New note is a page; typing saves; reload brings it back
-  await pn(() => window.__personalNote.createNote())
+  // F-040: a page note; typing saves; reload brings it back
+  await pn(() => window.__personalNote.createNote(undefined, 'page'))
   await page.waitForSelector('.page-host:not([hidden]) .cm-content', { timeout: 20000 })
-  check('New note opens a page note', await pn(() => window.__personalNote.state.activeNoteType) === 'page')
+  check('a page note opens', await pn(() => window.__personalNote.state.activeNoteType) === 'page')
   const pageId = await pn(() => window.__personalNote.state.activeNoteId)
   await page.click('.page-host .cm-content')
   await page.keyboard.type('# Lisbon\n\nThe harbour walk at dusk.')

@@ -94,8 +94,8 @@ const DEFAULT_MINDMAP_DOCUMENT = {
 document.querySelector('#app').innerHTML = `
   <div class="app-shell">
     <div class="note-create-menu" id="note-create-menu" role="menu" aria-label="Create note as" hidden>
-      <button role="menuitem" data-create-note-type="page"><i data-lucide="file-pen"></i><span>Page</span></button>
       <button role="menuitem" data-create-note-type="canvas"><i data-lucide="file-text"></i><span>Canvas note</span></button>
+      <button role="menuitem" data-create-note-type="page"><i data-lucide="file-pen"></i><span>Page</span></button>
       <button role="menuitem" data-create-note-type="mindmap"><i data-lucide="git-fork"></i><span>Mind map</span></button>
     </div>
     <div class="sidebar-scrim" id="sidebar-scrim" aria-hidden="true"></div>
@@ -105,7 +105,7 @@ document.querySelector('#app').innerHTML = `
         <span class="brand-name">Personal Note</span>
         <button class="icon-button sidebar-close" id="close-sidebar" title="Close notebooks" aria-label="Close notebooks"><i data-lucide="x"></i></button>
       </div>
-      <button class="quick-note hold-create-button" id="rail-new-note" title="New page - hold for more types" aria-label="Quick note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false">
+      <button class="quick-note hold-create-button" id="rail-new-note" title="New note - hold for more types" aria-label="Quick note. Press and hold for more note types" aria-haspopup="menu" aria-expanded="false">
         <i data-lucide="plus"></i><span>Quick note</span><kbd id="quick-note-kbd">Ctrl N</kbd>
       </button>
       <nav class="notebook-navigator" id="notebook-navigator" aria-label="Inbox and notebooks">
@@ -1823,7 +1823,7 @@ async function mergeRemoteNote(note) {
   return mergeLeaferNote(note)
 }
 
-async function createNote(notebookId, noteType = 'page') {
+async function createNote(notebookId, noteType = 'canvas') {
   if (state.creatingNote) return
   state.creatingNote = true
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
