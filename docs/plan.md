@@ -258,3 +258,41 @@ Captain: "explore the idea of using WebGPU… if Leafer JS supports something, t
 - [ ] what Leafer offers or plans for WebGPU/WebGL, and what else could use it (e.g. bitmap tiles, ink, minimap)
 - [ ] WebGPU availability in our windows: Chromium app window (Linux) and WKWebView (Mac)
 - [ ] the engine race gains a WebGPU lane if a candidate exists, with numbers vs today's Leafer
+## Milestone 1: two-layer pages (approved 2026-10-11; brief docs/briefs/two-layer-pages.md, ADR 0003, feel: prototype branch `prototype/two-layers`)
+Order: F-040 → F-041 → F-042 → F-043 → F-044 → F-045 → F-046. Frontend tickets share `src/page/`, so they go one after another.
+## F-040 Page note: write Markdown, saved [todo]
+Brief: docs/briefs/two-layer-pages.md · Needs: none
+- [ ] New note creates a page note by default (canvas and mind map stay in the menu); existing notes open as before
+- [ ] a page note opens in CodeMirror 6 (lazy-loaded, like the mind map), typing saves, reload shows the same text, revision conflicts behave like other notes
+- [ ] stored as note type `page`, content `{version, markdown, ink}`, content_format `page`; search finds its words; backup/import round-trips it; Markdown export writes its Markdown
+- [ ] CLI: `create --type page --text`, `read` prints the Markdown, `append` adds a paragraph at the end
+- [ ] the page editor is its own lazy chunk with its own size budget; the main app stays under 240 KiB gzip
+## F-041 The paper look [todo]
+Brief: Look and feel · Needs: F-040
+- [ ] page notes look like the prototype: ivory paper (860 px sheet) on a warm desk, Literata 18 px / 1.65, Bricolage headings, Figtree controls, faint "Page N" marks every 1080 px
+- [ ] heading marks (#) and list marks are quiet; the page grows as you write
+- [ ] the app chrome uses the same warm palette by default (other skins still selectable)
+## F-042 Marks on words [todo]
+Brief: What it does 2 · Needs: F-040
+- [ ] Write/Draw switch (Esc returns to writing); pen, red, highlighter, eraser; Pencil always draws, fingers scroll; drag on empty margins draws in Write mode
+- [ ] a mark on words anchors to its word and follows it through typing, split/merge, wrapping and zoom; a margin mark follows its line
+- [ ] deleting the words deletes the mark; one undo history for text and ink
+- [ ] marks are saved and come back after reload
+## F-043 Drawings on empty space [todo]
+Brief: What it does 2 · Needs: F-042
+- [ ] drawing on empty space creates a standalone drawing in the flow (linked to no word); more strokes join it; it grows as you draw past its edge; the page grows past its bottom
+- [ ] shapes (rectangle, ellipse) and text objects (word art: placed text, sizes S–XL) inside drawings
+- [ ] saved, undoable, erasable
+## F-044 Link and fold [todo]
+Brief: What it does 3 · Needs: F-043
+- [ ] "Link to text" then a click on a word links a drawing; it moves under that paragraph; the word turns into a teal link
+- [ ] clicking the word folds/unfolds the drawing with a smooth ~0.6 s slide; text and marks below glide; Fold all / Unfold all
+- [ ] a linked drawing is deleted with its word (undo restores both); fold state is saved with the note
+## F-045 Agents and pages [todo]
+Brief: What it does, also in v1 · Needs: F-040 (backend), F-044 (UI)
+- [ ] CLI `write` replaces a page's Markdown with a revision check; the server re-finds each mark and linked drawing by its quoted words; marks it can't place become loose ink, never deleted
+- [ ] the open page reloads an agent's change when you have no unsaved edits; loose ink shows in a tray on the page
+## F-046 Preview build for the captain [todo]
+Needs: F-040..F-045
+- [ ] runs as a local web server (`npm run dev`) for a first play
+- [ ] Mac and Linux packages published as a GitHub pre-release
