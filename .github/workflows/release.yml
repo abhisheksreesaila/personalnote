@@ -54,6 +54,29 @@ jobs:
           npm ci
           npm run build
 
+      # One private self-signed certificate signs every Mac build, so macOS sees each update as the same app
+      # and the secure-notes keychain key opens without asking for the login password again.
+      - name: Signing certificate (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MAC_SIGN_P12: ${{ secrets.MAC_SIGN_P12 }}
+          MAC_SIGN_PASSWORD: ${{ secrets.MAC_SIGN_PASSWORD }}
+        run: |
+          if [ -z "$MAC_SIGN_P12" ]; then echo "::warning title=Signing::No signing certificate; the app is signed ad hoc."; exit 0; fi
+          KC="$RUNNER_TEMP/sign.keychain-db"
+          KC_PASS="$(uuidgen)"
+          printf '%s' "$MAC_SIGN_P12" | base64 --decode > "$RUNNER_TEMP/sign.p12"
+          security create-keychain -p "$KC_PASS" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KC_PASS" "$KC"
+          security import "$RUNNER_TEMP/sign.p12" -k "$KC" -P "$MAC_SIGN_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/sign.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASS" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          IDENTITY="$(security find-certificate -c "Personal Note Self Signed" -Z "$KC" | awk '/SHA-1/ {print $3}')"
+          [ -n "$IDENTITY" ] || { echo "::error title=Signing::The certificate did not import."; exit 1; }
+          echo "MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
       - name: Build the app
         env:
           SKIP_FRONTEND: "1"

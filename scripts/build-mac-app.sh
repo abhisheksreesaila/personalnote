@@ -55,8 +55,10 @@ with open(path, "wb") as f:
     plistlib.dump(info, f)
 PY
 
-# Ad-hoc signature so macOS accepts the edited Info.plist; use a Developer ID to distribute.
-codesign --force --deep --sign - "dist-app/Personal Note.app"
+# Signed with the private self-signed certificate when the release build has it (MAC_SIGN_IDENTITY, its SHA-1),
+# so every update keeps the same designated requirement and the keychain trusts it; ad hoc otherwise.
+codesign --force --deep --sign "${MAC_SIGN_IDENTITY:--}" "dist-app/Personal Note.app"
+codesign --display --requirements - "dist-app/Personal Note.app" 2>&1 | grep -i designated || true
 ARCH="$(uname -m)"; [ "$ARCH" = "arm64" ] || ARCH="x86_64"
 rm -f "dist-app/personal-note-macos-$ARCH.zip"
 ditto -c -k --keepParent "dist-app/Personal Note.app" "dist-app/personal-note-macos-$ARCH.zip"
