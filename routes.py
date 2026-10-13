@@ -19,7 +19,17 @@ from portability import (
     workspace_backup,
 )
 from media_store import MAX_MEDIA_BYTES, MEDIA_NAME, sniff_image
-from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, WorkspaceImportError
+from services import (
+    ConflictError,
+    InvalidNoteContentError,
+    NoteService,
+    NotFoundError,
+    SecureAuthError,
+    SecureError,
+    SecureLockedError,
+    SecureNoteAgentError,
+    WorkspaceImportError,
+)
 from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
@@ -34,7 +44,7 @@ def runtime_capabilities() -> dict:
         "storage": {
             "engine": "sqlite",
             "location": "this-device",
-            "encryption": "not-enabled",
+            "encryption": "secure-notes",  # whole notes marked secure are AES-256-GCM encrypted; the rest of the file is plain
         },
         "portability": {
             "workspaceBackup": True,
@@ -135,11 +145,12 @@ def create_app(
     speedtest_instance: bool = False,
     speedtest_launcher=None,
     desktop_host: bool = False,
+    secure_platform=None,
 ) -> FastHTML:
     """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
     data_path = Path(database_path or default_database_path())
     speedtest_process: dict = {}  # the speed test this app started: one at a time
-    service = NoteService(data_path)
+    service = NoteService(data_path, secure_platform=secure_platform)
     # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service
@@ -148,11 +159,18 @@ def create_app(
         app.add_middleware(LoopbackHostMiddleware)
 
     def json_error(error: Exception) -> JSONResponse:
-        status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 400 if isinstance(error, InvalidNoteContentError) else 500
+        if isinstance(error, SecureLockedError):
+            status = 423  # Locked
+        elif isinstance(error, (SecureAuthError, SecureNoteAgentError)):
+            status = 403
+        elif isinstance(error, SecureError):
+            status = 400
+        else:
+            status = 404 if isinstance(error, NotFoundError) else 409 if isinstance(error, ConflictError) else 400 if isinstance(error, InvalidNoteContentError) else 500
         if status == 500:
             logger.exception("event=api.request outcome=failed error_class=%s", type(error).__name__)
         return JSONResponse(
-            {"error": str(error) if status in {400, 404, 409} else "Request failed"},
+            {"error": str(error) if status in {400, 403, 404, 409, 423} else "Request failed"},
             status_code=status,
         )
 
@@ -341,6 +359,47 @@ def create_app(
         try:
             service.delete_note(note_id)
             return Response(status_code=204)
+        except Exception as error:
+            return json_error(error)
+
+    @app.get("/api/secure/status")
+    def secure_status():
+        return JSONResponse(service.secure_status())
+
+    @app.post("/api/secure/unlock")
+    async def secure_unlock(request):
+        """Touch ID on a Mac (nothing in the body), a passphrase elsewhere, or the recovery key from any machine."""
+        if not from_this_app(request):
+            return forbidden()
+        body = await payload(request)
+        try:
+            return JSONResponse(service.unlock_secure(passphrase=body.get("passphrase"), recovery_key=body.get("recoveryKey")))
+        except Exception as error:
+            return json_error(error)
+
+    @app.post("/api/secure/lock")
+    def secure_lock(request):
+        if not from_this_app(request):
+            return forbidden()
+        return JSONResponse(service.lock_secure())
+
+    @app.post("/api/notes/{note_id}/secure")
+    async def mark_note_secure(request, note_id: int):
+        """Make the note secure. The first one on this computer returns `recoveryKey` once: show it, it is never kept."""
+        if not from_this_app(request):
+            return forbidden()
+        body = await payload(request)
+        try:
+            return JSONResponse(service.mark_secure(note_id, revision=body.get("revision"), passphrase=body.get("passphrase")))
+        except Exception as error:
+            return json_error(error)
+
+    @app.delete("/api/notes/{note_id}/secure")
+    def unmark_note_secure(request, note_id: int):
+        if not from_this_app(request):
+            return forbidden()
+        try:
+            return JSONResponse(service.unmark_secure(note_id))
         except Exception as error:
             return json_error(error)
 

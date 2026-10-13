@@ -10,6 +10,8 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
+import secure_crypto as sc
+import secure_platform as default_secure_platform
 from app_schema import initialize_schema
 from document_model import DocumentError, empty_document, from_fabric, plain_text
 from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
@@ -92,12 +94,43 @@ class InvalidNoteContentError(ValueError):
     """A canvas note's content is not a document this version can read."""
 
 
+class SecureError(Exception):
+    """Base of the secure-note errors (F-057); the message is safe to show."""
+
+
+class SecureLockedError(SecureError):
+    """The note's words are locked: unlock secure notes first."""
+
+
+class SecureAuthError(SecureError):
+    """Touch ID, the passphrase or the recovery key was not accepted."""
+
+
+class SecureSetupError(SecureError):
+    """A passphrase is needed, or the request does not fit the secure-note setup."""
+
+
+class SecureNoteAgentError(SecureError):
+    """Agents (the CLI) never read or write a secure note's words."""
+
+
 def empty_canvas_text() -> str:
     return json.dumps(to_json_canvas(empty_document()), separators=(",", ":"))
 
 
 class NoteService:
-    def __init__(self, database_path: Path | str, media_dir: Path | str | None = None):
+    def __init__(
+        self,
+        database_path: Path | str,
+        media_dir: Path | str | None = None,
+        secure_platform=None,
+        scrypt_cost: int = sc.SCRYPT_N,
+        clock=time.monotonic,
+    ):
+        # Secure notes (F-057): the platform seam (Touch ID + keychain on a Mac), the key cost for passphrases, and the keys held while unlocked.
+        self.secure_platform = secure_platform if secure_platform is not None else default_secure_platform
+        self.scrypt_cost = scrypt_cost
+        self.keyring = sc.Keyring(clock)
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         # Content-addressed picture and SVG files (`media/<sha256>.<ext>` in notes); beside the database unless told otherwise.
@@ -146,6 +179,8 @@ class NoteService:
             "pageState": cls.parse_json(note["page_state"], DEFAULT_PAGE_STATE),
             "createdAt": note["created_at"],
             "updatedAt": note["updated_at"],
+            "secure": bool(note["secure"]),
+            "locked": False,
         }
 
     @staticmethod
@@ -313,7 +348,7 @@ class NoteService:
         untouched: the note says the same thing. Safe to run again.
         """
         rows = connection.execute(
-            "SELECT id, content, page_state, title FROM notes WHERE note_type = 'canvas' AND content_format = ? ORDER BY id",
+            "SELECT id, content, page_state, title FROM notes WHERE note_type = 'canvas' AND content_format = ? AND secure = 0 ORDER BY id",
             (FORMAT_FABRIC,),
         ).fetchall()
         for row in rows:
@@ -398,7 +433,7 @@ class NoteService:
         """Block ids are unique across the workspace; repair any that are missing, empty or shared (imports, copies)."""
         seen: set[str] = set()
         notes = connection.execute(
-            "SELECT id, resource_id, revision, note_type, content, content_format, page_state, title FROM notes ORDER BY id"
+            "SELECT id, resource_id, revision, note_type, content, content_format, page_state, title FROM notes WHERE secure = 0 ORDER BY id"
         ).fetchall()
         for note in notes:
             if note["note_type"] != "canvas":
@@ -440,7 +475,7 @@ class NoteService:
     ) -> set[str]:
         reserved: set[str] = set()
         rows = connection.execute(
-            "SELECT content, content_format FROM notes WHERE id != ? AND note_type = 'canvas'",
+            "SELECT content, content_format FROM notes WHERE id != ? AND note_type = 'canvas' AND secure = 0",
             (exclude_note_id,),
         ).fetchall()
         for row in rows:
@@ -513,7 +548,7 @@ class NoteService:
     def rebuild_derived_indexes(cls, connection: sqlite3.Connection) -> None:
         connection.execute("DELETE FROM note_search")
         notes = connection.execute(
-            "SELECT id, title, note_type, content, content_format, page_state FROM notes"
+            "SELECT id, title, note_type, content, content_format, page_state, secure FROM notes"
         ).fetchall()
         for note in notes:
             cls.index_note(
@@ -524,6 +559,7 @@ class NoteService:
                 note["note_type"],
                 note["content_format"],
                 note["page_state"],
+                body="" if note["secure"] else None,  # a secure note is found by its title only
             )
         connection.commit()
 
@@ -663,7 +699,7 @@ class NoteService:
     def list_notes(self) -> list[dict]:
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT id, resource_id, revision, note_type, title, notebook_id, created_at, updated_at FROM notes ORDER BY updated_at DESC, id DESC"
+                "SELECT id, resource_id, revision, note_type, title, notebook_id, created_at, updated_at, secure FROM notes ORDER BY updated_at DESC, id DESC"
             ).fetchall()
         return [
             {
@@ -675,6 +711,7 @@ class NoteService:
                 "notebookId": row["notebook_id"],
                 "createdAt": row["created_at"],
                 "updatedAt": row["updated_at"],
+                "secure": bool(row["secure"]),
             }
             for row in rows
         ]
@@ -686,7 +723,13 @@ class NoteService:
             ).fetchone()
         if note is None:
             raise NotFoundError("Note not found")
-        return self.serialize_note(note)
+        if not note["secure"]:
+            return self.serialize_note(note)
+        revealed = self.reveal_row(note)
+        if revealed is None:
+            # Locked: the title and the facts about the note, never its words.
+            return {**self.serialize_note(note), "content": None, "pageState": None, "locked": True}
+        return self.serialize_note(revealed)
 
     def create_note(self, payload: dict) -> dict:
         title = str(payload.get("title") or "Untitled note")[:180]
@@ -733,6 +776,11 @@ class NoteService:
             ).fetchone()
             if current is None:
                 raise NotFoundError("Note not found")
+            data_key = None
+            if current["secure"]:
+                data_key = self.keyring.get(current["secure_key_id"])
+                if data_key is None:
+                    raise SecureLockedError("This note is locked. Unlock secure notes to change it.")
             expected_revision = self.expected_revision(payload, current["revision"])
             note_type = current["note_type"]
             body = None
@@ -751,13 +799,18 @@ class NoteService:
                 )
                 page_state = json.dumps(saved_page, separators=(",", ":"))
             revision = expected_revision + 1
+            stored_content, stored_page_state, sealed = content, page_state, None
+            if data_key is not None:
+                # A secure note keeps its words only sealed; the plain columns hold an empty placeholder and search sees the title only.
+                sealed = sc.seal(data_key, current["secure_key_id"], {"content": content, "page_state": page_state, "content_format": content_format})
+                stored_content, stored_page_state, body = self.placeholder_content(note_type), json.dumps(DEFAULT_PAGE_STATE), ""
             cursor = connection.execute(
                 """
                 UPDATE notes
-                SET title = ?, content = ?, content_format = ?, page_state = ?, revision = ?, updated_at = CURRENT_TIMESTAMP
+                SET title = ?, content = ?, content_format = ?, page_state = ?, sealed = ?, revision = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND revision = ?
                 """,
-                (title, content, content_format, page_state, revision, note_id, expected_revision),
+                (title, stored_content, content_format, stored_page_state, sealed, revision, note_id, expected_revision),
             )
             if cursor.rowcount == 0:
                 raise ConflictError("Resource revision does not match")
@@ -770,7 +823,7 @@ class NoteService:
                     "UPDATE notes SET notebook_id = ? WHERE id = ?",
                     (notebook_id, note_id),
                 )
-            self.index_note(connection, note_id, title, content, note_type, content_format, body=body)
+            self.index_note(connection, note_id, title, stored_content, note_type, content_format, body=body)
             self.record_change(connection, "note", current["resource_id"], revision, "updated")
             connection.commit()
         return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
@@ -806,6 +859,7 @@ class NoteService:
 
     def write_page(self, note_id: int, markdown: str, revision: int | None = None) -> dict:
         """Replace a page note's Markdown (an agent's rewrite). Marks and linked drawings find their words again; none are dropped."""
+        self.refuse_agent_on_secure(note_id)
         if len(markdown) > APPEND_MAX_LENGTH * 10:
             raise AppendTextError("Text is too long")
         note = self.get_note(note_id)
@@ -822,6 +876,7 @@ class NoteService:
         reading order; a note without one gets one, as append does. The text's marks and the objects linked to its words find those words
         again; a mark whose words are gone is kept as ink beside the text, and a linked object whose words are gone is unlinked and shown.
         """
+        self.refuse_agent_on_secure(note_id)
         if len(markdown) > APPEND_MAX_LENGTH * 10:
             raise AppendTextError("Text is too long")
         note = self.get_note(note_id)
@@ -924,6 +979,7 @@ class NoteService:
         Existing objects are never rewritten. The write goes through update_note,
         so a stale revision raises ConflictError and leaves the note unchanged.
         """
+        self.refuse_agent_on_secure(note_id)
         text = str(text).strip("\n")
         if not text.strip():
             raise AppendTextError("Text to append is empty")
@@ -1037,6 +1093,267 @@ class NoteService:
             )
             connection.commit()
 
+    # ---- secure notes (F-057, ADR 0005) ----------------------------------------------------------------------------------
+
+    @staticmethod
+    def placeholder_content(note_type: str) -> str:
+        """What a secure note's plain `content` column holds: an empty document of its type (the words are only in `sealed`)."""
+        if note_type == "page":
+            return json.dumps(empty_page_document(), separators=(",", ":"))
+        if note_type == "mindmap":
+            return json.dumps(DEFAULT_MINDMAP_CONTENT, separators=(",", ":"))
+        return empty_canvas_text()
+
+    def reveal_row(self, row) -> dict | None:
+        """A secure note's row with its words put back, or None while its key is not held (locked)."""
+        data_key = self.keyring.get(row["secure_key_id"])
+        if data_key is None:
+            return None
+        try:
+            payload = sc.unseal(data_key, row["secure_key_id"], row["sealed"])
+        except sc.DecryptError as error:
+            logger.error("event=secure.open outcome=failed note_id=%s", row["id"])
+            raise SecureAuthError(str(error)) from error
+        content, page_state = payload.get("content"), payload.get("page_state")
+        if not isinstance(content, str) or not isinstance(page_state, str):
+            raise SecureAuthError("This secure note could not be read")
+        revealed = dict(row)
+        revealed.update(content=content, page_state=page_state, content_format=payload.get("content_format") or row["content_format"])
+        return revealed
+
+    def refuse_agent_on_secure(self, note_id: int) -> None:
+        """The agent writes (append, rewrite) never touch a secure note, locked or not."""
+        with self.connection() as connection:
+            row = connection.execute("SELECT secure FROM notes WHERE id = ?", (note_id,)).fetchone()
+        if row is not None and row["secure"]:
+            raise SecureNoteAgentError("This is a secure note: agents cannot read or write it")
+
+    def secure_status(self) -> dict:
+        with self.connection() as connection:
+            configured = connection.execute("SELECT COUNT(*) FROM secure_keys").fetchone()[0] > 0
+            count = connection.execute("SELECT COUNT(*) FROM notes WHERE secure = 1").fetchone()[0]
+        return {
+            "backend": self.secure_platform.backend(),
+            "configured": configured,
+            "unlocked": self.keyring.is_unlocked,
+            "secureNotes": count,
+        }
+
+    def lock_secure(self) -> dict:
+        """Forget every key held in memory (and the Touch ID yes); secure notes read as locked again."""
+        self.keyring.lock()
+        forget = getattr(self.secure_platform, "forget_authentication", None)
+        if forget is not None:
+            forget()
+        return self.secure_status()
+
+    def _device_wrapping_key(self, reason: str, passphrase, salt: bytes | None = None, params: dict | None = None) -> tuple[str, bytes]:
+        """The key that wraps the data key on this computer: (kind, key). A Mac asks for Touch ID first; elsewhere a passphrase is used."""
+        if self.secure_platform.available():
+            if not self.secure_platform.authenticate(reason):
+                raise SecureAuthError("Touch ID was not accepted")
+            try:
+                return "keychain", sc.keychain_wrapping_key(self.secure_platform.key_get_or_create())
+            except (default_secure_platform.NotAuthenticated, default_secure_platform.Unavailable, OSError, sc.DecryptError) as error:
+                logger.warning("event=secure.keychain outcome=failed error_class=%s", type(error).__name__)
+                raise SecureAuthError("The keychain key could not be read") from error
+        if not isinstance(passphrase, str) or not passphrase:
+            raise SecureSetupError("Type the passphrase for secure notes")
+        return "passphrase", b""
+
+    def _primary_key(self, connection: sqlite3.Connection, passphrase) -> tuple[str, bytes, str | None]:
+        """(key id, data key, recovery key or None) for sealing a note; makes the keys the first time."""
+        primary = connection.execute("SELECT key_id FROM secure_keys WHERE is_primary = 1 ORDER BY id LIMIT 1").fetchone()
+        if primary is not None:
+            data_key = self.keyring.get(primary["key_id"])
+            if data_key is None:
+                raise SecureLockedError("Secure notes are locked. Unlock them first.")
+            return primary["key_id"], data_key, None
+        # First secure note on this computer: a new data key, wrapped by this computer's key and by a one-time recovery key.
+        if not self.secure_platform.available():
+            try:
+                sc.check_passphrase(passphrase)
+            except ValueError as error:
+                raise SecureSetupError(str(error)) from None
+        kind, device_key = self._device_wrapping_key("Personal Note is making your first secure note", passphrase)
+        key_id, data_key = sc.new_key_id(), sc.new_data_key()
+        salt, params = None, None
+        if kind == "passphrase":
+            salt_bytes, params = sc.new_salt(), sc.new_scrypt_params(self.scrypt_cost)
+            device_key = sc.passphrase_wrapping_key(passphrase, salt_bytes, params)
+            salt = sc.b64(salt_bytes)
+        recovery_key = sc.new_recovery_key()
+        recovery_salt = sc.new_salt()
+        rows = [
+            (key_id, kind, sc.WRAP_VERSION, salt, json.dumps(params) if params else None, sc.wrap(device_key, key_id, kind, data_key)),
+            (
+                key_id, "recovery", sc.WRAP_VERSION, sc.b64(recovery_salt), None,
+                sc.wrap(sc.recovery_wrapping_key(recovery_key, recovery_salt), key_id, "recovery", data_key),
+            ),
+        ]
+        for row in rows:
+            connection.execute(
+                "INSERT INTO secure_keys (key_id, kind, version, salt, params, wrapped, is_primary) VALUES (?, ?, ?, ?, ?, ?, 1)", row
+            )
+        return key_id, data_key, recovery_key
+
+    def mark_secure(self, note_id: int, revision: int | None = None, passphrase: str | None = None) -> dict:
+        """Make a whole note secure: its words are sealed (AES-256-GCM) and leave the plain columns and the search index.
+
+        Returns {ok, resourceId, revision}, plus `recoveryKey` exactly once: when the first secure note creates the keys.
+        Needs the secure notes unlocked when keys already exist; on a Mac the first one asks for Touch ID, elsewhere for a passphrase.
+        """
+        recovery_key = None
+        with self.connection() as connection:
+            current = connection.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+            if current is None:
+                raise NotFoundError("Note not found")
+            if current["secure"]:
+                return {"ok": True, "resourceId": current["resource_id"], "revision": current["revision"]}
+            expected = self.expected_revision({} if revision is None else {"revision": revision}, current["revision"])
+            key_id, data_key, recovery_key = self._primary_key(connection, passphrase)
+            sealed = sc.seal(
+                data_key, key_id,
+                {"content": current["content"], "page_state": current["page_state"], "content_format": current["content_format"]},
+            )
+            new_revision = expected + 1
+            cursor = connection.execute(
+                """
+                UPDATE notes SET secure = 1, secure_key_id = ?, sealed = ?, content = ?, page_state = ?, revision = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND revision = ?
+                """,
+                (key_id, sealed, self.placeholder_content(current["note_type"]), json.dumps(DEFAULT_PAGE_STATE), new_revision, note_id, expected),
+            )
+            if cursor.rowcount == 0:
+                raise ConflictError("Resource revision does not match")
+            self.index_note(connection, note_id, current["title"], "", current["note_type"], current["content_format"], body="")
+            self.record_change(connection, "note", current["resource_id"], new_revision, "updated")
+            connection.commit()
+        self.keyring.unlock(key_id, data_key)
+        self.scrub_old_words()
+        result = {"ok": True, "resourceId": current["resource_id"], "revision": new_revision}
+        if recovery_key is not None:
+            result["recoveryKey"] = recovery_key
+        return result
+
+    def scrub_old_words(self) -> None:
+        """Remove what the plain note left behind in the file: old search entries, freed pages and the write-ahead log."""
+        try:
+            with self.connection() as connection:
+                connection.execute("INSERT INTO note_search(note_search) VALUES ('optimize')")
+                connection.commit()
+                connection.execute("VACUUM")
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error:
+            logger.exception("event=secure.scrub outcome=failed")
+
+    def unmark_secure(self, note_id: int, revision: int | None = None) -> dict:
+        """Take a note out of secure: its words go back to the plain columns and the search index. Needs the note unlocked."""
+        with self.connection() as connection:
+            current = connection.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+            if current is None:
+                raise NotFoundError("Note not found")
+            if not current["secure"]:
+                return {"ok": True, "resourceId": current["resource_id"], "revision": current["revision"]}
+            revealed = self.reveal_row(current)
+            if revealed is None:
+                raise SecureLockedError("This note is locked. Unlock secure notes to change it.")
+            expected = self.expected_revision({} if revision is None else {"revision": revision}, current["revision"])
+            new_revision = expected + 1
+            cursor = connection.execute(
+                """
+                UPDATE notes SET secure = 0, secure_key_id = NULL, sealed = NULL, content = ?, page_state = ?, content_format = ?,
+                    revision = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND revision = ?
+                """,
+                (revealed["content"], revealed["page_state"], revealed["content_format"], new_revision, note_id, expected),
+            )
+            if cursor.rowcount == 0:
+                raise ConflictError("Resource revision does not match")
+            self.index_note(connection, note_id, current["title"], revealed["content"], current["note_type"], revealed["content_format"], revealed["page_state"])
+            self.record_change(connection, "note", current["resource_id"], new_revision, "updated")
+            connection.commit()
+        return {"ok": True, "resourceId": current["resource_id"], "revision": new_revision}
+
+    def unlock_secure(self, passphrase: str | None = None, recovery_key: str | None = None) -> dict:
+        """Hold the data keys in memory. A recovery key if given; else Touch ID on a Mac, or the passphrase elsewhere."""
+        with self.connection() as connection:
+            rows = connection.execute("SELECT * FROM secure_keys ORDER BY id").fetchall()
+        if not rows:
+            raise SecureSetupError("There are no secure notes yet")
+        opened = 0
+        if recovery_key is not None:
+            try:
+                sc.normalize_recovery_key(recovery_key)
+            except ValueError as error:
+                raise SecureAuthError(str(error)) from None
+            for row in rows:
+                if row["kind"] == "recovery":
+                    opened += self._try_unwrap(row, sc.recovery_wrapping_key(recovery_key, sc.unb64(row["salt"])))
+        elif self.secure_platform.available():
+            _kind, device_key = self._device_wrapping_key("Personal Note is unlocking your secure notes", None)
+            for row in rows:
+                if row["kind"] == "keychain":
+                    opened += self._try_unwrap(row, device_key)
+        else:
+            if not isinstance(passphrase, str) or not passphrase:
+                raise SecureSetupError("Type the passphrase for secure notes")
+            for row in rows:
+                if row["kind"] == "passphrase":
+                    key = sc.passphrase_wrapping_key(passphrase, sc.unb64(row["salt"]), json.loads(row["params"]))
+                    opened += self._try_unwrap(row, key)
+        if not opened:
+            raise SecureAuthError("That did not open the secure notes" if recovery_key is None else "That recovery key does not open these notes")
+        return self.secure_status()
+
+    def _try_unwrap(self, row, wrapping_key: bytes) -> int:
+        try:
+            data_key = sc.unwrap(wrapping_key, row["key_id"], row["kind"], row["wrapped"], row["version"])
+        except sc.DecryptError:
+            return 0
+        self.keyring.unlock(row["key_id"], data_key)
+        return 1
+
+    def secure_key_rows(self, connection: sqlite3.Connection) -> list[dict]:
+        """The wrapped keys, for a backup (never a data key, passphrase or recovery key)."""
+        return [
+            {
+                "keyId": row["key_id"], "kind": row["kind"], "version": row["version"], "salt": row["salt"],
+                "params": self.parse_json(row["params"], None), "wrapped": row["wrapped"], "primary": bool(row["is_primary"]),
+            }
+            for row in connection.execute("SELECT * FROM secure_keys ORDER BY id").fetchall()
+        ]
+
+    @staticmethod
+    def check_secure_import(snapshot: dict, notes: list, local_key_ids: set[str]) -> list[dict]:
+        """Validate a backup's secure keys and secure notes before anything is written; returns the key rows."""
+        keys = snapshot.get("secureKeys", [])
+        if not isinstance(keys, list):
+            raise WorkspaceImportError("Backup secure keys must be a list")
+        for key in keys:
+            if (
+                not isinstance(key, dict) or not isinstance(key.get("keyId"), str) or not key["keyId"] or len(key["keyId"]) > 64
+                or key.get("kind") not in ("keychain", "passphrase", "recovery") or not isinstance(key.get("version"), int)
+                or isinstance(key.get("version"), bool) or not isinstance(key.get("wrapped"), str)
+                or not (key.get("salt") is None or isinstance(key.get("salt"), str))
+                or not (key.get("params") is None or isinstance(key.get("params"), dict))
+            ):
+                raise WorkspaceImportError("A secure key in the backup cannot be read")
+            try:
+                sc.unb64(key["wrapped"])
+                if key.get("salt") is not None:
+                    sc.unb64(key["salt"])
+            except Exception:
+                raise WorkspaceImportError("A secure key in the backup cannot be read") from None
+        known = local_key_ids | {key["keyId"] for key in keys}
+        for note in notes:
+            if not note.get("secure"):
+                continue
+            key_id = note.get("keyId")
+            if not sc.is_sealed_text(note.get("sealed")) or not isinstance(key_id, str) or key_id not in known:
+                raise WorkspaceImportError("A secure note in the backup cannot be read")
+        return keys
+
     def workspace_snapshot(self) -> dict:
         """Return canonical notebook and note data without local database IDs."""
         with self.connection() as connection:
@@ -1047,14 +1364,16 @@ class NoteService:
                 "SELECT resource_id, name, color, category, created_at, updated_at FROM notebooks ORDER BY id"
             ).fetchall()
             notes = connection.execute(
-                "SELECT resource_id, note_type, title, content, content_format, page_state, notebook_id, created_at, updated_at FROM notes ORDER BY id"
+                "SELECT resource_id, note_type, title, content, content_format, page_state, notebook_id, created_at, updated_at, secure, secure_key_id, sealed FROM notes ORDER BY id"
             ).fetchall()
+            secure_keys = self.secure_key_rows(connection)
             notebook_resources = {
                 row["id"]: row["resource_id"]
                 for row in connection.execute("SELECT id, resource_id FROM notebooks")
             }
         return {
             "workspaceId": workspace["workspace_id"],
+            "secureKeys": secure_keys,
             "notebooks": [
                 {
                     "resourceId": row["resource_id"],
@@ -1066,20 +1385,26 @@ class NoteService:
                 }
                 for row in notebooks
             ],
-            "notes": [
-                {
-                    "resourceId": row["resource_id"],
-                    "notebookResourceId": notebook_resources[row["notebook_id"]],
-                    "noteType": row["note_type"],
-                    "title": row["title"],
-                    "contentFormat": self.format_of(row),
-                    "content": self.snapshot_content(row),
-                    "pageState": self.parse_json(row["page_state"], DEFAULT_PAGE_STATE),
-                    "createdAt": row["created_at"],
-                    "updatedAt": row["updated_at"],
-                }
-                for row in notes
-            ],
+            "notes": [self.snapshot_note(row, notebook_resources) for row in notes],
+        }
+
+    def snapshot_note(self, row, notebook_resources: dict) -> dict:
+        note = {
+            "resourceId": row["resource_id"],
+            "notebookResourceId": notebook_resources[row["notebook_id"]],
+            "noteType": row["note_type"],
+            "title": row["title"],
+            "contentFormat": self.format_of(row),
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+        if row["secure"]:
+            # Ciphertext only, whether or not the note is unlocked right now; the wrapped keys travel in `secureKeys`.
+            return {**note, "content": {}, "pageState": dict(DEFAULT_PAGE_STATE), "secure": True, "keyId": row["secure_key_id"], "sealed": row["sealed"]}
+        return {
+            **note,
+            "content": self.snapshot_content(row),
+            "pageState": self.parse_json(row["page_state"], DEFAULT_PAGE_STATE),
         }
 
     def snapshot_content(self, row) -> dict:
@@ -1102,7 +1427,7 @@ class NoteService:
         with self.connection() as connection:
             rows = connection.execute(
                 """
-                SELECT notes.id, notes.note_type, notes.title, notes.content, notes.content_format, notes.page_state, notebooks.name AS notebook_name
+                SELECT notes.id, notes.note_type, notes.title, notes.content, notes.content_format, notes.page_state, notes.secure, notebooks.name AS notebook_name
                 FROM notes JOIN notebooks ON notebooks.id = notes.notebook_id ORDER BY notes.id
                 """
             ).fetchall()
@@ -1115,6 +1440,7 @@ class NoteService:
                 "content": self.parse_json(row["content"], DEFAULT_CONTENT),
                 "contentFormat": self.format_of(row),
                 "pageState": self.parse_json(row["page_state"], DEFAULT_PAGE_STATE),
+                "secure": bool(row["secure"]),
             }
             for row in rows
         ]
@@ -1163,7 +1489,10 @@ class NoteService:
         imported_notebooks: dict[str, int] = {}
         imported_note_ids: list[int] = []
         with self.connection() as connection:
+            local_key_rows = connection.execute("SELECT key_id, kind, wrapped FROM secure_keys").fetchall()
+            backup_keys = self.check_secure_import(snapshot, notes, {row["key_id"] for row in local_key_rows})
             reserved_ids = self.reserved_block_ids(connection, -1)
+            self.import_secure_keys(connection, backup_keys, local_key_rows, snapshot.get("primaryKeyId"))
             for notebook in notebooks:
                 name = str(notebook.get("name") or "Imported notebook").strip()[:80]
                 color_value = notebook.get("color")
@@ -1182,7 +1511,14 @@ class NoteService:
                 page_state_value = note.get("pageState")
                 page_state = page_state_value if isinstance(page_state_value, dict) else DEFAULT_PAGE_STATE
                 body = None
-                if note_type == "page":
+                secure_key_id, sealed = None, None
+                if note.get("secure"):
+                    # Still encrypted: stored as it came, the words are never opened here. Search sees the title only.
+                    secure_key_id, sealed, body = note["keyId"], note["sealed"], ""
+                    content_format = {"page": FORMAT_PAGE, "mindmap": FORMAT_MINDMAP}.get(note_type, FORMAT_CANVAS)
+                    content = self.placeholder_content(note_type)
+                    page_state = dict(DEFAULT_PAGE_STATE)
+                elif note_type == "page":
                     content_format = FORMAT_PAGE
                     content = json.dumps(normalize_page_document(note["content"]), separators=(",", ":"))
                 elif note_type == "mindmap":
@@ -1201,8 +1537,8 @@ class NoteService:
                 cursor = connection.execute(
                     """
                     INSERT INTO notes
-                        (resource_id, note_type, title, content, content_format, page_state, notebook_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (resource_id, note_type, title, content, content_format, page_state, notebook_id, secure, secure_key_id, sealed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         resource_id,
@@ -1212,6 +1548,9 @@ class NoteService:
                         content_format,
                         json.dumps(page_state, separators=(",", ":")),
                         imported_notebooks[note["notebookResourceId"]],
+                        1 if sealed else 0,
+                        secure_key_id,
+                        sealed,
                     ),
                 )
                 note_id = cursor.lastrowid
@@ -1225,6 +1564,25 @@ class NoteService:
             "notesImported": len(imported_note_ids),
             "noteIds": imported_note_ids,
         }
+
+    @staticmethod
+    def import_secure_keys(connection: sqlite3.Connection, keys: list[dict], local_rows: list, primary_key_id) -> None:
+        """Add a backup's wrapped keys beside the ones already here (merge-only); the first keys a workspace gets become its primary."""
+        have = {(row["key_id"], row["kind"], row["wrapped"]) for row in local_rows}
+        make_primary = not local_rows and keys
+        if make_primary and not any(key["keyId"] == primary_key_id for key in keys):
+            primary_key_id = next((key["keyId"] for key in keys if key.get("primary")), keys[0]["keyId"])
+        for key in keys:
+            if (key["keyId"], key["kind"], key["wrapped"]) in have:
+                continue
+            connection.execute(
+                "INSERT INTO secure_keys (key_id, kind, version, salt, params, wrapped, is_primary) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    key["keyId"], key["kind"], key["version"], key.get("salt"),
+                    json.dumps(key["params"]) if key.get("params") else None, key["wrapped"],
+                    1 if make_primary and key["keyId"] == primary_key_id else 0,
+                ),
+            )
 
     def record_agent_activity(
         self, agent: str, note_id: int | None, action: str, now: float | None = None

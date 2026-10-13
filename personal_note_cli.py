@@ -19,7 +19,7 @@ from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
-from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
+from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, SecureError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
 from vault import PortabilityVaultError, export_vault_directory, import_vault_archive, import_vault_directory
 
 ROOT = Path(__file__).resolve().parent
@@ -216,14 +216,23 @@ def command_notes_list(service: NoteService, _args: argparse.Namespace) -> list[
     return service.list_notes()
 
 
+def agent_view(note: dict) -> dict:
+    """A secure note's words never reach an agent: it sees the title and that the note is locked."""
+    if note.get("secure"):
+        return {**note, "content": None, "pageState": None, "locked": True}
+    return note
+
+
 def command_notes_get(service: NoteService, args: argparse.Namespace) -> dict:
-    note = service.get_note(args.note_id)
+    note = agent_view(service.get_note(args.note_id))
     service.record_agent_activity(args.agent, note["id"], "reading")
     return note
 
 
 def command_notes_read(service: NoteService, args: argparse.Namespace) -> dict | None:
     note = service.get_note(args.note_id)
+    if note.get("secure"):
+        raise CliError("This is a secure note: agents cannot read or write it")
     service.record_agent_activity(args.agent, note["id"], "reading")
     text = note_plain_text(note)
     if args.as_text:
@@ -348,7 +357,7 @@ def main(argv: list[str] | None = None) -> int:
         if result is not None:
             emit(result)
         return 0
-    except (CliError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, InvalidNoteContentError, PortabilityError, PortabilityVaultError, WorkspaceImportError, PluginManifestError, MigrationError) as error:
+    except (CliError, SecureError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, InvalidNoteContentError, PortabilityError, PortabilityVaultError, WorkspaceImportError, PluginManifestError, MigrationError) as error:
         emit({"ok": False, "error": str(error)})
         return 2
     except Exception:

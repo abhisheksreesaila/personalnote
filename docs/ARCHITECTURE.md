@@ -108,6 +108,16 @@ The editor chunk is fetched only when a mind-map note opens. Canvas notes create
 
 Import never deletes or overwrites existing notes. New local resource IDs are assigned, and conflicting canvas object IDs are regenerated. This gives users a safe restore path without inventing sync or conflict-resolution semantics.
 
+### Secure notes (F-057, ADR 0005)
+
+A whole note can be marked secure (`POST /api/notes/{id}/secure`; `DELETE` takes it back). Its words (`content`, `page_state`, format) are sealed with AES-256-GCM into `notes.sealed`; the plain columns hold an empty placeholder and the title stays readable. `secure_crypto.py` is the pure crypto and the in-memory `Keyring`; `NoteService` owns the rows (`secure_keys` holds the wrapped data key per kind: keychain, passphrase, recovery).
+
+- Locked is the default: with no key in memory `get_note` returns the note with `content: null` and `locked: true`, and writes raise `SecureLockedError` (HTTP 423). `unlock_secure` (Touch ID on a Mac, a passphrase elsewhere, or the recovery key) fills the keyring; `lock_secure` empties it; `keyring.set_idle_timeout(seconds)` is the hook for the auto-lock.
+- Search indexes the title only. Markdown and Obsidian exports write the title and a "secure note" line. The CLI and `append_text`/`write_page`/`write_canvas_text` never read or write a secure note, locked or not. The change feed carries ids and revisions only.
+- Backups (version 2) carry each secure note as `{secure, keyId, sealed}` plus `secureKeys` (wrapped keys only). Import keeps them sealed and adds the keys beside any already here, so a machine can hold several data keys; a recovery key opens the ones it wraps.
+- Marking a note secure removes the old plain words from the file (search index optimize, `VACUUM`, WAL truncate). Pictures a secure note uses stay ordinary files in `media/` (not encrypted).
+- Routes: `GET /api/secure/status`, `POST /api/secure/unlock`, `POST /api/secure/lock` (the writes need the app header).
+
 ## Data model
 
 ```mermaid
@@ -198,6 +208,9 @@ LeaferJS is the canvas engine and the only one: F-036 removed Fabric.js (the dep
 | `GET` | `/api/export/vault` | Obsidian vault ZIP (`.canvas` files + attachments) |
 | `POST` | `/api/import/vault` | Merge-only import of a vault ZIP (needs the app header; raw body) |
 | `GET` | `/api/media/{sha256}.{ext}` | A content-addressed picture or SVG; any other name is a 404 |
+| `GET` | `/api/secure/status` | Secure notes: backend (`touchid`/`passphrase`), configured, unlocked |
+| `POST` | `/api/secure/unlock`, `/api/secure/lock` | Unlock (Touch ID, `{passphrase}` or `{recoveryKey}`) or lock; app header needed |
+| `POST/DELETE` | `/api/notes/{id}/secure` | Mark a note secure (first time returns `recoveryKey` once) or take it out |
 | `GET` | `/api/changes?since=` | Cheap change feed plus active agent presence, polled by the open app |
 
 There are no v1 model, suggestion, or remote workspace endpoints. Agents reach the notebook through the local CLI, which writes through `NoteService` to the same SQLite file; the browser notices those writes through `/api/changes`.
@@ -209,7 +222,7 @@ The canvas route statically loads Leafer and the shell (about 189 KiB of JavaScr
 ## Security and deployment boundaries
 
 - The API binds to `127.0.0.1` by default.
-- SQLite is local storage, not encryption. Secure notes (F-056..F-058) are under way: `secure_platform.py` holds the Mac pieces (Touch ID through LocalAuthentication, a key in the login keychain, keeping the window out of screen capture) and reports a passphrase backend elsewhere.
+- SQLite is local storage; only notes marked secure are encrypted (F-057, ADR 0005, below). `secure_platform.py` holds the Mac pieces (Touch ID through LocalAuthentication, a key in the login keychain, keeping the window out of screen capture) and reports a passphrase backend elsewhere.
 - V1 has no authentication, tenancy, sync, or remote API contract. Local agent access is the CLI on the same machine, with the same file permissions as the database.
 - No secret or provider credential is sent to the browser.
 - Imported backup content is treated as data and validated for format, note type, references, and size before insertion.
@@ -227,6 +240,7 @@ The canvas route statically loads Leafer and the shell (about 189 KiB of JavaScr
 | `voice_runtime.py` | Voice engine and model download, verification, removal and process lifecycle |
 | `scripts/build-voice-engine.sh` | Builds the pinned NeMo-Speech.cpp engine for the release (Linux x86_64 CPU, macOS arm64 Metal) |
 | `routes.py` | Core HTTP routes |
+| `secure_crypto.py` | Secure notes: AES-256-GCM seal/unseal, key wrapping (keychain, scrypt passphrase, recovery key), the in-memory keyring |
 | `desktop.py` | Native-window entry point: in-process server, single instance, close-time flush |
 | `desktop_menu.py` | macOS window chrome and menu bar: menu model, commands sent to `window.personalNote.command(name)`, guarded AppKit calls |
 | `app_paths.py` | Default database location shared by the app, CLI and server |

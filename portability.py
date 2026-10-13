@@ -203,7 +203,10 @@ def markdown_archive(service) -> bytes:
                 f"- Updated: {note.get('updatedAt', '')}",
                 "",
             ]
-            if note.get("noteType") == "page":
+            if note.get("secure"):
+                # F-057: the words of a secure note are never exported; the file only says it exists.
+                lines.append("*Secure note: its words are not part of this export.*")
+            elif note.get("noteType") == "page":
                 # A page is Markdown already: written as is (its ink stays in the JSON backup).
                 lines.extend(normalize_page_document(note.get("content"))["markdown"].splitlines())
             elif note.get("noteType") == "mindmap":

@@ -39,7 +39,7 @@ rm -rf build/pyinstaller dist-app/personal-note "dist-app/$NAME" "dist-app/$NAME
   --hidden-import routes --hidden-import services --hidden-import portability \
   --hidden-import app_schema --hidden-import note_text --hidden-import app_paths --hidden-import migration \
   --hidden-import document_model --hidden-import json_canvas --hidden-import media_store --hidden-import vault \
-  --hidden-import plugin_manifest --hidden-import startup --hidden-import voice_runtime --hidden-import chromium_app --hidden-import desktop_menu
+  --hidden-import plugin_manifest --hidden-import startup --hidden-import voice_runtime --hidden-import chromium_app --hidden-import desktop_menu --hidden-import secure_platform --hidden-import secure_crypto --collect-submodules cryptography
 
 STAGE="dist-app/$NAME"
 mkdir -p "$STAGE"

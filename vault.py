@@ -93,6 +93,10 @@ def export_vault(service) -> tuple[dict[str, bytes], list[str]]:
     for note in service.export_rows():
         folder = vault_name(note["notebookName"], "Notebook")
         title = vault_name(note["title"], f"Note {note['id']}")
+        if note.get("secure"):
+            # F-057: only the title leaves; the words of a secure note are never exported.
+            files[_unique(f"{folder}/{title}.md", used)] = f"# {note['title']}\n\n*Secure note: its words are not part of this export.*\n".encode("utf-8")
+            continue
         if note["noteType"] == "page":
             # A page is Markdown: Obsidian opens it as a normal note (its ink stays in the workspace backup).
             markdown = normalize_page_document(note["content"])["markdown"]

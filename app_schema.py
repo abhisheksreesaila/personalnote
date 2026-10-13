@@ -52,6 +52,17 @@ CREATE TABLE IF NOT EXISTS agent_activity (
     action TEXT NOT NULL CHECK (action IN ('reading', 'writing')),
     at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS secure_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('keychain', 'passphrase', 'recovery')),
+    version INTEGER NOT NULL DEFAULT 1,
+    salt TEXT,
+    params TEXT,
+    wrapped TEXT NOT NULL,
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE INDEX IF NOT EXISTS idx_workspace_changes_resource
 ON workspace_changes(resource_kind, resource_id, sequence);
 """
@@ -87,6 +98,18 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
             # Another process starting at the same moment added it first.
             if "duplicate column" not in str(error):
                 raise
+    # Secure notes (F-057, ADR 0005): `sealed` holds the encrypted words; `content` and `page_state` then hold an empty placeholder.
+    for column, definition in (
+        ("secure", "INTEGER NOT NULL DEFAULT 0"),
+        ("secure_key_id", "TEXT"),
+        ("sealed", "TEXT"),
+    ):
+        if column not in note_columns:
+            try:
+                connection.execute(f"ALTER TABLE notes ADD COLUMN {column} {definition}")
+            except sqlite3.OperationalError as error:
+                if "duplicate column" not in str(error):
+                    raise
     connection.execute(
         "UPDATE notes SET content_format = 'mindmap' WHERE note_type = 'mindmap' AND content_format = 'fabric'"
     )
