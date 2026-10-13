@@ -150,6 +150,96 @@ try {
   await page.waitForFunction(() => window.__personalNote.leaferEdits.doc.objects.some((o) => o.type === 'image'), null, { timeout: 8000 }).catch(() => {})
   check('a picture dropped on the open writing goes on the page (not into the words)', (await objects()).some((o) => o.type === 'image') && !(await objects()).some((o) => o.type === 'text' && /dot\.png|PNG/.test(o.content ?? '')))
 
+  // F-069: text wraps at the page edge while it is typed, exactly where it wraps once the typing stops (and after a reload), the pages do
+  // not grow sideways, and a faint hairline marks the wrap edge only while the words are written.
+  const wrapProbe = () => pn(() => {
+    const content = document.querySelector('.md-editor .cm-content')
+    const holder = document.querySelector('.md-editor')
+    if (!content || !holder) return null
+    const edge = holder.getBoundingClientRect().right
+    const rows = []
+    let top = null
+    let current = []
+    let inkRight = 0
+    const range = document.createRange()
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (let i = 0; i < node.data.length; i += 1) {
+        range.setStart(node, i); range.setEnd(node, i + 1)
+        const box = range.getBoundingClientRect()
+        if (!box.width && node.data[i] !== ' ') continue
+        if (top !== null && Math.abs(box.top - top) > 4) { rows.push(current.join('')); current = [] }
+        top = box.top
+        current.push(node.data[i])
+        if (node.data[i] !== ' ') inkRight = Math.max(inkRight, box.right)
+      }
+    }
+    rows.push(current.join(''))
+    const hair = holder.querySelector('.md-edge')
+    const hairBox = hair?.getBoundingClientRect()
+    return { rows: rows.map((row) => row.trim().split(/\s+/).join(' ')), over: inkRight - edge, edge, width: holder.getBoundingClientRect().width, columns: window.__personalNote.state.pages.columns,
+      hair: hair ? { right: hairBox.right, visible: getComputedStyle(hair).display !== 'none' && hairBox.width > 0 && hairBox.height > 0, parentIsHolder: hair.parentElement === holder } : null }
+  })
+  const committedRows = (id) => pn((textId) => {
+    const info = window.__personalNote.leaferCanvas().markdownInfo(textId)
+    const rows = []
+    let top = null
+    for (const word of info.words) { if (top === null || Math.abs(word.y - top) > 4) { rows.push([]); top = word.y } rows.at(-1).push(info.source.slice(word.from, word.to)) }
+    return rows.map((row) => row.join(' '))
+  }, id)
+  const sentence = 'The quick brown fox jumps over the lazy dog and keeps on running through the whole meadow until the sun goes down behind the hills. '
+  await pn(() => window.__personalNote.createNote())
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
+  await page.waitForFunction(() => document.querySelector('.md-editor .cm-content'), null, { timeout: 8000 }).catch(() => {})
+  await page.waitForTimeout(600)
+  const wrapNote = await pn(() => window.__personalNote.state.activeNoteId)
+  let widest = -1e9
+  let widths = new Set()
+  let columnsSeen = new Set()
+  for (let chunk = 0; chunk < 6; chunk += 1) {
+    await page.keyboard.type(sentence.slice(chunk * 22, chunk * 22 + 22), { delay: 3 })
+    const sample = await wrapProbe()
+    widest = Math.max(widest, sample.over); widths.add(Math.round(sample.width)); columnsSeen.add(sample.columns)
+  }
+  await page.keyboard.type(sentence.repeat(2), { delay: 1 })
+  const typing = await wrapProbe()
+  widest = Math.max(widest, typing.over); widths.add(Math.round(typing.width)); columnsSeen.add(typing.columns)
+  check('while typing a long line, no word ever runs past the wrap edge', widest <= 0.5, String(widest))
+  check('the editor keeps one width and the pages do not grow sideways while typing', widths.size === 1 && columnsSeen.size === 1 && [...columnsSeen][0] === 1, JSON.stringify([[...widths], [...columnsSeen]]))
+  check('a faint hairline marks the wrap edge while writing', Boolean(typing.hair?.visible) && typing.hair.parentIsHolder && Math.abs(typing.hair.right - typing.edge) < 2.5, JSON.stringify(typing.hair))
+  await shot('wrap-edge')
+  await page.waitForTimeout(1200) // (past the draft save)
+  const stillTyping = await wrapProbe()
+  check('the line breaks do not change when the typing pauses', JSON.stringify(stillTyping.rows) === JSON.stringify(typing.rows), JSON.stringify([typing.rows, stillTyping.rows]))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(800)
+  const wrapText = (await objects()).find((object) => object.type === 'text')
+  const settled = await committedRows(wrapText.id)
+  check('the line breaks once the typing stops equal the ones while typing', JSON.stringify(settled) === JSON.stringify(typing.rows), JSON.stringify([typing.rows, settled]))
+  check('the hairline is gone when the writing is done', (await pn(() => document.querySelector('.md-edge'))) === null)
+  check('the hairline is not saved in the note', !JSON.stringify(await pn(() => window.__personalNote.leaferEdits.doc)).includes('md-edge'))
+  await page.reload()
+  await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+  await pn((id) => window.__personalNote.selectNote(id), wrapNote)
+  await page.waitForFunction((id) => window.__personalNote.leaferCanvas?.().markdownInfo?.(id)?.words?.length > 5, wrapText.id, { timeout: 15000 })
+  await page.waitForTimeout(800)
+  check('and after a reload', JSON.stringify(await committedRows(wrapText.id)) === JSON.stringify(typing.rows))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(500)
+
+  // a text made with the Text tool part-way across the page wraps at that page's right margin, long unbreakable words included
+  await pn(() => { window.__personalNote.leaferCanvas().setView({ x: 120, y: 40, scale: 1 }); window.__personalNote.setTool('text') })
+  const wrapHost = await page.locator('#leafer-host').boundingBox()
+  await page.mouse.click(wrapHost.x + 120 + 560, wrapHost.y + 40 + 600)
+  await page.waitForTimeout(500)
+  await page.keyboard.type('Come and see Averyveryveryveryveryverylongwordwithoutanybreaksatallhere and the rest of the line', { delay: 2 })
+  const narrow = await wrapProbe()
+  check('a text started part-way across the page wraps at the page margin, even around a very long word', narrow.over <= 0.5 && narrow.rows.length > 3, JSON.stringify([narrow.over, narrow.rows]))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(800)
+  const narrowText = (await objects()).filter((object) => object.type === 'text').find((object) => object.id !== wrapText.id)
+  check('and breaks the same once it is written', JSON.stringify(await committedRows(narrowText.id)) === JSON.stringify(narrow.rows), JSON.stringify([narrow.rows, await committedRows(narrowText.id)]))
+
   // A phone-width window opens as before (no automatic caret, no 100% writing view)
   const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
   await phone.goto(`http://127.0.0.1:${UI_PORT}/notes`)

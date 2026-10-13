@@ -23,7 +23,11 @@ function installStyle() {
 .md-editor { position: absolute; left: 0; top: 0; transform-origin: 0 0; z-index: 5; -webkit-text-size-adjust: none; }
 .md-editor .cm-editor { background: transparent; }
 .md-editor .cm-editor.cm-focused { outline: none; }
-.md-editor .cm-scroller { overflow: visible; font-family: inherit; line-height: inherit; }
+.md-editor .cm-scroller { display: block; overflow: visible; font-family: inherit; line-height: inherit; }
+.md-editor.md-wrapped .cm-editor, .md-editor.md-wrapped .cm-content { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.md-editor .md-edge { position: absolute; top: -3px; bottom: -3px; right: -1px; width: 1px; pointer-events: none; z-index: 2;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--sk-muted, #6b6257) 38%, transparent) 14%, color-mix(in srgb, var(--sk-muted, #6b6257) 38%, transparent) 86%, transparent); }
+@media print { .md-editor .md-edge { display: none; } }
 .md-editor .cm-content { padding: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; font-kerning: normal; }
 .md-editor .cm-line { padding: 0; position: relative; letter-spacing: 0; }
 .md-editor .md-mark { position: absolute; pointer-events: none; }
@@ -204,7 +208,7 @@ export function createMarkdownEditor({ host }) {
       if (view) finish(true)
       session = { matrix, wrap, width, lineHeight: font.lineHeight, onInput, onCommit, onEscape, marks: marks.map((mark) => ({ mark, pos: mark.anchor.pos, end: mark.anchor.end })), links: links.map((link) => ({ ...link })) }
       holder = document.createElement('div')
-      holder.className = 'md-editor'
+      holder.className = wrap ? 'md-editor md-wrapped' : 'md-editor'
       Object.assign(holder.style, { width: wrap ? `${width}px` : 'max-content', font: cssFont({ italic: base.italic, fontWeight: base.fontWeight, fontSize: base.fontSize, fontFamily: quoteFamily(base.fontFamily) }), color: base.color, caretColor: base.color })
       host.append(holder)
       const inkLayer = document.createElementNS(SVG, 'svg')
@@ -270,6 +274,12 @@ export function createMarkdownEditor({ host }) {
         setSelectionRange: { value: (start, end = start) => editor.dispatch({ selection: EditorSelection.range(start, end) }), configurable: true },
       })
       holder.append(inkLayer)
+      if (wrap) { // the edge the words wrap at, faint, while they are written (it is not part of the note: nothing saves or prints it)
+        const edge = document.createElement('div')
+        edge.className = 'md-edge'
+        edge.setAttribute('aria-hidden', 'true')
+        holder.append(edge)
+      }
       drawMarks(view)
       openedAt = performance.now()
       place()

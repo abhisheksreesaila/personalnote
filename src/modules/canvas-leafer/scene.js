@@ -29,7 +29,7 @@ import { clearMarkdownLayouts, layoutMarkdown } from './markdown-layout.js'
 import { anchorStroke, mapMarks, placeMarks, quoteOf, wholeWords } from './text-marks.js'
 import { followLinks, linkRanges, linkWord } from './text-links.js'
 import { ERASER_RADIUS, samplePath } from './ink-model.js'
-import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal, writingWidth } from './text-ops.js'
 import { prettifySelection } from '../editor/prettify.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
@@ -1130,13 +1130,6 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       onEnd()
       onTextEvent('end')
     }
-  }
-
-  // From a page point to the right margin of its page (never narrower than a short line: past the margin the pages grow as usual).
-  const PAGE_MARGIN = 56
-  const writingWidth = (point) => {
-    const column = Math.max(0, Math.floor(point.x / PAGE.width))
-    return Math.max(200, Math.round((column + 1) * PAGE.width - PAGE_MARGIN - point.x))
   }
 
   const newId = () => `res_${globalThis.crypto.randomUUID().replaceAll('-', '')}`

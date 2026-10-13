@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { applyChanges } from '../../core/document/operations.js'
 import { applyMatrix, placementMatrix } from './placement.js'
-import { fitGeometry, newShape, planSetShapeFill, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newShape, writingWidth, planSetShapeFill, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
 
 const box = { x: 100, y: 50, width: 240, height: 200, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const doc = () => ({
@@ -121,4 +121,15 @@ test('choosing an object colour recolours the selected shapes, and only those th
   assert.deepEqual(op.changes.map((change) => change.id), ['a'])
   assert.deepEqual([op.changes[0].after.fill, op.changes[0].after.fillKey], ['#bf5af2', 'c4'])
   assert.equal(planSetShapeFill(d, { ids: ['a'], fill: '#ffd60a' }).op.changes.length, 0)
+})
+
+test('writingWidth runs from where a text starts to the right margin of its page', () => {
+  assert.equal(writingWidth({ x: 80 }, { pageW: 860 }), 724)
+  assert.equal(writingWidth({ x: 560 }, { pageW: 860 }), 244)
+  assert.equal(writingWidth({ x: 860 + 80 }, { pageW: 860 }), 724) // on the second page: its own margin
+})
+
+test('writingWidth is never narrower than a short line, and a point left of the page still has the first page margin', () => {
+  assert.equal(writingWidth({ x: 780 }, { pageW: 860 }), 200)
+  assert.equal(writingWidth({ x: -30 }, { pageW: 860 }), 834)
 })
