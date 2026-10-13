@@ -4,6 +4,7 @@
 // and the native undo of a typing session all work as they do in any form. The overlay never sets its value while the person types
 // (that is what doubles characters under an input method); it only reads it. No Leafer import here: the host (scene.js) gives it
 // the matrix that takes the text's own frame to screen pixels.
+import { QUIET_COLOR } from './markdown-layout.js'
 
 // Where the CSS line puts the first baseline for this font, in px below the top of the line box: measured, not assumed, because it
 // depends on the font's own metrics (Leafer's rule is (pitch + 0.7 * size) / 2).
@@ -66,6 +67,7 @@ export function createTextOverlay({ host }) {
   let area = null
   let session = null
   let composing = false
+  let edge = null // the faint hairline at the wrap edge while the words are written (not part of the note)
 
   const css = (font) => `${font.italic ? 'italic ' : ''}${font.weight} ${font.size}px ${font.family}`
 
@@ -79,6 +81,7 @@ export function createTextOverlay({ host }) {
     const contentHeight = Math.max(area.scrollHeight, session.lineHeight) // an empty field still has one line
     if (!wrap) area.style.width = `${contentWidth + 2}px` // room for the caret at the end of the longest line
     area.style.height = `${contentHeight}px`
+    if (edge) edge.style.height = `${contentHeight + 6}px`
     return { width: contentWidth, height: contentHeight }
   }
 
@@ -86,6 +89,7 @@ export function createTextOverlay({ host }) {
     if (!area) return
     const { matrix, shift } = session
     area.style.transform = `matrix(${matrix.a}, ${matrix.b}, ${matrix.c}, ${matrix.d}, ${matrix.e}, ${matrix.f}) translate(0px, ${shift}px)`
+    if (edge) edge.style.transform = `matrix(${matrix.a}, ${matrix.b}, ${matrix.c}, ${matrix.d}, ${matrix.e}, ${matrix.f}) translate(${session.width}px, ${shift - 3}px)`
   }
 
   function finish(commit) {
@@ -107,6 +111,8 @@ export function createTextOverlay({ host }) {
     window.removeEventListener('mousedown', keepFocus, true)
     area.removeEventListener('blur', onBlur)
     area.remove()
+    edge?.remove()
+    edge = null
     area = null
     session = null
     composing = false
@@ -149,7 +155,7 @@ export function createTextOverlay({ host }) {
     // value: the words so far. font: { family, size, weight, italic, lineHeight (px), letterSpacing (px), align, color, decoration, baseline (px, where
     // the host draws the first baseline below the text's top) }. wrap: false for a text as wide as its words; width: the wrapping width.
     // matrix: the text's own frame -> pixels from the host's top-left. caret: { x, y } in that frame, where to put the caret. Callbacks: onInput({ width, height }), onCommit(value), onEscape().
-    open({ value, font, wrap, width, matrix, caret = null, onInput = () => {}, onCommit, onEscape }) {
+    open({ value, font, wrap, width, matrix, edge: showEdge = false, caret = null, onInput = () => {}, onCommit, onEscape }) {
       if (area) finish(true)
       area = document.createElement('textarea')
       area.className = 'leafer-text-editor'
@@ -169,6 +175,14 @@ export function createTextOverlay({ host }) {
         fontKerning: 'auto',
       })
       host.append(area)
+      if (wrap && showEdge) {
+        edge = document.createElement('div')
+        edge.className = 'text-edge'
+        edge.setAttribute('aria-hidden', 'true')
+        const ink = 'color-mix(in srgb, var(--sk-muted, ${QUIET_COLOR}) 38%, transparent)'
+        Object.assign(edge.style, { position: 'absolute', left: '0', top: '0', width: '1px', pointerEvents: 'none', zIndex: '6', transformOrigin: '0 0', background: `linear-gradient(to bottom, transparent, ${ink} 14%, ${ink} 86%, transparent)` })
+        host.append(edge)
+      }
       openedAt = performance.now()
       place()
       fit()

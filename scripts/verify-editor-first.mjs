@@ -302,6 +302,42 @@ try {
   check('and nothing it was given is lost, nor does it change height when the typing stops', earlyInfo.content === plain?.value && Math.abs(earlyInfo.height - plain.height) <= 2, JSON.stringify([earlyInfo.height, plain?.height]))
   await early.context().close()
 
+  // F-069: the older kinds of text (a classic point text as wide as its words, a classic text box, a sticky) wrap the same way: while they
+  // are typed, in the middle of the page and near its right edge, never past the margin and never running on in one line
+  const classicNote = await (await fetch(`${API}/api/notes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Classic', notebookId: (await (await fetch(`${API}/api/notebooks`)).json())[0].id, noteType: 'canvas' }) })).json()
+  const classicGeometry = (x, y, width, height) => ({ x, y, width, height, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 })
+  const classicStyle = { fontSize: 24, color: '#1f1b16', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'left', lineHeight: 1.45, padding: 8 }
+  const classicNode = (id, mode, x, y, width, text) => ({ id, type: 'text', x, y, width, height: 40, text, pn: { type: 'text', mode, z: 0, geometry: classicGeometry(x, y, width, 40), style: classicStyle } })
+  await fetch(`${API}/api/notes/${classicNote.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Classic', notebookId: classicNote.notebookId, revision: classicNote.revision, pageState: { columns: 1, rows: 2 }, content: { nodes: [
+    classicNode('res_pointmid', 'point', 100, 100, 160, 'Point text'), classicNode('res_pointedge', 'point', 640, 300, 100, 'Edge text'),
+    classicNode('res_boxmid', 'box', 100, 500, 400, 'Box text'), classicNode('res_boxedge', 'box', 640, 700, 150, 'Edge box'),
+  ], edges: [] } }) })
+  await pn(async (id) => { await window.__personalNote.refreshWorkspaceLists(); await window.__personalNote.selectNote(id) }, classicNote.id)
+  await page.waitForFunction(() => window.__personalNote.leaferEdits.doc.objects.length === 4, null, { timeout: 15000 })
+  await page.waitForTimeout(800)
+  await pn(() => document.activeElement?.blur())
+  await pn(() => window.__personalNote.leaferCanvas().setView({ x: 120, y: 40, scale: 1 }))
+  const ids = (await objects()).map((object) => object.id) // (the app gives its own ids: they follow the order they were saved in)
+  const names = ['point text, mid-page', 'point text, near the edge', 'box text, mid-page', 'box text, near the edge']
+  for (const label of names) {
+    const id = ids[names.indexOf(label)]
+    const columnsBefore = await pn(() => window.__personalNote.state.pages.columns)
+    await pn((textId) => window.__personalNote.leaferCanvas().editText(textId, { select: false }), id)
+    await page.waitForTimeout(400)
+    await page.keyboard.type(' ' + sentence + 'Averyveryveryveryveryverylongwordwithoutanybreaksatallhere', { delay: 1 })
+    const area = await pn(() => { const a = document.querySelector('.leafer-text-editor'); const box = a.getBoundingClientRect(); return { right: box.right, over: a.scrollWidth - a.clientWidth, ws: getComputedStyle(a).whiteSpace, columns: window.__personalNote.state.pages.columns, edge: Boolean(a.parentElement.querySelector('.text-edge')) } })
+    const hostBox = await page.locator('#leafer-host').boundingBox()
+    const marginScreen = hostBox.x + 120 + 860 - 56
+    check(`${label}: while typing, the lines wrap at the page margin (no line runs on) and the page does not grow`, area.ws === 'pre-wrap' && area.over <= 1 && area.right <= marginScreen + 1 && area.columns === columnsBefore, JSON.stringify([columnsBefore, area]))
+    check(`${label}: a faint hairline marks the wrap edge while writing`, area.edge)
+    await page.waitForTimeout(900)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(700)
+    const after = (await objects()).find((object) => object.id === id)
+    check(`${label}: once written it is the box it was typed in, ending at the margin`, after.mode === 'box' && after.geometry.x + after.geometry.width <= 860 - 56 + 0.5, JSON.stringify([after.mode, after.geometry]))
+  }
+  check('and no hairline is left behind', (await pn(() => document.querySelector('.text-edge'))) === null)
+
   // A phone-width window opens as before (no automatic caret, no 100% writing view)
   const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
   await phone.goto(`http://127.0.0.1:${UI_PORT}/notes`)
