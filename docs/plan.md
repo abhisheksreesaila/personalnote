@@ -376,7 +376,7 @@ Riskiest assumption first: Touch ID, the keychain and screen-share exclusion fro
 - [x] a random key is stored in and read back from the login keychain, only after that Touch ID yes
 - [x] the window can be kept out of screen sharing and screenshots, and let back in
 - [x] a Help menu item (Test secure unlock…) runs all three on the captain's Mac and shows the result; off a Mac the platform module reports "passphrase" (the Linux app has no menu)
-## F-057 Secure notes: locked words on disk [todo]
+## F-057 Secure notes: locked words on disk [review]
 Needs: F-056
 Carry from the F-056 review: the spike's keychain item has no access control (Touch ID first is enforced by the app only), and an ad-hoc signed build asks for the keychain password again after each update; decide kSecAttrAccessControl (biometry) and signing here.
 - [ ] a whole note can be marked secure; its content is encrypted at rest (AES-GCM, key from the keychain on Mac, from a passphrase on Linux); its title stays readable (assumed)
@@ -403,3 +403,10 @@ Needs: none
 Needs: none
 - [ ] code inside ``` fences is coloured by its language (from the fence, or guessed), on the canvas and in the editor, loaded only when a code block appears
 - [ ] dropped if it costs any typing speed or a noticeable bundle increase
+## F-062 A text's underline stays with it after a move [doing]
+Reported on the Mac (preview 4): underline a word, move the text; the underline moves with it, then a couple of seconds later jumps back to where it was.
+- [ ] after moving a text, its marks stay on its words, also after a few seconds and after reopening the note
+## F-063 The notebook dialog lets you back out [done]
+Reported on the Mac (preview 4): a new notebook's dialog could not be cancelled. Reviewed: PASS (4f31486); checked in Chromium (WebKit does not start on the build machine).
+- [x] Cancel, X and Esc close it with the name empty, and make no notebook
+- [x] Enter with a name creates it (it used to cancel)
