@@ -367,15 +367,17 @@ Needs: F-049, F-050
 Superseded by F-059 Editor first (brief docs/briefs/editor-first-and-secure-notes.md, approved 2026-10-13): the editor feel becomes the default rather than a separate mode.
 Captain (2026-10-12): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."
 
-## F-056 Secure unlock spike (Mac) [todo]
+## F-056 Secure unlock spike (Mac) [review]
+Reviewed: PASS after fixes (0bc2774). Built (secure_platform.py, Help > Test secure unlock…); the real proof is a run on the captain's Mac in the next preview.
 Brief: docs/briefs/editor-first-and-secure-notes.md · Needs: none
 Riskiest assumption first: Touch ID, the keychain and screen-share exclusion from the pywebview app on macOS.
 - [ ] the Mac app can ask for Touch ID (falling back to the Mac password) and learn yes or no
 - [ ] a random key is stored in and read back from the login keychain, only after that Touch ID yes
 - [ ] the window can be kept out of screen sharing and screenshots, and let back in
-- [ ] a hidden Help menu item runs all three on the captain's Mac and shows the result; the Linux app answers "passphrase" instead
+- [ ] a Help menu item (Test secure unlock…) runs all three on the captain's Mac and shows the result; off a Mac the platform module reports "passphrase" (the Linux app has no menu)
 ## F-057 Secure notes: locked words on disk [todo]
 Needs: F-056
+Carry from the F-056 review: the spike's keychain item has no access control (Touch ID first is enforced by the app only), and an ad-hoc signed build asks for the keychain password again after each update; decide kSecAttrAccessControl (biometry) and signing here.
 - [ ] a whole note can be marked secure; its content is encrypted at rest (AES-GCM, key from the keychain on Mac, from a passphrase on Linux); its title stays readable (assumed)
 - [ ] search, Markdown export and the agent CLI never see its words; backups carry it still encrypted
 - [ ] a one-time recovery key is shown when the first secure note is made, and it opens the notes on another machine
