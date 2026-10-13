@@ -341,6 +341,25 @@ try {
   await stroke(Array.from({ length: 11 }, (_, i) => ({ x: below.x - 4 + (loneWord.width + 8) * i / 10, y: below.y + Math.sin(i) * 1.5 })))
   const underlined = (await objectsNow()).find((object) => object.id === lone.id)
   check('an underline drawn under a one-line text is a mark of its word, not loose ink', underlined.marks?.length === 1 && underlined.marks[0].anchor.quote.exact === 'harbour' && (await looseInk()) === looseBefore, JSON.stringify([underlined.marks?.map((mark) => mark.anchor.quote.exact), await looseInk(), looseBefore]))
+  // F-062: where the underline is on screen (dark pixels in the canvas layers at the spot a text's word underline should be), before and after the move
+  const underlineSpot = (geometry) => { const view = viewAtUnderline; return { x: host.x + view.x + (geometry.x + loneWord.x) * view.scale - 10, y: host.y + view.y + (geometry.y + loneWord.y + loneWord.height + 12) * view.scale - 10, w: loneWord.width * view.scale + 20, h: 20 } }
+  const darkAt = (spot) => pn(({ x, y, w, h }) => {
+    let total = 0
+    for (const canvas of document.querySelectorAll('canvas.leafer-canvas-view')) {
+      const box = canvas.getBoundingClientRect()
+      const sx = canvas.width / box.width
+      const sy = canvas.height / box.height
+      const left = Math.max(0, Math.round((x - box.left) * sx)), top = Math.max(0, Math.round((y - box.top) * sy))
+      const width = Math.min(canvas.width - left, Math.round(w * sx)), height = Math.min(canvas.height - top, Math.round(h * sy))
+      if (width <= 0 || height <= 0) continue
+      const data = canvas.getContext('2d').getImageData(left, top, width, height).data
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 200 && data[i] < 90 && data[i + 1] < 90 && data[i + 2] < 90) total += 1
+    }
+    return total
+  }, spot)
+  const viewAtUnderline = await pn(() => window.__personalNote.leaferCanvas().view())
+  const underlineHome = underlineSpot(lone.geometry)
+  const placedBefore = (await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)).placed
   await pn((id) => { window.__personalNote.setTool('select'); window.__personalNote.leaferCanvas().select([id]) }, lone.id)
   await page.waitForTimeout(300)
   const grip = { x: below.x + 30, y: below.y - loneWord.height / 2 - 10 }
@@ -350,6 +369,19 @@ try {
   await page.waitForTimeout(600)
   const carried = (await objectsNow()).find((object) => object.id === lone.id)
   check('moving the text carries its underline with it', carried.geometry.y > lone.geometry.y + 100 && carried.marks?.length === 1 && (await looseInk()) === looseBefore, JSON.stringify([lone.geometry.y, carried.geometry.y, carried.marks?.length]))
+  // F-062: the underline stays with the text. Not just right after the move: nothing brings it back to its old place later (the saves, the
+  // changes feed, the page bitmaps made again in idle time), nor after the note is opened again.
+  const underlineChecks = async (when) => {
+    const now = (await objectsNow()).find((object) => object.id === lone.id)
+    const spot = underlineSpot(now.geometry)
+    const placed = (await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)).placed
+    check(`${when}: the underline is drawn under its word at the text's new place and nowhere at the old one`, (await darkAt(spot)) > 20 && (await darkAt(underlineHome)) === 0, JSON.stringify([await darkAt(spot), await darkAt(underlineHome)]))
+    check(`${when}: it keeps its place in the text`, JSON.stringify(placed) === JSON.stringify(placedBefore), JSON.stringify([placed, placedBefore]))
+    check(`${when}: the text and its underline are saved at the new place`, now.geometry.y === carried.geometry.y && now.marks?.length === 1 && now.marks[0].anchor.quote.exact === 'harbour', JSON.stringify([now.geometry.y, carried.geometry.y, now.marks?.length]))
+  }
+  await underlineChecks('right after the move')
+  await page.waitForTimeout(3500)
+  await underlineChecks('three seconds after the move')
   const huggedBox = (await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)).box
   const lastWord = loneInfo.words.at(-1)
   check('a short text\'s box hugs its words, not the width it wraps at', Math.abs(huggedBox.width - (lastWord.x + lastWord.width)) < 3 && huggedBox.width < carried.geometry.width - 200, JSON.stringify([huggedBox, lastWord.x + lastWord.width, carried.geometry.width]))
