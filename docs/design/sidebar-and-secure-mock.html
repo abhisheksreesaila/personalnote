@@ -1,0 +1,535 @@
+<title>Sidebar and Secure Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@500&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap">
+<style>
+/* Layout: a design-review page; each tab is a live mock of the app window (floating glass sidebar over the dotted desk, a note page beside it),
+   with Option A / B switches. Tokens are the app's Crayon skin (light) and Night skin (dark), so what you see is what gets built. */
+:root {
+  --desk: #f2f2f7; --desk-dot: rgba(0,0,40,.07);
+  --panel: #ffffff; --edge: #e3e3ea; --glass: rgba(255,255,255,.80);
+  --ink: #111114; --ink-soft: #3a3a42; --muted: #5f5f69; --line: #e6e6ec;
+  --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: #e3ebfa;
+  --secure: #6a46c9; --secure-soft: #efe9fb; --secure-line: #d9cdf6;
+  --hover: rgba(17,17,20,.06); --pressed: rgba(17,17,20,.11);
+  --paper: #ffffff; --danger: #c2341c; --warn-soft: #fff4e0; --warn-ink: #7a4b00;
+  --shadow: 0 1px 2px rgba(0,0,30,.05), 0 16px 40px -16px rgba(0,0,60,.22);
+  --lift: 0 2px 4px rgba(0,0,30,.08), 0 18px 36px -12px rgba(0,0,60,.35);
+  --ui: "Geist", system-ui, -apple-system, sans-serif;
+  --display: "Bricolage Grotesque", "Geist", system-ui, sans-serif;
+  --read: "Literata", Georgia, serif;
+  --mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  --ease-out: cubic-bezier(.22,.75,.25,1); --ease-spring: cubic-bezier(.2,.9,.25,1.08);
+  --r: 18px; --r-ctl: 10px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --desk: #0d1015; --desk-dot: rgba(160,190,255,.07);
+  --panel: #161b23; --edge: #232a35; --glass: rgba(22,27,35,.86);
+  --ink: #eceff4; --ink-soft: #b9c1cd; --muted: #8e98a8; --line: #262e3a;
+  --accent: #7ee7c8; --accent-ink: #07261d; --accent-soft: rgba(126,231,200,.14);
+  --secure: #c3a8ff; --secure-soft: rgba(195,168,255,.13); --secure-line: rgba(195,168,255,.32);
+  --hover: rgba(236,239,244,.07); --pressed: rgba(236,239,244,.13);
+  --paper: #1b212b; --danger: #ff8fb1; --warn-soft: rgba(255,200,119,.12); --warn-ink: #ffc877;
+  --shadow: 0 0 0 1px rgba(236,239,244,.04), 0 20px 50px -20px rgba(0,0,0,.7);
+  --lift: 0 0 0 1px rgba(236,239,244,.08), 0 22px 44px -14px rgba(0,0,0,.8);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --desk: #0d1015; --desk-dot: rgba(160,190,255,.07);
+  --panel: #161b23; --edge: #232a35; --glass: rgba(22,27,35,.86);
+  --ink: #eceff4; --ink-soft: #b9c1cd; --muted: #8e98a8; --line: #262e3a;
+  --accent: #7ee7c8; --accent-ink: #07261d; --accent-soft: rgba(126,231,200,.14);
+  --secure: #c3a8ff; --secure-soft: rgba(195,168,255,.13); --secure-line: rgba(195,168,255,.32);
+  --hover: rgba(236,239,244,.07); --pressed: rgba(236,239,244,.13);
+  --paper: #1b212b; --danger: #ff8fb1; --warn-soft: rgba(255,200,119,.12); --warn-ink: #ffc877;
+  --shadow: 0 0 0 1px rgba(236,239,244,.04), 0 20px 50px -20px rgba(0,0,0,.7);
+  --lift: 0 0 0 1px rgba(236,239,244,.08), 0 22px 44px -14px rgba(0,0,0,.8);
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--desk); color: var(--ink); font: 14px/1.45 var(--ui); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 48px; display: grid; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 14px; }
+h1 { font: 700 28px/1.1 var(--display); letter-spacing: -.03em; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 6px 0 0; max-width: 62ch; }
+.switches { display: flex; flex-wrap: wrap; gap: 10px; }
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--panel); border: 1px solid var(--edge); border-radius: 999px; box-shadow: var(--shadow); }
+.seg button { border: 0; background: none; color: var(--ink-soft); font: 500 13px var(--ui); padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.seg button:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.optnote { font-size: 13px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 10px 14px; }
+.optnote b { color: var(--ink); }
+
+/* ---------- the mock window ---------- */
+.window { position: relative; display: grid; grid-template-columns: 240px minmax(0,1fr); gap: 14px; padding: 12px; min-height: 600px;
+  border-radius: 22px; border: 1px solid var(--edge); background-color: var(--desk);
+  background-image: radial-gradient(var(--desk-dot) 1px, transparent 1.2px); background-size: 22px 22px; overflow: hidden; }
+.side { background: var(--glass); border: 1px solid var(--edge); border-radius: var(--r); box-shadow: var(--shadow); padding: 12px 8px; align-self: start;
+  -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4); display: grid; gap: 2px; }
+.brand { display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px; font: 700 15px var(--display); letter-spacing: -.02em; }
+.brand i { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); display: inline-block; }
+svg.ic { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.sec { display: grid; }
+.sec-head { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: none; color: var(--muted); cursor: pointer;
+  padding: 7px 8px 5px; border-radius: 9px; font: 600 11px/1 var(--ui); letter-spacing: .07em; text-transform: uppercase; text-align: left; }
+.sec-head:hover { color: var(--ink); background: var(--hover); }
+.sec-head .chev { width: 12px; height: 12px; transition: transform 180ms var(--ease-out); opacity: .7; }
+.sec.open > .sec-head .chev { transform: rotate(90deg); }
+.sec-head .lbl { flex: 1; }
+.sec-head .add { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; opacity: 0; color: var(--ink-soft); }
+.sec-head:hover .add, .sec-head .add:focus-visible { opacity: 1; }
+.sec-head .add:hover { background: var(--pressed); }
+.sec-head.drop-target { color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 180ms var(--ease-out); }
+.sec.open > .fold { grid-template-rows: 1fr; }
+.fold > .inner { overflow: hidden; min-height: 0; display: grid; gap: 1px; }
+
+.row { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; color: var(--ink-soft); text-align: left; cursor: pointer;
+  padding: 6px 8px; border-radius: 9px; font: 400 13.5px/1.25 var(--ui); transition: background 120ms, transform 160ms var(--ease-spring), box-shadow 160ms; user-select: none; }
+.row:hover { background: var(--hover); color: var(--ink); }
+.row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .count { font: 500 11.5px var(--ui); color: var(--muted); font-variant-numeric: tabular-nums; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--c); }
+.row.notebook.open { color: var(--ink); font-weight: 500; }
+.row.drop-target { background: var(--accent-soft); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.row.lifting { opacity: .45; }
+.row.landed { animation: landed 700ms var(--ease-out); }
+@keyframes landed { 0% { background: var(--accent-soft); transform: scale(1.03); } 100% { background: transparent; transform: none; } }
+.notes { display: grid; gap: 1px; margin: 1px 0 4px 16px; padding-left: 8px; border-left: 1.5px solid var(--line); }
+.notes .row { font-size: 12.5px; padding: 5px 8px; }
+.notes .row svg.ic { width: 14px; height: 14px; opacity: .6; }
+.row.active { background: var(--pressed); color: var(--ink); font-weight: 500; }
+.row.secure { color: var(--secure); }
+.row.secure svg.ic { opacity: 1; }
+.empty { font-size: 12px; color: var(--muted); padding: 5px 8px; }
+.inbox-empty { font-size: 12px; color: var(--muted); padding: 4px 8px 8px 30px; }
+.namer { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 8px; }
+.namer input { flex: 1; min-width: 0; font: 500 13.5px var(--ui); color: var(--ink); background: var(--panel); border: 1.5px solid var(--accent); border-radius: 8px; padding: 4px 7px; }
+.namer-hint { font-size: 11px; color: var(--muted); padding: 0 8px 6px 25px; }
+
+/* Inbox tray (both options) */
+.inbox-tab { font-weight: 500; color: var(--ink); }
+.badge { min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font: 600 11px/18px var(--ui); text-align: center; font-variant-numeric: tabular-nums; transition: transform 160ms var(--ease-spring); }
+.badge.zero { background: var(--hover); color: var(--muted); }
+.badge.bump { transform: scale(1.25); }
+
+/* Archive box with a lid */
+.box { width: 18px; height: 18px; flex: none; overflow: visible; }
+.box .lid { transform-origin: 3px 7px; transition: transform 180ms var(--ease-spring); }
+.box.open .lid { transform: rotate(-24deg) translateY(-1px); }
+.box.gulp { animation: gulp 260ms var(--ease-out); }
+@keyframes gulp { 40% { transform: scale(1.18); } 100% { transform: none; } }
+
+/* Option B: shelves */
+.optB .sec { margin-top: 4px; border-radius: 13px; padding: 2px; }
+.optB .sec-head { text-transform: none; letter-spacing: -.005em; font: 600 13.5px var(--ui); color: var(--ink); padding: 8px 8px; gap: 8px; }
+.optB .sec-head .sec-ic { display: inline-flex; }
+.optB .sec.open { background: color-mix(in srgb, var(--ink) 3.5%, transparent); }
+.optB .sec-head .chev { order: 9; }
+.optA .sec-ic { display: none; }
+.optA .sec { margin-top: 8px; }
+.optA .sec.inbox-sec { margin-top: 0; }
+.optA .sec-head.inbox-head, .optB .sec-head.inbox-head { text-transform: none; letter-spacing: 0; font: 500 13.5px var(--ui); color: var(--ink); padding: 7px 8px; gap: 8px; }
+.optA .sec-head.inbox-head .sec-ic, .optB .sec-head.inbox-head .sec-ic { display: inline-flex; }
+
+/* ---------- page area ---------- */
+.stage { position: relative; min-width: 0; display: grid; }
+.topbar { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; padding: 2px 4px 10px; }
+.crumb { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); background: var(--glass); border: 1px solid var(--edge); border-radius: 999px; padding: 6px 12px; box-shadow: var(--shadow); }
+.crumb b { color: var(--ink); font-weight: 500; }
+.page { background: var(--paper); border-radius: 10px; box-shadow: var(--shadow); padding: 46px 56px; min-height: 480px; position: relative; overflow: hidden; }
+.page h2 { font: 700 30px/1.15 var(--display); letter-spacing: -.035em; margin: 0 0 14px; }
+.page p, .page li { font: 400 18px/1.65 var(--read); max-width: 62ch; color: var(--ink); margin: 0 0 12px; }
+.page .mono { font-family: var(--mono); font-size: 15px; letter-spacing: .02em; }
+.drag-tip { position: absolute; right: 16px; bottom: 14px; font-size: 12px; color: var(--muted); background: var(--glass); border: 1px solid var(--edge); border-radius: 999px; padding: 5px 11px; }
+.ghost { position: fixed; pointer-events: none; z-index: 50; padding: 6px 12px; border-radius: 10px; background: var(--panel); color: var(--ink); font: 500 13px var(--ui); box-shadow: var(--lift); transform: rotate(-2deg) scale(1.03); display: flex; gap: 8px; align-items: center; }
+
+/* ---------- secure ---------- */
+.secure-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--secure); background: var(--secure-soft); border: 1px solid var(--secure-line); border-radius: 999px; padding: 5px 6px 5px 11px; }
+.secure-pill .t { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.secure-pill button { border: 0; border-radius: 999px; background: var(--secure); color: var(--panel); font: 500 12px var(--ui); padding: 4px 10px; cursor: pointer; }
+.page.is-secure { box-shadow: var(--shadow), inset 0 3px 0 var(--secure); }
+.lockA { position: absolute; inset: 0; display: grid; place-items: center; }
+.lockA .lines { position: absolute; inset: 120px 56px 40px; display: grid; gap: 14px; align-content: start; filter: blur(5px); opacity: .55; }
+.lockA .lines span { height: 12px; border-radius: 6px; background: var(--secure-line); }
+.lockA .card, .lockB .card { position: relative; display: grid; justify-items: center; gap: 10px; text-align: center; padding: 26px 30px; border-radius: 16px; background: var(--panel); border: 1px solid var(--secure-line); box-shadow: var(--lift); max-width: 330px; }
+.lockB { position: absolute; inset: 0; display: grid; place-items: center; background: var(--secure-soft); }
+.lockB .card { background: transparent; border: 0; box-shadow: none; }
+.fp { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--secure-soft); color: var(--secure); border: 0; cursor: pointer; transition: transform 160ms var(--ease-spring); }
+.lockB .fp { width: 92px; height: 92px; background: var(--panel); box-shadow: var(--shadow); }
+.fp:hover { transform: scale(1.06); }
+.fp svg.ic { width: 30px; height: 30px; stroke-width: 1.5; }
+.lockB .fp svg.ic { width: 42px; height: 42px; }
+.card h3 { font: 700 19px/1.2 var(--display); letter-spacing: -.02em; margin: 2px 0 0; }
+.card p { margin: 0; font-size: 13px; color: var(--muted); }
+.linkbtn { border: 0; background: none; color: var(--secure); font: 500 13px var(--ui); cursor: pointer; padding: 4px; text-decoration: underline; text-underline-offset: 3px; }
+.page-title-locked { font: 700 30px/1.15 var(--display); letter-spacing: -.035em; position: absolute; left: 56px; top: 46px; margin: 0; display: flex; gap: 10px; align-items: center; }
+.page-title-locked svg.ic { width: 22px; height: 22px; color: var(--secure); }
+
+.touch { position: absolute; z-index: 30; left: 50%; top: 80px; transform: translateX(-50%); width: 300px; padding: 20px; border-radius: 16px; background: var(--panel); box-shadow: var(--lift); border: 1px solid var(--edge); display: grid; justify-items: center; gap: 8px; text-align: center; }
+.touch .fpbig { width: 54px; height: 54px; color: #e2475a; }
+.touch .fpbig.ok { color: #2a9d55; }
+.touch small { color: var(--muted); font-size: 11.5px; }
+.touch p { margin: 0; font-size: 13px; }
+
+.sheet-back { position: absolute; inset: 0; z-index: 40; background: rgba(10,10,20,.28); display: grid; place-items: center; padding: 16px; }
+.sheet { width: min(460px, 100%); background: var(--panel); border-radius: 18px; box-shadow: var(--lift); padding: 24px; display: grid; gap: 14px; border: 1px solid var(--edge); }
+.sheet h3 { font: 700 21px/1.2 var(--display); letter-spacing: -.02em; margin: 0; }
+.sheet p { margin: 0; color: var(--ink-soft); }
+.key { font: 500 17px/1.6 var(--mono); letter-spacing: .04em; background: var(--secure-soft); border: 1px dashed var(--secure-line); color: var(--ink); border-radius: 12px; padding: 12px 14px; text-align: center; word-spacing: .2em; overflow-wrap: anywhere; }
+.warn { display: flex; gap: 10px; background: var(--warn-soft); color: var(--warn-ink); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+.warn svg.ic { margin-top: 2px; }
+.sheet .acts { display: flex; gap: 8px; justify-content: end; flex-wrap: wrap; align-items: center; }
+.btn { border: 1px solid var(--edge); background: var(--panel); color: var(--ink); border-radius: var(--r-ctl); padding: 8px 14px; font: 500 13.5px var(--ui); cursor: pointer; }
+.btn.primary { background: var(--secure); border-color: var(--secure); color: var(--panel); }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13.5px; margin-right: auto; }
+.menu-demo { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.notes-doc { display: grid; gap: 8px; }
+.notes-doc h3 { font: 700 17px var(--display); margin: 8px 0 0; letter-spacing: -.02em; }
+.notes-doc ul { margin: 0; padding-left: 20px; color: var(--ink-soft); }
+.notes-doc li { margin: 3px 0; }
+
+@media (max-width: 760px) {
+  .window { grid-template-columns: minmax(0,1fr); }
+  .page { padding: 28px 22px; }
+  .page-title-locked { left: 22px; top: 28px; font-size: 24px; }
+  .lockA .lines { inset: 100px 22px 30px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Sidebar and secure notes</h1>
+      <p class="sub">A working mock in the app's own colours. Try it: drag notes out of Inbox, drag a notebook onto Archive, fold sections, add a notebook with +. On the second tab, open the locked note.</p>
+    </div>
+    <div class="switches">
+      <div class="seg" role="group" aria-label="Screen">
+        <button id="tab-side" aria-pressed="true">Sidebar</button>
+        <button id="tab-sec" aria-pressed="false">Secure notes</button>
+      </div>
+      <div class="seg" role="group" aria-label="Option">
+        <button id="opt-a" aria-pressed="true">Option A</button>
+        <button id="opt-b" aria-pressed="false">Option B</button>
+      </div>
+    </div>
+  </header>
+  <div class="optnote" id="optnote"></div>
+
+  <div class="window" id="win">
+    <aside class="side optA" id="side" aria-label="Notebooks"></aside>
+    <section class="stage" id="stage"></section>
+  </div>
+</div>
+
+<script>
+const I = {
+  chev: '<path d="m9 6 6 6-6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  compass: '<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/>',
+  book: '<path d="M4 19.5V5a2 2 0 0 1 2-2h14v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M8 7h8"/>',
+  note: '<path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  fp: '<path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+}
+const ic = (n, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`
+const boxSvg = (cls = '') => `<svg class="box ${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/><g class="lid"><rect x="2.5" y="4" width="19" height="5" rx="1.2"/></g></svg>`
+
+const SECTIONS = [
+  { id: 'projects', label: 'Projects', icon: 'target' },
+  { id: 'areas', label: 'Areas', icon: 'compass' },
+  { id: 'resources', label: 'Resources', icon: 'book' },
+  { id: 'archive', label: 'Archive', icon: 'box' },
+]
+const store = (() => { try { return window.localStorage } catch { return null } })()
+const saved = (k, d) => { try { const v = store?.getItem(k); return v ? JSON.parse(v) : d } catch { return d } }
+const save = (k, v) => { try { store?.setItem(k, JSON.stringify(v)) } catch {} }
+
+let nid = 100
+const state = {
+  tab: 'side', opt: 'A',
+  open: saved('pn-mock-open', { inbox: true, projects: true, areas: true, resources: false, archive: false }),
+  openNotebook: 2,
+  activeNote: 11,
+  naming: null,
+  notebooks: [
+    { id: 1, name: 'Personal Note v0.5', sec: 'projects', c: '#2f6fe0' },
+    { id: 2, name: 'Kitchen remodel', sec: 'projects', c: '#ff6b3d' },
+    { id: 3, name: 'Health', sec: 'areas', c: '#30d158' },
+    { id: 4, name: 'Money', sec: 'areas', c: '#bf5af2' },
+    { id: 5, name: 'Recipes', sec: 'resources', c: '#d8a600' },
+    { id: 6, name: 'Reading', sec: 'resources', c: '#64b5ff' },
+    { id: 7, name: 'Taxes 2025', sec: 'archive', c: '#8e8e98' },
+  ],
+  notes: [
+    { id: 11, title: 'Call with contractor', nb: null },
+    { id: 12, title: 'Idea: voice button on the dock', nb: null },
+    { id: 13, title: 'Quick note, 9:41', nb: null },
+    { id: 14, title: 'Book list from podcast', nb: null },
+    { id: 21, title: 'Release checklist', nb: 1 },
+    { id: 22, title: 'Mind map: M2', nb: 1 },
+    { id: 23, title: 'Tile samples', nb: 2 },
+    { id: 31, title: 'Cards and accounts', nb: 4, secure: true },
+    { id: 32, title: 'Budget 2026', nb: 4 },
+    { id: 33, title: 'Sleep log', nb: 3 },
+    { id: 41, title: 'Sourdough', nb: 5 },
+    { id: 51, title: 'Receipts', nb: 7 },
+  ],
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+/* ---------------- sidebar ---------------- */
+function noteRow(n) {
+  return `<button class="row ${n.secure ? 'secure' : ''} ${n.id === state.activeNote ? 'active' : ''}" draggable="true" data-note="${n.id}">
+    ${ic(n.secure ? 'lock' : 'note')}<span class="name">${esc(n.title)}</span></button>`
+}
+function renderSide() {
+  const side = document.getElementById('side')
+  side.className = `side opt${state.opt}`
+  const inbox = state.notes.filter((n) => n.nb === null)
+  let html = `<div class="brand"><i></i>Personal Note</div>`
+  html += `<div class="sec inbox-sec ${state.open.inbox ? 'open' : ''}" data-sec="inbox">
+    <button class="sec-head inbox-head" data-fold="inbox" aria-expanded="${state.open.inbox}">
+      <span class="sec-ic">${ic('inbox')}</span><span class="lbl">Inbox</span>
+      <span class="badge ${inbox.length ? '' : 'zero'}" id="inbox-badge">${inbox.length}</span>${ic('chev', 'ic chev')}
+    </button>
+    <div class="fold"><div class="inner">${inbox.length
+      ? `<div class="notes">${inbox.map(noteRow).join('')}</div>`
+      : `<div class="inbox-empty">All filed. New notes land here.</div>`}</div></div></div>`
+  for (const s of SECTIONS) {
+    const nbs = state.notebooks.filter((b) => b.sec === s.id)
+    const secIcon = s.icon === 'box' ? boxSvg('sec-box') : ic(s.icon)
+    html += `<div class="sec ${state.open[s.id] ? 'open' : ''}" data-sec="${s.id}">
+      <div class="sec-head" role="button" tabindex="0" data-fold="${s.id}" data-sec-drop="${s.id}" aria-expanded="${!!state.open[s.id]}">
+        ${state.opt === 'A' ? ic('chev', 'ic chev') : ''}<span class="sec-ic">${secIcon}</span><span class="lbl">${s.label}</span>
+        ${s.id === 'archive' && state.opt === 'A' ? boxSvg('sec-box') : ''}
+        ${s.id !== 'archive' ? `<span class="add" role="button" tabindex="0" data-add="${s.id}" aria-label="New notebook in ${s.label}">${ic('plus')}</span>` : ''}
+        ${state.opt === 'B' ? ic('chev', 'ic chev') : ''}
+      </div>
+      <div class="fold"><div class="inner">
+        ${nbs.map((b) => {
+          const notes = state.notes.filter((n) => n.nb === b.id)
+          const isOpen = state.openNotebook === b.id
+          return `<button class="row notebook ${isOpen ? 'open' : ''}" draggable="true" data-notebook="${b.id}" data-nb-drop="${b.id}">
+              <span class="dot" style="--c:${b.c}"></span><span class="name">${esc(b.name)}</span><span class="count">${notes.length}</span></button>
+            ${isOpen ? `<div class="notes">${notes.length ? notes.map(noteRow).join('') : '<div class="empty">No notes yet</div>'}</div>` : ''}`
+        }).join('')}
+        ${state.naming === s.id ? `<div class="namer"><span class="dot" style="--c:var(--accent)"></span><input id="namer-input" aria-label="Notebook name" placeholder="Notebook name"></div><div class="namer-hint">Enter to keep · Esc to drop</div>` : ''}
+        ${!nbs.length && state.naming !== s.id ? '<div class="empty">Drop a notebook here</div>' : ''}
+      </div></div></div>`
+  }
+  side.innerHTML = html
+  if (state.naming) { const inp = document.getElementById('namer-input'); inp?.focus() }
+}
+
+/* fold, select, add */
+document.getElementById('side').addEventListener('click', (e) => {
+  const add = e.target.closest('[data-add]')
+  if (add) { e.stopPropagation(); state.naming = add.dataset.add; state.open[state.naming] = true; renderSide(); return }
+  const fold = e.target.closest('[data-fold]')
+  if (fold) { const id = fold.dataset.fold; state.open[id] = !state.open[id]; save('pn-mock-open', state.open); setOpen(id); return }
+  const nb = e.target.closest('[data-notebook]')
+  if (nb) { const id = Number(nb.dataset.notebook); state.openNotebook = state.openNotebook === id ? null : id; renderSide(); return }
+  const note = e.target.closest('[data-note]')
+  if (note) { state.activeNote = Number(note.dataset.note); renderSide(); renderStage() }
+})
+document.getElementById('side').addEventListener('keydown', (e) => {
+  if (e.target.id === 'namer-input') {
+    if (e.key === 'Enter') {
+      const name = e.target.value.trim()
+      if (name) { const b = { id: ++nid, name, sec: state.naming, c: '#2f6fe0' }; state.notebooks.push(b); state.naming = null; renderSide(); land(`[data-notebook="${b.id}"]`) }
+      else { state.naming = null; renderSide() }
+    } else if (e.key === 'Escape') { state.naming = null; renderSide() }
+    return
+  }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"]')) { e.preventDefault(); e.target.click() }
+})
+document.getElementById('side').addEventListener('focusout', (e) => {
+  if (e.target.id === 'namer-input' && !e.target.value.trim()) setTimeout(() => { if (state.naming && document.activeElement?.id !== 'namer-input') { state.naming = null; renderSide() } }, 120)
+})
+function setOpen(id) {
+  // Toggle the class only, so the grid-rows transition animates instead of re-rendering.
+  const sec = document.querySelector(`.sec[data-sec="${id}"]`)
+  sec?.classList.toggle('open', !!state.open[id])
+  sec?.querySelector('[data-fold]')?.setAttribute('aria-expanded', String(!!state.open[id]))
+}
+function land(selector) {
+  requestAnimationFrame(() => { const el = document.querySelector(selector); if (el) { el.classList.add('landed'); el.addEventListener('animationend', () => el.classList.remove('landed'), { once: true }) } })
+}
+
+/* drag and drop */
+let drag = null, springTimer = null, ghost = null
+const transparent = new Image(); transparent.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+document.getElementById('side').addEventListener('dragstart', (e) => {
+  const note = e.target.closest('[data-note]'), nb = e.target.closest('[data-notebook]')
+  if (!note && !nb) return
+  drag = note ? { kind: 'note', id: Number(note.dataset.note), el: note } : { kind: 'notebook', id: Number(nb.dataset.notebook), el: nb }
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', String(drag.id))
+  try { e.dataTransfer.setDragImage(transparent, 0, 0) } catch {}
+  ghost = document.createElement('div'); ghost.className = 'ghost'
+  ghost.innerHTML = drag.el.innerHTML.replace(/<span class="count">.*?<\/span>/, '')
+  document.body.append(ghost); moveGhost(e)
+  requestAnimationFrame(() => drag?.el.classList.add('lifting'))
+})
+document.addEventListener('drag', moveGhost)
+function moveGhost(e) { if (ghost && (e.clientX || e.clientY)) { ghost.style.left = `${e.clientX + 12}px`; ghost.style.top = `${e.clientY - 14}px` } }
+function targetFor(e) {
+  if (!drag) return null
+  if (drag.kind === 'note') return e.target.closest('[data-nb-drop]')
+  return e.target.closest('[data-sec-drop]')
+}
+let lastTarget = null
+document.getElementById('side').addEventListener('dragover', (e) => {
+  const t = targetFor(e)
+  // Hovering a folded section's heading springs it open after half a second.
+  const head = e.target.closest('[data-fold]')
+  if (drag && head && !state.open[head.dataset.fold]) {
+    if (!springTimer || springTimer.id !== head.dataset.fold) {
+      clearTimeout(springTimer?.t)
+      springTimer = { id: head.dataset.fold, t: setTimeout(() => { state.open[head.dataset.fold] = true; setOpen(head.dataset.fold); springTimer = null }, 500) }
+    }
+  }
+  if (t !== lastTarget) {
+    lastTarget?.classList.remove('drop-target'); lastTarget?.querySelector('.box')?.classList.remove('open')
+    lastTarget = t
+    t?.classList.add('drop-target')
+    const archiveHead = t?.matches('[data-sec-drop="archive"]') ? t : (t && state.notebooks.find((b) => b.id === Number(t.dataset.nbDrop))?.sec === 'archive' ? document.querySelector('[data-sec-drop="archive"]') : null)
+    document.querySelectorAll('.sec-box').forEach((b) => b.classList.toggle('open', !!archiveHead))
+  }
+  if (t) { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }
+})
+document.getElementById('side').addEventListener('drop', (e) => {
+  const t = targetFor(e)
+  if (!t || !drag) return
+  e.preventDefault()
+  const intoArchive = drag.kind === 'notebook' ? t.dataset.secDrop === 'archive' : state.notebooks.find((b) => b.id === Number(t.dataset.nbDrop))?.sec === 'archive'
+  if (drag.kind === 'note') {
+    const n = state.notes.find((x) => x.id === drag.id); const wasInbox = n.nb === null
+    n.nb = Number(t.dataset.nbDrop)
+    endDrag(); renderSide(); land(`[data-notebook="${n.nb}"]`)
+    if (wasInbox) bump()
+  } else {
+    const b = state.notebooks.find((x) => x.id === drag.id)
+    b.sec = t.dataset.secDrop; state.open[b.sec] = true
+    endDrag(); renderSide(); land(`[data-notebook="${b.id}"]`)
+  }
+  if (intoArchive) requestAnimationFrame(() => document.querySelectorAll('.sec-box').forEach((box) => {
+    box.classList.add('open'); setTimeout(() => { box.classList.remove('open'); box.classList.add('gulp'); box.addEventListener('animationend', () => box.classList.remove('gulp'), { once: true }) }, 220)
+  }))
+})
+document.addEventListener('dragend', () => { endDrag(); renderSide() })
+function endDrag() {
+  clearTimeout(springTimer?.t); springTimer = null
+  lastTarget?.classList.remove('drop-target'); lastTarget = null
+  document.querySelectorAll('.sec-box').forEach((b) => b.classList.remove('open'))
+  drag?.el.classList.remove('lifting'); drag = null
+  ghost?.remove(); ghost = null
+}
+function bump() { requestAnimationFrame(() => { const b = document.getElementById('inbox-badge'); if (!b) return; b.classList.add('bump'); setTimeout(() => b.classList.remove('bump'), 170) }) }
+
+/* ---------------- stage ---------------- */
+const SECRET_NOTE = 31
+const sec = { unlocked: false, until: 0, timer: null, touch: null, sheet: false, ack: false, everMarked: false }
+function renderStage() {
+  const stage = document.getElementById('stage')
+  const n = state.notes.find((x) => x.id === state.activeNote) || state.notes[0]
+  const b = state.notebooks.find((x) => x.id === n.nb)
+  const crumb = `<div class="crumb">${b ? `${esc(SECTIONS.find((s) => s.id === b.sec).label)} › <b>${esc(b.name)}</b>` : '<b>Inbox</b>'}</div>`
+  if (!n.secure) {
+    stage.innerHTML = `<div class="topbar">${crumb}${state.tab === 'sec' ? `<div class="menu-demo"><button class="btn" id="make-secure">${ic('lock')} Make secure</button></div>` : ''}</div>
+      <div class="page"><h2>${esc(n.title)}</h2>
+      <p>${n.nb === null ? 'This note is in Inbox. Drag it from the sidebar onto a notebook to file it; the Inbox count drops as you go.' : 'Filed. Its notebook shows in the breadcrumb above.'}</p>
+      <p>Folding a section is one click on its name. A folded section opens by itself when you hold a dragged note over it for half a second.</p>
+      ${state.tab === 'side' ? '<span class="drag-tip">Drag rows in the sidebar</span>' : ''}</div>${sheetHtml()}`
+    return
+  }
+  if (!sec.unlocked) {
+    const lockA = `<div class="lockA"><div class="lines">${'<span></span>'.repeat(9).replace(/<span>/g, () => `<span style="width:${55 + Math.round(Math.random() * 40)}%">`)}</div>
+        <div class="card"><button class="fp" id="unlock" aria-label="Open with Touch ID">${ic('fp')}</button>
+        <h3>Locked</h3><p>Touch ID opens it. Its words never show on a shared screen.</p><button class="linkbtn" id="use-key">Use recovery key</button></div></div>`
+    const lockB = `<div class="lockB"><div class="card"><button class="fp" id="unlock" aria-label="Open with Touch ID">${ic('fp')}</button>
+        <h3>Touch to open</h3><p>Secure note · hidden from screen sharing</p><button class="linkbtn" id="use-key">Use recovery key</button></div></div>`
+    stage.innerHTML = `<div class="topbar">${crumb}<span class="secure-pill">${ic('lock')} Secure · locked</span></div>
+      <div class="page is-secure" style="min-height:480px"><p class="page-title-locked">${ic('lock')}${esc(n.title)}</p>${state.opt === 'A' ? lockA : lockB}${touchHtml()}</div>${sheetHtml()}`
+    return
+  }
+  stage.innerHTML = `<div class="topbar">${crumb}<span class="secure-pill">${ic('shield')} Hidden from screen sharing · locks in <span class="t" id="countdown">${fmt()}</span><button id="lock-now">Lock</button></span></div>
+    <div class="page is-secure"><h2>${esc(n.title)}</h2>
+      <div class="notes-doc"><h3>Visa, everyday</h3><p class="mono">4111 1111 1111 1111 · 08/29 · 737</p>
+      <h3>Bank</h3><p class="mono">Routing 021000021 · Account 0000123456</p>
+      <h3>When it locks</h3><ul><li>you open another note</li><li>5 quiet minutes pass</li><li>the Mac sleeps</li></ul></div></div>${sheetHtml()}`
+}
+function touchHtml() {
+  if (!sec.touch) return ''
+  return `<div class="touch" role="dialog" aria-label="Touch ID">${ic('fp', `ic fpbig ${sec.touch === 'ok' ? 'ok' : ''}`)}
+    <p><b>Personal Note</b> wants to open a secure note.</p><small>${sec.touch === 'ok' ? 'Opened' : 'Touch ID or enter your password'}</small></div>`
+}
+function sheetHtml() {
+  if (!sec.sheet) return ''
+  return `<div class="sheet-back"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rk-title">
+    <h3 id="rk-title">Your recovery key</h3>
+    <p>Touch ID opens secure notes on this Mac. This key is the only other way in: on a new Mac, after a restore, or if Touch ID is reset.</p>
+    <div class="key" id="rk">K7QM-3XRA-9TWE-HB2N-PC4F-Z8YD-L6VU-M2GS</div>
+    <div class="warn">${ic('alert')}<span>It is shown once. Without it, a lost Mac means lost secure notes. Keep it in a password manager or on paper, not in a note.</span></div>
+    <div class="acts"><label class="check"><input type="checkbox" id="rk-ack" ${sec.ack ? 'checked' : ''}> I saved it somewhere safe</label>
+    <button class="btn" id="rk-copy">Copy</button><button class="btn primary" id="rk-done" ${sec.ack ? '' : 'disabled'}>Done</button></div></div></div>`
+}
+const fmt = () => { const s = Math.max(0, Math.ceil((sec.until - Date.now()) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
+function startTimer() {
+  clearInterval(sec.timer)
+  sec.until = Date.now() + 5 * 60 * 1000
+  sec.timer = setInterval(() => { const el = document.getElementById('countdown'); if (Date.now() >= sec.until) lockNow(); else if (el) el.textContent = fmt() }, 1000)
+}
+function lockNow() { sec.unlocked = false; clearInterval(sec.timer); renderStage() }
+document.getElementById('stage').addEventListener('click', (e) => {
+  if (e.target.closest('#unlock')) {
+    sec.touch = 'ask'; renderStage()
+    setTimeout(() => { sec.touch = 'ok'; renderStage(); setTimeout(() => { sec.touch = null; sec.unlocked = true; startTimer(); renderStage() }, 420) }, 900)
+  } else if (e.target.closest('#use-key')) {
+    const card = e.target.closest('.card'); card.querySelector('#use-key').outerHTML = '<input class="btn" style="font-family:var(--mono);width:100%" placeholder="XXXX-XXXX-XXXX-…" aria-label="Recovery key">'
+  } else if (e.target.closest('#lock-now')) lockNow()
+  else if (e.target.closest('#make-secure')) { sec.sheet = true; sec.ack = false; renderStage() }
+  else if (e.target.closest('#rk-copy')) {
+    const t = document.getElementById('rk').textContent
+    navigator.clipboard?.writeText(t).then(() => { e.target.textContent = 'Copied' }).catch(() => { const r = document.createRange(); r.selectNodeContents(document.getElementById('rk')); getSelection().removeAllRanges(); getSelection().addRange(r) })
+  } else if (e.target.closest('#rk-done')) {
+    sec.sheet = false
+    const n = state.notes.find((x) => x.id === state.activeNote); n.secure = true; sec.unlocked = true; startTimer(); renderSide(); renderStage()
+  }
+})
+document.getElementById('stage').addEventListener('change', (e) => { if (e.target.id === 'rk-ack') { sec.ack = e.target.checked; document.getElementById('rk-done').disabled = !sec.ack } })
+
+/* ---------------- switches ---------------- */
+const NOTES = {
+  side: {
+    A: '<b>Option A, quiet list.</b> Small section labels with a chevron, like the Finder sidebar. Inbox sits on top with a count that empties as you file. Archive keeps its box, whose lid opens when something is dropped on it. Least change from today.',
+    B: '<b>Option B, shelves.</b> Each section is a row with its own icon (target, compass, book, box); an open section gets a faint shelf behind it. Easier to aim a drag at; a little more visual weight.',
+  },
+  sec: {
+    A: '<b>Option A, blurred page.</b> The note keeps its title; its body shows as blurred lines under a small Touch ID card. You see there is something there, never what.',
+    B: '<b>Option B, quiet cover.</b> The whole page turns the secure colour with one large fingerprint button. Calmer and clearly different from an ordinary note.',
+  },
+}
+function sync() {
+  document.getElementById('tab-side').setAttribute('aria-pressed', String(state.tab === 'side'))
+  document.getElementById('tab-sec').setAttribute('aria-pressed', String(state.tab === 'sec'))
+  document.getElementById('opt-a').setAttribute('aria-pressed', String(state.opt === 'A'))
+  document.getElementById('opt-b').setAttribute('aria-pressed', String(state.opt === 'B'))
+  document.getElementById('optnote').innerHTML = NOTES[state.tab][state.opt] + (state.tab === 'sec' ? ' Both: a secure note shows a purple lock in the list, the window is hidden from screen sharing while it is open, and it locks when you leave it, after 5 quiet minutes, or when the Mac sleeps. Pick an ordinary note and choose <b>Make secure</b> to see the one-time recovery key.' : '')
+  renderSide(); renderStage()
+}
+document.getElementById('tab-side').onclick = () => { state.tab = 'side'; state.activeNote = 11; sync() }
+document.getElementById('tab-sec').onclick = () => { state.tab = 'sec'; state.activeNote = SECRET_NOTE; state.openNotebook = 4; state.open.areas = true; sync() }
+document.getElementById('opt-a').onclick = () => { state.opt = 'A'; sync() }
+document.getElementById('opt-b').onclick = () => { state.opt = 'B'; sync() }
+if (location.hash === '#secure') { state.tab = 'sec'; state.activeNote = SECRET_NOTE; state.openNotebook = 4; state.open.areas = true }
+sync()
+</script>
