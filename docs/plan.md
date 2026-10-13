@@ -437,10 +437,11 @@ Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Nee
 The + opens the inline row; its colour dot (or Shift+click on +) opens the full dialog.
 Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Needs: none
 - [x] a section's + adds a notebook row named in place (Enter keeps it, Esc drops it); the dialog stays for colour and editing
-## F-068 A notebook folds its own notes [doing]
+## F-068 A notebook folds its own notes [done]
+Reviewed: PASS after fixes (d8f9447). A click folds or opens a notebook's notes; several can be open, remembered per machine; opening a note opens its notebook; a fold click doesn't change the selection.
 Reported on the Mac (preview 5): an open notebook's notes can only be hidden by folding the whole section.
-- [ ] clicking an open notebook's row folds its notes (clicking again opens them), with the same smooth fold as sections
-- [ ] the note being written stays reachable (its notebook opens when the note is opened from search or the breadcrumb)
+- [x] clicking an open notebook's row folds its notes (clicking again opens them), with the same smooth fold as sections
+- [x] the note being written stays reachable (its notebook opens when the note is opened from search or the breadcrumb)
 ## F-069 Text wraps at the page edge while typing [doing]
 Reported on the Mac (preview 5): typing runs past the page's right edge and only wraps when typing stops.
 - [ ] while typing, a Markdown text wraps at the same width it will have when typing ends (never wider than the page)
