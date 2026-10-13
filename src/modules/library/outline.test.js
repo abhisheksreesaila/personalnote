@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CATEGORIES, FOLD_KEY, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, moveNotebookToCategory, outline, quickNoteKeycap, readFolded, writeFolded } from './outline.js'
+import { CATEGORIES, FOLD_KEY, NOTEBOOK_FOLD_KEY, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, moveNotebookToCategory, outline, quickNoteKeycap, readFolded, writeFolded } from './outline.js'
 
 const notebooks = [
   { id: 1, name: 'Personal Note', category: 'projects' },
@@ -104,4 +104,12 @@ test('the chord is ignored while typing, in dialogs or search, and for a dead ke
   assert.equal(isQuickNoteShortcut(chord(), { blocked: true }), false)
   assert.equal(isQuickNoteShortcut(chord({ key: 'Dead' }), { blocked: true }), false)
   assert.equal(isQuickNoteShortcut(chord(), { blocked: false }), true)
+})
+
+test('open notebooks are remembered under their own key, apart from the sections', () => {
+  const store = new Map()
+  const storage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) }
+  writeFolded(storage, { 3: true, 5: false }, NOTEBOOK_FOLD_KEY)
+  assert.deepEqual(readFolded(storage, NOTEBOOK_FOLD_KEY), { 3: true, 5: false })
+  assert.deepEqual(readFolded(storage), {})
 })

@@ -100,11 +100,11 @@
     margin-left: auto; color: var(--ui-muted); font: 400 11px/1 var(--sk-mono); font-variant-numeric: tabular-nums; transition: opacity 120ms ease;
   }
   .app-shell .nav-edit {
-    position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px;
+    position: absolute; right: 22px; top: 4px; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px;
     color: var(--ui-muted); background: transparent; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease;
   }
   .app-shell .nav-edit svg { width: 15px; height: 15px; }
-  .app-shell .nav-new-note { right: 28px; }
+  .app-shell .nav-new-note { right: 46px; }
   .app-shell .nav-row:hover .nav-edit, .app-shell .nav-edit:focus-visible { opacity: 1; background: color-mix(in srgb, var(--sk-panel) 70%, var(--sk-accent-soft)); }
   .app-shell .nav-row:hover .notebook-count, .app-shell .nav-edit:focus-visible ~ .notebook-tab .notebook-count { opacity: 0; }
 
@@ -134,7 +134,7 @@
   .app-shell .sec-ic svg { width: 16px; height: 16px; }
   .app-shell .sec-head .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .app-shell .sec-chev { width: 14px; height: 14px; flex: none; opacity: .7; transition: transform 180ms var(--ease-out); }
-  .app-shell .sec.open .sec-chev { transform: rotate(90deg); }
+  .app-shell .sec.open > .sec-top .sec-chev, .app-shell .nbk.open > .nav-row .sec-chev { transform: rotate(90deg); }
   .app-shell .sec-add {
     position: absolute; right: 30px; top: 6px; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--ink-soft); cursor: pointer;
     opacity: 0; transition: opacity 140ms ease, background-color 140ms ease;
@@ -151,7 +151,7 @@
 
   /* A section folds by growing its row from 0fr to 1fr: only a class changes, nothing re-renders. */
   .app-shell .fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 180ms var(--ease-out); }
-  .app-shell .sec.open > .fold { grid-template-rows: 1fr; }
+  .app-shell .sec.open > .fold, .app-shell .nbk.open > .fold { grid-template-rows: 1fr; }
   .app-shell .fold > .inner { overflow: hidden; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; align-content: start; }
 
   /* Archive: a box whose lid opens while something hovers over it, and which gulps when it lands. */
@@ -426,8 +426,8 @@
     .app-shell .sec-head { height: 44px; font-size: 14px; }
     .app-shell .note-list-item { min-height: 40px; }
     .app-shell .sec-add, .app-shell .nav-edit { opacity: 1; width: 32px; height: 32px; }
-    .app-shell .nav-edit { top: 6px; right: 2px; }
-    .app-shell .nav-new-note { right: 36px; }
+    .app-shell .nav-edit { top: 6px; right: 24px; }
+    .app-shell .nav-new-note { right: 58px; }
     .app-shell .nav-row .notebook-count { margin-right: 62px; }
 
     .app-shell .topbar { inset: 8px 8px auto 8px; height: 40px; gap: 8px; }

@@ -34,7 +34,7 @@ import { createConnectTool } from './modules/canvas-leafer/connect-tool.js'
 import { EDGE_OVERFLOW, shiftedDocument } from './modules/canvas-leafer/pages.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
-import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, readFolded, writeFolded } from './modules/library/outline.js'
+import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, NOTEBOOK_FOLD_KEY, readFolded, writeFolded } from './modules/library/outline.js'
 import { mountShelves } from './modules/library/shelves.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
@@ -509,6 +509,7 @@ const state = {
   activeNoteType: 'canvas',
   selectedNotebookId: null,
   sectionOpen: readFolded(safeStorage()),
+  notebookOpen: readFolded(safeStorage(), NOTEBOOK_FOLD_KEY), // notebook id -> whether its notes show; several can be open
   pages: { columns: 1, rows: 1 },
   tool: 'text',
   color: '#20201e',
@@ -832,24 +833,47 @@ function noteRowHtml(note) {
   `
 }
 
+let lastSelectedNotebookId = null // a notebook that becomes the selected one (a note opened in it, a new one) opens
+
+function setNotebookOpen(id, open) {
+  state.notebookOpen[id] = open
+  writeFolded(safeStorage(), state.notebookOpen, NOTEBOOK_FOLD_KEY)
+}
+
+// The notes of a closed notebook are only drawn once it has been opened (a notebook can hold hundreds); closing just folds them.
 function notebookRowHtml(notebook, selectedNotebook) {
   const isSelected = notebook.id === selectedNotebook?.id
-  const notes = isSelected ? state.notes.filter((note) => note.notebookId === notebook.id) : []
+  const isOpen = state.notebookOpen[notebook.id] === true
+  const notes = isOpen ? state.notes.filter((note) => note.notebookId === notebook.id) : []
   return `
+    <div class="nbk${isOpen ? ' open' : ''}" data-nbk="${notebook.id}">
     <div class="nav-row ${isSelected ? 'active' : ''}">
-      <button class="notebook-tab ${isSelected ? 'active' : ''}" draggable="true" data-notebook-select="${notebook.id}" data-notebook-drop="${notebook.id}" data-notebook-drag="${notebook.id}" data-category="${notebook.category}" aria-expanded="${isSelected}">
+      <button class="notebook-tab ${isSelected ? 'active' : ''}" draggable="true" data-notebook-select="${notebook.id}" data-notebook-drop="${notebook.id}" data-notebook-drag="${notebook.id}" data-category="${notebook.category}" aria-expanded="${isOpen}">
         <span class="notebook-dot" style="--notebook-color:${notebook.color}"></span>
         <span class="notebook-name">${escapeHtml(notebook.name)}</span>
-        <span class="notebook-count">${notebook.count}</span>
+        <span class="notebook-count">${notebook.count}</span><i class="sec-chev" data-lucide="chevron-right"></i>
       </button>
       <button class="nav-edit nav-new-note" data-new-note-in="${notebook.id}" title="New note in ${escapeHtml(notebook.name)}" aria-label="New note in ${escapeHtml(notebook.name)}"><i data-lucide="plus"></i></button>
       <button class="nav-edit" data-edit-notebook="${notebook.id}" title="Edit ${escapeHtml(notebook.name)}" aria-label="Edit notebook ${escapeHtml(notebook.name)}"><i data-lucide="more-horizontal"></i></button>
     </div>
-    ${isSelected ? `
-      <div class="nav-notes" role="group" aria-label="Notes in ${escapeHtml(notebook.name)}">
+    <div class="fold"${isOpen ? '' : ' inert'}><div class="inner">
+      ${isOpen ? `<div class="nav-notes" role="group" aria-label="Notes in ${escapeHtml(notebook.name)}">
         ${notes.length ? notes.map((note) => noteRowHtml(note)).join('') : '<div class="empty-notebook"><span>No notes yet</span></div>'}
       </div>` : ''}
+    </div></div>
+    </div>
   `
+}
+
+// Click on a notebook row: an open notebook folds, a folded one opens, and nothing else changes (the selection and breadcrumb stay). Only classes change, unless the notes were never drawn.
+function toggleNotebook(id) {
+  const open = state.notebookOpen[id] !== true
+  setNotebookOpen(id, open)
+  const wrap = elements.list.querySelector(`[data-nbk="${id}"]`)
+  if (!wrap || (open && !wrap.querySelector('.nav-notes'))) return renderNoteList()
+  wrap.classList.toggle('open', open)
+  wrap.querySelector('[data-notebook-select]').setAttribute('aria-expanded', String(open))
+  wrap.querySelector('.fold').toggleAttribute('inert', !open)
 }
 
 function renderNoteList() {
@@ -857,6 +881,8 @@ function renderNoteList() {
   // An unfiled note has no notebook (it sits in the Inbox), so no notebook is open for it.
   const selectedNotebook = state.notebooks.find((notebook) => notebook.id === state.selectedNotebookId)
   if (!selectedNotebook) state.selectedNotebookId = null
+  if (selectedNotebook && selectedNotebook.id !== lastSelectedNotebookId) setNotebookOpen(selectedNotebook.id, true)
+  lastSelectedNotebookId = selectedNotebook?.id ?? null
 
   const sections = notebookOutline(state.notebooks, state.notes)
   const unfiled = inboxNotes(state.notes)
@@ -1935,6 +1961,7 @@ async function selectNoteNow(id, { reload = false } = {}) {
 async function refreshWorkspaceLists() {
   const [notebooks, notes] = await Promise.all([api('/notebooks'), api('/notes')])
   state.notebooks = notebooks
+  pruneOpenNotebooks()
   const previous = new Map(state.notes.map((note) => [note.id, note]))
   state.notes = notes.filter((note) => note.id !== pendingDelete?.note.id).map((note) => {
     const known = previous.get(note.id)
@@ -2125,6 +2152,16 @@ async function moveNotebook(notebookId, category) {
 function revealNotebook(notebookId) {
   const notebook = state.notebooks.find((item) => item.id === notebookId)
   if (notebook && !isSectionOpen(state.sectionOpen, notebook.category)) setSectionOpen(notebook.category, true)
+  if (notebook && state.notebookOpen[notebook.id] !== true) setNotebookOpen(notebook.id, true) // and its notebook, even when it was already the selected one
+}
+
+// Notebooks that no longer exist drop out of the remembered open record.
+function pruneOpenNotebooks() {
+  const known = new Set(state.notebooks.map((notebook) => String(notebook.id)))
+  const stale = Object.keys(state.notebookOpen).filter((id) => !known.has(id))
+  if (!stale.length) return
+  stale.forEach((id) => delete state.notebookOpen[id])
+  writeFolded(safeStorage(), state.notebookOpen, NOTEBOOK_FOLD_KEY)
 }
 
 function setSectionOpen(id, open) {
@@ -2199,6 +2236,7 @@ async function deleteNotebook() {
     }
   })
   state.notebooks = await api('/notebooks')
+  pruneOpenNotebooks()
   state.selectedNotebookId = result.destinationNotebookId
   elements.notebookDialog.close()
   renderNoteList()
@@ -2340,6 +2378,7 @@ async function importWorkspaceFile(file) {
     })
     setPortabilityStatus(`Imported ${result.notesImported} notes into ${result.notebooksImported} notebooks.`)
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
+    pruneOpenNotebooks()
     renderNoteList()
   } catch (error) {
     console.error(error)
@@ -3579,8 +3618,7 @@ elements.list.addEventListener('click', (event) => {
   if (edit) return openNotebookDialog(state.notebooks.find((notebook) => notebook.id === Number(edit.dataset.editNotebook)))
   const notebook = event.target.closest('[data-notebook-select]')
   if (notebook) {
-    state.selectedNotebookId = Number(notebook.dataset.notebookSelect)
-    renderNoteList()
+    toggleNotebook(Number(notebook.dataset.notebookSelect))
   }
 })
 shelves = mountShelves(elements.list, {
@@ -3881,6 +3919,7 @@ async function initialize() {
     await api('/secure/lock', { method: 'POST' }).catch(() => {})
     await secure.resetCapture() // and the window may be shared again (a Mac window an earlier page left hidden)
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
+    pruneOpenNotebooks()
     state.selectedNotebookId = state.notes[0]?.notebookId ?? null
     if (!state.notes.length) await createNote()
     else await selectNote(state.notes[0].id)
