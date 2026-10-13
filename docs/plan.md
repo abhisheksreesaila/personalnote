@@ -367,15 +367,15 @@ Needs: F-049, F-050
 Superseded by F-059 Editor first (brief docs/briefs/editor-first-and-secure-notes.md, approved 2026-10-13): the editor feel becomes the default rather than a separate mode.
 Captain (2026-10-12): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."
 
-## F-056 Secure unlock spike (Mac) [blocked]
-Blocked: Touch ID works on the Mac; still need the Keychain line of the final message, and whether a screenshot taken during the 10 seconds showed the window or a blank space.
+## F-056 Secure unlock spike (Mac) [done]
+Run on the captain's Mac 2026-10-13: "Touch ID: yes", "Keychain: key stored and read back OK", and a screenshot during the 10 seconds showed the window blank.
 Reviewed: PASS after fixes (0bc2774). Shipped in v0.5.0-preview.4 https://github.com/abhisheksreesaila/personalnote/releases/tag/v0.5.0-preview.4
 Brief: docs/briefs/editor-first-and-secure-notes.md · Needs: none
 Riskiest assumption first: Touch ID, the keychain and screen-share exclusion from the pywebview app on macOS.
 - [x] the Mac app can ask for Touch ID (falling back to the Mac password) and learn yes or no (captain's Mac, 2026-10-13: "Touch ID: yes")
-- [ ] a random key is stored in and read back from the login keychain, only after that Touch ID yes
-- [ ] the window can be kept out of screen sharing and screenshots, and let back in
-- [ ] a Help menu item (Test secure unlock…) runs all three on the captain's Mac and shows the result; off a Mac the platform module reports "passphrase" (the Linux app has no menu)
+- [x] a random key is stored in and read back from the login keychain, only after that Touch ID yes
+- [x] the window can be kept out of screen sharing and screenshots, and let back in
+- [x] a Help menu item (Test secure unlock…) runs all three on the captain's Mac and shows the result; off a Mac the platform module reports "passphrase" (the Linux app has no menu)
 ## F-057 Secure notes: locked words on disk [todo]
 Needs: F-056
 Carry from the F-056 review: the spike's keychain item has no access control (Touch ID first is enforced by the app only), and an ad-hoc signed build asks for the keychain password again after each update; decide kSecAttrAccessControl (biometry) and signing here.
