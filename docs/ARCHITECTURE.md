@@ -39,13 +39,15 @@ The Leafer canvas is always window-sized: pan and zoom move the view (`setCanvas
 
 Pending edits are flushed when the page is hidden or closed (`src/modules/editor/save-flush.js`): a keepalive request survives unload but is capped at 64 KiB, so a note over about 60 KiB is saved on close best-effort with a normal request that the browser may cancel. If a save is already in flight at that moment, the close-time save is sent at once with the last confirmed revision (never a guessed one); if the in-flight save lands first the server rejects it with a conflict rather than overwrite anything, so edits made after that save can be lost.
 
-The chrome floats over that canvas (F-004): a glass sidebar (Quick note, Inbox, notebooks grouped by PARA category with their notes), a top bar (breadcrumb, title, save state, agent chip, search, share/export), a bottom dock (tools, ink swatches, undo, mic), a page minimap and a zoom control. Pure helpers keep the logic testable: `src/modules/library/outline.js` (sidebar grouping), `src/modules/editor/navigation.js` (page label, zoom steps, fit, minimap, scroll thumbs), `keyboard-pan.js`, `edge-ghost.js` (the "+ Page N" preview) and `lift.js` (a dragged object's tilt and shadow). The ghost page and the lift are painted only while dragging and are never saved objects. The chrome is screen-only and lives in `src/chrome.css`.
+The chrome floats over that canvas (F-004): a glass sidebar (Quick note, the Inbox of unfiled notes, then Projects, Areas, Resources and Archive as foldable shelves of notebooks; notes drag onto notebooks and notebooks onto shelves), a top bar (breadcrumb, title, save state, agent chip, search, share/export), a bottom dock (tools, ink swatches, undo, mic), a page minimap and a zoom control. Pure helpers keep the logic testable: `src/modules/library/outline.js` (sidebar grouping, the Inbox, the remembered folded state) and `shelves.js` (its drag, fold and in-place naming behaviour, checked in the real app by `scripts/verify-sidebar.mjs`), `src/modules/editor/navigation.js` (page label, zoom steps, fit, minimap, scroll thumbs), `keyboard-pan.js`, `edge-ghost.js` (the "+ Page N" preview) and `lift.js` (a dragged object's tilt and shadow). The ghost page and the lift are painted only while dragging and are never saved objects. The chrome is screen-only and lives in `src/chrome.css`.
 
 Objects and the desk (F-012): a note opens zoomed out so every page is on the desk (`openingView` in `navigation.js`; phones keep the full-width first page), with "Page N" under each page and dashed fold lines between pages, all drawn by the canvas and never saved. The dock's Sticky note and Image tools create ordinary objects of the document model: a sticky is a `sticky` object (its colour is saved), and a picture is shrunk off the main thread, stored once in the media library and placed as a `mediaRef` (picker, drop or paste; `canvas-leafer/media.js`). `objects.js` holds the pure rules (palette from the skin's `--sk-c1..c5`, sticky defaults, image sizing). The Shape tool places a rounded rectangle in the chosen object colour (a `shape` object, selected, one undo step; `R`). Clear all on a canvas note removes every object in one undo step and offers Undo in a toast. A voice dictation with no text open starts a box 42 px under the note's content (`voiceInsertPoint`), and the pages are outlined in the accent colour while dictation listens. The agent's "writing" flag is placed over the last text block from the model and follows the view. `scripts/verify-leafer-dock.mjs` checks these in the real app. Crayon's screen paper is white; Paper (the default skin) and Night keep their ivory, and print is unchanged.
 
 `src/main.js` owns shared note lifecycle and canvas interaction. It talks to the backend only through `src/core/api.js`. The shell knows that notes have a `noteType`, but optional modules do not own notebook navigation, persistence, or search.
 
 ### Persistence
+
+An unfiled note has no notebook (`notes.notebook_id` is NULL): that is the Inbox, a built-in place rather than a notebook row. New notes land there unless a notebook is named, and the schema migration fills in a notebook only for a database from before notebooks existed. Backups carry `notebookResourceId: null` for these notes and import keeps them unfiled.
 
 `routes.py` defines the local HTTP surface. `services.py::NoteService` is the only owner of canonical note and notebook reads/writes. `app_schema.py` performs idempotent schema creation and migration. All endpoints work without voice or mind-map code running in the browser.
 
@@ -137,7 +139,7 @@ erDiagram
         int id PK
         string resource_id UK
         int revision
-        int notebook_id FK
+        int notebook_id FK "NULL = Inbox"
         string note_type
         string content_format
         string title
@@ -197,10 +199,10 @@ LeaferJS is the canvas engine and the only one: F-036 removed Fabric.js (the dep
 | `GET` | `/health` | Core process health |
 | `GET` | `/api/settings/capabilities` | Storage, portability, and built-in module facts |
 | `GET/POST` | `/api/notebooks` | List/create notebooks |
-| `PUT/DELETE` | `/api/notebooks/{id}` | Update/delete notebook; note reassignment is transactional |
+| `PUT/DELETE` | `/api/notebooks/{id}` | Update/delete notebook (a section change is a `category` update); a deleted notebook's notes go to the Inbox, transactionally |
 | `GET/POST` | `/api/notes` | List/create notes |
 | `GET/PUT/DELETE` | `/api/notes/{id}` | Canonical note lifecycle |
-| `PATCH` | `/api/notes/{id}/notebook` | Move a note |
+| `PATCH` | `/api/notes/{id}/notebook` | File a note into a notebook, or back to the Inbox with `"notebookId": null` |
 | `GET` | `/api/search?q=` | FTS5 note search |
 | `GET` | `/api/export/workspace` | Canonical JSON backup |
 | `POST` | `/api/import/workspace` | Non-destructive merge import |

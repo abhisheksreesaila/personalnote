@@ -62,13 +62,17 @@ test('folded state reads and writes through a storage that may be missing or thr
   assert.deepEqual(readFolded(storage), {})
   writeFolded(storage, { inbox: false, archive: true })
   assert.deepEqual(readFolded(storage), { inbox: false, archive: true })
+  assert.deepEqual(readFolded({ getItem: () => '[1,2]' }), {})
   assert.deepEqual(readFolded(null), {})
   assert.deepEqual(readFolded({ getItem: () => { throw new Error('blocked') } }), {})
   assert.doesNotThrow(() => writeFolded({ setItem: () => { throw new Error('blocked') } }, {}))
   store.set(FOLD_KEY, '{not json')
   assert.deepEqual(readFolded(storage), {})
-  assert.equal(isSectionOpen({}, 'projects'), true) // sections start open
-  assert.equal(isSectionOpen({ projects: false }, 'projects'), false)
+  assert.equal(isSectionOpen({}, 'projects'), true) // sections start open, except the Archive
+  assert.equal(isSectionOpen({}, 'inbox'), true)
+  assert.equal(isSectionOpen({}, 'archive'), false)
+  assert.equal(isSectionOpen({ projects: false, archive: true }, 'projects'), false)
+  assert.equal(isSectionOpen({ projects: false, archive: true }, 'archive'), true)
 })
 
 test('the quick-note shortcut is shown for the platform', () => {

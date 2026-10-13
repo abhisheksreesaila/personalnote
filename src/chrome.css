@@ -84,37 +84,21 @@
 
   .app-shell .notebook-navigator { display: block; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; scrollbar-color: var(--sk-line) transparent; }
   .app-shell .notebook-list { display: block; padding: 0; overflow: visible; }
-  .app-shell .nav-heading {
-    display: flex; align-items: center; padding: 12px 8px 4px; color: var(--ui-muted); font-size: 10.5px; font-weight: 500;
-    letter-spacing: .08em; text-transform: uppercase;
-  }
-  .app-shell .nav-add {
-    width: 22px; height: 22px; margin: -2px -4px -2px auto; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px;
-    color: var(--ui-muted); background: transparent; cursor: pointer; opacity: 0; transition: opacity 140ms ease, background-color 140ms ease;
-  }
-  .app-shell .nav-heading:hover .nav-add, .app-shell .nav-add:focus-visible { opacity: 1; }
-  .app-shell .nav-add:hover { background: var(--hover); color: var(--sk-ink); }
-  .app-shell .nav-add svg { width: 14px; height: 14px; }
-
   .app-shell .nav-row { position: relative; display: block; }
-  .app-shell .nav-item, .app-shell .notebook-tab {
+  .app-shell .notebook-tab {
     position: relative; width: 100%; min-width: 0; height: 30px; display: flex; align-items: center; gap: 9px; padding: 0 8px; border: 0;
     border-radius: 9px; background: transparent; box-shadow: none; color: var(--ink-soft); font-size: 13px; font-weight: 400; text-align: left; cursor: pointer;
     transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
   }
-  .app-shell .nav-item:hover, .app-shell .notebook-tab:hover { background: var(--hover); color: var(--sk-ink); }
-  .app-shell .nav-item:active, .app-shell .notebook-tab:active { background: var(--pressed); transform: scale(.985); }
-  .app-shell .nav-item:focus-visible, .app-shell .notebook-tab:focus-visible, .app-shell .note-list-item:focus-visible { outline: 2px solid var(--sk-accent); outline-offset: -2px; }
-  .app-shell .notebook-tab.active, .app-shell .nav-item.active { background: var(--sk-accent-soft); color: var(--sk-ink); font-weight: 500; box-shadow: none; }
-  .app-shell .notebook-tab.drag-over { background: var(--sk-accent-soft); box-shadow: inset 0 0 0 1.5px var(--sk-accent); }
-  .app-shell .nav-item svg { width: 16px; height: 16px; flex: none; color: var(--ink-soft); }
+  .app-shell .notebook-tab:hover { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .notebook-tab:active { background: var(--pressed); transform: scale(.985); }
+  .app-shell .notebook-tab:focus-visible, .app-shell .note-list-item:focus-visible, .app-shell .sec-head:focus-visible, .app-shell .sec-add:focus-visible { outline: 2px solid var(--sk-accent); outline-offset: -2px; }
+  .app-shell .notebook-tab.active { background: var(--sk-accent-soft); color: var(--sk-ink); font-weight: 500; box-shadow: none; }
   .app-shell .notebook-dot { width: 8px; height: 8px; flex: none; margin: 0 1px; border-radius: 3px; background: var(--notebook-color); box-shadow: none; }
   .app-shell .notebook-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: inherit; }
   .app-shell .notebook-count, .app-shell .notebook-tab .notebook-count {
     margin-left: auto; color: var(--ui-muted); font: 400 11px/1 var(--sk-mono); font-variant-numeric: tabular-nums; transition: opacity 120ms ease;
   }
-  .app-shell .nav-chevron { width: 14px !important; height: 14px !important; transition: transform 200ms var(--ease-out); }
-  .app-shell .nav-chevron.open { transform: rotate(90deg); }
   .app-shell .nav-edit {
     position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px;
     color: var(--ui-muted); background: transparent; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease;
@@ -135,6 +119,62 @@
   .app-shell .note-list-item > svg { width: 14px; height: 14px; flex: none; color: currentColor; opacity: .65; }
   .app-shell .note-list-item span:not(.notebook-dot) { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12.5px/1.3 var(--ui-font); }
   .app-shell .empty-notebook { min-height: 0; display: block; padding: 5px 8px; color: var(--ui-muted); font: 400 12px/1.4 var(--ui-font); }
+
+  /* ---------- Shelves (F-065..F-067): Inbox and the four PARA sections ---------- */
+  .app-shell .sec { display: grid; margin-top: 4px; padding: 2px; border-radius: 13px; transition: background-color 180ms var(--ease-out); }
+  .app-shell .sec.inbox-sec { margin-top: 0; }
+  .app-shell .sec.open { background: color-mix(in srgb, var(--sk-ink) 3.5%, transparent); }
+  .app-shell .sec-head {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 34px; padding: 0 8px; border: 0; border-radius: 10px;
+    background: transparent; color: var(--sk-ink); font: 600 13.5px/1 var(--ui-font); letter-spacing: -.005em; text-align: left; cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  }
+  .app-shell .sec-head:hover { background: var(--hover); }
+  .app-shell .sec-head.inbox-head { font-weight: 500; }
+  .app-shell .sec-ic { display: inline-flex; flex: none; color: var(--ink-soft); }
+  .app-shell .sec-ic svg { width: 16px; height: 16px; }
+  .app-shell .sec-head .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-shell .sec-chev { width: 14px; height: 14px; flex: none; opacity: .7; transition: transform 180ms var(--ease-out); }
+  .app-shell .sec.open > .sec-head .sec-chev { transform: rotate(90deg); }
+  .app-shell .sec-add {
+    width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px; color: var(--ink-soft);
+    opacity: 0; transition: opacity 140ms ease, background-color 140ms ease;
+  }
+  .app-shell .sec-add svg { width: 14px; height: 14px; }
+  .app-shell .sec-head:hover .sec-add, .app-shell .sec-add:focus-visible { opacity: 1; }
+  .app-shell .sec-add:hover { background: var(--pressed); }
+  .app-shell .badge {
+    min-width: 18px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--sk-accent); color: var(--sk-accent-ink);
+    font: 600 11px/18px var(--ui-font); text-align: center; font-variant-numeric: tabular-nums; transition: transform 160ms var(--ease-spring), background-color 160ms ease;
+  }
+  .app-shell .badge.zero { background: var(--hover); color: var(--ui-muted); }
+  .app-shell .badge.bump { transform: scale(1.25); }
+
+  /* A section folds by growing its row from 0fr to 1fr: only a class changes, nothing re-renders. */
+  .app-shell .fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 180ms var(--ease-out); }
+  .app-shell .sec.open > .fold { grid-template-rows: 1fr; }
+  .app-shell .fold > .inner { overflow: hidden; min-height: 0; display: grid; gap: 1px; align-content: start; }
+  .app-shell .empty-section { padding-left: 24px; }
+
+  /* Archive: a box whose lid opens while something hovers over it, and which gulps when it lands. */
+  .app-shell .sec-box { width: 18px; height: 18px; flex: none; overflow: visible; }
+  .app-shell .sec-box .lid { transform-origin: 3px 7px; transition: transform 180ms var(--ease-spring); }
+  .app-shell .sec-box.open .lid { transform: rotate(-24deg) translateY(-1px); }
+  .app-shell .sec-box.gulp { animation: pn-gulp 260ms var(--ease-out); }
+  @keyframes pn-gulp { 40% { transform: scale(1.18); } 100% { transform: none; } }
+
+  /* Dragging: the row lifts, a ghost follows the pointer, the target is ringed, a dropped row flashes. */
+  .app-shell .lifting { opacity: .45; }
+  .app-shell .drop-target, .app-shell .sec-head.drop-target { background: var(--sk-accent-soft); box-shadow: inset 0 0 0 1.5px var(--sk-accent); }
+  .app-shell .landed { animation: pn-landed 700ms var(--ease-out); }
+  @keyframes pn-landed { 0% { background: var(--sk-accent-soft); transform: scale(1.03); } 100% { background: transparent; transform: none; } }
+  .app-shell .drag-ghost {
+    position: fixed; z-index: 60; pointer-events: none; display: flex; align-items: center; gap: 8px; width: max-content; max-width: 240px; min-height: 0; height: auto;
+    padding: 6px 12px; border: 0; border-radius: 10px; background: var(--sk-panel); color: var(--sk-ink); font: 500 13px/1.25 var(--ui-font);
+    box-shadow: 0 2px 4px rgba(0, 0, 30, .08), 0 18px 36px -12px rgba(0, 0, 60, .35); transform: rotate(-2deg) scale(1.03);
+  }
+  .app-shell .drag-ghost > svg { width: 14px; height: 14px; flex: none; }
+  .app-shell .drag-ghost span:not(.notebook-dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .app-shell .sidebar-footer {
     flex: none; height: auto; display: flex; align-items: center; gap: 8px; margin: 6px -2px 0; padding: 10px 6px 0 8px;
@@ -377,9 +417,10 @@
       display: block; position: fixed; inset: 0; z-index: 35; background: color-mix(in srgb, var(--sk-ink) 38%, transparent); opacity: 0; pointer-events: none; transition: opacity 240ms ease;
     }
     .app-shell.sidebar-open .sidebar-scrim { opacity: 1; pointer-events: auto; }
-    .app-shell .notebook-tab, .app-shell .nav-item { height: 44px; font-size: 14px; }
+    .app-shell .notebook-tab { height: 44px; font-size: 14px; }
+    .app-shell .sec-head { height: 44px; font-size: 14px; }
     .app-shell .note-list-item { min-height: 40px; }
-    .app-shell .nav-add, .app-shell .nav-edit { opacity: 1; width: 32px; height: 32px; }
+    .app-shell .sec-add, .app-shell .nav-edit { opacity: 1; width: 32px; height: 32px; }
     .app-shell .nav-edit { top: 6px; right: 2px; }
     .app-shell .nav-new-note { right: 36px; }
     .app-shell .nav-row .notebook-count { margin-right: 62px; }
@@ -445,7 +486,7 @@
   }
 
   @media (hover: none) {
-    .app-shell .nav-add, .app-shell .nav-edit { opacity: 1; }
+    .app-shell .sec-add, .app-shell .nav-edit { opacity: 1; }
     .app-shell .nav-row .notebook-count { margin-right: 52px; }
   }
 

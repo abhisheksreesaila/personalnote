@@ -31,7 +31,8 @@ import { createConnectTool } from './modules/canvas-leafer/connect-tool.js'
 import { EDGE_OVERFLOW, shiftedDocument } from './modules/canvas-leafer/pages.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
-import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, modifierLabel, outline as notebookOutline, quickNoteKeycap } from './modules/library/outline.js'
+import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, readFolded, writeFolded } from './modules/library/outline.js'
+import { mountShelves } from './modules/library/shelves.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
@@ -502,8 +503,7 @@ const state = {
   activeNoteId: null,
   activeNoteType: 'canvas',
   selectedNotebookId: null,
-  inboxOpen: true,
-  archiveOpen: false,
+  sectionOpen: {},
   pages: { columns: 1, rows: 1 },
   tool: 'text',
   color: '#20201e',
@@ -805,8 +805,18 @@ function escapeHtml(value) {
   return element.innerHTML
 }
 
+// The Archive's icon is a box whose lid opens while something is dragged over it (plain CSS, see .sec-box).
+const ARCHIVE_BOX = '<svg class="sec-box" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/><g class="lid"><rect x="2.5" y="4" width="19" height="5" rx="1.2"/></g></svg>'
+const SECTION_ICONS = { projects: 'target', areas: 'compass', resources: 'book-open' }
+let lastInboxCount = 0
+let shelves = null
+
+function safeStorage() {
+  try { return window.localStorage } catch { return null }
+}
+
 function noteRowHtml(note) {
-  const dot = `<i data-lucide="${note.secure ? 'lock' : note.noteType === 'mindmap' ? 'git-fork' : note.noteType === 'page' ? 'file-pen' : 'file-text'}"></i>`
+  const dot = `<i data-lucide="${note.noteType === 'mindmap' ? 'git-fork' : note.noteType === 'page' ? 'file-pen' : 'file-text'}"></i>`
   return `
     <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''}" data-note-id="${note.id}" draggable="true">
       ${dot}
@@ -820,7 +830,7 @@ function notebookRowHtml(notebook, selectedNotebook) {
   const notes = isSelected ? state.notes.filter((note) => note.notebookId === notebook.id) : []
   return `
     <div class="nav-row ${isSelected ? 'active' : ''}">
-      <button class="notebook-tab ${isSelected ? 'active' : ''}" data-notebook-select="${notebook.id}" data-notebook-drop="${notebook.id}" aria-expanded="${isSelected}">
+      <button class="notebook-tab ${isSelected ? 'active' : ''}" draggable="true" data-notebook-select="${notebook.id}" data-notebook-drop="${notebook.id}" data-notebook-drag="${notebook.id}" data-category="${notebook.category}" aria-expanded="${isSelected}">
         <span class="notebook-dot" style="--notebook-color:${notebook.color}"></span>
         <span class="notebook-name">${escapeHtml(notebook.name)}</span>
         <span class="notebook-count">${notebook.count}</span>
@@ -842,38 +852,38 @@ function renderNoteList() {
   if (!selectedNotebook) state.selectedNotebookId = null
 
   const sections = notebookOutline(state.notebooks, state.notes)
-  const selectedSection = sections.find((section) => section.notebooks.some((item) => item.id === selectedNotebook?.id))
-  const archiveOpen = state.archiveOpen || selectedSection?.id === 'archive'
   const unfiled = inboxNotes(state.notes)
+  const openClass = (id) => (isSectionOpen(state.sectionOpen, id) ? ' open' : '')
+  const chevron = '<i class="sec-chev" data-lucide="chevron-right"></i>'
 
+  // Inbox first: the notes not filed yet, with a count that empties as they are filed.
   const inboxHtml = `
-    <button class="nav-item inbox-tab ${state.inboxOpen ? 'active' : ''}" data-inbox-toggle aria-expanded="${state.inboxOpen}">
-      <i data-lucide="inbox"></i><span class="notebook-name">Inbox</span><span class="notebook-count" title="Notes not filed yet">${unfiled.length}</span>
-    </button>
-    ${state.inboxOpen ? `
-      <div class="nav-notes" role="group" aria-label="Inbox">
-        ${unfiled.length ? unfiled.map((note) => noteRowHtml(note)).join('') : '<div class="empty-notebook"><span>All filed. New notes land here.</span></div>'}
-      </div>` : ''}
-  `
-
-  const sectionHtml = sections.map((section) => {
-    if (section.id === 'archive') {
-      return `
-        <div class="nav-section nav-archive">
-          <button class="nav-item archive-tab" data-archive-toggle aria-expanded="${archiveOpen}">
-            <i data-lucide="archive"></i><span class="notebook-name">Archive</span><span class="notebook-count">${section.notebooks.length}</span>
-            <i class="nav-chevron ${archiveOpen ? 'open' : ''}" data-lucide="chevron-right"></i>
-          </button>
-          ${archiveOpen ? section.notebooks.map((notebook) => notebookRowHtml(notebook, selectedNotebook)).join('') : ''}
-        </div>`
-    }
-    return `
-      <div class="nav-section" data-category="${section.id}">
-        <div class="nav-heading">
-          <span>${section.label}</span>
-          <button class="nav-add" data-new-notebook="${section.id}" title="New notebook in ${section.label}" aria-label="New notebook in ${section.label}"><i data-lucide="plus"></i></button>
+    <div class="sec inbox-sec${openClass('inbox')}" data-sec="inbox">
+      <button class="sec-head inbox-head" data-fold="inbox" aria-expanded="${isSectionOpen(state.sectionOpen, 'inbox')}">
+        <span class="sec-ic"><i data-lucide="inbox"></i></span><span class="lbl">Inbox</span>
+        <span class="badge ${unfiled.length ? '' : 'zero'}" id="inbox-badge" title="Notes not filed yet">${unfiled.length}</span>${chevron}
+      </button>
+      <div class="fold"><div class="inner">
+        <div class="nav-notes" role="group" aria-label="Inbox">
+          ${unfiled.length ? unfiled.map((note) => noteRowHtml(note)).join('') : '<div class="empty-notebook"><span>All filed. New notes land here.</span></div>'}
         </div>
-        ${section.notebooks.map((notebook) => notebookRowHtml(notebook, selectedNotebook)).join('')}
+      </div></div>
+    </div>`
+
+  // Projects, Areas, Resources and Archive: shelves a notebook can be dragged onto.
+  const sectionHtml = sections.map((section) => {
+    const icon = section.id === 'archive' ? ARCHIVE_BOX : `<i data-lucide="${SECTION_ICONS[section.id]}"></i>`
+    return `
+      <div class="sec${openClass(section.id)}" data-sec="${section.id}" data-sec-drop="${section.id}">
+        <div class="sec-head" role="button" tabindex="0" data-fold="${section.id}" aria-expanded="${isSectionOpen(state.sectionOpen, section.id)}">
+          <span class="sec-ic">${icon}</span><span class="lbl">${section.label}</span>
+          ${section.id === 'archive' ? '' : `<span class="sec-add" role="button" tabindex="0" data-new-notebook="${section.id}" title="New notebook in ${section.label}" aria-label="New notebook in ${section.label}"><i data-lucide="plus"></i></span>`}
+          ${chevron}
+        </div>
+        <div class="fold"><div class="inner">
+          ${section.notebooks.map((notebook) => notebookRowHtml(notebook, selectedNotebook)).join('')}
+          ${section.notebooks.length ? '' : '<div class="empty-notebook empty-section"><span>Drop a notebook here</span></div>'}
+        </div></div>
       </div>`
   }).join('')
 
@@ -881,12 +891,15 @@ function renderNoteList() {
   const scrollTop = elements.list.scrollTop
   elements.notebookList.innerHTML = inboxHtml + sectionHtml
   elements.list.scrollTop = scrollTop
+  if (lastInboxCount > unfiled.length) shelves?.bumpInbox() // a note just left the Inbox
+  lastInboxCount = unfiled.length
 
   const notebookForCrumb = state.notebooks.find((item) => item.id === activeNote?.notebookId)
   elements.breadcrumbCategory.textContent = notebookForCrumb ? categoryLabel(notebookForCrumb.category) : 'Not filed yet'
   elements.breadcrumbNotebook.textContent = notebookForCrumb ? notebookForCrumb.name : 'Inbox'
   renderNotebookPicker()
   createIcons({ icons })
+  shelves?.afterRender()
 }
 
 function renderNotebookPicker() {
@@ -1809,6 +1822,7 @@ async function selectNoteNow(id) {
       revision: note.revision,
     })
     state.selectedNotebookId = note.notebookId
+    revealNotebook(note.notebookId)
     elements.title.value = note.title
     setActiveNoteType(note.noteType)
     if (state.activeNoteType === 'mindmap') {
@@ -1975,17 +1989,61 @@ async function createNote(notebookId, noteType = 'canvas') {
   }
 }
 
+// A move shows at once and is put back, with the toast, if the server does not keep it. Resolves to whether it was kept.
 async function moveNote(noteId, notebookId) { // notebookId null: back to the Inbox
   const note = state.notes.find((item) => item.id === noteId)
-  if (!note || (note.notebookId ?? null) === notebookId) return
-  const result = await api(`/notes/${noteId}/notebook`, {
-    method: 'PATCH',
-    body: JSON.stringify({ notebookId, revision: note.revision }),
-  })
-  Object.assign(note, { notebookId, revision: result.revision, resourceId: result.resourceId })
+  if (!note || (note.notebookId ?? null) === notebookId) return true
+  const before = { notebookId: note.notebookId, selected: state.selectedNotebookId }
+  note.notebookId = notebookId
   if (noteId === state.activeNoteId) state.selectedNotebookId = notebookId
   renderNoteList()
+  try {
+    const result = await api(`/notes/${noteId}/notebook`, {
+      method: 'PATCH',
+      body: JSON.stringify({ notebookId, revision: note.revision }),
+    })
+    Object.assign(note, { revision: result.revision, resourceId: result.resourceId })
+    return true
+  } catch (error) {
+    console.error(error)
+    note.notebookId = before.notebookId
+    state.selectedNotebookId = before.selected
+    renderNoteList()
+    showToast("Couldn't move it. Try again.")
+    return false
+  }
 }
+
+async function moveNotebook(notebookId, category) {
+  const notebook = state.notebooks.find((item) => item.id === notebookId)
+  if (!notebook || notebook.category === category) return true
+  const before = { category: notebook.category }
+  notebook.category = category
+  setSectionOpen(category, true) // show it where it landed
+  renderNoteList()
+  try {
+    const updated = await api(`/notebooks/${notebookId}`, { method: 'PUT', body: JSON.stringify({ category, revision: notebook.revision }) })
+    Object.assign(notebook, updated)
+    return true
+  } catch (error) {
+    console.error(error)
+    notebook.category = before.category
+    renderNoteList()
+    showToast("Couldn't move it. Try again.")
+    return false
+  }
+}
+
+// Opening a note in a folded section unfolds it, so the row you are on is never hidden.
+function revealNotebook(notebookId) {
+  const notebook = state.notebooks.find((item) => item.id === notebookId)
+  if (notebook && !isSectionOpen(state.sectionOpen, notebook.category)) setSectionOpen(notebook.category, true)
+}
+
+function setSectionOpen(id, open) {
+  state.sectionOpen[id] = open
+}
+
 
 function openNotebookDialog(notebook = null, category = 'projects') {
   elements.notebookForm.dataset.notebookId = notebook?.id || ''
@@ -3414,42 +3472,22 @@ elements.list.addEventListener('click', (event) => {
   const newNote = event.target.closest('[data-new-note-in]')
   if (newNote) return void createNote(Number(newNote.dataset.newNoteIn))
   const add = event.target.closest('[data-new-notebook]')
-  if (add) return openNotebookDialog(null, add.dataset.newNotebook)
+  if (add) return openNotebookDialog(null, add.dataset.newNotebook) // (with the + naming in place, this is Shift+click)
   const edit = event.target.closest('[data-edit-notebook]')
   if (edit) return openNotebookDialog(state.notebooks.find((notebook) => notebook.id === Number(edit.dataset.editNotebook)))
-  if (event.target.closest('[data-inbox-toggle]')) {
-    state.inboxOpen = !state.inboxOpen
-    return renderNoteList()
-  }
-  if (event.target.closest('[data-archive-toggle]')) {
-    state.archiveOpen = !state.archiveOpen
-    return renderNoteList()
-  }
   const notebook = event.target.closest('[data-notebook-select]')
   if (notebook) {
     state.selectedNotebookId = Number(notebook.dataset.notebookSelect)
     renderNoteList()
   }
 })
-elements.list.addEventListener('dragstart', (event) => {
-  const note = event.target.closest('[data-note-id]')
-  if (!note) return
-  event.dataTransfer.setData('text/plain', note.dataset.noteId)
-  event.dataTransfer.effectAllowed = 'move'
-})
-elements.list.addEventListener('dragover', (event) => {
-  const notebook = event.target.closest('[data-notebook-drop]')
-  if (!notebook) return
-  event.preventDefault()
-  notebook.classList.add('drag-over')
-})
-elements.list.addEventListener('dragleave', (event) => event.target.closest('[data-notebook-drop]')?.classList.remove('drag-over'))
-elements.list.addEventListener('drop', (event) => {
-  const notebook = event.target.closest('[data-notebook-drop]')
-  if (!notebook) return
-  event.preventDefault()
-  notebook.classList.remove('drag-over')
-  moveNote(Number(event.dataTransfer.getData('text/plain')), Number(notebook.dataset.notebookDrop))
+shelves = mountShelves(elements.list, {
+  isOpen: (id) => isSectionOpen(state.sectionOpen, id),
+  setOpen: setSectionOpen,
+  moveNote,
+  moveNotebook,
+  noteNotebookId: (id) => state.notes.find((note) => note.id === id)?.notebookId ?? null,
+  notebookCategory: (id) => state.notebooks.find((notebook) => notebook.id === id)?.category,
 })
 
 // Cancel and the X are plain buttons, so the empty Name never blocks them and Enter reaches Create.

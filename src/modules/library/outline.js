@@ -39,7 +39,7 @@ export function moveNotebookToCategory(notebooks, notebookId, category) {
 // Which sections are folded is kept on this machine. Storage can be missing or throw (private mode, some web views), so nothing here may.
 export const FOLD_KEY = 'personal-note-folded-sections'
 
-export function readFolded(storage) {
+export function readFolded(storage) { // -> { sectionId: isOpen }
   try {
     const value = JSON.parse(storage?.getItem(FOLD_KEY) || '{}')
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -48,12 +48,13 @@ export function readFolded(storage) {
   }
 }
 
-export function writeFolded(storage, folded) {
-  try { storage?.setItem(FOLD_KEY, JSON.stringify(folded)) } catch {}
+export function writeFolded(storage, open) {
+  try { storage?.setItem(FOLD_KEY, JSON.stringify(open)) } catch {}
 }
 
-export function isSectionOpen(folded, id) {
-  return folded[id] !== false
+// `open` maps a section id to whether it is open. Until the person chooses, every section is open except the Archive.
+export function isSectionOpen(open, id) {
+  return typeof open[id] === 'boolean' ? open[id] : id !== 'archive'
 }
 
 export function modifierLabel(platform = '') {

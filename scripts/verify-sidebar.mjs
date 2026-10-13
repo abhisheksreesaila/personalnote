@@ -31,7 +31,7 @@ try {
   await apiUp()
   await server.listen()
   browser = await engine.launch({ headless: true, ...(engine === chromium ? { args: ['--disable-dev-shm-usage'] } : {}) })
-  const page = await (await browser.newContext({ viewport: { width: 1360, height: 900 } })).newPage()
+  const page = await (await browser.newContext({ viewport: { width: 1360, height: 1400 } })).newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   const shot = async (name) => { if (process.env.PN_SHOT) await page.screenshot({ path: process.env.PN_SHOT.replace('.png', `-${name}.png`) }) }
@@ -42,7 +42,7 @@ try {
     await page.waitForTimeout(300)
   }
   const settle = (ms = 250) => page.waitForTimeout(ms)
-  const inboxCount = () => page.evaluate(() => Number(document.querySelector('[data-inbox-toggle] .notebook-count')?.textContent))
+  const inboxCount = () => page.evaluate(() => Number(document.querySelector('#inbox-badge')?.textContent))
   const inboxTitles = () => page.evaluate(() => [...document.querySelectorAll('[aria-label="Inbox"] .note-list-item')].map((row) => row.textContent.trim()))
 
   // ---- F-064: a real Inbox ----
@@ -101,6 +101,111 @@ try {
   const lonely = (await call('GET', '/notes')).find((note) => note.title === 'Lonely')
   check('deleting a notebook moves its notes to the Inbox', lonely?.notebookId === null && (await inboxTitles()).includes('Lonely'), JSON.stringify(lonely))
   await shot('inbox')
+
+
+  // ---- shared helpers for the sidebar checks ----
+  const rowOf = (selector) => page.locator(selector).first()
+  const centreOf = async (locator) => { const box = await locator.boundingBox(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 } }
+  // A real mouse drag: press, a small move so the engine starts the drag, travel to the target, optionally look around mid-drag, release.
+  const mouseDrag = async (from, to, { during = null, hover = 0 } = {}) => {
+    const start = await centreOf(from)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(start.x + 6, start.y + 6, { steps: 3 })
+    const end = await centreOf(to)
+    await page.mouse.move(end.x, end.y, { steps: 14 })
+    await page.waitForTimeout(Math.max(hover, 150)) // dragover is delivered a moment after the last move
+    if (during) await during()
+    await page.mouse.up()
+    await settle(500)
+  }
+  const countOf = (notebookId) => page.evaluate((id) => Number(document.querySelector(`[data-notebook-select="${id}"] .notebook-count`)?.textContent), notebookId)
+  const noteRow = (title) => page.locator('[aria-label="Inbox"] .note-list-item', { hasText: title }).first()
+  const toast = () => page.evaluate(() => { const t = document.querySelector('#toast'); return t.hidden ? '' : t.textContent })
+  const serverNote = async (id) => (await call('GET', '/notes')).find((note) => note.id === id)
+  const serverNotebook = async (id) => (await call('GET', '/notebooks')).find((notebook) => notebook.id === id)
+  const sectionHead = (id) => rowOf(`[data-sec="${id}"] > [data-fold]`)
+  const inSection = (section, notebookId) => page.evaluate(([name, id]) => document.querySelector(`[data-sec="${name}"] [data-notebook-select="${id}"]`) !== null, [section, notebookId])
+
+
+  // ---- F-065: file by drag ----
+  const old = await call('POST', '/notebooks', { name: 'Old taxes', category: 'projects' })
+  const batch = []
+  for (const title of ['Receipt', 'Idea', 'Quote', 'Recipe']) batch.push(await call('POST', '/notes', { title }))
+  await open()
+  const filedBefore = await inboxCount()
+  const houseBefore = await countOf(house.id)
+
+  // mouse down/move/up, the plainest gesture: an Inbox note onto a notebook
+  await mouseDrag(noteRow('Receipt'), rowOf(`[data-notebook-drop="${house.id}"]`), {
+    during: async () => {
+      const mid = await page.evaluate(() => ({
+        ghost: Boolean(document.querySelector('.drag-ghost')),
+        lifting: document.querySelectorAll('.lifting').length,
+        ringed: document.querySelectorAll('.drop-target').length,
+      }))
+      check('mid-drag: a ghost follows the pointer, the row lifts and the target is ringed', mid.ghost && mid.lifting === 1 && mid.ringed === 1, JSON.stringify(mid))
+    },
+  })
+  check('dropping an Inbox note on a notebook: the Inbox count drops and the notebook count rises', (await inboxCount()) === filedBefore - 1 && (await countOf(house.id)) === houseBefore + 1, JSON.stringify([filedBefore, await inboxCount(), houseBefore, await countOf(house.id)]))
+  check('the ghost, the lift and the ring are gone afterwards', await page.evaluate(() => !document.querySelector('.drag-ghost') && !document.querySelector('.drop-target') && !document.querySelector('.lifting')))
+  const receipt = batch.find((note) => note.title === 'Receipt')
+  check('the note is filed on the server', (await serverNote(receipt.id)).notebookId === house.id, JSON.stringify(await serverNote(receipt.id)))
+  await open()
+  check('and after a reload it is still filed, not in the Inbox', (await inboxTitles()).every((title) => title !== 'Receipt') && (await countOf(house.id)) === houseBefore + 1)
+
+  // the HTML5 gesture Playwright offers (dragTo) does the same thing
+  await noteRow('Idea').dragTo(rowOf(`[data-notebook-drop="${garden.id}"]`))
+  await settle(500)
+  check('dragTo: an Inbox note onto another notebook files it', (await serverNote(batch.find((note) => note.title === 'Idea').id)).notebookId === garden.id)
+
+  // a note can also be dragged out of one notebook into another (open House first: its notes show)
+  await page.click(`[data-notebook-select="${house.id}"]`)
+  await settle(300)
+  await mouseDrag(page.locator(`[data-note-id="${receipt.id}"]`).first(), rowOf(`[data-notebook-drop="${garden.id}"]`))
+  check('a note dragged from a notebook into another notebook moves', (await serverNote(receipt.id)).notebookId === garden.id)
+
+  // a notebook onto Archive: the lid opens while hovering, the notebook changes section
+  await mouseDrag(rowOf(`[data-notebook-drag="${old.id}"]`), sectionHead('archive'), {
+    during: async () => {
+      const lid = await page.evaluate(() => ({
+        open: document.querySelector('.sec-box').classList.contains('open'),
+        ringed: Boolean(document.querySelector('[data-sec="archive"] > .sec-head.drop-target')),
+      }))
+      check('hovering a notebook over Archive opens the lid and rings the section', lid.open && lid.ringed, JSON.stringify(lid))
+    },
+    hover: 150,
+  })
+  check('the notebook is now in Archive', (await serverNotebook(old.id)).category === 'archive', JSON.stringify(await serverNotebook(old.id)))
+  check('the lid closed again', await page.evaluate(() => !document.querySelector('.sec-box').classList.contains('open')))
+  await shot('archive')
+
+  // a notebook onto another section from the dragTo gesture
+  await rowOf(`[data-notebook-drag="${garden.id}"]`).dragTo(sectionHead('resources'))
+  await settle(500)
+  check('dragTo: a notebook onto Resources changes its section', (await serverNotebook(garden.id)).category === 'resources')
+  await open()
+  check('and after a reload it is still there', await inSection('resources', garden.id))
+
+  // dropping on something that is not a notebook changes nothing
+  const stray = await call('POST', '/notes', { title: 'Stay put' })
+  await open()
+  await mouseDrag(noteRow('Stay put'), page.locator('#rail-new-note'))
+  check('dropping on something that is not a notebook leaves the note in the Inbox', (await serverNote(stray.id)).notebookId === null)
+
+  // a failed move puts everything back and shows the toast
+  await page.route('**/api/notes/*/notebook', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"no"}' }))
+  const inboxNow = await inboxCount()
+  await mouseDrag(noteRow('Stay put'), rowOf(`[data-notebook-drop="${house.id}"]`))
+  check('a failed move puts the note back in the Inbox', (await inboxCount()) === inboxNow && (await inboxTitles()).includes('Stay put'), JSON.stringify(await inboxTitles()))
+  check('and shows the toast', (await toast()).includes("Couldn't move it"), await toast())
+  await page.unroute('**/api/notes/*/notebook')
+  await page.route('**/api/notebooks/*', (route) => (route.request().method() === 'PUT' ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"no"}' }) : route.continue()))
+  await mouseDrag(rowOf(`[data-notebook-drag="${house.id}"]`), sectionHead('areas'))
+  check('a failed notebook move puts it back in its section, with the toast', (await inSection('projects', house.id)) && (await toast()).includes("Couldn't move it"))
+  await page.unroute('**/api/notebooks/*')
+
+
 
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
