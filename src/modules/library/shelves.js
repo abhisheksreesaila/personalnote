@@ -37,6 +37,7 @@ export function mountShelves(root, options) {
   let ghost = null
   let target = null // the element currently ringed
   let spring = null // { id, timer }
+  let naming = null // { category, value } while a notebook is being named in place
 
   // ---------------------------------------------------------------- fold
   function applyOpen(id) {
@@ -59,6 +60,7 @@ export function mountShelves(root, options) {
     if (head && root.contains(head)) toggle(head.dataset.fold)
   })
   root.addEventListener('keydown', (event) => {
+    if (event.target.matches?.('.namer-input')) return
     if ((event.key === 'Enter' || event.key === ' ') && event.target.matches?.('[data-fold][role="button"]')) {
       event.preventDefault()
       toggle(event.target.dataset.fold)
@@ -214,10 +216,81 @@ export function mountShelves(root, options) {
 
   document.addEventListener('dragend', () => cleanUp())
 
+  // ---------------------------------------------------------------- naming a notebook in place
+  const namerHtml = () => `
+    <div class="namer" data-namer="${naming.category}">
+      <span class="notebook-dot namer-dot"></span>
+      <input class="namer-input" aria-label="Notebook name" placeholder="Notebook name" maxlength="80" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="namer-hint">Enter to keep · Esc to drop</div>`
+
+  function stopNaming() {
+    const category = naming?.category
+    naming = null
+    root.querySelectorAll('.namer, .namer-hint').forEach((node) => node.remove())
+    return category
+  }
+
+  function showNamer() {
+    root.querySelectorAll('.namer, .namer-hint').forEach((node) => node.remove())
+    if (!naming) return
+    const inner = root.querySelector(`[data-sec="${naming.category}"] .fold > .inner`)
+    if (!inner) { naming = null; return }
+    inner.querySelector('.empty-section')?.remove()
+    inner.insertAdjacentHTML('beforeend', namerHtml())
+    const input = inner.querySelector('.namer-input')
+    input.value = naming.value
+    input.focus()
+  }
+
+  async function commitNaming() {
+    const input = root.querySelector('.namer-input')
+    const name = input?.value.trim() || ''
+    const category = stopNaming()
+    if (!name || !category) return
+    await options.createNotebook(category, name)
+  }
+
+  root.addEventListener('click', (event) => {
+    const add = event.target.closest('[data-new-notebook]')
+    if (!add || event.shiftKey) return // Shift+click is the full dialog (colour), handled by main.js
+    if (!CATEGORIES.includes(add.dataset.newNotebook)) return
+    event.stopPropagation()
+    options.setOpen(add.dataset.newNotebook, true)
+    applyOpen(add.dataset.newNotebook)
+    naming = { category: add.dataset.newNotebook, value: '' }
+    showNamer()
+  }, true)
+
+  root.addEventListener('input', (event) => {
+    if (naming && event.target.matches('.namer-input')) naming.value = event.target.value
+  })
+  root.addEventListener('keydown', (event) => {
+    if (!event.target.matches?.('.namer-input')) return
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      void commitNaming()
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      stopNaming()
+    }
+  })
+  root.addEventListener('focusout', (event) => {
+    if (!event.target.matches?.('.namer-input') || !naming) return
+    // Esc and Enter remove the row themselves (naming is already null by then). Otherwise leaving the field keeps a name and drops an empty one.
+    setTimeout(() => {
+      if (!naming || document.activeElement?.matches?.('.namer-input')) return
+      if (naming.value.trim()) void commitNaming()
+      else stopNaming()
+    }, 120)
+  })
+
   return {
     // main.js calls this after it replaced the sidebar's HTML: put back what lives only in the DOM.
     afterRender() {
       for (const id of ['inbox', ...CATEGORIES]) applyOpen(id)
+      showNamer()
     },
     applyOpen,
     bumpInbox() {
@@ -227,5 +300,6 @@ export function mountShelves(root, options) {
       badge.classList.add('bump')
       setTimeout(() => badge.classList.remove('bump'), BUMP_MS)
     },
+    isNaming: () => Boolean(naming),
   }
 }

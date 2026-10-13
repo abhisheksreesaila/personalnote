@@ -175,6 +175,14 @@
   }
   .app-shell .drag-ghost > svg { width: 14px; height: 14px; flex: none; }
   .app-shell .drag-ghost span:not(.notebook-dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Naming a notebook in place. */
+  .app-shell .namer { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 8px; }
+  .app-shell .namer-dot { background: var(--sk-accent); }
+  .app-shell .namer-input {
+    flex: 1; min-width: 0; padding: 4px 7px; border: 1.5px solid var(--sk-accent); border-radius: 8px; background: var(--sk-panel);
+    color: var(--sk-ink); font: 500 13.5px/1.25 var(--ui-font); outline: none;
+  }
+  .app-shell .namer-hint { padding: 0 8px 6px 25px; color: var(--ui-muted); font-size: 11px; }
 
   .app-shell .sidebar-footer {
     flex: none; height: auto; display: flex; align-items: center; gap: 8px; margin: 6px -2px 0; padding: 10px 6px 0 8px;

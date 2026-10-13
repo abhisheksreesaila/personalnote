@@ -2045,6 +2045,20 @@ function setSectionOpen(id, open) {
   writeFolded(safeStorage(), state.sectionOpen)
 }
 
+// The section's + names a notebook right in the list (Enter keeps it); the dialog stays for colour and editing.
+async function createNotebookInline(category, name) {
+  try {
+    const notebook = await api('/notebooks', { method: 'POST', body: JSON.stringify({ name, category }) })
+    state.notebooks.unshift(notebook)
+    state.selectedNotebookId = notebook.id
+    renderNoteList()
+    return true
+  } catch (error) {
+    console.error(error)
+    showToast("Couldn't make the notebook. Try again.")
+    return false
+  }
+}
 
 function openNotebookDialog(notebook = null, category = 'projects') {
   elements.notebookForm.dataset.notebookId = notebook?.id || ''
@@ -3489,6 +3503,7 @@ shelves = mountShelves(elements.list, {
   moveNotebook,
   noteNotebookId: (id) => state.notes.find((note) => note.id === id)?.notebookId ?? null,
   notebookCategory: (id) => state.notebooks.find((notebook) => notebook.id === id)?.category,
+  createNotebook: createNotebookInline,
 })
 
 // Cancel and the X are plain buttons, so the empty Name never blocks them and Enter reaches Create.

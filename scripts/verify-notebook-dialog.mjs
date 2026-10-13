@@ -1,4 +1,5 @@
 // The new-notebook dialog always lets you back out (Vite dev server on PN_VERIFY_PORT, default 4870, mocked /api, headless Chromium).
+//   (the section + now names a notebook in place; Shift+click on it opens this dialog)
 //   - with the name still empty, Cancel closes it, the X closes it, and Esc closes it; none of them makes a notebook
 //   - Create with an empty name keeps it open; Create with a name makes the notebook and closes it
 //
@@ -37,7 +38,7 @@ try {
   await page.goto(`http://127.0.0.1:${UI_PORT}/notes`)
   await page.waitForSelector('[data-new-notebook="projects"]', { timeout: 60000 })
   const dialogOpen = () => page.evaluate(() => document.querySelector('#notebook-dialog').open)
-  const openDialog = async () => { await page.click('[data-new-notebook="projects"]'); await page.waitForTimeout(150) }
+  const openDialog = async () => { await page.click('[data-new-notebook="projects"]', { modifiers: ['Shift'] }); await page.waitForTimeout(150) }
 
   await openDialog()
   check('the + opens the new-notebook dialog', await dialogOpen())
