@@ -126,6 +126,8 @@ try {
   const serverNotebook = async (id) => (await call('GET', '/notebooks')).find((notebook) => notebook.id === id)
   // The ring and the lid answer a dragenter/dragover: look for them for up to a second rather than once.
   const eventually = async (read, ms = 1500) => { let value; for (let waited = 0; waited < ms; waited += 50) { value = await read(); if (value) return value; await page.waitForTimeout(50) } return value }
+  // a click on a notebook row toggles it (F-068), so "show its notes" means: click only if it is folded
+  const ensureOpen = async (id) => { if (!(await page.evaluate((nb) => document.querySelector(`[data-nbk="${nb}"]`).classList.contains('open'), id))) await page.click(`[data-notebook-select="${id}"]`) }
   const sectionHead = (id) => rowOf(`[data-sec="${id}"] [data-fold]`)
   const inSection = (section, notebookId) => page.evaluate(([name, id]) => document.querySelector(`[data-sec="${name}"] [data-notebook-select="${id}"]`) !== null, [section, notebookId])
 
@@ -162,7 +164,7 @@ try {
   check('dragTo: an Inbox note onto another notebook files it', (await serverNote(batch.find((note) => note.title === 'Idea').id)).notebookId === garden.id)
 
   // a note can also be dragged out of one notebook into another (open House first: its notes show)
-  await page.click(`[data-notebook-select="${house.id}"]`)
+  await ensureOpen(house.id)
   await settle(300)
   await mouseDrag(page.locator(`[data-note-id="${receipt.id}"]`).first(), rowOf(`[data-notebook-drop="${garden.id}"]`))
   check('a note dragged from a notebook into another notebook moves', (await serverNote(receipt.id)).notebookId === garden.id)
@@ -200,7 +202,7 @@ try {
   // a note dragged onto the Inbox shelf is unfiled again
   const filed = batch.find((note) => note.title === 'Idea')
   await open()
-  await page.click(`[data-notebook-select="${garden.id}"]`)
+  await ensureOpen(garden.id)
   await settle(300)
   const beforeInbox = await inboxCount()
   await mouseDrag(page.locator(`[data-note-id="${filed.id}"]`).first(), sectionHead('inbox'), {
@@ -468,6 +470,96 @@ try {
   await page.click('.brand-name')
   await settle(600)
   check('and keeps a typed name', (await notebookNames()).includes('Left by tab'))
+
+  // ---- F-068: a notebook folds its own notes ----
+  const shelfA = await call('POST', '/notebooks', { name: 'Shelf A', category: 'projects' })
+  const shelfB = await call('POST', '/notebooks', { name: 'Shelf B', category: 'projects' })
+  const notesA = []
+  for (const title of ['Alpha one', 'Alpha two', 'Alpha three']) notesA.push(await call('POST', '/notes', { title, notebookId: shelfA.id }))
+  const noteB = await call('POST', '/notes', { title: 'Beta one', notebookId: shelfB.id })
+  await open()
+  const nbOpen = (id) => page.evaluate((nb) => document.querySelector(`[data-nbk="${nb}"]`).classList.contains('open'), id)
+  const aria = (id) => page.getAttribute(`[data-notebook-select="${id}"]`, 'aria-expanded')
+  const notesShown = (id) => page.evaluate((nb) => { const list = document.querySelector(`[data-nbk="${nb}"] > .fold`); return Boolean(list.querySelector('.nav-notes')) && list.getBoundingClientRect().height > 4 }, id)
+  const tab = (id) => page.locator(`[data-notebook-select="${id}"]`)
+  const storedOpen = () => page.evaluate(() => JSON.parse(localStorage.getItem('personal-note-open-notebooks') || '{}'))
+  // bring both to a known state: A open, B folded
+  if (!(await nbOpen(shelfA.id))) { await tab(shelfA.id).click(); await settle(300) }
+  if (await nbOpen(shelfB.id)) { await tab(shelfB.id).click(); await settle(300) }
+  check('an open notebook shows its notes and says so (aria-expanded)', (await nbOpen(shelfA.id)) && (await aria(shelfA.id)) === 'true' && (await notesShown(shelfA.id)))
+  await page.evaluate((id) => { document.querySelector(`[data-nbk="${id}"]`).dataset.mark = 'same' }, shelfA.id)
+  await tab(shelfA.id).click()
+  await settle(350)
+  check('clicking an open notebook folds its notes (hidden, not reachable, aria-expanded false)', !(await nbOpen(shelfA.id)) && (await aria(shelfA.id)) === 'false' && !(await notesShown(shelfA.id)) && await page.evaluate((id) => document.querySelector(`[data-nbk="${id}"] > .fold`).hasAttribute('inert'), shelfA.id))
+  check('the fold re-renders nothing (the same element, marked before the click)', await page.evaluate((id) => document.querySelector(`[data-nbk="${id}"]`).dataset.mark === 'same', shelfA.id))
+  check('a folded notebook still shows its count and its chevron', (await countOf(shelfA.id)) === 3 && await page.evaluate((id) => Boolean(document.querySelector(`[data-nbk="${id}"] .notebook-tab .sec-chev`)), shelfA.id))
+  await tab(shelfA.id).click()
+  await settle(350)
+  check('clicking it again opens the notes', (await nbOpen(shelfA.id)) && (await notesShown(shelfA.id)))
+  await tab(shelfB.id).click()
+  await settle(350)
+  check('several notebooks can be open at once', (await nbOpen(shelfA.id)) && (await nbOpen(shelfB.id)) && (await notesShown(shelfA.id)) && (await notesShown(shelfB.id)))
+  // keyboard
+  await tab(shelfA.id).focus()
+  await page.keyboard.press('Enter')
+  await settle(350)
+  check('Enter on a focused notebook folds it', !(await nbOpen(shelfA.id)) && (await aria(shelfA.id)) === 'false')
+  await page.keyboard.press('Space')
+  await settle(350)
+  check('Space opens it again', (await nbOpen(shelfA.id)) && (await notesShown(shelfA.id)))
+  // the + and the ... still work on a row
+  await page.click(`[data-edit-notebook="${shelfA.id}"]`, { force: true })
+  await settle(250)
+  check('the ... still opens the notebook dialog and does not fold', await page.evaluate(() => document.querySelector('#notebook-dialog').open) && (await nbOpen(shelfA.id)))
+  await page.keyboard.press('Escape')
+  await settle(200)
+  // remembered after a reload
+  await tab(shelfA.id).click() // fold A
+  await settle(350)
+  check('the choice is remembered on this machine (storage)', (await storedOpen())[shelfA.id] === false && (await storedOpen())[shelfB.id] === true, JSON.stringify(await storedOpen()))
+  await open()
+  const selectedAfterReload = await page.evaluate(() => window.__personalNote.state.selectedNotebookId)
+  const remembered = selectedAfterReload === shelfA.id ? shelfB : shelfA
+  const rememberedOpen = remembered === shelfB
+  check('after a reload a folded notebook is still folded and an open one still open', (await nbOpen(remembered.id)) === rememberedOpen && (selectedAfterReload === shelfA.id || !(await nbOpen(shelfA.id))), JSON.stringify([selectedAfterReload, await nbOpen(shelfA.id), await nbOpen(shelfB.id)]))
+  // opening a note from search opens its folded notebook
+  if (await nbOpen(shelfA.id)) { await tab(shelfA.id).click(); await settle(350) }
+  check('(setup) Shelf A is folded before the search', !(await nbOpen(shelfA.id)))
+  await page.keyboard.press('Control+k')
+  await settle(300)
+  await page.fill('#search-input', 'Alpha two')
+  await page.waitForSelector('[data-search-note-id]', { timeout: 10000 })
+  await page.click(`[data-search-note-id="${notesA[1].id}"]`)
+  await settle(600)
+  check('opening a note from search opens its folded notebook and shows the note', (await nbOpen(shelfA.id)) && await page.evaluate((id) => document.querySelector(`[data-note-id="${id}"]`)?.classList.contains('active'), notesA[1].id))
+  // a new note from the + of a folded notebook opens that notebook
+  await tab(shelfB.id).click()
+  if (await nbOpen(shelfB.id)) await tab(shelfB.id).click()
+  await settle(350)
+  check('(setup) Shelf B is folded', !(await nbOpen(shelfB.id)))
+  // drag onto a folded notebook still files
+  const dropperOne = await call('POST', '/notes', { title: 'Moth' })
+  const dropperTwo = await call('POST', '/notes', { title: 'Zebra' })
+  await open()
+  // drag one that is not the open note (dragging the open note itself moves the view with it, which opens its notebook)
+  const dropper = (await page.evaluate(() => window.__personalNote.state.activeNoteId)) === dropperOne.id ? dropperTwo : dropperOne
+  if (await nbOpen(shelfB.id)) { await tab(shelfB.id).click(); await settle(350) }
+  const bBefore = await countOf(shelfB.id)
+  await mouseDrag(noteRow(dropper.title), tab(shelfB.id).first())
+  check('dragging a note onto a folded notebook files it, bumps its count and leaves it folded', (await serverNote(dropper.id)).notebookId === shelfB.id && (await countOf(shelfB.id)) === bBefore + 1 && !(await nbOpen(shelfB.id)), JSON.stringify([await serverNote(dropper.id), bBefore, await countOf(shelfB.id), await nbOpen(shelfB.id)]))
+  // the + on a folded notebook opens it with the new note
+  await page.click(`[data-new-note-in="${shelfB.id}"]`, { force: true })
+  await page.waitForFunction(() => !window.__personalNote.state.creatingNote)
+  await settle(600)
+  check('a new note from a folded notebook opens that notebook', (await nbOpen(shelfB.id)) && (await notesShown(shelfB.id)))
+  // reduced motion: the fold still works (instantly)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await tab(shelfB.id).click()
+  await settle(300)
+  check('with reduced motion the fold still works', !(await nbOpen(shelfB.id)) && (await eventually(async () => !(await notesShown(shelfB.id)))))
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await shot('notebook-fold')
+
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
   await browser?.close()
