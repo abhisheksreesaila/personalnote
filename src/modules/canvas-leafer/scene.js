@@ -97,7 +97,11 @@ function textProps(object, { width, padding = 0, offsetY = 0 }) {
 // Markdown text (F-048, ADR 0004): a text object whose words are Markdown, drawn formatted. Older texts are plain.
 export const isMarkdownText = (object) => object?.type === 'text' && object.format === 'markdown'
 // Marks and link words work on Markdown text that is upright and at its own size (as nearly all is); a turned text keeps them, drawn, as they are.
+const MIN_HUG = 24 // the narrowest box a text hugging its words gets (a single letter can still be picked)
 const isUpright = (g) => !(g.rotation ?? 0) && (g.scaleX ?? 1) === 1 && (g.scaleY ?? 1) === 1 && !g.flipX && !g.flipY && !g.skewX && !g.skewY
+// A Markdown text in a box, upright, hugs its words: its box is as wide as its widest line (`layout`: its layout), its lines wrap at its width.
+const hugsWords = (object) => isMarkdownText(object) && object.mode !== 'point' && isUpright(object.geometry)
+const hugWidth = (object, layout) => Math.min(object.geometry.width, Math.max(MIN_HUG, layout.inkWidth))
 const MARKDOWN_LINE_HEIGHT = 1.45
 const SAFE_FAMILY = /^[\w\s"',-]{1,120}$/ // font names and fallbacks only: the family goes into CSS for the layout and the editor
 function markdownBase(object) {
@@ -258,6 +262,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const live = { active: false, kind: null, rest: null, shift: { x: 0, y: 0 }, grown: false, lifted: [], ghost: '' }
   let connectorSelected = null // the id of the selected connector (it is picked by its line, apart from the editor's selection)
   const sizeOf = (object) => entries.get(object?.id)?.size ?? {}
+  // The rect an object takes on the page as drawn: a text that hugs its words is as wide as they are, so arrows, snapping and folds meet
+  // its words rather than the empty space its lines may wrap into.
+  // Worked out from the object itself (not from its node, which may not be drawn again yet), so every caller agrees.
+  const drawnRect = (object, size = sizeOf(object)) => boundingRect(hugsWords(object) ? { ...object, geometry: { ...object.geometry, width: hugWidth(object, layoutOf(object)) } } : object, size)
 
   // ---- page furniture (screen space), stacked: shadow bands, edge, paper, fold lines, labels
   const shadowGroup = new Group({ hittable: false })
@@ -339,7 +347,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         if (isMarkdownText(object)) {
           const layout = layoutOf(object)
           const words = markdownNodes(layout, object.marks)
-          const size = { width: object.mode === 'point' ? layout.width : g.width, height: layout.height }
+          // An upright text in a box hugs its words: its box (what is picked and outlined) is as wide as its widest line, while its lines
+          // still wrap at the stored width. A resize sets that width; a move keeps it (flushGesture).
+          const hugs = hugsWords(object)
+          const size = { width: object.mode === 'point' ? layout.width : hugs ? hugWidth(object, layout) : g.width, height: layout.height }
           const holder = object.mode === 'point' ? new Group({ ...base, hitChildren: false }) : new Box({ ...base, width: size.width, height: size.height, hitFill: 'all', hitChildren: false })
           if (object.mode === 'point') holder.add(new Rect({ width: size.width, height: size.height, fill: 'rgba(0,0,0,0)', hittable: false }))
           holder.add(words)
@@ -351,7 +362,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
             words.clear()
             for (const child of [...markdownNodes(next, object.marks).children]) words.add(child)
           }
-          return { node: holder, text: words, size, markdown: true, sized: object.mode !== 'point', lockRatio: object.mode === 'point', relayout }
+          return { node: holder, text: words, size, markdown: true, hugs, sized: object.mode !== 'point', lockRatio: object.mode === 'point', relayout }
         }
         const text = new Text(textProps(object, { width: g.width }))
         textNodes.push(text)
@@ -488,7 +499,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   function register(object, built, box) {
     const entry = { id: object.id, object, built, node: built.node, box, size: built.size.width !== undefined ? { ...built.size } : { width: object.geometry.width, height: object.geometry.height }, rect: null }
     if (object.type === 'connector') link(object)
-    else entry.rect = boundingRect(object, entry.size)
+    else entry.rect = drawnRect(object, entry.size)
     entries.set(object.id, entry)
     entryOfNode.set(built.node, entry)
     configure(entry)
@@ -519,7 +530,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
 
   function refreshBox(entry) {
     const g = entry.object.geometry
-    if (entry.rect) entry.rect = boundingRect(entry.object, entry.size)
+    if (entry.rect) entry.rect = drawnRect(entry.object, entry.size)
     if (!entry.box) return
     Object.assign(entry.box, boxOf(placementMatrix(g, entry.size), entry.size.width ?? g.width ?? 0, entry.size.height ?? g.height ?? 0))
   }
@@ -611,7 +622,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     if (freed.length) op = { ...op, changes: [...op.changes, ...freed.map((object) => ({ id: object.id, before: object, after: { ...object, link: null, folded: false } }))] }
     lod.exit() // the vectors are on screen from here: an edit is always live
     const named = new Set(op.changes.map((change) => change.id))
-    const { op: whole, shift } = finalizeOp(doc, op, { sizeOf, floor })
+    const { op: whole, shift } = finalizeOp(doc, op, { sizeOf, floor, rectOf: (object) => drawnRect(object) })
     if (!whole.changes.length && !whole.page) return false
     lod.invalidate(shift.x || shift.y ? undefined : touchedRects([...whole.changes.map((change) => entries.get(change.id)?.object ?? change.before), ...whole.changes.map((change) => change.after)]))
     // The view has followed the growth the drag made already; it follows the rest, and the note's layer goes back to the view's own place.
@@ -639,7 +650,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const entry = entries.get(change.id)
       if (!entry || !change.after) continue
       if (entry.object.type === 'connector') syncConnector(entry)
-      else if (entry.rect) entry.rect = boundingRect(entry.object, entry.size)
+      else if (entry.rect) entry.rect = drawnRect(entry.object, entry.size)
     }
     for (const object of freed) { const entry = entries.get(object.id); if (entry) rebuild(entry) }
     redrawLinkedTexts(whole.changes)
@@ -673,7 +684,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     const { node, object } = entry
     if (live.kind === 'move') { // a drag is a pure move: the model geometry moved by how far the node has come (the lift's tilt turns about the node's own corner, which stays put)
       const g = { ...object.geometry, x: object.geometry.x + (node.x - entry.liveBase.x), y: object.geometry.y + (node.y - entry.liveBase.y) }
-      return boundingRect({ ...object, geometry: g }, entry.size)
+      return drawnRect({ ...object, geometry: g }, entry.size)
     }
     const size = entry.built.sized ? { width: node.width, height: node.height } : entry.size
     const g = geometryFromMatrix(node.localTransform, size, object.geometry, { bake: Boolean(entry.built.sized) })
@@ -807,6 +818,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const { node, object } = entry
       const size = entry.built.sized ? { width: node.width, height: node.height } : entry.size
       const next = geometryFromMatrix(node.localTransform, size, object.geometry, { bake: Boolean(entry.built.sized) })
+      if (entry.built.hugs && isUpright(next) && Math.abs(node.width - entry.size.width) < 0.5) next.width = object.geometry.width // moved, not resized: the words wrap where they did (a turned text keeps the box it was turned about)
       const before = object.geometry
       const same = ['x', 'y', 'width', 'height', 'rotation', 'scaleX', 'scaleY', 'skewX'].every((key) => Math.abs((next[key] ?? 0) - (before[key] ?? (key.startsWith('scale') ? 1 : 0))) < 1e-6)
       if (same) continue
@@ -1181,7 +1193,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const node = entry.node
       const word = from ?? (() => { const text = doc.objects.find((object) => object?.id === entry.object.link?.textId); return text ? wordCentre(text, layoutOf(text), entry.object.link) : null })()
       const start = { x: node.x, y: node.y, scaleX: node.scaleX ?? 1, scaleY: node.scaleY ?? 1, opacity: node.opacity ?? 1 }
-      const rect = entry.rect ?? boundingRect(entry.object, entry.size)
+      const rect = entry.rect ?? drawnRect(entry.object, entry.size)
       const centre = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
       node.visible = true
       return { id: entry.id, node, start, centre, rect, word: word ?? centre }
@@ -1239,9 +1251,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // Ends a text edit in progress (the words typed so far are kept). The host calls it before it saves or leaves the note.
     finishTextEdit() { if (overlay.isOpen) overlay.commit() },
     // Starts editing the words of a text or sticky (by id, or the topmost one at a page point, with the caret there). False when nothing editable is there.
+    // A text whose box hugs its words is still written into anywhere along its lines, up to where they wrap (as in any editor).
     editText(target, options = {}) {
       const byPoint = typeof target !== 'string'
-      const object = byPoint ? objectAt(doc, new Map([...entries].map(([id, entry]) => [id, entry.size])), target) : doc.objects.find((candidate) => candidate?.id === target)
+      const object = byPoint ? objectAt(doc, new Map([...entries].map(([id, entry]) => [id, entry.built.hugs ? { ...entry.size, width: entry.object.geometry.width } : entry.size])), target) : doc.objects.find((candidate) => candidate?.id === target)
       const entry = object && entries.get(object.id)
       if (!entry || !isTextual(entry.object) || isLocked(entry.object)) return false
       return startTextEdit(entry.object, { entry, select: options.select ?? true, point: byPoint ? target : null })
@@ -1322,7 +1335,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const entry = entries.get(id)
       if (!entry?.built.markdown) return null
       const layout = layoutOf(entry.object)
-      return { width: layout.width, height: layout.height, visible: entry.built.text.visible !== false, pieces: layout.pieces.map((piece) => ({ text: piece.text, fontSize: piece.fontSize, fontWeight: piece.fontWeight, italic: piece.italic, decoration: piece.decoration, fontFamily: piece.fontFamily, color: piece.color })), shapes: layout.shapes.map((shape) => shape.kind), drawn: entry.built.text.children.length, source: entry.object.content ?? '', placed: placeMarks(entry.object.marks, layout.words).map((mark) => ({ x: mark.x, y: mark.y, exact: mark.anchor.quote?.exact })), words: layout.words.map((word) => ({ from: word.from, to: word.to, x: word.x, y: word.y, width: word.width, height: word.height })), marks: (entry.object.marks ?? []).length }
+      return { width: layout.width, height: layout.height, box: { width: entry.node.width, height: entry.node.height }, visible: entry.built.text.visible !== false, pieces: layout.pieces.map((piece) => ({ text: piece.text, fontSize: piece.fontSize, fontWeight: piece.fontWeight, italic: piece.italic, decoration: piece.decoration, fontFamily: piece.fontFamily, color: piece.color })), shapes: layout.shapes.map((shape) => shape.kind), drawn: entry.built.text.children.length, source: entry.object.content ?? '', placed: placeMarks(entry.object.marks, layout.words).map((mark) => ({ x: mark.x, y: mark.y, exact: mark.anchor.quote?.exact })), words: layout.words.map((word) => ({ from: word.from, to: word.to, x: word.x, y: word.y, width: word.width, height: word.height })), marks: (entry.object.marks ?? []).length }
     },
     // What Leafer drew for a text or sticky (for checks): its lines, and the font it used.
     textInfo(id) {
@@ -1658,7 +1671,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // An arrow from one object to another, as one undo step. Returns its id, or null when there is nothing to show (the same object, the pair is
     // already joined, or the two are too close for an arrow).
     createConnector(fromId, toId, color) {
-      const object = newConnector(doc.objects, { fromId, toId, color, z: nextZ(doc), rectOf: (target) => boundingRect(target, sizeOf(target)) })
+      const object = newConnector(doc.objects, { fromId, toId, color, z: nextZ(doc), rectOf: (target) => drawnRect(target) })
       if (!object) return null
       const ids = editorEntries().map((entry) => entry.id)
       commit({ label: 'Connect', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: ids, after: ids } })
@@ -1667,7 +1680,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     // The document with every connector brought in line with the objects it joins (a note saved by an older app, or an agent that moved an end).
     followConnectors(next) {
-      const changes = followChanges(next.objects, null, (object) => boundingRect(object, sizeOf(object)))
+      const changes = followChanges(next.objects, null, (object) => drawnRect(object))
       return changes.length ? applyChanges(next, { changes }) : next
     },
     connectorAt: (point) => connectorAt(doc?.objects ?? [], point, CONNECTOR_HIT / view.scale)?.id ?? null,

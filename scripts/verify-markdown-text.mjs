@@ -350,6 +350,71 @@ try {
   await page.waitForTimeout(600)
   const carried = (await objectsNow()).find((object) => object.id === lone.id)
   check('moving the text carries its underline with it', carried.geometry.y > lone.geometry.y + 100 && carried.marks?.length === 1 && (await looseInk()) === looseBefore, JSON.stringify([lone.geometry.y, carried.geometry.y, carried.marks?.length]))
+  const huggedBox = (await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)).box
+  const lastWord = loneInfo.words.at(-1)
+  check('a short text\'s box hugs its words, not the width it wraps at', Math.abs(huggedBox.width - (lastWord.x + lastWord.width)) < 3 && huggedBox.width < carried.geometry.width - 200, JSON.stringify([huggedBox, lastWord.x + lastWord.width, carried.geometry.width]))
+  check('and moving it keeps the width its words wrap at', carried.geometry.width === lone.geometry.width, JSON.stringify([lone.geometry.width, carried.geometry.width]))
+  // turning a short text by its handle: it turns about the middle of its words and stays where it is when the turn ends
+  const cornersOf = () => pn((id) => window.__personalNote.leaferCanvas().pageCorners(id), lone.id)
+  const middleOf = (corners) => ({ x: corners.reduce((sum, c) => sum + c.x, 0) / 4, y: corners.reduce((sum, c) => sum + c.y, 0) / 4 })
+  await pn((id) => { window.__personalNote.setTool('select'); window.__personalNote.leaferCanvas().select([id]) }, lone.id)
+  await page.waitForTimeout(300)
+  const turnFrom = middleOf(await cornersOf())
+  const view0 = await pn(() => window.__personalNote.leaferCanvas().view())
+  const screenAt = (p) => ({ x: host.x + view0.x + p.x * view0.scale, y: host.y + view0.y + p.y * view0.scale })
+  const top = Math.min(...(await cornersOf()).map((c) => c.y))
+  const handle = screenAt({ x: turnFrom.x, y: top - 28 / view0.scale })
+  const centre = screenAt(turnFrom)
+  const radius = centre.y - handle.y
+  await page.mouse.move(handle.x, handle.y); await page.mouse.down()
+  for (let i = 1; i <= 12; i += 1) { const a = (i / 12) * (Math.PI / 2); await page.mouse.move(centre.x + radius * Math.sin(a), centre.y - radius * Math.cos(a)); await page.waitForTimeout(20) }
+  const turning = middleOf(await cornersOf())
+  await page.mouse.up()
+  await page.waitForTimeout(600)
+  const turned = (await objectsNow()).find((object) => object.id === lone.id)
+  const turnTo = middleOf(await cornersOf())
+  check('a short text turned by its handle stays where it was turned (no jump when the turn ends)', Math.abs(turned.geometry.rotation ?? 0) > 30 && Math.hypot(turnTo.x - turning.x, turnTo.y - turning.y) < 3 && Math.hypot(turnTo.x - turnFrom.x, turnTo.y - turnFrom.y) < 3, JSON.stringify([turned.geometry.rotation, turnFrom, turning, turnTo]))
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(500)
+  // resizing it sets where its lines wrap: the box it is given
+  await pn((id) => window.__personalNote.leaferCanvas().select([id]), lone.id)
+  await page.waitForTimeout(300)
+  const box0 = await cornersOf()
+  const corner = screenAt(box0[2])
+  const wanted = screenAt({ x: box0[0].x + 180, y: box0[2].y })
+  await page.mouse.move(corner.x, corner.y); await page.mouse.down()
+  for (let i = 1; i <= 8; i += 1) { await page.mouse.move(corner.x + (wanted.x - corner.x) * i / 8, corner.y); await page.waitForTimeout(20) }
+  await page.mouse.up()
+  await page.waitForTimeout(600)
+  const narrowed = (await objectsNow()).find((object) => object.id === lone.id)
+  const narrowInfo = await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)
+  check('resizing a text sets the width its words wrap at', Math.abs(narrowed.geometry.width - 180) < 6 && new Set(narrowInfo.words.map((word) => Math.round(word.y))).size > 1, JSON.stringify([narrowed.geometry.width, narrowInfo.words.map((word) => Math.round(word.y))]))
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(500)
+  // an arrow from a short text meets its words, not the empty space its lines may wrap into, and stays there when the text moves
+  const loneNow = (await objectsNow()).find((object) => object.id === lone.id)
+  await pn((point) => window.__personalNote.leaferCanvas().createShape(point), { x: loneNow.geometry.x + 640, y: loneNow.geometry.y + loneNow.geometry.height / 2 }) // level with it: the arrow leaves its right side
+  const shapeId = (await objectsNow()).filter((object) => object.type === 'shape').at(-1)?.id
+  const arrowId = await pn(([a, b]) => window.__personalNote.leaferCanvas().createConnector(a, b), [lone.id, shapeId])
+  const arrowAt = async () => {
+    const objects = await objectsNow()
+    const arrow = objects.find((object) => object.type === 'connector')
+    const text = objects.find((object) => object.id === lone.id)
+    if (!arrow) return null
+    const g = arrow.geometry
+    return { start: { x: arrow.reverseX ? g.x + g.width : g.x, y: arrow.reverseY ? g.y + g.height : g.y }, wordsRight: text.geometry.x + (await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)).box.width }
+  }
+  const arrowMade = await arrowAt()
+  await pn((id) => window.__personalNote.leaferCanvas().select([id]), lone.id)
+  await page.waitForTimeout(300)
+  const viewNow = await pn(() => window.__personalNote.leaferCanvas().view())
+  const pressAt = { x: host.x + viewNow.x + (loneNow.geometry.x + 40) * viewNow.scale, y: host.y + viewNow.y + (loneNow.geometry.y + loneNow.geometry.height / 2) * viewNow.scale }
+  await page.mouse.move(pressAt.x, pressAt.y); await page.mouse.down()
+  for (let i = 1; i <= 8; i += 1) { await page.mouse.move(pressAt.x, pressAt.y + i * 5); await page.waitForTimeout(20) }
+  await page.mouse.up()
+  await page.waitForTimeout(600)
+  const arrowMoved = await arrowAt()
+  check('an arrow from a short text starts at its words and stays there when the text moves', Boolean(arrowMade && arrowMoved) && Math.abs(arrowMade.start.x - arrowMade.wordsRight) < 12 && arrowMoved.start.x <= arrowMoved.wordsRight + 2 && arrowMoved.start.y > arrowMade.start.y + 20, JSON.stringify([shapeId, arrowId, arrowMade, arrowMoved]))
   await pn(async (id) => window.__personalNote.selectNote(id), noteId)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
   await page.waitForTimeout(800)

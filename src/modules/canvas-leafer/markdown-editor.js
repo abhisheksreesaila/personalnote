@@ -105,7 +105,7 @@ function decorationsFor(state, base, links = []) {
     const lineHeight = line.kind === 'fence' && raw ? Math.round(base.fontSize * base.lineHeight * 100) / 100 : look.lineHeight
     builder.add(line.from, line.from, Decoration.line({
       class: classes.join(' '),
-      attributes: { style: `padding-left:${look.indent}px;line-height:${lineHeight}px;min-height:${lineHeight}px;font:${fontOf(look)};color:${look.color};--md-bar:${look.fontSize * 0.2}px` },
+      attributes: { style: `font:${fontOf(look)};padding-left:${look.indent}px;line-height:${lineHeight}px;min-height:${lineHeight}px;color:${look.color};--md-bar:${look.fontSize * 0.2}px` }, // (font first: the shorthand resets line-height)
     }))
     // What lies between line.from and line.to, in order: the marker, then shown runs with hidden marks between them.
     const pieces = []

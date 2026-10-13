@@ -114,11 +114,11 @@ function mayChangeBounds(changes) {
 //                  that arrived since (an agent's) is moved back with the rest.
 // options.sizeOf(object): the measured { width, height } of an object the model gives no size for (text laid out by the engine).
 // options.floor: { columns, rows } the grid may not fold below (while words are being typed).
-export function finalizeOp(doc, op, { sizeOf = () => ({}), floor = null } = {}) {
+// options.rectOf(object): the rect connectors meet, when it is not the model's own box (a text whose box hugs its words).
+export function finalizeOp(doc, op, { sizeOf = () => ({}), floor = null, rectOf = (object) => rectOfObject(object, sizeOf) } = {}) {
   const changes = op.changes.map((change) => ({ ...change }))
   const byId = new Map(changes.map((change) => [change.id, change]))
   const original = indexById(doc.objects)
-  const rectOf = (object) => rectOfObject(object, sizeOf)
   const objectsNow = () => withChanges(doc, changes).objects
 
   // connectors follow what moved; none is left without an end

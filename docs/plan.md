@@ -391,10 +391,12 @@ Needs: none
 - [ ] a note opens at 100% with the caret ready in its text (a new note gets an empty Markdown text at the top of the first page); page edges, page map and zoom stay quiet until needed
 - [ ] picking a drawing tool (pen, highlighter, shape, sticky, connector) smoothly zooms out to show the whole page; Esc or typing back in the text returns to 100%
 - [ ] every tool stays in the dock; nothing is hidden or removed; typing latency (speed test row) is no worse
-## F-060 Text outline hugs the words [todo]
+## F-060 Text outline hugs the words [review]
+Reviewed: PASS on the code (after fixes: a turned text doesn't jump; arrows meet the words on every commit). Waiting on the captain: the box still starts at the first line's top (about 6 px above the letters at 24 px); is that the gap they saw?
 Needs: none
-- [ ] a Markdown text's outline sits exactly on its words (no empty space above the first line)
-- [ ] the outline shows when the text is picked with the Select tool, never while writing in it
+- [x] a Markdown text's box and outline are as wide as its words (lines still wrap at its width; a resize sets that width; arrows, snapping and folds meet the words); while typing, lines sit exactly where the canvas draws them (they jumped by 4 px a line before)
+- [ ] no empty space above the first line (captain to confirm)
+- [x] the outline shows when the text is picked with the Select tool, never while writing in it
 ## F-061 Code colours (only if free) [todo]
 Needs: none
 - [ ] code inside ``` fences is coloured by its language (from the fence, or guessed), on the canvas and in the editor, loaded only when a code block appears

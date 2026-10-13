@@ -111,7 +111,7 @@ function measure(source, width, base, links) {
   for (const line of lines) {
     const look = lineLook(line, base)
     const element = document.createElement('div')
-    element.style.cssText = `margin:0;padding:0 0 0 ${look.indent}px;min-height:${look.lineHeight}px;line-height:${look.lineHeight}px;font:${cssFont({ ...look, fontFamily: quoteFamily(look.fontFamily) })};letter-spacing:0`
+    element.style.cssText = `font:${cssFont({ ...look, fontFamily: quoteFamily(look.fontFamily) })};margin:0;padding:0 0 0 ${look.indent}px;min-height:${look.lineHeight}px;line-height:${look.lineHeight}px;letter-spacing:0` // (font first: the shorthand resets line-height)
     const spans = line.runs.map((run) => {
       const piece = runLook(look, run.style)
       const span = document.createElement('span')
@@ -191,5 +191,7 @@ function measure(source, width, base, links) {
   const total = { width: width ?? Math.ceil(probe.scrollWidth), height: Math.ceil(probe.getBoundingClientRect().height) }
   for (const shape of shapes) if ((shape.kind === 'rule' || (shape.kind === 'paper' && shape.x === 0)) && !shape.width) shape.width = total.width
   probe.remove()
-  return { ...total, pieces, shapes, words, rowTops }
+  // How far right anything is drawn: the box of a text hugs its words (and its code paper and rules) rather than the width it wraps at.
+  const reach = Math.max(0, ...words.map((word) => word.x + word.width), ...shapes.map((shape) => shape.x + (shape.width ?? shape.size ?? 0)))
+  return { ...total, inkWidth: Math.min(total.width, Math.ceil(reach)), pieces, shapes, words, rowTops }
 }
