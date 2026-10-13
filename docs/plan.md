@@ -405,7 +405,8 @@ Needs: none
 Needs: none
 - [ ] code inside ``` fences is coloured by its language (from the fence, or guessed), on the canvas and in the editor, loaded only when a code block appears
 - [ ] dropped if it costs any typing speed or a noticeable bundle increase
-## F-062 A text's underline stays with it after a move [doing]
+## F-062 A text's underline stays with it after a move [blocked]
+Blocked: not reproduced headlessly (drags, typing, every render mode, WebKitGTK). Tell me whether you dragged the text or typed so the word shifted, whether it jumped back by itself or on a click, and send a screen recording if it happens again.
 Reported on the Mac (preview 4): underline a word, move the text; the underline moves with it, then a couple of seconds later jumps back to where it was.
 - [ ] after moving a text, its marks stay on its words, also after a few seconds and after reopening the note
 ## F-063 The notebook dialog lets you back out [done]
