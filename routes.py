@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -138,6 +139,18 @@ class LoopbackHostMiddleware:
         await self.app(scope, receive, send)
 
 
+SECURE_IDLE_SECONDS = 300.0  # secure notes lock again after 5 quiet minutes
+
+
+def secure_idle_seconds() -> float:
+    """The quiet time before secure notes lock. `PERSONAL_NOTE_SECURE_IDLE_SECONDS` shortens it for checks; nonsense keeps 5 minutes."""
+    try:
+        value = float(os.environ.get("PERSONAL_NOTE_SECURE_IDLE_SECONDS", ""))
+    except ValueError:
+        return SECURE_IDLE_SECONDS
+    return value if value > 0 else SECURE_IDLE_SECONDS
+
+
 def create_app(
     database_path: Path | str | None = None,
     voice: VoiceRuntime | None = None,
@@ -151,6 +164,7 @@ def create_app(
     data_path = Path(database_path or default_database_path())
     speedtest_process: dict = {}  # the speed test this app started: one at a time
     service = NoteService(data_path, secure_platform=secure_platform)
+    service.keyring.set_idle_timeout(secure_idle_seconds())
     # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service
@@ -377,7 +391,8 @@ def create_app(
             return forbidden()
         body = await payload(request)
         try:
-            return JSONResponse(service.unlock_secure(passphrase=body.get("passphrase"), recovery_key=body.get("recoveryKey")))
+            # Touch ID and scrypt wait or burn time: off the event loop, so the page's other requests keep being answered.
+            return JSONResponse(await asyncio.to_thread(service.unlock_secure, passphrase=body.get("passphrase"), recovery_key=body.get("recoveryKey")))
         except Exception as error:
             return json_error(error)
 
@@ -387,9 +402,17 @@ def create_app(
         if not from_this_app(request):
             return forbidden()
         try:
-            return JSONResponse(service.add_passphrase((await payload(request)).get("passphrase")))
+            passphrase = (await payload(request)).get("passphrase")
+            return JSONResponse(await asyncio.to_thread(service.add_passphrase, passphrase))
         except Exception as error:
             return json_error(error)
+
+    @app.post("/api/secure/touch")
+    def secure_touch(request):
+        """The open page is in use: renew the quiet time. Never unlocks anything."""
+        if not from_this_app(request):
+            return forbidden()
+        return JSONResponse(service.touch_secure())
 
     @app.post("/api/secure/lock")
     def secure_lock(request):
@@ -404,7 +427,7 @@ def create_app(
             return forbidden()
         body = await payload(request)
         try:
-            return JSONResponse(service.mark_secure(note_id, revision=body.get("revision"), passphrase=body.get("passphrase")))
+            return JSONResponse(await asyncio.to_thread(service.mark_secure, note_id, revision=body.get("revision"), passphrase=body.get("passphrase")))
         except Exception as error:
             return json_error(error)
 

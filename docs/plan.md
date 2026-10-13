@@ -383,12 +383,14 @@ Carry from the F-056 review: the spike's keychain item has no access control (To
 - [x] a whole note can be marked secure; its content is encrypted at rest (AES-GCM, key from the keychain on Mac, from a passphrase on Linux); its title stays readable (assumed)
 - [x] search, Markdown export and the agent CLI never see its words; backups carry it still encrypted
 - [x] a one-time recovery key is shown when the first secure note is made, and it opens the notes on another machine
-## F-058 Secure notes: lock, unlock, never on a shared screen [todo]
+## F-058 Secure notes: lock, unlock, never on a shared screen [done]
+Reviewed: PASS after fixes (a56f0c8). Touch ID, capture hiding and the sleep/screen-lock lock are written against fakes; first real run is the captain's Mac in the next preview.
+Design: docs/design/secure-notes.md (Option B, quiet cover; captain 2026-10-13)
 Needs: F-057 · Design first (designer skill)
 Carry from F-057: the app's api() must send the x-personal-note header when reading an unlocked secure note (otherwise it only sees the locked view); reload a note after unlock before saving it; show the recovery key once with a clear warning; after a recovery unlock on Linux, ask for a passphrase for this machine.
-- [ ] a secure note shows its own colour and a lock in the note list, and opens locked
-- [ ] one touch (Touch ID) unlocks it; while it is open the window is kept out of screen sharing
-- [ ] it locks again when you leave it, after 5 quiet minutes, or when the Mac sleeps
+- [x] a secure note shows its own colour and a lock in the note list, and opens locked
+- [x] one touch (Touch ID) unlocks it; while it is open the window is kept out of screen sharing
+- [x] it locks again when you leave it, after 5 quiet minutes, or when the Mac sleeps
 ## F-059 Editor first [done]
 Reviewed: PASS after fixes (once per tool pick, pen-then-shape, stickies stay put, glide gives way to the person, stale opens ignored). Captain signed off 2026-10-13: single-key tools, Space and arrow pan, Ctrl+A, Quick note and the speed meter need Esc first while the caret is in a note; the pen and highlighter open the page at their first drawing (underlines stay at 100%); the page edges stay.
 Needs: none
@@ -405,7 +407,8 @@ Needs: none
 Needs: none
 - [ ] code inside ``` fences is coloured by its language (from the fence, or guessed), on the canvas and in the editor, loaded only when a code block appears
 - [ ] dropped if it costs any typing speed or a noticeable bundle increase
-## F-062 A text's underline stays with it after a move [doing]
+## F-062 A text's underline stays with it after a move [blocked]
+Blocked: not reproduced headlessly (drags, typing, every render mode, WebKitGTK); guard checks in verify-markdown-text (reviewed PASS) and a cleared live pen canvas are in. Tell me whether you dragged the text or typed so the word shifted, whether it jumped back by itself or on a click, and send a screen recording if it happens again.
 Reported on the Mac (preview 4): underline a word, move the text; the underline moves with it, then a couple of seconds later jumps back to where it was.
 - [ ] after moving a text, its marks stay on its words, also after a few seconds and after reopening the note
 ## F-063 The notebook dialog lets you back out [done]

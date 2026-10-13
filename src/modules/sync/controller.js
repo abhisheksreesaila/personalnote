@@ -10,6 +10,7 @@ export function createAgentSyncController({ host, ui }) {
     if (!active || (active.noteType !== 'canvas' && active.noteType !== 'page')) return
     const note = await host.api(`/notes/${active.id}`)
     const current = host.getActive()
+    if (note.locked) return // a locked secure note comes back without its words: there is nothing to show or merge
     if (!current || current.id !== active.id || note.revision <= current.revision) return
     if (host.hasUnsavedEdits()) {
       const added = await host.merge(note)

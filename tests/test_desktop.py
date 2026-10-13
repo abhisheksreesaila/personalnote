@@ -1,13 +1,16 @@
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+import desktop
 from desktop import (
+    DesktopApi,
     LocalServer,
     MISSING_CHROMIUM,
     report_startup_error,
@@ -366,3 +369,107 @@ class WindowUrlTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CaptureBridgeTests(unittest.TestCase):
+    def test_the_page_can_hide_and_restore_the_window_from_screen_sharing(self):
+        calls = []
+        api = DesktopApi(lambda: None, capture=lambda hidden: calls.append(hidden) or True)
+        self.assertTrue(api.set_capture_hidden(True))
+        self.assertTrue(api.set_capture_hidden(False))
+        self.assertEqual(calls, [True, False])
+
+    def test_a_failure_is_reported_as_false_never_raised(self):
+        def boom(_hidden):
+            raise RuntimeError("no window")
+
+        self.assertFalse(DesktopApi(lambda: None, capture=boom).set_capture_hidden(True))
+
+    def test_without_a_capture_function_the_answer_is_false(self):
+        self.assertFalse(DesktopApi(lambda: None).set_capture_hidden(True))
+
+    def test_anything_truthy_hides(self):
+        calls = []
+        api = DesktopApi(lambda: None, capture=lambda hidden: calls.append(hidden) or True)
+        api.set_capture_hidden("yes")
+        self.assertEqual(calls, [True])
+
+
+class ThreadStrictWindow:
+    """Like pywebview's Cocoa window: evaluate_js must never be called on the thread that delivered the notification."""
+
+    def __init__(self, forbidden_thread):
+        self.forbidden = forbidden_thread
+        self.scripts = []
+        self.errors = []
+
+    def evaluate_js(self, script):
+        if threading.current_thread() is self.forbidden:
+            self.errors.append(script)
+            raise RuntimeError("evaluate_js on the main thread would deadlock")
+        self.scripts.append(script)
+        return 1 if script.strip() == "window.__flushResult" else None
+
+
+class LockOnSleepTests(unittest.TestCase):
+    def run_lock(self, lock_keys, window=None):
+        window = window or ThreadStrictWindow(threading.current_thread())
+        worker = desktop.make_lock_on_sleep(lock_keys, window)("sleep")
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        return window
+
+    def test_the_keys_are_gone_before_the_notification_returns_and_the_page_part_follows(self):
+        order = []
+        window = ThreadStrictWindow(threading.current_thread())
+        original = window.evaluate_js
+        window.evaluate_js = lambda script: (order.append("page:" + script), original(script))[1]
+        gate = threading.Event()
+        slow_original = window.evaluate_js
+        window.evaluate_js = lambda script: (gate.wait(2), slow_original(script))[1]
+        worker = desktop.make_lock_on_sleep(lambda: order.append("keys"), window)("sleep")
+        self.assertEqual(order, ["keys"])  # locked, with the page still waiting
+        self.assertTrue(worker.is_alive())
+        gate.set()
+        worker.join(5)
+        self.assertEqual(window.errors, [])
+        self.assertTrue(any("personalNote.flush" in item for item in order[1:]))
+        self.assertTrue(any("lockSecure" in item for item in order[1:]))
+
+    def test_a_service_lock_through_the_observer_empties_the_keyring(self):
+        from routes import create_app
+
+        app = create_app(Path(tempfile.mkdtemp()) / "n.db", bound_host=None)
+        service = app.state.note_service
+        service.keyring.unlock("k", b"x" * 32)
+        self.assertTrue(service.keyring.is_unlocked)
+        worker = desktop.make_lock_on_sleep(service.lock_secure, ThreadStrictWindow(threading.current_thread()))("sleep")
+        self.assertFalse(service.keyring.is_unlocked)
+        worker.join(5)
+
+    def test_nothing_touches_the_window_on_the_notification_thread(self):
+        window = self.run_lock(lambda: None)
+        self.assertEqual(window.errors, [])
+        self.assertTrue(any("lockSecure" in script for script in window.scripts))
+
+    def test_the_notification_returns_at_once_even_when_the_page_is_slow(self):
+        gate = threading.Event()
+
+        class Slow(ThreadStrictWindow):
+            def evaluate_js(self, script):
+                gate.wait(2)
+                return super().evaluate_js(script)
+
+        window = Slow(threading.current_thread())
+        started = time.monotonic()
+        worker = desktop.make_lock_on_sleep(lambda: None, window)("sleep")
+        self.assertLess(time.monotonic() - started, 0.5)
+        gate.set()
+        worker.join(5)
+
+    def test_the_page_is_told_even_when_the_server_side_lock_fails(self):
+        def boom():
+            raise RuntimeError("x")
+
+        window = self.run_lock(boom)
+        self.assertTrue(any("lockSecure" in script for script in window.scripts))

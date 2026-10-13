@@ -10,7 +10,8 @@ import { chromium } from 'playwright'
 import { readJsonCanvas, writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
 
-const PORT = 4771
+const PORT = Number(process.env.PN_VERIFY_PORT || 4771)
+const MOCK_PORT = PORT + 8 // (the mocked /api answers here)
 const now = new Date().toISOString()
 const fixture = JSON.parse(fs.readFileSync(new URL('../tests/fixtures/documents/app-all-tools.json', import.meta.url), 'utf8'))
 const results = []
@@ -43,7 +44,7 @@ const agentWrite = ({ remove = [], append = [], pages = null }) => {
   changeSeq += 1
   changeLog.push({ sequence: changeSeq, resourceKind: 'note', resourceId: 'r1', changeType: 'updated', revision: stored.revision })
 }
-const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4779' } }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': `http://127.0.0.1:${MOCK_PORT}` } }, logLevel: 'error' })
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 

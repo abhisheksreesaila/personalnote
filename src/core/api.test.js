@@ -46,3 +46,25 @@ test('imports and exports of a whole workspace or vault carry no timeout, unless
     assert.ok(signals['/api/import/workspace?again'])
   } finally { globalThis.fetch = real }
 })
+
+test('every request says it comes from this app, so a secure note is read unlocked and not as the locked view', async () => {
+  const real = globalThis.fetch
+  let seen
+  globalThis.fetch = async (url, init) => { seen = init; return { ok: true, status: 200, json: async () => ({}) } }
+  try {
+    await api('/notes/1')
+    assert.equal(seen.headers['x-personal-note'], '1')
+    assert.equal(seen.headers['Content-Type'], 'application/json')
+    await api('/notes/1', { headers: { 'x-extra': 'y' } })
+    assert.equal(seen.headers['x-personal-note'], '1')
+    assert.equal(seen.headers['x-extra'], 'y')
+  } finally { globalThis.fetch = real }
+})
+
+test('a refused request carries its status, so a locked note (423) can be told from a failure', async () => {
+  const real = globalThis.fetch
+  globalThis.fetch = async () => ({ ok: false, status: 423, json: async () => ({ error: 'This note is locked' }) })
+  try {
+    await assert.rejects(api('/notes/1', { method: 'PUT', body: '{}' }), (error) => error.status === 423 && /locked/.test(error.message))
+  } finally { globalThis.fetch = real }
+})

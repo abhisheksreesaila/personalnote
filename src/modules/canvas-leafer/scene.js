@@ -144,11 +144,12 @@ function markdownNodes(layout, marks) {
   return group
 }
 
+const MARK_NAME = 'text-mark' // (checks find a text's marks by this, not by their place among its children)
 // A mark is drawn like the ink it was made from, at (x, y) in the text's frame.
 function markNode(mark) {
   const color = withAlpha(mark.color, mark.alpha)
-  if (mark.kind === 'dot') return new Ellipse({ x: mark.x, y: mark.y, width: mark.radius * 2, height: mark.radius * 2, fill: color, hittable: false })
-  return new Path({ x: mark.x, y: mark.y, path: pathData(mark.path), stroke: color, strokeWidth: mark.width ?? 2, strokeCap: mark.cap ?? 'round', strokeJoin: mark.join ?? 'round', hittable: false })
+  if (mark.kind === 'dot') return new Ellipse({ name: MARK_NAME, x: mark.x, y: mark.y, width: mark.radius * 2, height: mark.radius * 2, fill: color, hittable: false })
+  return new Path({ name: MARK_NAME, x: mark.x, y: mark.y, path: pathData(mark.path), stroke: color, strokeWidth: mark.width ?? 2, strokeCap: mark.cap ?? 'round', strokeJoin: mark.join ?? 'round', hittable: false })
 }
 
 // The points of a placed mark in the text's frame (for the eraser).
@@ -1338,7 +1339,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const entry = entries.get(id)
       if (!entry?.built.markdown) return null
       const layout = layoutOf(entry.object)
-      return { width: layout.width, height: layout.height, box: { width: entry.node.width, height: entry.node.height }, visible: entry.built.text.visible !== false, pieces: layout.pieces.map((piece) => ({ text: piece.text, fontSize: piece.fontSize, fontWeight: piece.fontWeight, italic: piece.italic, decoration: piece.decoration, fontFamily: piece.fontFamily, color: piece.color })), shapes: layout.shapes.map((shape) => shape.kind), drawn: entry.built.text.children.length, source: entry.object.content ?? '', placed: placeMarks(entry.object.marks, layout.words).map((mark) => ({ x: mark.x, y: mark.y, exact: mark.anchor.quote?.exact })), words: layout.words.map((word) => ({ from: word.from, to: word.to, x: word.x, y: word.y, width: word.width, height: word.height })), marks: (entry.object.marks ?? []).length }
+      return { width: layout.width, height: layout.height, box: { width: entry.node.width, height: entry.node.height }, visible: entry.built.text.visible !== false, pieces: layout.pieces.map((piece) => ({ text: piece.text, fontSize: piece.fontSize, fontWeight: piece.fontWeight, italic: piece.italic, decoration: piece.decoration, fontFamily: piece.fontFamily, color: piece.color })), shapes: layout.shapes.map((shape) => shape.kind), drawn: entry.built.text.children.length, drawnMarks: entry.built.text.children.filter((node) => node.name === MARK_NAME).map((node) => { const b = node.worldBoxBounds; return { x: b.x, y: b.y, width: b.width, height: b.height } }), source: entry.object.content ?? '', placed: placeMarks(entry.object.marks, layout.words).map((mark) => ({ x: mark.x, y: mark.y, exact: mark.anchor.quote?.exact })), words: layout.words.map((word) => ({ from: word.from, to: word.to, x: word.x, y: word.y, width: word.width, height: word.height })), marks: (entry.object.marks ?? []).length }
     },
     // What Leafer drew for a text or sticky (for checks): its lines, and the font it used.
     textInfo(id) {

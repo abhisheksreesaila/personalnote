@@ -119,6 +119,7 @@ A whole note can be marked secure (`POST /api/notes/{id}/secure`; `DELETE` takes
 - Backups (version 2) carry each secure note as `{secure, keyId, sealed}` plus `secureKeys` (wrapped keys only). Import keeps them sealed and adds the keys beside any already here, so a machine can hold several data keys; a recovery key opens the ones it wraps.
 - Marking a note secure removes the old plain words from the file (search index optimize, `VACUUM`, WAL truncate). Pictures a secure note uses stay ordinary files in `media/` (not encrypted).
 - Routes: `GET /api/secure/status`, `POST /api/secure/unlock`, `POST /api/secure/lock` (the writes need the app header).
+- The page (F-058, `src/modules/secure/`): `api()` sends the app header on every request, so an unlocked note's words reach the page. A locked note opens as an empty page under the quiet cover (`session.js`); the editors never see its words, and `saveActiveNote` refuses while `state.noteLocked`. Unlocking holds the keys on the server, hides the Mac window from screen sharing (`window.pywebview.api.set_capture_hidden`, `DesktopApi`), then reloads the note before anything is saved. It locks when another note opens, after the quiet time (`PERSONAL_NOTE_SECURE_IDLE_SECONDS`, default 300, reported as `idleSeconds` in the status; the pill counts the same time down), when a save is refused with 423, on the Lock button, on a page load, and when the Mac sleeps or locks (`secure_platform.watch_lock_events`, which locks the server and calls `window.personalNote.lockSecure()`).
 
 ## Data model
 
@@ -242,6 +243,7 @@ The canvas route statically loads Leafer and the shell (about 189 KiB of JavaScr
 | `voice_runtime.py` | Voice engine and model download, verification, removal and process lifecycle |
 | `scripts/build-voice-engine.sh` | Builds the pinned NeMo-Speech.cpp engine for the release (Linux x86_64 CPU, macOS arm64 Metal) |
 | `routes.py` | Core HTTP routes |
+| `src/modules/secure/` | Secure notes in the page: the cover, sheets, countdown pill and the lock/unlock flow (`session.js`), pure helpers (`secure.js`) |
 | `secure_crypto.py` | Secure notes: AES-256-GCM seal/unseal, key wrapping (keychain, scrypt passphrase, recovery key), the in-memory keyring |
 | `desktop.py` | Native-window entry point: in-process server, single instance, close-time flush |
 | `desktop_menu.py` | macOS window chrome and menu bar: menu model, commands sent to `window.personalNote.command(name)`, guarded AppKit calls |

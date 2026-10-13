@@ -212,6 +212,10 @@ class Keyring:
     def set_idle_timeout(self, seconds: float | None) -> None:
         self._idle_timeout = seconds
 
+    @property
+    def idle_timeout(self) -> float | None:
+        return self._idle_timeout
+
     def _expire(self) -> None:
         if self._keys and self._idle_timeout is not None and self._clock() - self._last_used > self._idle_timeout:
             self._keys.clear()
@@ -226,6 +230,12 @@ class Keyring:
         if key is not None:
             self._last_used = self._clock()
         return key
+
+    def touch(self) -> None:
+        """Renew the quiet time of keys that are still held (a key already expired stays gone)."""
+        self._expire()
+        if self._keys:
+            self._last_used = self._clock()
 
     def lock(self) -> None:
         self._keys.clear()

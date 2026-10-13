@@ -341,6 +341,24 @@ try {
   await stroke(Array.from({ length: 11 }, (_, i) => ({ x: below.x - 4 + (loneWord.width + 8) * i / 10, y: below.y + Math.sin(i) * 1.5 })))
   const underlined = (await objectsNow()).find((object) => object.id === lone.id)
   check('an underline drawn under a one-line text is a mark of its word, not loose ink', underlined.marks?.length === 1 && underlined.marks[0].anchor.quote.exact === 'harbour' && (await looseInk()) === looseBefore, JSON.stringify([underlined.marks?.map((mark) => mark.anchor.quote.exact), await looseInk(), looseBefore]))
+  // F-062: where the underline is on screen (dark pixels in the canvas layers at the spot a text's word underline should be), before and after the move
+  const underlineSpot = async (geometry, word) => { const view = await pn(() => window.__personalNote.leaferCanvas().view()); const host = await page.locator('#leafer-host').boundingBox(); return { x: host.x + view.x + (geometry.x + (word ?? loneWord).x) * view.scale - 10, y: host.y + view.y + (geometry.y + (word ?? loneWord).y + (word ?? loneWord).height + 12) * view.scale - 10, w: (word ?? loneWord).width * view.scale + 20, h: 20 } }
+  const darkAt = (spot) => pn(({ x, y, w, h }) => {
+    let total = 0
+    for (const canvas of document.querySelectorAll('canvas.leafer-canvas-view')) {
+      const box = canvas.getBoundingClientRect()
+      const sx = canvas.width / box.width
+      const sy = canvas.height / box.height
+      const left = Math.max(0, Math.round((x - box.left) * sx)), top = Math.max(0, Math.round((y - box.top) * sy))
+      const width = Math.min(canvas.width - left, Math.round(w * sx)), height = Math.min(canvas.height - top, Math.round(h * sy))
+      if (width <= 0 || height <= 0) continue
+      const data = canvas.getContext('2d').getImageData(left, top, width, height).data
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 200 && data[i] < 90 && data[i + 1] < 90 && data[i + 2] < 90) total += 1
+    }
+    return total
+  }, spot)
+  const underlineHome = await underlineSpot(lone.geometry)
+  const placedBefore = (await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)).placed
   await pn((id) => { window.__personalNote.setTool('select'); window.__personalNote.leaferCanvas().select([id]) }, lone.id)
   await page.waitForTimeout(300)
   const grip = { x: below.x + 30, y: below.y - loneWord.height / 2 - 10 }
@@ -350,6 +368,47 @@ try {
   await page.waitForTimeout(600)
   const carried = (await objectsNow()).find((object) => object.id === lone.id)
   check('moving the text carries its underline with it', carried.geometry.y > lone.geometry.y + 100 && carried.marks?.length === 1 && (await looseInk()) === looseBefore, JSON.stringify([lone.geometry.y, carried.geometry.y, carried.marks?.length]))
+  // F-062: the underline stays with the text. Not just right after the move: nothing brings it back to its old place later (the saves, the
+  // changes feed, the page bitmaps made again in idle time), nor after the note is opened again.
+  // The underline of the text `id` (found by its word): is it drawn under that word, where the model says (the pixels of the canvas layers, and
+  // the mark node the scene drew, found by its name), and is it saved? Returns the failures.
+  const underlineProblems = async (id, word, away = []) => {
+    const now = (await objectsNow()).find((object) => object.id === id)
+    const info = await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), id)
+    const view = await pn(() => window.__personalNote.leaferCanvas().view())
+    const at = now.content.indexOf(word)
+    const w = info.words.find((each) => each.from === at)
+    const mark = now.marks?.[0]
+    if (!w || now.marks?.length !== 1 || mark.anchor.quote.exact !== word || mark.anchor.pos !== at) return [`no single mark on ${word} at ${at}: ${JSON.stringify([now.content, now.marks?.map((m) => m.anchor)])}`]
+    const problems = []
+    const spot = await underlineSpot({ x: now.geometry.x, y: now.geometry.y }, w)
+    if ((await darkAt(spot)) <= 20) problems.push(`no underline pixels under the word (${await darkAt(spot)})`)
+    for (const old of away) if ((await darkAt(old)) !== 0) problems.push(`underline pixels at the old place ${JSON.stringify(old)}`)
+    const drawn = info.drawnMarks
+    const wantX = view.x + view.scale * (now.geometry.x + w.x + mark.anchor.dx)
+    const wantY = view.y + view.scale * (now.geometry.y + w.y + mark.anchor.dy)
+    if (drawn.length !== 1 || Math.abs(drawn[0].x - wantX) > 1 || Math.abs(drawn[0].y - wantY) > 1) problems.push(`the drawn mark is at ${JSON.stringify(drawn)}, the model says ${wantX},${wantY}`)
+    return problems
+  }
+  const underlineChecks = async (when, away = [underlineHome]) => {
+    const now = (await objectsNow()).find((object) => object.id === lone.id)
+    const placed = (await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)).placed
+    const problems = await underlineProblems(lone.id, 'harbour', away)
+    check(`${when}: the underline is drawn under its word at the text's new place and nowhere at the old one`, problems.length === 0, problems.join('; '))
+    check(`${when}: it keeps its place in the text`, JSON.stringify(placed) === JSON.stringify(placedBefore), JSON.stringify([placed, placedBefore]))
+    check(`${when}: the text and its underline are saved at the new place`, now.geometry.y === carried.geometry.y, JSON.stringify([now.geometry.y, carried.geometry.y]))
+  }
+  await underlineChecks('right after the move')
+  await page.waitForTimeout(3500)
+  await underlineChecks('three seconds after the move')
+  await page.reload()
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  await page.waitForTimeout(1500)
+  await page.keyboard.press('Escape') // (the note opens with the caret in its writing)
+  await page.waitForTimeout(800)
+  await underlineChecks('after reopening', [])
+  await pn(() => window.__personalNote.leaferCanvas().setView({ x: 120, y: 40, scale: 1 }))
+  await page.waitForTimeout(500)
   const huggedBox = (await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)).box
   const lastWord = loneInfo.words.at(-1)
   check('a short text\'s box hugs its words, not the width it wraps at', Math.abs(huggedBox.width - (lastWord.x + lastWord.width)) < 3 && huggedBox.width < carried.geometry.width - 200, JSON.stringify([huggedBox, lastWord.x + lastWord.width, carried.geometry.width]))
@@ -415,6 +474,62 @@ try {
   await page.waitForTimeout(600)
   const arrowMoved = await arrowAt()
   check('an arrow from a short text starts at its words and stays there when the text moves', Boolean(arrowMade && arrowMoved) && Math.abs(arrowMade.start.x - arrowMade.wordsRight) < 12 && arrowMoved.start.x <= arrowMoved.wordsRight + 12 && arrowMoved.start.y > arrowMade.start.y + 20, JSON.stringify([shapeId, arrowId, arrowMade, arrowMoved]))
+  await pn(async (id) => window.__personalNote.selectNote(id), noteId)
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
+  await page.waitForTimeout(800)
+
+  // F-062: typing in a text with an underline. The words before the underlined one change (more words, a line or a heading above, enough to
+  // wrap it onto the next line): while the editor is open, a couple of seconds later (the draft and the save), after clicking away, and after the
+  // note is opened again, the underline is under its word.
+  await pn(() => window.__personalNote.createNote())
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
+  await page.waitForFunction(() => document.querySelector('.md-editor .cm-content'), null, { timeout: 8000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  await page.keyboard.type('The harbour walk at dusk')
+  await page.waitForTimeout(1500)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(800)
+  const underlinedText = (await objectsNow()).find((object) => object.type === 'text' && object.content === 'The harbour walk at dusk')
+  const typedWord = async (word) => { const info = await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), underlinedText.id); const now = (await objectsNow()).find((object) => object.id === underlinedText.id); return info.words.find((each) => each.from === now.content.indexOf(word)) }
+  const typedScreen = async (word, dy) => { const w = await typedWord(word); const now = (await objectsNow()).find((object) => object.id === underlinedText.id); const view = await pn(() => window.__personalNote.leaferCanvas().view()); const box = await page.locator('#leafer-host').boundingBox(); return { w, x: box.x + view.x + (now.geometry.x + w.x) * view.scale, y: box.y + view.y + (now.geometry.y + w.y + dy) * view.scale } }
+  const harbourAt = await typedScreen('harbour', 0)
+  await page.click('[data-tool="pen"]')
+  await page.waitForTimeout(400)
+  await stroke(Array.from({ length: 11 }, (_, i) => ({ x: harbourAt.x - 4 + (harbourAt.w.width + 8) * i / 10, y: harbourAt.y + harbourAt.w.height + 10 + Math.sin(i) * 1.5 })))
+  await page.click('[data-tool="select"]')
+  await page.waitForTimeout(500)
+  const typedProblems = async (label) => { const problems = await underlineProblems(underlinedText.id, 'harbour'); check(`typing: ${label}: the underline is under its word`, problems.length === 0, problems.join('; ')) }
+  await typedProblems('before any typing')
+  const typeInto = async (keys) => { // opens the text on a word, then keys; Escape ends the edit
+    const walk = await typedScreen('walk', 0)
+    await page.mouse.dblclick(walk.x + walk.w.width / 2, walk.y + walk.w.height / 2)
+    await page.waitForTimeout(800)
+    await keys()
+  }
+  await typeInto(async () => { await page.keyboard.press('Home'); await page.keyboard.type('Today: ') })
+  await page.waitForTimeout(3000)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(800)
+  await typedProblems('words typed before it')
+  await typeInto(async () => { await page.keyboard.press('Control+Home'); await page.keyboard.type('# Title\n') })
+  await page.waitForTimeout(3000)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(800)
+  await typedProblems('a heading added above it')
+  await typeInto(async () => { await page.keyboard.press('Control+Home'); await page.keyboard.type('Many many words before it so that the line has to wrap and the underlined one moves down ') })
+  await page.waitForTimeout(3000)
+  await page.mouse.click(host.x + 300, host.y + 700) // clicking away ends the edit
+  await page.waitForTimeout(1500)
+  await pn(() => window.__personalNote.setTool('select'))
+  const wrapped = (await objectsNow()).find((object) => object.id === underlinedText.id)
+  check('typing: enough words before it wrap the underlined one onto a later line', (await typedWord('harbour')).y > 40 && wrapped.content.startsWith('Many'), JSON.stringify([(await typedWord('harbour'))?.y, wrapped.content]))
+  await typedProblems('it wrapped onto a later line, after clicking away')
+  await page.reload()
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  await page.waitForTimeout(1500)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(800)
+  await typedProblems('after opening the note again')
   await pn(async (id) => window.__personalNote.selectNote(id), noteId)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
   await page.waitForTimeout(800)

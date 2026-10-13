@@ -100,6 +100,10 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
 
   function hideLive() {
     liveCanvas.style.visibility = 'hidden'
+    ctx?.save() // (a hidden canvas keeps its pixels: cleared, so a stroke that became a mark or ink can never show again at the place it was drawn)
+    ctx?.setTransform(1, 0, 0, 1, 0, 0)
+    ctx?.clearRect(0, 0, liveCanvas.width, liveCanvas.height)
+    ctx?.restore()
   }
 
   function pagesOp() {

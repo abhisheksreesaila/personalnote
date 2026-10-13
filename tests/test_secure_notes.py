@@ -4,8 +4,11 @@ import json
 import os
 import shutil
 import tempfile
+import time
+import threading
 import unittest
 import zipfile
+from unittest import mock
 from pathlib import Path
 
 from starlette.testclient import TestClient
@@ -718,3 +721,114 @@ class ReviewFixTests(SecureCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AutoLockSettingsTests(SecureCase):
+    def test_the_status_tells_the_page_how_long_the_quiet_time_is(self):
+        app = create_app(self.root / "idle.db", secure_platform=self.mac, bound_host=None)
+        client = TestClient(app, headers={"x-personal-note": "1"})
+        self.assertEqual(client.get("/api/secure/status").json()["idleSeconds"], 300)
+
+    def test_the_quiet_time_can_be_shortened_for_checks(self):
+        with mock.patch.dict(os.environ, {"PERSONAL_NOTE_SECURE_IDLE_SECONDS": "7"}):
+            app = create_app(self.root / "idle2.db", secure_platform=self.mac, bound_host=None)
+        client = TestClient(app, headers={"x-personal-note": "1"})
+        self.assertEqual(client.get("/api/secure/status").json()["idleSeconds"], 7)
+
+    def test_a_garbage_setting_keeps_five_minutes(self):
+        with mock.patch.dict(os.environ, {"PERSONAL_NOTE_SECURE_IDLE_SECONDS": "soon"}):
+            app = create_app(self.root / "idle3.db", secure_platform=self.mac, bound_host=None)
+        self.assertEqual(TestClient(app).get("/api/secure/status").json()["idleSeconds"], 300)
+
+
+class SearchShowsSecureNotesTests(SecureCase):
+    def test_a_secure_note_is_found_by_title_and_marked_secure_with_no_excerpt(self):
+        service = self.service_for(self.mac) if hasattr(self, "service_for") else NoteService(self.root / "s.db", secure_platform=self.mac, scrypt_cost=2**4)
+        note = service.create_note({"title": "Banking quokka", "noteType": "page"})
+        saved = service.update_note(note["id"], {"title": "Banking quokka", "content": {"markdown": f"pin {SECRET}"}, "revision": note["revision"]})
+        service.mark_secure(note["id"], revision=saved["revision"])
+        found = service.search("quokka")
+        self.assertEqual([item["title"] for item in found], ["Banking quokka"])
+        self.assertTrue(found[0]["secure"])
+        self.assertEqual(found[0]["excerpt"], "")
+        self.assertEqual(service.search("ZEBRA"), [])
+
+
+class SlowMac(FakeMac):
+    """Touch ID that takes a while to answer, like a person finding the sensor."""
+
+    def authenticate(self, reason, timeout=0):
+        time.sleep(0.8)
+        return super().authenticate(reason, timeout)
+
+
+class EventLoopTests(SecureCase):
+    """A real server (a TestClient gives every request its own loop and would hide a blocked one)."""
+
+    def serve(self, name, platform):
+        from desktop import LocalServer
+
+        server = LocalServer(create_app(self.root / name, secure_platform=platform, bound_host=None))
+        base = server.start()
+        self.addCleanup(server.stop)
+
+        def call(method, path, body=None):
+            from urllib.request import Request, urlopen
+
+            request = Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None, headers={"x-personal-note": "1", "content-type": "application/json"})
+            with urlopen(request, timeout=10) as response:
+                return json.loads(response.read() or b"null")
+
+        return call
+
+    def assert_others_answer_meanwhile(self, call, slow):
+        thread = threading.Thread(target=slow)
+        thread.start()
+        time.sleep(0.25)
+        started = time.monotonic()
+        call("GET", "/api/secure/status")
+        call("GET", "/api/notes")
+        self.assertLess(time.monotonic() - started, 0.5)
+        thread.join(10)
+
+    def test_a_slow_touch_id_does_not_stop_other_requests(self):
+        call = self.serve("slow.db", SlowMac())
+        note = call("POST", "/api/notes", {"title": "Cards", "noteType": "page"})
+        call("POST", f"/api/notes/{note['id']}/secure", {})
+        call("POST", "/api/secure/lock", {})
+        self.assert_others_answer_meanwhile(call, lambda: call("POST", "/api/secure/unlock", {}))
+        self.assertTrue(call("GET", "/api/secure/status")["unlocked"])
+
+    def test_marking_a_note_secure_does_not_block_either(self):
+        call = self.serve("slow2.db", SlowMac())
+        note = call("POST", "/api/notes", {"title": "Cards", "noteType": "page"})
+        self.assert_others_answer_meanwhile(call, lambda: call("POST", f"/api/notes/{note['id']}/secure", {}))
+
+    def test_a_slow_recovery_unlock_that_adds_this_machine_does_not_block(self):
+        mac = SlowMac()
+        call = self.serve("slow3.db", mac)
+        note = call("POST", "/api/notes", {"title": "Cards", "noteType": "page"})
+        key = call("POST", f"/api/notes/{note['id']}/secure", {})["recoveryKey"]
+        call("POST", "/api/secure/lock", {})
+        self.assert_others_answer_meanwhile(call, lambda: call("POST", "/api/secure/unlock", {"recoveryKey": key}))
+
+
+class TouchTests(SecureCase):
+    def test_a_touch_renews_the_quiet_time_while_unlocked(self):
+        clock = Clock()
+        service = NoteService(self.root / "touch.db", secure_platform=self.mac, scrypt_cost=2**4, clock=clock)
+        note = self.page_note(service)
+        service.mark_secure(note["id"])
+        service.keyring.set_idle_timeout(300)
+        for _ in range(3):
+            clock.now += 250
+            self.assertTrue(service.touch_secure()["unlocked"])
+        self.assertFalse(service.get_note(note["id"])["locked"])
+        clock.now += 301
+        self.assertFalse(service.touch_secure()["unlocked"])  # too late: a touch never unlocks
+        self.assertTrue(service.get_note(note["id"])["locked"])
+
+    def test_the_touch_route_needs_the_app_header(self):
+        app = create_app(self.root / "touchroute.db", secure_platform=self.mac, bound_host=None)
+        self.assertEqual(TestClient(app).post("/api/secure/touch").status_code, 403)
+        self.assertEqual(TestClient(app, headers={"x-personal-note": "1"}).post("/api/secure/touch").status_code, 200)
