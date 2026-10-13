@@ -57,3 +57,25 @@ export function searchResultView(result) {
     ? { icon: 'lock', excerpt: '', className: 'is-secure' }
     : { icon: plainIcon(result.noteType), excerpt: result.excerpt ?? '', className: '' }
 }
+
+export const PING_EVERY_MS = 30_000
+
+// While a secure note is open the server keeps its keys only for the quiet time; activity on the page renews it, not more than every 30 s.
+export function shouldPing({ last, now, every = PING_EVERY_MS }) {
+  return now - last >= every
+}
+
+// A save the server refused because the keys timed out must not lose the words: they are held here (in memory only) and sent on the
+// note's new revision once it is unlocked and opened again.
+export function createHeldEdit() {
+  const held = new Map()
+  return {
+    hold: (noteId, body) => { held.set(noteId, body) },
+    has: (noteId) => held.has(noteId),
+    take(noteId, revision) {
+      if (!held.has(noteId)) return null
+      return JSON.stringify({ ...JSON.parse(held.get(noteId)), revision })
+    },
+    done: (noteId) => { held.delete(noteId) },
+  }
+}

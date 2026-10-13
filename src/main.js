@@ -7,7 +7,7 @@ import { mountSkinSwitcher, startSkins } from './skins.js'
 import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
 import { createIcons, icons } from './icons.js'
 import { createSecureSession } from './modules/secure/session.js'
-import { noteRowIcon, searchResultView } from './modules/secure/secure.js'
+import { createHeldEdit, noteRowIcon, searchResultView } from './modules/secure/secure.js'
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
 import { nudgeDistance } from './core/document/operations.js'
@@ -55,6 +55,7 @@ const PAGE_HEIGHT = 1080
 const CANVAS_ZOOM_MIN = 0.25
 const CANVAS_ZOOM_MAX = 4
 // desktop.py opens the Chromium app window with engine=chromium (see createSaveTiming).
+const heldEdit = createHeldEdit() // typed words a secure note's save could not take because it had locked
 const saveTiming = createSaveTiming({ fast: new URLSearchParams(location.search).get('engine') === 'chromium' })
 const INK_COLORS = [
   ['Charcoal', '#20201e'],
@@ -812,13 +813,14 @@ function escapeHtml(value) {
 
 function noteRowHtml(note, { dotFor = null } = {}) {
   const secureRow = noteRowIcon(note) // a secure note shows the lock in the secure colour
-  const dot = dotFor && !note.secure
+  const dot = dotFor
     ? `<span class="notebook-dot" style="--notebook-color:${dotFor.color}" title="${escapeHtml(dotFor.name)}"></span>`
     : `<i data-lucide="${secureRow.icon}"></i>`
   return `
     <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''} ${secureRow.className}" data-note-id="${note.id}" draggable="true">
       ${dot}
       <span>${escapeHtml(note.title || 'Untitled note')}</span>
+      ${dotFor && note.secure ? '<i data-lucide="lock" class="secure-row-lock"></i>' : ''}
     </button>
   `
 }
@@ -1406,6 +1408,7 @@ async function saveActiveNote({ unloading = false } = {}) {
   setSaveState('Saving')
   const noteId = state.activeNoteId
   const note = state.notes.find((item) => item.id === noteId)
+  let sentBody = ''
   try {
     if (state.activeNoteType === 'canvas' && leaferSource.noteId !== noteId) throw Object.assign(new Error('the content on hand belongs to another note'), { refused: true })
     const title = elements.title.value.trim() || 'Untitled note'
@@ -1427,6 +1430,7 @@ async function saveActiveNote({ unloading = false } = {}) {
     const body = editedLeafer
       ? joinSaveBody(leaferSource.contentJson, fields)
       : JSON.stringify({ ...fields, content: savedContent })
+    sentBody = body
     saveTiming.saved(body)
     // While the page is going away a keepalive request is the only one guaranteed to be sent (it takes the text itself). Otherwise the
     // body goes as a Blob: handing a note of megabytes to fetch as a string copies it on the main thread and stalls a drag for ~100 ms.
@@ -1445,6 +1449,7 @@ async function saveActiveNote({ unloading = false } = {}) {
     console.error(error)
     if (error.status === 423) { // the server locked the secure notes (quiet time, sleep): show the cover, don't call it a failure
       unsavedEdits = false
+      if (sentBody) heldEdit.hold(noteId, sentBody) // the words stay (in memory only) and go out after the next unlock
       setSaveState('Locked')
       void secure.serverLocked()
       return
@@ -1848,8 +1853,19 @@ async function selectNoteNow(id, { reload = false } = {}) {
   pageEditor?.destroy()
   pageEditor = null
   try {
-    const note = await api(`/notes/${id}`)
+    let note = await api(`/notes/${id}`)
     // A newer pick superseded this one while it loaded: its content must not land under another note's id.
+    if (sequence !== selectSequence) return
+    // An unlocked secure note is drawn only with the window hidden from sharing (the Mac); if that cannot be done it stays locked.
+    if (note.secure && !note.locked && !(await secure.guardOpen())) note = { ...note, content: null, pageState: null, locked: true }
+    // Words typed just before the keys timed out were held: they go out now, on the new revision, and the note is read again with them.
+    if (note.secure && !note.locked && heldEdit.has(id)) {
+      try {
+        await api(`/notes/${id}`, { method: 'PUT', body: heldEdit.take(id, note.revision) })
+        heldEdit.done(id)
+        note = await api(`/notes/${id}`)
+      } catch (error) { console.error(error) }
+    }
     if (sequence !== selectSequence) return
     const summary = state.notes.find((item) => item.id === id)
     if (summary) Object.assign(summary, {
@@ -3800,6 +3816,7 @@ async function initialize() {
   try {
     // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server.
     await api('/secure/lock', { method: 'POST' }).catch(() => {})
+    await secure.resetCapture() // and the window may be shared again (a Mac window an earlier page left hidden)
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
     state.selectedNotebookId = state.notes[0]?.notebookId || state.notebooks[0]?.id || null
     if (!state.notes.length) await createNote()

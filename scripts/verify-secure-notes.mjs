@@ -189,6 +189,25 @@ try {
   await cover().waitFor({ timeout: 10000 })
   check('the Lock button locks it at once', (await pill().count()) === 0 && !(await serverStatus()).unlocked && !(await bodyHasSecret()))
 
+  // ---- the keys time out behind the page's back while words are being typed: the words are kept and saved after the next unlock ----
+  await page.fill('.secure-cover input[name=passphrase]', PASSPHRASE)
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.secure-pill', { timeout: 20000 })
+  await page.waitForTimeout(500)
+  await call('POST', '/api/secure/lock')
+  await pn(() => document.querySelector('#page-host .cm-content').focus())
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type(' LATE-WORDS')
+  await cover().waitFor({ timeout: 15000 })
+  check('a save refused because the keys timed out shows the cover, not an error', (await pill().count()) === 0 && !(await bodyHasSecret()))
+  await page.fill('.secure-cover input[name=passphrase]', PASSPHRASE)
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.secure-pill', { timeout: 20000 })
+  await page.waitForTimeout(1200)
+  check('and the words typed meanwhile are back after the next unlock, and saved', (await pn(() => document.body.innerText)).includes('LATE-WORDS') && (await call('GET', `/api/notes/${cards.id}`)).body.content.markdown.includes('LATE-WORDS'))
+  await page.click('.secure-lock')
+  await cover().waitFor({ timeout: 10000 })
+
   // ---- reload shows it locked, even with the keys still held on the server ----
   await call('POST', '/api/secure/unlock', { passphrase: PASSPHRASE })
   await page.reload()

@@ -3,6 +3,7 @@
 @media screen {
   .app-shell .note-list-item.is-secure, .app-shell .note-list-item.is-secure.active, .search-result.is-secure .search-result-icon { color: var(--sk-secure); }
   .app-shell .note-list-item.is-secure > svg { opacity: 1; }
+  .app-shell .note-list-item .secure-row-lock { width: 12px; height: 12px; flex: none; color: var(--sk-secure); }
 
   .secure-cover { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 72px 16px 24px; background: var(--sk-secure-soft); color: var(--sk-ink); border-top: 3px solid var(--sk-secure); }
   .secure-cover-title, .secure-cover-card h3, .secure-sheet h3 { margin: 0; font-family: var(--sk-display); font-weight: var(--sk-display-weight, 700); font-style: var(--sk-display-style, normal); letter-spacing: -.02em; }
@@ -30,7 +31,7 @@
   .secure-time { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--sk-ink-soft); }
   .secure-lock { border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer; font: 500 12px var(--ui-font); background: var(--sk-secure); color: var(--sk-panel); }
 
-  .secure-sheet-back { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgba(10, 10, 20, .32); }
+  .secure-sheet-back { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--sk-ink) 32%, transparent); }
   .secure-sheet { width: min(480px, 100%); max-height: calc(100dvh - 32px); overflow: auto; display: grid; gap: 14px; padding: 24px; border-radius: var(--sk-radius); border: 1px solid var(--sk-edge); background: var(--sk-panel); color: var(--sk-ink); box-shadow: var(--sk-shadow); }
   .secure-sheet h3 { font-size: 21px; }
   .secure-sheet p { margin: 0; color: var(--sk-ink-soft); font-size: 14px; }

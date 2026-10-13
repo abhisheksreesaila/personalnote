@@ -10,7 +10,7 @@
 //   syncMenu(): void              refresh the "Make secure / Make ordinary" button
 //   toast(message): void
 // }
-import { createQuietTimer, formatCountdown, formatRecoveryInput, passphraseProblem, recoveryGroups, unlockFailureMessage } from './secure.js'
+import { PING_EVERY_MS, createQuietTimer, formatCountdown, formatRecoveryInput, passphraseProblem, recoveryGroups, shouldPing, unlockFailureMessage } from './secure.js'
 
 const html = (strings, ...values) => strings.reduce((out, text, index) => out + text + (index < values.length ? values[index] : ''), '')
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])
@@ -203,7 +203,12 @@ export function createSecureSession({ api, workspace, topbarActions, shell, titl
     for (const type of ['keydown', 'pointerdown', 'wheel']) workspace.removeEventListener(type, touch, true)
     state.open = false
   }
-  const touch = () => state.quiet?.touch()
+  let lastPing = 0
+  // Activity keeps the server's keys from timing out before the page's own countdown does (a ping, at most every 30 s).
+  const touch = () => {
+    state.quiet?.touch()
+    if (state.open && shouldPing({ last: lastPing, now: clock(), every: PING_EVERY_MS })) { lastPing = clock(); post('/secure/touch').catch(() => {}) }
+  }
 
   async function noteOpened(note) {
     removeCover()
@@ -212,6 +217,7 @@ export function createSecureSession({ api, workspace, topbarActions, shell, titl
     state.open = true
     state.noteId = note.id
     state.quiet = createQuietTimer({ seconds: current?.idleSeconds, now: clock })
+    lastPing = clock()
     shell.classList.add('secure-open')
     state.edge = document.createElement('div')
     state.edge.className = 'secure-edge'
@@ -248,14 +254,23 @@ export function createSecureSession({ api, workspace, topbarActions, shell, titl
 
   // Leaving the note (another note opens): keys and sharing are put back at once; nothing is reloaded.
   async function leave() {
-    const needsLock = state.open || state.hidden
     removeCover()
     clearOpen()
-    if (needsLock) {
-      await post('/secure/lock').catch(() => {})
-      await setCapture(false)
-    }
+    // Always: keys can be held with nothing open here (an earlier page, a note made ordinary, an unlock whose note never loaded).
+    await post('/secure/lock').catch(() => {})
+    await setCapture(false)
   }
+
+  // A note's words may be drawn only with the window hidden from sharing (when the Mac bridge exists); otherwise the keys go again.
+  async function guardOpen() {
+    if (!canHide() || state.hidden) return true
+    if (await setCapture(true)) return true
+    await post('/secure/lock').catch(() => {})
+    return false
+  }
+
+  // A page that starts puts sharing back (after it has locked the keys), whatever the last page left.
+  async function resetCapture() { await setCapture(false) }
 
   // ---- the note menu ----
   async function makeSecure(id) {
@@ -288,7 +303,7 @@ export function createSecureSession({ api, workspace, topbarActions, shell, titl
       return
     }
     if (canHide() && !(await setCapture(true))) {
-      await lockNow({ edits: false })
+      await lockNow({ edits: false, force: true })
       host.toast("Couldn't keep this window out of screen sharing, so the note was locked.")
       return
     }
@@ -314,7 +329,7 @@ export function createSecureSession({ api, workspace, topbarActions, shell, titl
   }
 
   return {
-    showCover, noteOpened, leave, lockNow, makeSecure, makeOrdinary,
+    showCover, noteOpened, leave, guardOpen, resetCapture, lockNow, makeSecure, makeOrdinary,
     isOpen: () => state.open,
     // The cover or the pill must go when an ordinary note opens.
     clear() { removeCover(); clearOpen() },

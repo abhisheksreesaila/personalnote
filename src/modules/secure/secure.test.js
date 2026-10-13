@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  createQuietTimer, formatCountdown, formatRecoveryInput, noteRowIcon, passphraseProblem, recoveryGroups, searchResultView, unlockFailureMessage,
+  createHeldEdit, createQuietTimer, formatCountdown, shouldPing, formatRecoveryInput, noteRowIcon, passphraseProblem, recoveryGroups, searchResultView, unlockFailureMessage,
 } from './secure.js'
 
 test('the countdown reads minutes and seconds and never goes below zero', () => {
@@ -71,4 +71,32 @@ test('a secure note row gets the lock and the secure class; the others keep thei
 test('a search result for a secure note shows the title only', () => {
   assert.deepEqual(searchResultView({ secure: true, noteType: 'page', excerpt: 'card 4111' }), { icon: 'lock', excerpt: '', className: 'is-secure' })
   assert.deepEqual(searchResultView({ noteType: 'mindmap', excerpt: 'branch' }), { icon: 'git-fork', excerpt: 'branch', className: '' })
+})
+
+test('activity pings the server at most every 30 seconds', () => {
+  assert.equal(shouldPing({ last: 0, now: 40_000 }), true)
+  assert.equal(shouldPing({ last: 1_000, now: 20_000 }), false)
+  assert.equal(shouldPing({ last: 1_000, now: 31_000 }), true)
+  assert.equal(shouldPing({ last: 1_000, now: 31_000, every: 60_000 }), false)
+})
+
+test('an edit the server refused because it was locked is held, then goes out on the note\'s new revision', () => {
+  const held = createHeldEdit()
+  assert.equal(held.take(7, 12), null)
+  held.hold(7, JSON.stringify({ title: 'Cards', revision: 9, content: { markdown: 'typed words' } }))
+  assert.equal(held.take(8, 12), null) // another note
+  assert.ok(held.has(7))
+  const body = JSON.parse(held.take(7, 12))
+  assert.equal(body.revision, 12)
+  assert.equal(body.content.markdown, 'typed words')
+  assert.ok(held.has(7)) // kept until it has been sent
+  held.done(7)
+  assert.equal(held.has(7), false)
+})
+
+test('a newer refused edit replaces the older held one', () => {
+  const held = createHeldEdit()
+  held.hold(7, JSON.stringify({ revision: 1, content: 'a' }))
+  held.hold(7, JSON.stringify({ revision: 1, content: 'ab' }))
+  assert.equal(JSON.parse(held.take(7, 2)).content, 'ab')
 })
