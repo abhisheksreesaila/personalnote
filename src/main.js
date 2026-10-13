@@ -378,7 +378,7 @@ document.querySelector('#app').innerHTML = `
           <p class="dialog-eyebrow">Notebook</p>
           <h2 id="notebook-dialog-title">New notebook</h2>
         </div>
-        <button class="icon-button" value="cancel" aria-label="Close"><i data-lucide="x"></i></button>
+        <button class="icon-button notebook-dialog-close" type="button" aria-label="Close"><i data-lucide="x"></i></button>
       </div>
       <label class="field-label" for="notebook-name">Name</label>
       <input class="notebook-name-input" id="notebook-name" maxlength="80" required />
@@ -407,7 +407,7 @@ document.querySelector('#app').innerHTML = `
       <p class="dialog-note" id="notebook-dialog-note">Give related notes a quiet place of their own.</p>
       <div class="dialog-actions">
         <button class="delete-notebook" id="delete-notebook" type="button" hidden>Delete notebook</button>
-        <button class="dialog-cancel" value="cancel">Cancel</button>
+        <button class="dialog-cancel notebook-dialog-close" type="button">Cancel</button>
         <button class="dialog-primary" id="save-notebook" value="default">Create</button>
       </div>
     </form>
@@ -3449,8 +3449,9 @@ elements.list.addEventListener('drop', (event) => {
   moveNote(Number(event.dataTransfer.getData('text/plain')), Number(notebook.dataset.notebookDrop))
 })
 
+// Cancel and the X are plain buttons, so the empty Name never blocks them and Enter reaches Create.
+elements.notebookForm.querySelectorAll('.notebook-dialog-close').forEach((button) => button.addEventListener('click', () => elements.notebookDialog.close()))
 elements.notebookForm.addEventListener('submit', (event) => {
-  if (event.submitter?.value === 'cancel') return
   event.preventDefault()
   saveNotebook().catch(console.error)
 })
