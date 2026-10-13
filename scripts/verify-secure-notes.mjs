@@ -229,6 +229,22 @@ try {
   const found = (await call('GET', '/api/search?q=quokkaphrase')).body
   check('and search finds its words again', found.length === 1)
 
+  // ---- a phone-width window ----
+  const phoneNote = await makeNote('A very long title that has to fit on a phone screen without pushing anything sideways', 'phone words')
+  await call('POST', '/api/secure/unlock', { passphrase: newPassphrase })
+  await call('POST', `/api/notes/${phoneNote.id}/secure`, { revision: phoneNote.revision })
+  await call('POST', '/api/secure/lock')
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
+  await phone.goto(`http://127.0.0.1:${UI_PORT}/notes`)
+  await phone.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+  await phone.evaluate((id) => window.__personalNote.selectNote(id), phoneNote.id)
+  await phone.waitForSelector('.secure-cover', { timeout: 15000 })
+  await phone.waitForTimeout(500)
+  const overflow = await phone.evaluate(() => ({ page: document.documentElement.scrollWidth - innerWidth, cover: document.querySelector('.secure-cover').scrollWidth - document.querySelector('.secure-cover').clientWidth }))
+  check('on a phone the cover fits the width (no sideways scroll)', overflow.page <= 0 && overflow.cover <= 0, JSON.stringify(overflow))
+  if (process.env.PN_SHOT) await phone.screenshot({ path: process.env.PN_SHOT.replace('.png', '-phone.png') })
+  await phone.context().close()
+
   check('no errors on the page', errors.length === 0, errors.join(' | '))
 } finally {
   await browser?.close()

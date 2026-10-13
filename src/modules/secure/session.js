@@ -90,7 +90,7 @@ export function createSecureSession({ api, workspace, topbarActions, shell, titl
       back.innerHTML = html`<div class="secure-sheet wide" role="dialog" aria-modal="true" aria-labelledby="secure-key-title">
         <h3 id="secure-key-title">Your recovery key</h3>
         <p>${intro}</p>
-        <div class="secure-key" data-recovery-key>${recoveryGroups(key).map((group) => `<span>${escapeHtml(group)}</span>`).join('')}</div>
+        <div class="secure-key" data-recovery-key>${recoveryGroups(key).map((group) => `<span>${escapeHtml(group)}</span>`).join(' ')}</div>
         <div class="secure-warn"><i data-lucide="shield-check"></i><span>It is shown once. Without it, a lost Mac means lost secure notes. Keep it in a password manager or on paper, not in a note.</span></div>
         <div class="secure-sheet-actions">
           <label class="secure-check"><input type="checkbox" data-saved /> I saved it somewhere safe</label>
