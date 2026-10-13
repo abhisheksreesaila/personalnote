@@ -11,7 +11,7 @@ const budgets = {
   // editor is fetched once a canvas has opened and the window is idle (F-049). They have their own budget instead of eating the app's:
   // the two editors and the CodeMirror chunk they share.
   pageEditorGzip: 150 * KIB,
-  cssGzip: 16.75 * KIB, // 16 until F-058 (secure notes: cover, sheets, pill, about 1 KiB gzip); the sidebar work argues its own increase
+  cssGzip: 17.1 * KIB, // 16 until F-058 (secure notes: about 1 KiB gzip) then 16.75; the PARA sidebar (shelves, drag, naming) adds about 0.3 KiB, trimmed first
   largestJavascriptRaw: 850 * KIB,
 }
 

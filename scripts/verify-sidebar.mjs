@@ -211,6 +211,15 @@ try {
   })
   check('dropping a filed note on the Inbox shelf unfiles it', (await serverNote(filed.id)).notebookId === null && (await inboxCount()) === beforeInbox + 1, JSON.stringify([await serverNote(filed.id), beforeInbox, await inboxCount()]))
 
+  // a secure note keeps its lock in the Inbox and is filed by drag like any other note
+  const vault = await call('POST', '/notes', { title: 'Vault note' })
+  const sealed = await call('POST', `/notes/${vault.id}/secure`, { revision: vault.revision, passphrase: 'correct horse battery' })
+  await open()
+  check('a secure note in the Inbox shows its lock', sealed.error === undefined && await page.evaluate(() => Boolean(document.querySelector('[aria-label="Inbox"] .note-list-item.is-secure svg.lucide-lock'))), JSON.stringify(sealed).slice(0, 120))
+  await mouseDrag(noteRow('Vault note'), rowOf(`[data-notebook-drop="${house.id}"]`))
+  const moved = await serverNote(vault.id)
+  check('dragging a secure note onto a notebook files it and it stays secure', moved.notebookId === house.id && moved.secure === true, JSON.stringify(moved))
+
   // a stale revision is refused, the row goes back, and the retry works because the revision was refreshed
   const stale = await call('POST', '/notes', { title: 'Stale one' })
   await call('PATCH', `/notes/${stale.id}/notebook`, { notebookId: null, revision: stale.revision }) // the server moves on to revision 2
