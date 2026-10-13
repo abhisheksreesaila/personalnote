@@ -6,9 +6,10 @@ export const REQUEST_TIMEOUT_MS = 30000
 const UNTIMED = /^\/(import|export)\//
 
 export async function api(path, options = {}) {
-  const { timeout = UNTIMED.test(path) ? 0 : REQUEST_TIMEOUT_MS, ...rest } = options
+  const { timeout = UNTIMED.test(path) ? 0 : REQUEST_TIMEOUT_MS, headers, ...rest } = options
   const response = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    // x-personal-note says the request is this app's own: only then does the server give an unlocked secure note's words.
+    headers: { 'Content-Type': 'application/json', 'x-personal-note': '1', ...headers },
     signal: timeout > 0 && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(timeout) : undefined,
     ...rest,
   })
@@ -17,7 +18,7 @@ export async function api(path, options = {}) {
     try {
       message = (await response.json()).error || message
     } catch {}
-    throw new Error(message)
+    throw Object.assign(new Error(message), { status: response.status })
   }
   return response.status === 204 ? null : response.json()
 }

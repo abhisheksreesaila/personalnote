@@ -78,3 +78,9 @@ test('the flag points at the appended block for writes and the first block for r
   assert.equal(pickFlagBlock('reading', objects).content, 'first')
   assert.equal(pickFlagBlock('reading', []), undefined)
 })
+
+test('a locked secure note is never reloaded or merged from the empty locked view', async () => {
+  const { calls, controller } = setup({ remote: { id: 1, revision: 4, content: null, locked: true } })
+  await controller.onUpdate({ changes: [change(4)], agents: [] })
+  assert.deepEqual(names(calls).filter((n) => n !== 'presence' && n !== 'flag'), ['lists'])
+})

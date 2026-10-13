@@ -14,5 +14,9 @@ export const icons = {
   Printer, Redo2, Scan, Search, SearchX, Share, SlidersHorizontal, Square, StickyNote, Trash2, Undo2, UnfoldVertical, WandSparkles, X,
 }
 
+// Secure notes (F-058). Added here, not in the lists above, so a change to those never clashes with this.
+import { Fingerprint, Lock, LockOpen, ShieldCheck } from 'lucide'
+Object.assign(icons, { Fingerprint, Lock, LockOpen, ShieldCheck })
+
 // Replaces every <i data-lucide> in the page (or in `root`) with its icon.
 export const createIcons = (options = {}) => createLucideIcons({ icons, ...options })

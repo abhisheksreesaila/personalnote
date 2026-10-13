@@ -2,9 +2,12 @@ import './style.css'
 import './workspace-theme.css'
 import './skins.css'
 import './chrome.css'
+import './secure.css'
 import { mountSkinSwitcher, startSkins } from './skins.js'
 import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
 import { createIcons, icons } from './icons.js'
+import { createSecureSession } from './modules/secure/session.js'
+import { noteRowIcon, searchResultView } from './modules/secure/secure.js'
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
 import { nudgeDistance } from './core/document/operations.js'
@@ -321,6 +324,7 @@ document.querySelector('#app').innerHTML = `
         <p class="portability-status" id="portability-status" role="status" aria-live="polite"></p>
       </section>
       <div class="properties-footer">
+        <button class="secure-note-action" id="secure-note" type="button"><i data-lucide="lock"></i><span>Make secure</span></button>
         <button class="delete-note-action" id="delete-note"><i data-lucide="trash-2"></i><span>Delete note</span></button>
       </div>
     </aside>
@@ -526,6 +530,7 @@ const state = {
   voiceAttempt: 0,
   creatingNote: false,
   loading: false,
+  noteLocked: false, // the open note is a locked secure note: the page shows its cover and nothing here may be saved
 }
 
 let mindmapEditor = null
@@ -806,11 +811,12 @@ function escapeHtml(value) {
 }
 
 function noteRowHtml(note, { dotFor = null } = {}) {
-  const dot = dotFor
+  const secureRow = noteRowIcon(note) // a secure note shows the lock in the secure colour
+  const dot = dotFor && !note.secure
     ? `<span class="notebook-dot" style="--notebook-color:${dotFor.color}" title="${escapeHtml(dotFor.name)}"></span>`
-    : `<i data-lucide="${note.noteType === 'mindmap' ? 'git-fork' : note.noteType === 'page' ? 'file-pen' : 'file-text'}"></i>`
+    : `<i data-lucide="${secureRow.icon}"></i>`
   return `
-    <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''}" data-note-id="${note.id}" draggable="true">
+    <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''} ${secureRow.className}" data-note-id="${note.id}" draggable="true">
       ${dot}
       <span>${escapeHtml(note.title || 'Untitled note')}</span>
     </button>
@@ -1386,7 +1392,7 @@ let unsavedEdits = false
 let agentSync = null
 
 async function saveActiveNote({ unloading = false } = {}) {
-  if (!state.activeNoteId || state.loading || speedTestPaused) return
+  if (!state.activeNoteId || state.loading || speedTestPaused || state.noteLocked) return
   if (saveInFlight && !unloading) {
     saveQueued = true
     return
@@ -1437,6 +1443,12 @@ async function saveActiveNote({ unloading = false } = {}) {
     setSaveState('Saved')
   } catch (error) {
     console.error(error)
+    if (error.status === 423) { // the server locked the secure notes (quiet time, sleep): show the cover, don't call it a failure
+      unsavedEdits = false
+      setSaveState('Locked')
+      void secure.serverLocked()
+      return
+    }
     // A refused save is dropped, not retried: it would be refused again and block switching notes.
     unsavedEdits = !error.refused
     if (/revision/i.test(error.message)) {
@@ -1456,7 +1468,7 @@ async function saveActiveNote({ unloading = false } = {}) {
 }
 
 function queueSave() {
-  if (state.loading || speedTestPaused) return
+  if (state.loading || speedTestPaused || state.noteLocked) return
   unsavedEdits = true
   // Any edit after Clear all ends its Undo, so Ctrl/Cmd+Z goes back to ordinary undo.
   if (pendingClearUndo) hideToast()
@@ -1484,8 +1496,45 @@ const windowHooks = {
   setFullscreen: (on) => setMacFullscreen(document.documentElement, on),
   setMacChrome: (on) => document.documentElement.classList.toggle(MAC_CHROME_CLASS, Boolean(on)),
 }
+// Secure notes (F-058): the cover, the sheets and the pill live in modules/secure; this hands them what they need from the note lifecycle.
+const secure = createSecureSession({
+  api,
+  workspace: elements.workspace,
+  topbarActions: document.querySelector('.topbar-actions'),
+  shell: elements.shell,
+  titleInput: elements.title,
+  renderIcons: () => createIcons({ icons }),
+  // The Mac app's bridge (desktop.py DesktopApi); the browser and the Linux window have none.
+  captureBridge: () => { const bridge = window.pywebview?.api; return typeof bridge?.set_capture_hidden === 'function' ? (hidden) => bridge.set_capture_hidden(hidden) : undefined },
+  host: {
+    flush: () => settleOutgoingNote(),
+    reload: () => selectNote(state.activeNoteId, { reload: true }),
+    note: (id) => state.notes.find((item) => item.id === id),
+    patchNote: (id, patch) => { const note = state.notes.find((item) => item.id === id); if (note) Object.assign(note, patch) },
+    renderList: () => renderNoteList(),
+    syncMenu: () => syncSecureMenu(),
+    toast: (message) => showToast(message),
+  },
+})
+function syncSecureMenu() {
+  const note = state.notes.find((item) => item.id === state.activeNoteId)
+  const button = document.querySelector('#secure-note')
+  if (!button) return
+  button.disabled = !note
+  button.querySelector('span').textContent = note?.secure ? 'Make ordinary' : 'Make secure'
+  button.querySelector('svg, i')?.setAttribute('data-lucide', note?.secure ? 'lock-open' : 'lock')
+  createIcons({ icons })
+}
+document.querySelector('#secure-note').addEventListener('click', () => {
+  const note = state.notes.find((item) => item.id === state.activeNoteId)
+  if (!note) return
+  setPropertiesOpen(false)
+  void (note.secure ? secure.makeOrdinary(note.id) : secure.makeSecure(note.id)).catch((error) => { console.error(error); showToast(error.message || 'Something went wrong') })
+})
 window.personalNote = {
   ...windowHooks,
+  // The Mac slept or its screen locked (desktop.py): cover the secure note at once.
+  lockSecure: () => secure.lockNow(),
   flush: () => settleSaves({
     flushPending: () => {
       void commitPendingDelete({ keepalive: true })
@@ -1768,26 +1817,28 @@ async function stopDictationForSwitch() {
   leaferCanvas?.finishTextEdit()
 }
 
-async function selectNote(id) {
-  if (id === state.activeNoteId) return
+async function selectNote(id, { reload = false } = {}) {
+  if (id === state.activeNoteId && !reload) return
   leaferSwitching += 1
   await stopDictationForSwitch()
   leaferCanvas.clearSelection()
   leaferInk.cancel()
   leaferConnect.cancel()
   elements.shell.classList.add('leafer-switching')
-  try { await selectNoteNow(id) } finally {
+  try { await selectNoteNow(id, { reload }) } finally {
     if (!--leaferSwitching) elements.shell.classList.remove('leafer-switching')
   }
 }
-async function selectNoteNow(id) {
+async function selectNoteNow(id, { reload = false } = {}) {
   hideToast()
   const sequence = ++selectSequence
   // Stay on the current note rather than drop its edits when they cannot be saved in time.
   if (!(await settleOutgoingNote())) return
-  if (sequence !== selectSequence || id === state.activeNoteId) return
+  if (sequence !== selectSequence || (id === state.activeNoteId && !reload)) return
   clearTimeout(saveTimer)
   unsavedEdits = false
+  if (!reload) await secure.leave() // another note opens: secure notes lock, the window may be shared again (a reload keeps the keys)
+  if (sequence !== selectSequence) return
   state.activeNoteId = id
   renderNoteList()
   state.loading = true
@@ -1806,9 +1857,21 @@ async function selectNoteNow(id) {
       noteType: note.noteType,
       resourceId: note.resourceId,
       revision: note.revision,
+      secure: Boolean(note.secure),
     })
     state.selectedNotebookId = note.notebookId
     elements.title.value = note.title
+    state.noteLocked = Boolean(note.locked)
+    elements.title.readOnly = state.noteLocked
+    if (state.noteLocked) { // a locked secure note: an empty page and the cover, never its words
+      setActiveNoteType('canvas')
+      if (!(await showLeaferNote({ id: note.id, noteType: 'canvas', content: null, pageState: null })) || sequence !== selectSequence) return
+      secure.showCover(note)
+      setSaveState('Locked')
+      syncSecureMenu()
+      renderNoteList()
+      return
+    }
     setActiveNoteType(note.noteType)
     if (state.activeNoteType === 'mindmap') {
       await mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
@@ -1823,6 +1886,9 @@ async function selectNoteNow(id) {
       setTool('text') // a note opens ready for typing
     }
     setSaveState('Saved')
+    if (note.secure) await secure.noteOpened(note)
+    else secure.clear()
+    syncSecureMenu()
     renderNoteList()
     requestAnimationFrame(() => { openCanvasView(); if (state.activeNoteType === 'canvas') startWriting(sequence) })
   } catch (error) {
@@ -2584,16 +2650,16 @@ function renderSearchResults(allResults, query = '') {
   } else {
     elements.searchResults.innerHTML = `
       <p class="search-results-label">${query ? `${results.length} ${results.length === 1 ? 'result' : 'results'}` : 'Recently edited'}</p>
-      ${results.map((result) => `
-        <button class="search-result" data-search-note-id="${result.id}">
-          <span class="search-result-icon" style="--notebook-color:${result.notebookColor}"><i data-lucide="${result.noteType === 'mindmap' ? 'git-fork' : result.noteType === 'page' ? 'file-pen' : 'file-text'}"></i></span>
+      ${results.map((result) => { const view = searchResultView(result); return `
+        <button class="search-result ${view.className}" data-search-note-id="${result.id}">
+          <span class="search-result-icon" style="--notebook-color:${result.notebookColor}"><i data-lucide="${view.icon}"></i></span>
           <span class="search-result-copy">
             <strong>${escapeHtml(result.title || 'Untitled note')}</strong>
-            ${result.excerpt ? `<small>${escapeHtml(result.excerpt)}</small>` : ''}
+            ${view.excerpt ? `<small>${escapeHtml(view.excerpt)}</small>` : ''}
           </span>
           <span class="search-result-notebook"><i data-lucide="notebook-tabs"></i>${escapeHtml(result.notebookName)}</span>
         </button>
-      `).join('')}
+      ` }).join('')}
     `
   }
   createIcons({ icons })
@@ -3732,6 +3798,8 @@ async function initialize() {
   syncTypographyControls()
   loadCapabilitySettings()
   try {
+    // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server.
+    await api('/secure/lock', { method: 'POST' }).catch(() => {})
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
     state.selectedNotebookId = state.notes[0]?.notebookId || state.notebooks[0]?.id || null
     if (!state.notes.length) await createNote()
