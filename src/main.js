@@ -865,20 +865,15 @@ function notebookRowHtml(notebook, selectedNotebook) {
   `
 }
 
-// Click on a notebook row: an open notebook folds, a folded one opens. Only classes change, unless the notes were never drawn.
+// Click on a notebook row: an open notebook folds, a folded one opens, and nothing else changes (the selection and breadcrumb stay). Only classes change, unless the notes were never drawn.
 function toggleNotebook(id) {
   const open = state.notebookOpen[id] !== true
   setNotebookOpen(id, open)
-  state.selectedNotebookId = id
-  lastSelectedNotebookId = id
   const wrap = elements.list.querySelector(`[data-nbk="${id}"]`)
   if (!wrap || (open && !wrap.querySelector('.nav-notes'))) return renderNoteList()
   wrap.classList.toggle('open', open)
   wrap.querySelector('[data-notebook-select]').setAttribute('aria-expanded', String(open))
   wrap.querySelector('.fold').toggleAttribute('inert', !open)
-  elements.list.querySelectorAll('.nav-row.active, .notebook-tab.active').forEach((el) => el.classList.remove('active'))
-  wrap.querySelector('.nav-row').classList.add('active')
-  wrap.querySelector('.notebook-tab').classList.add('active')
 }
 
 function renderNoteList() {
@@ -1966,6 +1961,7 @@ async function selectNoteNow(id, { reload = false } = {}) {
 async function refreshWorkspaceLists() {
   const [notebooks, notes] = await Promise.all([api('/notebooks'), api('/notes')])
   state.notebooks = notebooks
+  pruneOpenNotebooks()
   const previous = new Map(state.notes.map((note) => [note.id, note]))
   state.notes = notes.filter((note) => note.id !== pendingDelete?.note.id).map((note) => {
     const known = previous.get(note.id)
@@ -2156,6 +2152,16 @@ async function moveNotebook(notebookId, category) {
 function revealNotebook(notebookId) {
   const notebook = state.notebooks.find((item) => item.id === notebookId)
   if (notebook && !isSectionOpen(state.sectionOpen, notebook.category)) setSectionOpen(notebook.category, true)
+  if (notebook && state.notebookOpen[notebook.id] !== true) setNotebookOpen(notebook.id, true) // and its notebook, even when it was already the selected one
+}
+
+// Notebooks that no longer exist drop out of the remembered open record.
+function pruneOpenNotebooks() {
+  const known = new Set(state.notebooks.map((notebook) => String(notebook.id)))
+  const stale = Object.keys(state.notebookOpen).filter((id) => !known.has(id))
+  if (!stale.length) return
+  stale.forEach((id) => delete state.notebookOpen[id])
+  writeFolded(safeStorage(), state.notebookOpen, NOTEBOOK_FOLD_KEY)
 }
 
 function setSectionOpen(id, open) {
@@ -2230,6 +2236,7 @@ async function deleteNotebook() {
     }
   })
   state.notebooks = await api('/notebooks')
+  pruneOpenNotebooks()
   state.selectedNotebookId = result.destinationNotebookId
   elements.notebookDialog.close()
   renderNoteList()
@@ -2371,6 +2378,7 @@ async function importWorkspaceFile(file) {
     })
     setPortabilityStatus(`Imported ${result.notesImported} notes into ${result.notebooksImported} notebooks.`)
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
+    pruneOpenNotebooks()
     renderNoteList()
   } catch (error) {
     console.error(error)
@@ -3911,6 +3919,7 @@ async function initialize() {
     await api('/secure/lock', { method: 'POST' }).catch(() => {})
     await secure.resetCapture() // and the window may be shared again (a Mac window an earlier page left hidden)
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
+    pruneOpenNotebooks()
     state.selectedNotebookId = state.notes[0]?.notebookId ?? null
     if (!state.notes.length) await createNote()
     else await selectNote(state.notes[0].id)
