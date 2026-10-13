@@ -366,7 +366,7 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool,
             from webview.menu import Menu, MenuAction, MenuSeparator
 
             mac_zoom.append(lambda: desktop_menu.on_main_thread(lambda: desktop_menu.zoom_native_window(window.native)))
-            actions = desktop_menu.MenuActions(window, mac_zoom[0])
+            actions = desktop_menu.MenuActions(window, mac_zoom[0], notify=lambda message: show_notice(window, message))
             menus = desktop_menu.webview_menus(actions, Menu, MenuAction, MenuSeparator)
             setup_mac_window(window, actions, menus)
         except Exception:

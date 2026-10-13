@@ -1,2 +1,4 @@
 -r requirements.txt
 pywebview==6.2.1
+pyobjc-framework-LocalAuthentication==12.2.2; sys_platform == "darwin"
+pyobjc-framework-Security==12.2.2; sys_platform == "darwin"

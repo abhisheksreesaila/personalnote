@@ -38,7 +38,7 @@ printf '%s\n' "$APP_VERSION" > app_version.txt # the app finds its voice engine 
   --hidden-import app_schema --hidden-import note_text --hidden-import app_paths --hidden-import migration \
   --hidden-import document_model --hidden-import json_canvas --hidden-import media_store --hidden-import vault \
   --hidden-import plugin_manifest --hidden-import startup --hidden-import voice_runtime \
-  --hidden-import desktop_menu --hidden-import AppKit --hidden-import Foundation --hidden-import PyObjCTools.AppHelper
+  --hidden-import desktop_menu --hidden-import secure_platform --hidden-import LocalAuthentication --hidden-import Security --hidden-import AppKit --hidden-import Foundation --hidden-import PyObjCTools.AppHelper
 
 # WKWebView only prompts for the microphone if the bundle says why it wants it.
 "$PY" - <<'PY'

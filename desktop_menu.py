@@ -97,7 +97,11 @@ WINDOW_ITEMS = (
     Item("Zoom", action="zoom"),
 )
 
-HELP_ITEMS = (Item("Personal Note on GitHub", action="open-help"),)
+HELP_ITEMS = (
+    Item("Personal Note on GitHub", action="open-help"),
+    SEPARATOR,
+    Item("Test secure unlock…", action="secure-test"),  # F-056 spike: Touch ID, keychain, screen-share exclusion
+)
 
 CUSTOM_MENUS = (("File", FILE_ITEMS), ("Window", WINDOW_ITEMS), ("Help", HELP_ITEMS))
 
@@ -136,10 +140,19 @@ def window_url(base_url: str, platform: str = sys.platform, query: str = "") -> 
 class MenuActions:
     """Runs menu items against a pywebview window. Every method swallows and logs its failures."""
 
-    def __init__(self, window, zoom_window: Callable[[], None], open_url: Callable[[str], Any] | None = None):
+    def __init__(
+        self,
+        window,
+        zoom_window: Callable[[], None],
+        open_url: Callable[[str], Any] | None = None,
+        notify: Callable[[str], None] | None = None,
+        secure_test: Callable[..., Any] | None = None,
+    ):
         self.window = window
         self.zoom_window = zoom_window
         self.open_url = open_url
+        self.notify = notify
+        self.secure_test = secure_test
 
     def run(self, item: Item) -> bool:
         try:
@@ -156,12 +169,24 @@ class MenuActions:
 
                     opener = webbrowser.open
                 opener(REPOSITORY_URL)
+            elif item.action == "secure-test":
+                self._start_secure_test()
             else:
                 return False
             return True
         except Exception:
             logger.warning("Menu item %r failed.", item.title, exc_info=True)
             return False
+
+    def _start_secure_test(self) -> None:
+        """The Touch ID prompt must not block the AppKit loop, so the test runs on its own thread."""
+        runner = self.secure_test
+        if runner is None:
+            import secure_platform
+
+            runner = secure_platform.run_self_test
+        notify = self.notify or (lambda message: None)
+        threading.Thread(target=runner, args=(self.window, notify), daemon=True).start()
 
     def runner(self, item: Item) -> Callable[[], bool]:
         return lambda: self.run(item)
