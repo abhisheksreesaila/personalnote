@@ -230,7 +230,7 @@ export function mountShelves(root, options) {
     return category
   }
 
-  function showNamer(focus = true) {
+  function showNamer(focus = true, focusSelector = '.namer-input') {
     root.querySelectorAll('.namer, .namer-hint').forEach((node) => node.remove())
     if (!naming) return
     const inner = root.querySelector(`[data-sec="${naming.category}"] .fold > .inner`)
@@ -239,7 +239,7 @@ export function mountShelves(root, options) {
     inner.insertAdjacentHTML('beforeend', namerHtml())
     const input = inner.querySelector('.namer-input')
     input.value = naming.value
-    if (focus) input.focus()
+    if (focus) (inner.querySelector(focusSelector) || input).focus()
   }
 
   async function commitNaming() {
@@ -303,12 +303,13 @@ export function mountShelves(root, options) {
   return {
     // main.js calls this just before it replaces the sidebar's HTML.
     beforeRender() {
-      if (naming) naming.hadFocus = document.activeElement?.matches?.('.namer-input') ?? false
+      // Remember which part of the row has the focus (the field or the colour dot) and give it back to the same one.
+      if (naming) naming.focused = document.activeElement?.closest?.('.namer') ? (document.activeElement.matches('.namer-dot') ? '.namer-dot' : '.namer-input') : null
     },
     // main.js calls this after it replaced the sidebar's HTML: put back what lives only in the DOM.
     afterRender() {
       for (const id of ['inbox', ...CATEGORIES]) applyOpen(id)
-      showNamer(naming?.hadFocus ?? false) // only a row that had the focus gets it back: one you clicked away from must stay dropped
+      showNamer(Boolean(naming?.focused), naming?.focused ?? undefined) // only a row that had the focus gets it back: one you clicked away from must stay dropped
       if (drag) {
         // The list was re-rendered mid-drag (a save, a sync): the lift and the ring were on elements that are gone, so put them back.
         const again = drag.kind === 'note' ? root.querySelector(`[data-note-id="${drag.id}"]`) : root.querySelector(`[data-notebook-drag="${drag.id}"]`)?.closest('.nav-row')

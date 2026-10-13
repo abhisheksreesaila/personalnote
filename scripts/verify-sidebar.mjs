@@ -419,13 +419,29 @@ try {
   await page.keyboard.press('Escape')
   await settle(200)
   check('the + tooltip says how to reach the dialog', (await plusOf('areas').getAttribute('title')).includes('Shift'))
+  // a re-render while the colour dot has the focus gives the focus back to the dot
+  await startNaming('resources')
+  await page.keyboard.type('Keep my dot')
+  await page.keyboard.press('Shift+Tab')
+  await page.evaluate(() => window.__personalNote.refreshWorkspaceLists()) // re-renders the sidebar
+  await settle(300)
+  check('a re-render while the colour dot has the focus gives the focus back to the dot, with the name kept', await page.evaluate(() => document.activeElement?.classList.contains('namer-dot') && document.querySelector('.namer-input').value === 'Keep my dot'))
+  await page.keyboard.press('Escape')
+  await settle(200)
   // a press on the colour dot that slides away and lets go elsewhere does not strand the row (empty: dropped; typed: kept)
   const slideOffDot = async () => {
     const box = await page.locator('.namer-dot').boundingBox()
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    // the press must land on the real dot: it is on the sidebar, not clipped away or covered
+    const under = await page.evaluate((point) => document.elementFromPoint(point.x, point.y)?.className, at)
+    check('the inline row\'s colour dot is on screen and is what is under the pointer', under === 'notebook-dot namer-dot' && box.x > 12, JSON.stringify([under, box]))
+    await page.mouse.move(at.x, at.y)
     await page.mouse.down()
     await page.mouse.move(700, 500, { steps: 6 })
     await page.mouse.up()
+    await settle(300)
+    // Chromium gives a pressed button the focus, so the row waits there; clicking away is what settles it (engines that do not focus a button settle at pointerup)
+    await page.click('.brand-name')
     await settle(500)
   }
   await startNaming('resources')
@@ -447,6 +463,8 @@ try {
   await startNaming('resources')
   await page.keyboard.type('Left by tab')
   await page.keyboard.press('Shift+Tab')
+  await settle(300) // focus is on the dot; the field's own blur has long been settled
+  check('with a name typed the row still stays while focus is on the dot', await page.evaluate(() => Boolean(document.querySelector('.namer')) && document.activeElement?.classList.contains('namer-dot')))
   await page.click('.brand-name')
   await settle(600)
   check('and keeps a typed name', (await notebookNames()).includes('Left by tab'))
