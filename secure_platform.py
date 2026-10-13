@@ -37,6 +37,8 @@ SHARING_READ_ONLY = 1
 # LAPolicyDeviceOwnerAuthentication: biometrics, falling back to the account password.
 LA_POLICY_OWNER_AUTH = 2
 ERR_SEC_ITEM_NOT_FOUND = -25300
+ERR_SEC_DUPLICATE_ITEM = -25299  # another writer added the key first: just read it back
+_test_lock = threading.Lock()
 
 _authenticated_at: float | None = None
 
@@ -49,11 +51,11 @@ class NotAuthenticated(Exception):
     """The key was asked for without a recent Touch ID yes."""
 
 
-def available(platform: str = sys.platform) -> bool:
-    return platform == "darwin"
+def available(platform: str | None = None) -> bool:
+    return (sys.platform if platform is None else platform) == "darwin"
 
 
-def backend(platform: str = sys.platform) -> str:
+def backend(platform: str | None = None) -> str:
     """"touchid" on a Mac, "passphrase" elsewhere."""
     return "touchid" if available(platform) else "passphrase"
 
@@ -141,7 +143,7 @@ def _keychain_add(security: Any, key: bytes) -> None:
     item = _query(security)
     item[security.kSecValueData] = NSData.dataWithBytes_length_(key, len(key))
     status, _ = security.SecItemAdd(item, None)
-    if status != 0:
+    if status not in (0, ERR_SEC_DUPLICATE_ITEM):
         raise OSError(f"keychain write failed ({status})")
 
 
@@ -207,12 +209,22 @@ def run_self_test(
     window: Any,
     notify: Callable[[str], None],
     pause: Callable[[float], None] = time.sleep,
-    platform: str = sys.platform,
+    platform: str | None = None,
 ) -> list[str]:
     """Runs all three pieces and reports each outcome in plain words (never the key). Never raises."""
     if not available(platform):
         notify(PASSPHRASE_MESSAGE)
         return [PASSPHRASE_MESSAGE]
+    if not _test_lock.acquire(blocking=False):
+        notify("Secure unlock test is already running")
+        return ["already running"]
+    try:
+        return _run_self_test(window, notify, pause)
+    finally:
+        _test_lock.release()
+
+
+def _run_self_test(window: Any, notify: Callable[[str], None], pause: Callable[[float], None]) -> list[str]:
     lines: list[str] = []
     try:
         ok = authenticate("Personal Note is testing secure unlock")
