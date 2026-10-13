@@ -419,16 +419,33 @@ class LockOnSleepTests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         return window
 
-    def test_the_page_gets_a_moment_to_save_then_the_keys_go_and_the_page_is_covered(self):
+    def test_the_keys_are_gone_before_the_notification_returns_and_the_page_part_follows(self):
         order = []
         window = ThreadStrictWindow(threading.current_thread())
         original = window.evaluate_js
         window.evaluate_js = lambda script: (order.append("page:" + script), original(script))[1]
-        self.run_lock(lambda: order.append("keys"), window)
+        gate = threading.Event()
+        slow_original = window.evaluate_js
+        window.evaluate_js = lambda script: (gate.wait(2), slow_original(script))[1]
+        worker = desktop.make_lock_on_sleep(lambda: order.append("keys"), window)("sleep")
+        self.assertEqual(order, ["keys"])  # locked, with the page still waiting
+        self.assertTrue(worker.is_alive())
+        gate.set()
+        worker.join(5)
         self.assertEqual(window.errors, [])
-        keys_at = order.index("keys")
-        self.assertTrue(any("personalNote.flush" in item for item in order[:keys_at]))
-        self.assertTrue(any("lockSecure" in item for item in order[keys_at:]))
+        self.assertTrue(any("personalNote.flush" in item for item in order[1:]))
+        self.assertTrue(any("lockSecure" in item for item in order[1:]))
+
+    def test_a_service_lock_through_the_observer_empties_the_keyring(self):
+        from routes import create_app
+
+        app = create_app(Path(tempfile.mkdtemp()) / "n.db", bound_host=None)
+        service = app.state.note_service
+        service.keyring.unlock("k", b"x" * 32)
+        self.assertTrue(service.keyring.is_unlocked)
+        worker = desktop.make_lock_on_sleep(service.lock_secure, ThreadStrictWindow(threading.current_thread()))("sleep")
+        self.assertFalse(service.keyring.is_unlocked)
+        worker.join(5)
 
     def test_nothing_touches_the_window_on_the_notification_thread(self):
         window = self.run_lock(lambda: None)

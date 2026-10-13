@@ -319,24 +319,25 @@ def _page_call(window, call: str) -> None:
 def make_lock_on_sleep(lock_keys: Callable[[], object], window, grace: float = 1.0) -> Callable[[str], threading.Thread]:
     """What runs when the Mac sleeps or the screen locks.
 
-    The notification arrives on AppKit's main thread, where `evaluate_js` would wait for that same thread and deadlock, so all the
-    work runs on a worker: the page gets up to `grace` seconds to save what is typed, then the keys are forgotten here, then the
-    page is told to show its covers. Returns the worker.
+    The keys are forgotten first, right on the notification thread (a lock in memory, no window call, so it is quick and cannot
+    deadlock): they must not outlive the sleep. `evaluate_js` would wait for that same main thread, so the page part runs on a worker:
+    the page is asked to save what is typed (the server now refuses, and the page holds those words for the next unlock), then told
+    to show its covers. Returns the worker.
     """
 
-    def work(reason: str) -> None:
+    def work() -> None:
         try:
             flush_page(window, timeout=grace)
         except Exception:
-            logger.warning("Could not let the page save before locking on %s.", reason, exc_info=True)
+            logger.warning("Could not ask the page to save before covering it.", exc_info=True)
+        _page_call(window, "lockSecure()")
+
+    def lock(reason: str) -> threading.Thread:
         try:
             lock_keys()
         except Exception:
             logger.warning("Could not lock secure notes on %s.", reason, exc_info=True)
-        _page_call(window, "lockSecure()")
-
-    def lock(reason: str) -> threading.Thread:
-        worker = threading.Thread(target=work, args=(reason,), daemon=True)
+        worker = threading.Thread(target=work, daemon=True)
         worker.start()
         return worker
 
