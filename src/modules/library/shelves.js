@@ -263,6 +263,10 @@ export function mountShelves(root, options) {
 
   // The row's colour dot opens the full dialog with the name typed so far (it works by touch, unlike Shift+click).
   root.addEventListener('pointerdown', (event) => { if (naming && event.target.closest('.namer-dot')) naming.opening = true })
+  // A press on the dot that is not followed by a click (the pointer slid away) is over at pointerup or pointercancel: decide the row then.
+  const pressOver = () => setTimeout(() => { if (naming?.opening) { naming.opening = false; settleRow() } }, 60)
+  document.addEventListener('pointerup', pressOver)
+  document.addEventListener('pointercancel', pressOver)
   root.addEventListener('click', (event) => {
     if (!naming || !event.target.closest('.namer-dot')) return
     const { category, value } = naming
@@ -284,22 +288,24 @@ export function mountShelves(root, options) {
       stopNaming()
     }
   })
+  // Focus has left the whole row (the field and its colour dot): keep a typed name, drop an empty one.
+  function settleRow() {
+    if (!naming || naming.opening || document.activeElement?.closest?.('.namer')) return
+    if (naming.value.trim()) void commitNaming()
+    else stopNaming()
+  }
   root.addEventListener('focusout', (event) => {
-    if (!event.target.matches?.('.namer-input') || !naming) return
-    // Esc and Enter remove the row themselves (naming is already null by then). Otherwise leaving the field keeps a name and drops an empty one.
-    setTimeout(() => {
-      if (!naming || naming.opening || document.activeElement?.closest?.('.namer')) return // still in the row (its colour button, too)
-      if (naming.value.trim()) void commitNaming()
-      else stopNaming()
-    }, 120)
+    // Esc and Enter remove the row themselves (naming is already null by then).
+    if (!naming || !event.target.closest?.('.namer')) return
+    setTimeout(settleRow, 120)
   })
 
   return {
-    // main.js calls this after it replaced the sidebar's HTML: put back what lives only in the DOM.
     // main.js calls this just before it replaces the sidebar's HTML.
     beforeRender() {
       if (naming) naming.hadFocus = document.activeElement?.matches?.('.namer-input') ?? false
     },
+    // main.js calls this after it replaced the sidebar's HTML: put back what lives only in the DOM.
     afterRender() {
       for (const id of ['inbox', ...CATEGORIES]) applyOpen(id)
       showNamer(naming?.hadFocus ?? false) // only a row that had the focus gets it back: one you clicked away from must stay dropped
