@@ -386,16 +386,17 @@ Needs: F-057 · Design first (designer skill)
 - [ ] a secure note shows its own colour and a lock in the note list, and opens locked
 - [ ] one touch (Touch ID) unlocks it; while it is open the window is kept out of screen sharing
 - [ ] it locks again when you leave it, after 5 quiet minutes, or when the Mac sleeps
-## F-059 Editor first [todo]
+## F-059 Editor first [done]
+Reviewed: PASS after fixes (once per tool pick, pen-then-shape, stickies stay put, glide gives way to the person, stale opens ignored). Captain signed off 2026-10-13: single-key tools, Space and arrow pan, Ctrl+A, Quick note and the speed meter need Esc first while the caret is in a note; the pen and highlighter open the page at their first drawing (underlines stay at 100%); the page edges stay.
 Needs: none
-- [ ] a note opens at 100% with the caret ready in its text (a new note gets an empty Markdown text at the top of the first page); page edges, page map and zoom stay quiet until needed
-- [ ] picking a drawing tool (pen, highlighter, shape, sticky, connector) smoothly zooms out to show the whole page; Esc or typing back in the text returns to 100%
-- [ ] every tool stays in the dock; nothing is hidden or removed; typing latency (speed test row) is no worse
-## F-060 Text outline hugs the words [review]
-Reviewed: PASS on the code (after fixes: a turned text doesn't jump; arrows meet the words on every commit). Waiting on the captain: the box still starts at the first line's top (about 6 px above the letters at 24 px); is that the gap they saw?
+- [x] a note with writing (or an empty one) opens at 100% with the caret at the end of its writing (an empty note: a new Markdown text at the top of the first page, made at the first word); the page map and zoom stay quiet while writing; a note of drawings and phones open as before
+- [x] shape, sticky and connector zoom out to the whole page as they are picked; the pen and highlighter at their first drawing; Esc or opening writing returns to 100%
+- [x] every tool stays in the dock; typing no slower (speed test headline row, same machine back to back: before p95 46 ms key to frame, after 19 ms; the detail tables are noisy both ways; the Mac measure is the one that counts)
+## F-060 Text outline hugs the words [done]
+Reviewed: PASS (after fixes: a turned text doesn't jump; arrows meet the words on every commit). Captain 2026-10-13: the small gap above the first line (line spacing) is fine.
 Needs: none
 - [x] a Markdown text's box and outline are as wide as its words (lines still wrap at its width; a resize sets that width; arrows, snapping and folds meet the words); while typing, lines sit exactly where the canvas draws them (they jumped by 4 px a line before)
-- [ ] no empty space above the first line (captain to confirm)
+- [x] no empty space above the first line beyond the line spacing (captain: fine)
 - [x] the outline shows when the text is picked with the Select tool, never while writing in it
 ## F-061 Code colours (only if free) [todo]
 Needs: none

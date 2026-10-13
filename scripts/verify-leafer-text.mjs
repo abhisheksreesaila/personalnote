@@ -705,7 +705,7 @@ try {
     holdPutMs = 0
     await waitForSave(page, n)
     await page.waitForTimeout(500)
-    check('choosing another note with the editor open saves the words into the note being left', objectOf(savedDoc(), N1)?.content.endsWith(' SWITCH') && !(await editorOpen(page)), objectOf(savedDoc(), N1)?.content)
+    check('choosing another note with the editor open saves the words into the note being left', objectOf(savedDoc(), N1)?.content.endsWith(' SWITCH') && !(await page.evaluate(() => document.querySelector('.leafer-text-editor')?.value ?? document.querySelector('.leafer-text-editor')?.textContent ?? ''))?.includes(' SWITCH'), objectOf(savedDoc(), N1)?.content) // (the note chosen opens ready for writing, F-059: its own words, never the old note's)
     check('the base for merges is the note now open, not the one left', await page.evaluate(() => window.__personalNote.leaferBase().objects.length === 0))
     check('and puts nothing into the note chosen', puts2.length === 0 && (await live(page)).objects.length === 0, JSON.stringify([puts2.length, (await live(page)).objects.length]))
   }

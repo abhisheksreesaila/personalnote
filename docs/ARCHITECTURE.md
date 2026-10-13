@@ -64,6 +64,8 @@ The two layers live inside the canvas note: every tool, the zoom and the growing
 - `markdown-editor.js` (lazy chunk, CodeMirror) edits a Markdown text in place with the same per-line look, hiding the marks except on the caret's line; until it loads, the plain textarea editor (`text.js`) is used.
 - `text-marks.js`: a pen or highlighter stroke over a Markdown text's words becomes one of its `marks`, anchored to the whole words ([pos, end) + quote) and drawn relative to the first word, so it follows typing, rewrapping and moving. `text-links.js`: any object can `link` to words of a Markdown text; the words are drawn teal and a click folds the object into them (`folded`) or opens it with a short liquid motion. `src/core/text-diff.js` maps both through an edit.
 - Agents: `notes write` on a canvas replaces a Markdown text; `NoteService._reanchor_canvas_text` re-finds marks and links by quote (a whole-word match; a one-letter word by its context). The app keeps a mark while half of its word survives an edit, the server only when the word is found again, so an agent fixing a typo inside a marked word turns that mark into ink beside the text (kept where it was last drawn, never dropped). `scripts/verify-markdown-text.mjs` checks the whole path in the real app.
+- A Markdown text's box hugs its words (`hugsWords`/`hugWidth` in scene.js: picking, the outline, arrows, snapping and folds) while its lines wrap at its stored width; a move keeps that width, a resize sets it.
+- Editor first (F-059, desktop only): `main.js` opens a note with Markdown writing, or an empty one, at 100% with the caret at the end of its topmost text (`writingTarget`, `startWriting`; the view maths is `writingView`/`pageView` in `modules/editor/navigation.js`); a note of drawings opens as before. Shape, sticky and connector tools, and the pen's or highlighter's first drawing of their own, glide out to the whole page once per tool pick; Esc from drawing, or writing opened while zoomed out, glides back to 100%. Automatic moves happen only while the canvas shows the view the shell set (`viewIsOurs`). `scripts/verify-editor-first.mjs` checks it.
 
 ### Page notes (Milestone 1, ADR 0003)
 
@@ -207,7 +209,7 @@ The canvas route statically loads Leafer and the shell (about 189 KiB of JavaScr
 ## Security and deployment boundaries
 
 - The API binds to `127.0.0.1` by default.
-- SQLite is local storage, not encryption.
+- SQLite is local storage, not encryption. Secure notes (F-056..F-058) are under way: `secure_platform.py` holds the Mac pieces (Touch ID through LocalAuthentication, a key in the login keychain, keeping the window out of screen capture) and reports a passphrase backend elsewhere.
 - V1 has no authentication, tenancy, sync, or remote API contract. Local agent access is the CLI on the same machine, with the same file permissions as the database.
 - No secret or provider credential is sent to the browser.
 - Imported backup content is treated as data and validated for format, note type, references, and size before insertion.

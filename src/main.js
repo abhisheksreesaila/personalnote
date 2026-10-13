@@ -36,7 +36,7 @@ import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, j
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
-import { chooseOpeningView, fitView, openingView, pageLabel, scrollThumbs, stepZoom, viewForPage, visiblePages, zoomPercent } from './modules/editor/navigation.js'
+import { chooseOpeningView, fitView, isDrawingTool, openingView, pageLabel, pageView, scrollThumbs, stepZoom, viewForPage, visiblePages, writingView, zoomPercent } from './modules/editor/navigation.js'
 import {
   clampView,
   pageExtents,
@@ -997,7 +997,11 @@ function clampedViewOffset(offsetX, offsetY, keep = false, scale = getCanvasScal
   })
 }
 
+// F-059: a glide of the view in progress (glideViewTo, below) gives way to any other move of the view.
+let viewGlide = 0
+const stopGlide = () => cancelAnimationFrame(viewGlide) // the person moved the view (or a note opened): their move wins
 function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOffsetY, keep = false) {
+  stopGlide()
   let next = clampedViewOffset(offsetX, offsetY, keep)
   // A view that no longer overlaps any page (after an undo or a fold-back) goes at once, not animated, to the nearest page edge.
   if (!keep) {
@@ -1067,6 +1071,7 @@ function updateScrollIndicators(reveal) {
 
 function updateNavigationUi(reveal = false) {
   elements.zoomValue.textContent = `${zoomPercent(getCanvasScale())}%`
+  updateWritingQuiet()
   updateMiniGrid()
   updateScrollIndicators(reveal)
 }
@@ -1093,11 +1098,13 @@ function zoomTarget(nextZoom, point = { x: viewSize.width / 2, y: viewSize.heigh
 }
 
 function zoomStep(direction) {
+  stopGlide()
   const next = stepZoom(state.canvasZoom, direction, { min: CANVAS_ZOOM_MIN, max: CANVAS_ZOOM_MAX })
   setViewTo(zoomTarget(next))
 }
 
 function fitAllPages() {
+  stopGlide()
   const target = pageExtentsTarget()
   const margins = viewMargins(window.innerWidth)
   const fit = fitView({
@@ -1127,8 +1134,90 @@ const OPEN_OBJECT_LIMIT = 150
 // A note opens with its whole page grid on the desk (zoomed out). A dense note would pan at a crawl with hundreds of
 // objects on screen, so it opens on its first page, or at full size if even that is crowded. Phones keep the
 // full-width first page.
+// F-059 editor first: a note with Markdown writing (or nothing in it yet) opens like a document, at 100% at its writing; a note of
+// drawings opens as before. Returns { text } (the topmost Markdown text, or null for an empty note) or null.
+function writingTarget() {
+  if (window.innerWidth <= 800) return null
+  const objects = (leaferEdits.doc?.objects ?? []).filter(Boolean)
+  const texts = objects.filter((object) => object.type === 'text' && object.format === 'markdown' && object.geometry).sort((a, b) => a.geometry.y - b.geometry.y || a.geometry.x - b.geometry.x)
+  if (texts.length) return { text: texts[0] }
+  return objects.length ? null : { text: null }
+}
+
+function writingViewFor(text) {
+  const g = text?.geometry
+  const column = g ? Math.max(0, Math.floor((g.x + 1) / PAGE_WIDTH)) : 0
+  const row = g ? Math.max(0, Math.floor((g.y + 1) / PAGE_HEIGHT)) : 0
+  return writingView({ viewW: viewSize.width, viewH: viewSize.height, margins: viewMargins(window.innerWidth), scale: 1,
+    page: { left: column * PAGE_WIDTH, top: row * PAGE_HEIGHT, width: PAGE_WIDTH }, text: g ? { top: g.y, height: g.height ?? 0 } : null })
+}
+
+// The caret goes into the writing as the note opens: at the end of its topmost text, or in a new text at the top of the first page.
+// `sequence`: the note pick this belongs to (a later pick, or the person having clicked into something else meanwhile, wins).
+async function startWriting(sequence) {
+  const writing = writingTarget()
+  if (!writing) return
+  const focusedBefore = document.activeElement
+  await Promise.race([leaferCanvas.whenEditorReady?.(), new Promise((resolve) => setTimeout(resolve, 1500))])
+  if (sequence !== selectSequence || state.loading || leaferSwitching || state.tool !== 'text' || leaferCanvas.isEditingText()) return
+  const focused = document.activeElement
+  if (focused !== focusedBefore && focused && focused !== document.body && (['INPUT', 'TEXTAREA', 'SELECT'].includes(focused.tagName) || focused.isContentEditable)) return // clicked into a field meanwhile
+  if (writing.text) leaferCanvas.editText(writing.text.id, { select: false })
+  else leaferCanvas.createText({ x: 80, y: 80 }, { select: false })
+}
+
+// The view moves smoothly to `target` ({ x, y, scale }) over a moment (at once when motion is reduced).
+function glideViewTo(target, ms = 320) {
+  cancelAnimationFrame(viewGlide)
+  const from = { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return setViewTo(target)
+  const began = performance.now()
+  const step = (now) => {
+    const t = Math.min(1, (now - began) / ms)
+    const eased = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
+    setViewTo({ x: from.x + (target.x - from.x) * eased, y: from.y + (target.y - from.y) * eased, scale: from.scale + (target.scale - from.scale) * eased })
+    if (t < 1) viewGlide = requestAnimationFrame(step)
+  }
+  viewGlide = requestAnimationFrame(step)
+}
+
+const OPENS_PAGE = new Set(['shape', 'sticky', 'connect'])
+// The canvas shows the view this window last set (nothing else moved it): only then does the view move on its own.
+// (Code that sets the canvas view itself, as the real-app checks do to aim their strokes, is left alone.)
+const viewIsOurs = () => { const view = leaferCanvas.view(); return Math.abs(view.x - viewportOffsetX) < 1 && Math.abs(view.y - viewportOffsetY) < 1 && Math.abs(view.scale - getCanvasScale()) < 1e-3 }
+
+// Drawing opens the page up: the whole page the view is on (when the view is closer than that), once per tool pick, so drawing zoomed in
+// afterwards stays where the person put the view.
+let pageOpened = false
+function openPageForDrawing() {
+  if (pageOpened || window.innerWidth <= 800 || state.activeNoteType !== 'canvas' || !viewIsOurs()) return
+  pageOpened = true
+  const target = pageView({ viewW: viewSize.width, viewH: viewSize.height, margins: viewMargins(window.innerWidth), center: viewCenterPoint(),
+    pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT, columns: state.pages.columns, rows: state.pages.rows, min: state.displayScale * CANVAS_ZOOM_MIN, max: state.displayScale })
+  if (getCanvasScale() > target.scale + 0.01) glideViewTo(target)
+}
+
+// Writing again (Esc from a drawing tool, or a text opened while the page is zoomed out) comes back to 100%, about `point` (view pixels).
+function backToWriting(point = { x: viewSize.width / 2, y: viewSize.height / 2 }) {
+  if (window.innerWidth <= 800 || state.activeNoteType !== 'canvas' || getCanvasScale() > 0.99 || !viewIsOurs()) return
+  glideViewTo(zoomTarget(1 / state.displayScale, point))
+}
+
+// While writing at 100% the page map and zoom stay quiet (they come back on hover, when zoomed, or with a drawing tool).
+function updateWritingQuiet() {
+  const quiet = window.innerWidth > 800 && state.activeNoteType === 'canvas' && Math.abs(getCanvasScale() - 1) < 0.01 && !isDrawingTool(state.tool)
+  elements.shell.classList.toggle('writing-quiet', quiet)
+}
+
 function openCanvasView() {
   if (window.innerWidth <= 800) return resetCanvasView()
+  const writing = writingTarget()
+  if (writing) {
+    const view = writingViewFor(writing.text)
+    state.canvasZoom = view.scale / state.displayScale
+    setCanvasViewportOffset(view.x, view.y)
+    return
+  }
   const target = pageExtentsTarget()
   const margins = viewMargins(window.innerWidth)
   const viewW = viewSize.width
@@ -1198,7 +1287,9 @@ const TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'shape', 'pen', 'high
 function setTool(tool) {
   if (!TOOLS.has(tool)) tool = 'select'
   if (!applyingTemporaryHand) temporaryHand.cancel()
+  if (tool !== state.tool) pageOpened = false
   state.tool = tool
+  if (OPENS_PAGE.has(tool)) openPageForDrawing() // F-059: whiteboard tools open the page up (the pen and highlighter do at their first drawing)
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
   if (tool === 'text' || tool === 'sticky' || tool === 'shape') leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
   if (tool === 'pen' || tool === 'highlight' || tool === 'eraser' || tool === 'connect') leaferCanvas?.clearSelection()
@@ -1216,6 +1307,7 @@ function setTool(tool) {
   elements.mobileConnect.setAttribute('aria-pressed', String(tool === 'connect'))
   updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
+  updateWritingQuiet()
 }
 
 // A shape: a rounded rectangle in the chosen object colour, selected, one undo step.
@@ -1255,7 +1347,10 @@ async function placeLeaferPictures(files, point) {
   const dropMade = () => { for (const picture of made) URL.revokeObjectURL(picture.url); return 0 }
   if (!made.length) return 0
   // A drag, a stroke, an erase pass or typing in progress when the upload finishes is never interrupted: the pictures wait for it to end.
-  while (gestureBusy()) {
+  // A text merely open, as a note is when it opens ready for writing (F-059), is not typing: the pictures the person dropped go in and the
+  // text closes. Typing counts while a key was pressed in the last moment, so a pause mid-sentence longer than that lets the pictures in.
+  const busy = () => pointerHeld || Boolean(leaferInk?.active) || (Boolean(leaferCanvas?.isEditingText()) && performance.now() - lastKeyAt < 1500)
+  while (busy()) {
     if (noteId !== state.activeNoteId || leaferSwitching) return dropMade()
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
@@ -1268,7 +1363,8 @@ async function placeLeaferPictures(files, point) {
 let pointerHeld = false
 for (const type of ['pointerdown']) window.addEventListener(type, () => { pointerHeld = true }, true)
 for (const type of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(type, () => { pointerHeld = false }, true)
-const gestureBusy = () => pointerHeld || Boolean(leaferInk?.active) || Boolean(leaferCanvas?.isEditingText())
+let lastKeyAt = -Infinity // when a key was last pressed (typing in progress)
+window.addEventListener('keydown', () => { lastKeyAt = performance.now() }, true)
 
 async function placeImageFiles(files, point = viewCenterPoint()) {
   const pictures = imageFiles(files)
@@ -1539,6 +1635,11 @@ function mountLeaferCanvas() {
       if (type === 'escape') setTool('select')
       if (type === 'link') updateSelectionBar()
       if (type === 'start' || type === 'end') setPageZoomLocked(type === 'start')
+      if (type === 'start' && document.querySelector('.md-editor')) { // F-059: writing opened while the page is zoomed out comes back to 100%, about the words (a sticky being placed stays as it is)
+        const words = document.querySelector('.leafer-text-editor')?.getBoundingClientRect()
+        const host = leaferHost.getBoundingClientRect()
+        backToWriting(words ? { x: words.left - host.left, y: words.top - host.top } : undefined)
+      }
     },
     // What a new text and a new sticky look like, in the model's words.
     defaults: {
@@ -1556,6 +1657,7 @@ mountLeaferCanvas()
 // The pen, highlighter and eraser (F-031). The stroke is a model object recorded as one undo step; a page grows when the pen
 // goes past the right or bottom edge.
 leaferInk = createInk({
+  onDrawn: (object) => { if (object.tool === 'pen' || object.tool === 'highlight') openPageForDrawing() }, // F-059: drawing on the page opens it up (marks on words stay at 100%)
   host: elements.paper,
   scene: leaferCanvas,
   getDoc: () => leaferEdits.doc,
@@ -1722,7 +1824,7 @@ async function selectNoteNow(id) {
     }
     setSaveState('Saved')
     renderNoteList()
-    requestAnimationFrame(openCanvasView)
+    requestAnimationFrame(() => { openCanvasView(); if (state.activeNoteType === 'canvas') startWriting(sequence) })
   } catch (error) {
     console.error(error)
     setSaveState('Could not load', true)
@@ -3553,6 +3655,9 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault()
   } else if (event.key === 'Escape' && leaferConnect?.active) {
     leaferConnect.cancel()
+  } else if (event.key === 'Escape' && !isTyping && isDrawingTool(state.tool) && state.activeNoteType === 'canvas' && window.innerWidth > 800) {
+    setTool('text') // F-059: Esc from drawing goes back to writing, at 100%
+    backToWriting()
   } else if (event.key === 'Escape' && !isTyping && state.tool !== 'select') {
     setTool('select')
   } else if (isTyping && (event.ctrlKey || event.metaKey)) {
@@ -3716,5 +3821,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by the scripts/ checks; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { voiceBoxPoint: () => pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH }), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { voiceBoxPoint: () => pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH }), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, setViewTo, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize().then(async () => { await speedTestStatus; if (speedTestInstance && new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way

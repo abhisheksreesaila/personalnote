@@ -528,3 +528,8 @@
 
 /* F-051: link mode, a press on a word links the selection to it */
 #leafer-host.is-linking, #leafer-host.is-linking * { cursor: alias !important; }
+/* F-059: while writing at 100% the page map and zoom stay quiet; they come back on hover, when zoomed, or with a drawing tool. */
+@media screen and (min-width: 801px) {
+  .page-minimap, .zoom-control { transition: opacity 200ms ease; }
+  .writing-quiet .page-minimap:not(:hover):not(:focus-within), .writing-quiet .zoom-control:not(:hover):not(:focus-within) { opacity: 0; }
+}

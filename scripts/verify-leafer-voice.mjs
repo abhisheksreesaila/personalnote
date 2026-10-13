@@ -247,7 +247,8 @@ try {
     // words still only interim are dropped
     await page.evaluate(() => window.__personalNote.selectNote(1))
     await page.waitForFunction(() => window.__personalNote.leaferEdits.doc.objects.length > 0)
-    await page.evaluate(() => window.__personalNote.leaferCanvas().clearSelection())
+    await page.waitForTimeout(800) // (a note opens ready for writing, F-059: that editor is closed here, so the words go in a new box)
+    await page.evaluate(() => { const scene = window.__personalNote.leaferCanvas(); if (scene.isEditingText()) scene.finishTextEdit(); scene.clearSelection() })
     script = [['heard but not final', 'never final']]
     n1 = puts.length
     await page.click('#voice-button')
@@ -255,6 +256,18 @@ try {
     await page.evaluate(() => window.__personalNote.selectNote(2))
     await page.waitForTimeout(1200)
     check('(switch) interim words that never became final are not kept in either note', !puts.slice(n1).some((body) => JSON.stringify(body).includes('not final')) && !JSON.stringify(puts2).includes('final') && !(await listening()), JSON.stringify([puts.slice(n1).map((b) => JSON.stringify(b).includes('not final')), puts2.length, await listening(), JSON.stringify(puts2).slice(0, 300)]))
+  }
+
+  // F-059: a note opens ready for writing, and what is said then goes on at the caret, at the end of its words
+  {
+    await page.evaluate(() => window.__personalNote.selectNote(1))
+    await page.waitForFunction(() => window.__personalNote.leaferCanvas().isEditingText(), null, { timeout: 8000 }).catch(() => {})
+    const before = await editorValue(page)
+    script = [['and then', 'and then some words']]
+    await page.click('#voice-button')
+    check('(open) dictation into a note just opened goes on at the end of its writing', Boolean(before) && await until(async () => (await editorValue(page))?.startsWith(before) && (await editorValue(page)).endsWith('and then some words')), JSON.stringify([before, await editorValue(page)]))
+    if (await page.evaluate(() => window.__personalNote.state.listening)) await page.click('#voice-button')
+    await page.waitForTimeout(400)
   }
 
   const realErrors = errors.filter((e) => !/WebSocket|8080|status of 4/.test(e))

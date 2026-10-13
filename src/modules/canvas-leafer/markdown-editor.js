@@ -254,7 +254,10 @@ export function createMarkdownEditor({ host }) {
               }
               if (update.docChanged || update.geometryChanged || update.viewportChanged) drawMarks(update.view)
             }),
-            EditorView.domEventHandlers({ keydown: (event) => event.isComposing || event.keyCode === IME_KEY }), // keys that belong to the input method
+            EditorView.domEventHandlers({
+              keydown: (event) => event.isComposing || event.keyCode === IME_KEY, // keys that belong to the input method
+              drop: (event) => Boolean(event.dataTransfer?.files?.length), // a picture dropped on the words goes on the page (the app places it), never in as text
+            }),
           ],
         }),
       })

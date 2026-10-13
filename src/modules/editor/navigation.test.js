@@ -10,6 +10,9 @@ import {
   stepZoom,
   viewForPage,
   visiblePages,
+  writingView,
+  pageView,
+  isDrawingTool,
   zoomPercent,
 } from './navigation.js'
 
@@ -143,4 +146,32 @@ test('the average load while panning counts too, not only what is on screen at t
   const content = { width: 2580, height: 4320 }
   assert.equal(chooseOpeningView([page, actual], 1212, 900, boxes, 50, content), actual)
   assert.equal(chooseOpeningView([page, actual], 1212, 900, boxes, 50), page)
+})
+
+// F-059 editor first
+const DESK = { viewW: 1200, viewH: 800, margins: { left: 140, right: 140, top: 104, bottom: 180 } }
+
+test('a note opens at 100% with its page centred and the top of its writing just under the top bar', () => {
+  const view = writingView({ ...DESK, scale: 1, page: { left: 0, top: 0, width: 860 }, text: { top: 90, height: 200 } })
+  assert.deepEqual(view, { scale: 1, x: 170, y: 104 - 90 + 32 })
+})
+
+test('writing taller than the window opens at its end, where the caret is', () => {
+  const view = writingView({ ...DESK, scale: 1, page: { left: 0, top: 0, width: 860 }, text: { top: 90, height: 2000 } })
+  assert.equal(view.y, 800 * 0.6 - 2090)
+})
+
+test('a note with no writing opens at the top of its first page', () => {
+  assert.deepEqual(writingView({ ...DESK, scale: 1, page: { left: 860, top: 0, width: 860 }, text: null }), { scale: 1, x: 600 - 1290, y: 104 })
+})
+
+test('picking a drawing tool shows the whole page the view is on', () => {
+  const view = pageView({ ...DESK, center: { x: 1300, y: 400 }, pageW: 860, pageH: 1080, columns: 2, rows: 1, min: 0.2, max: 1 })
+  const scale = Math.min((1200 - 280) / 860, (800 - 284) / 1080)
+  assert.equal(view.scale, scale)
+  assert.ok(Math.abs(view.x + 860 * scale - (140 + (920 - 860 * scale) / 2)) < 1e-9, 'the second page is centred')
+})
+
+test('only drawing tools open the page up', () => {
+  assert.deepEqual(['pen', 'highlight', 'eraser', 'shape', 'sticky', 'connect', 'select', 'text', 'hand'].map(isDrawingTool), [true, true, true, true, true, true, false, false, false])
 })

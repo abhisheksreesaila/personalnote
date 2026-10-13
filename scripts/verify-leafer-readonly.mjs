@@ -1,6 +1,6 @@
 // F-027 read-only checks, in the real app (Vite dev server on port 4535, mocked in-memory /api, headless Chromium):
 //   - renaming a note saves that note's own content and page state back untouched, to its own id
-//   - a brand-new note holds no ghost text box, typing saves no text, and the next note switch is clean
+//   - a brand-new note holds no ghost text box (it opens ready for writing; what is typed is saved), and the next note switch is clean
 //   - a save is refused when the content on hand belongs to another note
 //   - Print is off (preview does not open, a short notice shows)
 //   - refreshText re-places text that was measured before fonts loaded
@@ -80,17 +80,17 @@ try {
   await page.waitForTimeout(2000)
   puts.length = 0
 
-  // 3. a new note: typing saves no text
+  // 3. a new note: no ghost text box; it opens ready for writing and what is typed is saved (F-059 editor first)
   await page.evaluate(() => window.__personalNote.createNote())
   await page.waitForTimeout(1200)
   const fresh = await page.evaluate(() => ({ active: window.__personalNote.state.activeNoteId, objects: window.__personalNote.leaferEdits.doc.objects.length, editing: window.__personalNote.leaferCanvas().isEditingText() }))
-  check('a new note opens empty, with no text box being edited', fresh.objects === 0 && !fresh.editing, JSON.stringify(fresh))
+  check('a new note opens empty (no ghost text box), ready for writing', fresh.objects === 0 && fresh.editing, JSON.stringify(fresh)) // F-059: the caret is ready; nothing is made until words are typed
   await page.keyboard.type('hello typed')
   await page.mouse.click(600, 400)
   await page.keyboard.type('more typed')
   await page.waitForTimeout(1500)
   const textSaved = puts.some((put) => JSON.stringify(put.body.content ?? '').includes('typed'))
-  check('typing on a new note saves no text', !textSaved, JSON.stringify({ textSaved }))
+  check('typing on a new note saves what is typed', textSaved, JSON.stringify({ textSaved }))
   puts.length = 0
 
   // 4. switching back draws note one

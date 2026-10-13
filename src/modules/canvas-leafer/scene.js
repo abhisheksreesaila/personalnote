@@ -919,7 +919,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const plainOverlay = createTextOverlay({ host: editorLayer })
   let markdownEditor = null
   let activeEditor = plainOverlay
-  const loadEditor = () => import('./markdown-editor.js').then((module) => { markdownEditor ??= module.createMarkdownEditor({ host: editorLayer }) }).catch(() => {})
+  let editorLoading = null
+  const loadEditor = () => (editorLoading ??= import('./markdown-editor.js').then((module) => { markdownEditor ??= module.createMarkdownEditor({ host: editorLayer }) }).catch(() => {}))
   if (globalThis.requestIdleCallback) requestIdleCallback(() => loadEditor(), { timeout: 4000 }) // (when the canvas is idle: never in the way of a pan)
   else setTimeout(loadEditor, 1500)
   const overlay = {
@@ -1238,6 +1239,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
 
   const textApi = {
     isEditingText: () => overlay.isOpen,
+    // Resolves once the formatting editor is here (fetched now if it was not yet), so writing can start in it rather than in the plain one.
+    whenEditorReady: () => loadEditor(),
     // Before a merge: the words typed so far go into the document now (not in the middle of a composition, which cannot be read yet).
     // Returns the id of the object being typed (it counts as the user's in the merge), or null.
     flushText() {

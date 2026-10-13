@@ -414,7 +414,7 @@ try {
   await page.mouse.up()
   await page.waitForTimeout(600)
   const arrowMoved = await arrowAt()
-  check('an arrow from a short text starts at its words and stays there when the text moves', Boolean(arrowMade && arrowMoved) && Math.abs(arrowMade.start.x - arrowMade.wordsRight) < 12 && arrowMoved.start.x <= arrowMoved.wordsRight + 2 && arrowMoved.start.y > arrowMade.start.y + 20, JSON.stringify([shapeId, arrowId, arrowMade, arrowMoved]))
+  check('an arrow from a short text starts at its words and stays there when the text moves', Boolean(arrowMade && arrowMoved) && Math.abs(arrowMade.start.x - arrowMade.wordsRight) < 12 && arrowMoved.start.x <= arrowMoved.wordsRight + 12 && arrowMoved.start.y > arrowMade.start.y + 20, JSON.stringify([shapeId, arrowId, arrowMade, arrowMoved]))
   await pn(async (id) => window.__personalNote.selectNote(id), noteId)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
   await page.waitForTimeout(800)

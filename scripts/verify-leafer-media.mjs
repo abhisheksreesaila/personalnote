@@ -173,9 +173,11 @@ try {
     return page.screenshot({ clip: { x: rect.x + box.x, y: rect.y + box.y, width: Math.round(box.width), height: Math.round(box.height) } })
   }
   const shotBefore = await pictureShot(first.id)
+  const viewBefore = await pn(page, () => window.__personalNote.leaferCanvas().view())
   await page.reload()
   await page.waitForFunction(() => window.__personalNote?.leaferCanvas && document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   if (!(await pn(page, (id) => window.__personalNote.state.activeNoteId === id, noteId))) { await pn(page, (id) => window.__personalNote.selectNote(id), noteId); await page.waitForTimeout(800) }
+  await pn(page, (view) => window.__personalNote.setViewTo(view), viewBefore); await page.waitForTimeout(1300) // (the scroll marks it shows fade first) (an empty note opens at 100% for writing, F-059, and one with a picture as an overview: compare at the same view)
   await settle(page)
   const reloaded = (await images(page))[0]
   const shotAfter = await pictureShot(first.id)

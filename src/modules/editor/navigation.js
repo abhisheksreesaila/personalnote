@@ -102,3 +102,25 @@ export function scrollThumbs({ view, viewW, viewH, contentW, contentH, margins }
     y: thumb(view.y, viewH, contentH * view.scale, margins.top, margins.bottom),
   }
 }
+
+// ---- editor first (F-059): a note opens like a document, and picking a drawing tool opens the page up like a whiteboard
+const DRAWING_TOOLS = new Set(['pen', 'highlight', 'eraser', 'shape', 'sticky', 'connect'])
+export const isDrawingTool = (tool) => DRAWING_TOOLS.has(tool)
+
+// The view for writing, at `scale` (100%): the page column the writing is on centred, and the writing's top just under the top bar, or,
+// when it is taller than the window, its end (where the caret goes) a little above the middle. `text` is { top, height } in world units, or
+// null for a note with nothing written yet (the top of `page`).
+export function writingView({ viewW, viewH, margins, scale, page, text }) {
+  const x = viewW / 2 - (page.left + page.width / 2) * scale
+  if (!text) return { scale, x, y: margins.top - page.top * scale }
+  const fits = text.height * scale <= viewH - margins.top - margins.bottom
+  return { scale, x, y: fits ? margins.top - (text.top - 32) * scale : viewH * 0.6 - (text.top + text.height) * scale }
+}
+
+// The view that shows the whole page under the world point `center`, fitted inside the margins.
+export function pageView({ viewW, viewH, margins, center, pageW, pageH, columns, rows, min, max }) {
+  const column = Math.min(columns - 1, Math.max(0, Math.floor(center.x / pageW)))
+  const row = Math.min(rows - 1, Math.max(0, Math.floor(center.y / pageH)))
+  const fitted = fitView({ viewW, viewH, contentW: pageW, contentH: pageH, margins, min, max })
+  return { scale: fitted.scale, x: fitted.x - column * pageW * fitted.scale, y: fitted.y - row * pageH * fitted.scale }
+}

@@ -685,6 +685,8 @@ try {
     // bottom: lines pile up until the box nears the bottom edge; the page appears while the session is still open
     await scene(tp, 'createText', { x: 100, y: 800 })
     await tp.waitForSelector('.leafer-text-editor')
+    await tp.waitForFunction(() => window.__personalNote.leaferCanvas().view().scale === 1) // (writing opened on a zoomed-out page glides to 100%, F-059: measured once it is there)
+    await tp.waitForTimeout(200)
     const before = await editor()
     let grewAt = null
     let lines = 0

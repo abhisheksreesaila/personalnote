@@ -10,7 +10,7 @@
 //   ink.setTool(tool)   shows the surface for 'pen', 'highlight' and 'eraser', hides it for anything else
 import { createEraser, drawOp, HIGHLIGHT_ALPHA, inkObject, topZ } from './ink-model.js'
 
-export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, setPages, cursor }) {
+export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, setPages, cursor, onDrawn = () => {} }) {
   const surface = document.createElement('div')
   surface.className = 'ink-surface'
   surface.hidden = true
@@ -169,6 +169,7 @@ export function createInk({ host, scene, getDoc, getBrush, getPages, growPages, 
     scene.flush()
     hideLive()
     scene.inkCommit(drawOp(object, pagesOp()))
+    onDrawn(object) // a drawing of its own (not a mark on words)
   }
 
   // A stroke the system took away (a second finger for a pinch, the window lost the pointer): nothing is kept.

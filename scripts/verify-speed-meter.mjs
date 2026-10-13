@@ -54,6 +54,9 @@ async function open(width = 1440, height = 900, skin = 'crayon', query = '') {
   await page.goto(new URL('notes' + query, baseUrl).href)
   await page.waitForFunction(() => window.__personalNote?.leaferCanvas() && document.querySelector('.note-list-item.active'), null, { timeout: 30000 })
   await page.waitForTimeout(900)
+  // A note opens ready for writing (F-059); the app shortcuts wait until the writing is left, as a person would with Esc.
+  await page.waitForTimeout(1200)
+  await page.evaluate(() => { const scene = window.__personalNote.leaferCanvas(); if (scene.isEditingText()) scene.finishTextEdit() })
   return { context, page }
 }
 
