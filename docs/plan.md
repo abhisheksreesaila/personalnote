@@ -383,7 +383,8 @@ Carry from the F-056 review: the spike's keychain item has no access control (To
 - [x] a whole note can be marked secure; its content is encrypted at rest (AES-GCM, key from the keychain on Mac, from a passphrase on Linux); its title stays readable (assumed)
 - [x] search, Markdown export and the agent CLI never see its words; backups carry it still encrypted
 - [x] a one-time recovery key is shown when the first secure note is made, and it opens the notes on another machine
-## F-058 Secure notes: lock, unlock, never on a shared screen [todo]
+## F-058 Secure notes: lock, unlock, never on a shared screen [doing]
+Design: docs/design/secure-notes.md (Option B, quiet cover; captain 2026-10-13)
 Needs: F-057 · Design first (designer skill)
 Carry from F-057: the app's api() must send the x-personal-note header when reading an unlocked secure note (otherwise it only sees the locked view); reload a note after unlock before saving it; show the recovery key once with a clear warning; after a recovery unlock on Linux, ask for a passphrase for this machine.
 - [ ] a secure note shows its own colour and a lock in the note list, and opens locked
