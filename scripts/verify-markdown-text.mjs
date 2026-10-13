@@ -385,8 +385,8 @@ try {
     if ((await darkAt(spot)) <= 20) problems.push(`no underline pixels under the word (${await darkAt(spot)})`)
     for (const old of away) if ((await darkAt(old)) !== 0) problems.push(`underline pixels at the old place ${JSON.stringify(old)}`)
     const drawn = info.drawnMarks
-    const wantX = view.x + now.geometry.x + w.x + mark.anchor.dx
-    const wantY = view.y + now.geometry.y + w.y + mark.anchor.dy
+    const wantX = view.x + view.scale * (now.geometry.x + w.x + mark.anchor.dx)
+    const wantY = view.y + view.scale * (now.geometry.y + w.y + mark.anchor.dy)
     if (drawn.length !== 1 || Math.abs(drawn[0].x - wantX) > 1 || Math.abs(drawn[0].y - wantY) > 1) problems.push(`the drawn mark is at ${JSON.stringify(drawn)}, the model says ${wantX},${wantY}`)
     return problems
   }
@@ -538,7 +538,7 @@ try {
   const zip = path.join(scratch, 'export.zip')
   fs.writeFileSync(zip, Buffer.from(await (await fetch(`${API}/api/export/markdown`)).arrayBuffer()))
   const exported = spawnSync('unzip', ['-p', zip], { encoding: 'utf8' }).stdout ?? ''
-  check('Markdown export writes the Markdown as underlinedText', exported.includes('# Lisbon trip') && exported.includes('**harbour**'), exported.slice(0, 300))
+  check('Markdown export writes the Markdown as typed', exported.includes('# Lisbon trip') && exported.includes('**harbour**'), exported.slice(0, 300))
 
   if (process.env.PN_SHOT) { await pn(() => window.__personalNote.leaferCanvas().setView({ x: 120, y: 40, scale: 1 })); await page.waitForTimeout(600); await page.screenshot({ path: process.env.PN_SHOT }) }
   check('no errors on the page', errors.length === 0, errors.join(' | '))
