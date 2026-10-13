@@ -357,6 +357,7 @@ Needs: F-048..F-051 (F-052 if ready)
 - [x] Mac and Linux packages as a GitHub pre-release: v0.5.0-preview.2 https://github.com/abhisheksreesaila/personalnote/releases/tag/v0.5.0-preview.2
 ## F-055 Preview 2 fixes: selecting text, underlines that stay [done]
 Reviewed: PASS (follow-ups: middle-button pan and touch on the words being typed as before; the editor layer never scrolls; underline vs handwriting boundary tests).
+Shipped in v0.5.0-preview.3 https://github.com/abhisheksreesaila/personalnote/releases/tag/v0.5.0-preview.3
 Known: verify-leafer-hybrid's group-drag and typing-grid checks fail intermittently on the released code too (2 of 4 runs); needs its own look.
 Captain (2026-10-12, after preview 2): with the Text tool the words could be typed but not selected with the mouse; an underline under the text stayed behind when the text moved.
 Needs: F-049, F-050
