@@ -24,10 +24,11 @@ KEY_BYTES = 32
 NONCE_BYTES = 12
 SEAL_VERSION = 1
 WRAP_VERSION = 1
-SCRYPT_N = 2**15
+SCRYPT_N = 2**17  # ~0.25 s and 128 MB on a 2026 laptop
 SCRYPT_R = 8
 SCRYPT_P = 1
 SALT_BYTES = 16
+SCRYPT_MAXMEM = 2**28
 MIN_PASSPHRASE_LENGTH = 8
 RECOVERY_BYTES = 20  # 160 bits, written as 8 groups of 4 letters and digits
 _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -56,15 +57,20 @@ def new_key_id() -> str:
 # ---- notes ----------------------------------------------------------------------------------------
 
 
-def _note_aad(key_id: str) -> bytes:
-    return f"personal-note:secure-note:v{SEAL_VERSION}:{key_id}".encode()
+def _note_aad(key_id: str, seal_id: str) -> bytes:
+    """Bound into every sealed blob: the key and this note's own seal id, so a blob cannot be swapped or replayed into another note."""
+    return f"personal-note:secure-note:v{SEAL_VERSION}:{key_id}:{seal_id}".encode()
 
 
-def seal(data_key: bytes, key_id: str, payload: dict) -> str:
+def new_seal_id() -> str:
+    return f"seal_{secrets.token_hex(12)}"
+
+
+def seal(data_key: bytes, key_id: str, seal_id: str, payload: dict) -> str:
     """Encrypt a note's words (content, page state, format) into one text blob: version, nonce, ciphertext and tag."""
     nonce = secrets.token_bytes(NONCE_BYTES)
     plain = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    return b64(bytes([SEAL_VERSION]) + nonce + AESGCM(data_key).encrypt(nonce, plain, _note_aad(key_id)))
+    return b64(bytes([SEAL_VERSION]) + nonce + AESGCM(data_key).encrypt(nonce, plain, _note_aad(key_id, seal_id)))
 
 
 def is_sealed_text(value) -> bool:
@@ -77,12 +83,12 @@ def is_sealed_text(value) -> bool:
     return len(raw) > 1 + NONCE_BYTES + 16 and raw[0] == SEAL_VERSION
 
 
-def unseal(data_key: bytes, key_id: str, sealed: str) -> dict:
+def unseal(data_key: bytes, key_id: str, seal_id: str, sealed: str) -> dict:
     try:
         raw = unb64(sealed)
         if raw[0] != SEAL_VERSION:
             raise DecryptError("This secure note was saved by a newer version")
-        payload = AESGCM(data_key).decrypt(raw[1 : 1 + NONCE_BYTES], raw[1 + NONCE_BYTES :], _note_aad(key_id))
+        payload = AESGCM(data_key).decrypt(raw[1 : 1 + NONCE_BYTES], raw[1 + NONCE_BYTES :], _note_aad(key_id, seal_id))
         value = json.loads(payload.decode("utf-8"))
     except DecryptError:
         raise
@@ -127,13 +133,23 @@ def new_scrypt_params(cost: int = SCRYPT_N) -> dict:
     return {"kdf": "scrypt", "n": cost, "r": SCRYPT_R, "p": SCRYPT_P}
 
 
-def passphrase_wrapping_key(passphrase: str, salt: bytes, params: dict) -> bytes:
-    n, r, p = int(params["n"]), int(params["r"]), int(params["p"])
-    if n < 2 or n & (n - 1) or r < 1 or p < 1 or n > 2**20 or r > 32 or p > 16:
+def valid_scrypt_params(params) -> tuple[int, int, int]:
+    """(n, r, p) if the stored settings are sane and fit the memory limit (128*r*n bytes), else DecryptError."""
+    try:
+        values = [params[key] for key in ("n", "r", "p")]
+    except (TypeError, KeyError):
+        raise DecryptError("The stored passphrase settings are not valid") from None
+    if any(type(value) is not int for value in values):
         raise DecryptError("The stored passphrase settings are not valid")
-    return hashlib.scrypt(
-        passphrase.encode("utf-8"), salt=salt, n=n, r=r, p=p, dklen=KEY_BYTES, maxmem=2**28
-    )
+    n, r, p = values
+    if n < 2 or n & (n - 1) or r < 1 or p < 1 or r > 32 or p > 16 or 128 * r * n > SCRYPT_MAXMEM:
+        raise DecryptError("The stored passphrase settings are not valid")
+    return n, r, p
+
+
+def passphrase_wrapping_key(passphrase: str, salt: bytes, params: dict) -> bytes:
+    n, r, p = valid_scrypt_params(params)
+    return hashlib.scrypt(passphrase.encode("utf-8"), salt=salt, n=n, r=r, p=p, dklen=KEY_BYTES, maxmem=SCRYPT_MAXMEM)
 
 
 def check_passphrase(passphrase) -> str:

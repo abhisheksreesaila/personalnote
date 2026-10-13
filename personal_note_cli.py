@@ -281,6 +281,7 @@ def command_notes_create(service: NoteService, args: argparse.Namespace) -> dict
 
 
 def command_notes_delete(service: NoteService, args: argparse.Namespace) -> dict:
+    service.refuse_agent_on_secure(args.note_id)  # agents never delete a secure note (the app can)
     service.delete_note(args.note_id)
     return {"ok": True, "id": args.note_id}
 

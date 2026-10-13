@@ -102,6 +102,7 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
     for column, definition in (
         ("secure", "INTEGER NOT NULL DEFAULT 0"),
         ("secure_key_id", "TEXT"),
+        ("seal_id", "TEXT"),
         ("sealed", "TEXT"),
     ):
         if column not in note_columns:

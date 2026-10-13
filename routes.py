@@ -330,9 +330,13 @@ def create_app(
         return JSONResponse(service.list_notes())
 
     @app.get("/api/notes/{note_id}")
-    def get_note(note_id: int):
+    def get_note(request, note_id: int):
         try:
-            return JSONResponse(service.get_note(note_id))
+            note = service.get_note(note_id)
+            if note["secure"] and not note["locked"] and not from_this_app(request):
+                # A casual local request (curl) gets the locked view; the words go only to this app.
+                note = {**note, "content": None, "pageState": None, "locked": True}
+            return JSONResponse(note)
         except Exception as error:
             return json_error(error)
 
@@ -374,6 +378,16 @@ def create_app(
         body = await payload(request)
         try:
             return JSONResponse(service.unlock_secure(passphrase=body.get("passphrase"), recovery_key=body.get("recoveryKey")))
+        except Exception as error:
+            return json_error(error)
+
+    @app.post("/api/secure/passphrase")
+    async def secure_add_passphrase(request):
+        """Linux: add a passphrase wrap for the notes unlocked now (after a restore with the recovery key)."""
+        if not from_this_app(request):
+            return forbidden()
+        try:
+            return JSONResponse(service.add_passphrase((await payload(request)).get("passphrase")))
         except Exception as error:
             return json_error(error)
 

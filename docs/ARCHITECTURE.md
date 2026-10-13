@@ -209,7 +209,7 @@ LeaferJS is the canvas engine and the only one: F-036 removed Fabric.js (the dep
 | `POST` | `/api/import/vault` | Merge-only import of a vault ZIP (needs the app header; raw body) |
 | `GET` | `/api/media/{sha256}.{ext}` | A content-addressed picture or SVG; any other name is a 404 |
 | `GET` | `/api/secure/status` | Secure notes: backend (`touchid`/`passphrase`), configured, unlocked |
-| `POST` | `/api/secure/unlock`, `/api/secure/lock` | Unlock (Touch ID, `{passphrase}` or `{recoveryKey}`) or lock; app header needed |
+| `POST` | `/api/secure/unlock`, `/api/secure/lock`, `/api/secure/passphrase` | Unlock (Touch ID, `{passphrase}` or `{recoveryKey}`) or lock; app header needed |
 | `POST/DELETE` | `/api/notes/{id}/secure` | Mark a note secure (first time returns `recoveryKey` once) or take it out |
 | `GET` | `/api/changes?since=` | Cheap change feed plus active agent presence, polled by the open app |
 

@@ -20,6 +20,7 @@ from services import (
     SecureLockedError,
     SecureNoteAgentError,
     SecureSetupError,
+    WorkspaceImportError,
 )
 from vault import export_vault_archive
 
@@ -431,7 +432,7 @@ class ExportAndBackupTests(SecureCase):
             if note.get("secure"):
                 note["sealed"] = 7
         fresh = self.make_service(self.root / "fresh2.db", FakeMac())
-        with self.assertRaises(Exception):
+        with self.assertRaises(WorkspaceImportError):
             import_workspace_backup(fresh, backup)
         self.assertEqual([note["title"] for note in fresh.list_notes()], [])
 
@@ -562,6 +563,157 @@ class RouteTests(SecureCase):
         result = self.client.delete(f"/api/notes/{self.note['id']}/secure")
         self.assertEqual(result.status_code, 200)
         self.assertFalse(self.client.get(f"/api/notes/{self.note['id']}").json()["secure"])
+
+
+class ReviewFixTests(SecureCase):
+    def setUp(self):
+        super().setUp()
+        self.note = self.page_note()
+        self.recovery = self.service.mark_secure(self.note["id"])["recoveryKey"]
+
+    def backup(self):
+        return json.loads(json.dumps(workspace_backup(self.service)))
+
+    def linux_backup(self):
+        linux = self.make_service(self.root / "src-linux.db", FakeLinux())
+        note = self.page_note(linux)
+        result = linux.mark_secure(note["id"], passphrase=PASSPHRASE)
+        return linux, json.loads(json.dumps(workspace_backup(linux))), result["recoveryKey"]
+
+    # 1: key rows in a backup are validated
+    def test_import_refuses_secure_key_rows_that_could_break_unlocking(self):
+        _linux, backup, _recovery = self.linux_backup()
+        cases = {
+            "salt null": lambda k: k.update(salt=None),
+            "params null": lambda k: k.update(params=None),
+            "oversize n": lambda k: k.update(params={"kdf": "scrypt", "n": 2**25, "r": 8, "p": 1}),
+            "oversize memory": lambda k: k.update(params={"kdf": "scrypt", "n": 2**18, "r": 32, "p": 1}),
+            "not a power of two": lambda k: k.update(params={"kdf": "scrypt", "n": 1000, "r": 8, "p": 1}),
+            "string n": lambda k: k.update(params={"kdf": "scrypt", "n": "big", "r": 8, "p": 1}),
+        }
+        for name, damage in cases.items():
+            damaged = json.loads(json.dumps(backup))
+            damage(next(k for k in damaged["secureKeys"] if k["kind"] == "passphrase"))
+            with self.assertRaises(WorkspaceImportError, msg=name):
+                import_workspace_backup(self.make_service(self.root / f"v-{abs(hash(name))}.db", FakeMac()), damaged)
+        damaged = json.loads(json.dumps(backup))
+        next(k for k in damaged["secureKeys"] if k["kind"] == "recovery")["salt"] = None
+        with self.assertRaises(WorkspaceImportError):
+            import_workspace_backup(self.make_service(self.root / "v-rec.db", FakeMac()), damaged)
+
+    def test_a_bad_stored_row_never_breaks_unlocking(self):
+        import sqlite3
+        self.service.lock_secure()
+        with sqlite3.connect(self.database_path) as connection:
+            connection.execute("INSERT INTO secure_keys (key_id, kind, version, salt, params, wrapped) VALUES ('key_x', 'passphrase', 1, NULL, NULL, 'AAAA')")
+            connection.execute("INSERT INTO secure_keys (key_id, kind, version, salt, params, wrapped) VALUES ('key_y', 'recovery', 1, NULL, NULL, 'AAAA')")
+            connection.execute("INSERT INTO secure_keys (key_id, kind, version, salt, params, wrapped) VALUES ('key_z', 'keychain', 1, '!!', 'junk', '!!')")
+        self.service.unlock_secure()
+        self.service.lock_secure()
+        self.service.unlock_secure(recovery_key=self.recovery)
+        self.assertTrue(self.service.secure_status()["unlocked"])
+
+    # 2: a restored machine gets its own wrap
+    def test_a_recovery_unlock_on_a_mac_adds_this_macs_own_wrap(self):
+        other_mac = FakeMac()
+        fresh = self.make_service(self.root / "restored.db", other_mac)
+        import_workspace_backup(fresh, self.backup())
+        with self.assertRaises(SecureAuthError):
+            fresh.unlock_secure()
+        status = fresh.unlock_secure(recovery_key=self.recovery)
+        self.assertTrue(status["deviceWrapAdded"])
+        fresh.lock_secure()
+        fresh.unlock_secure()  # Touch ID alone now opens them
+        self.assertTrue(fresh.secure_status()["unlocked"])
+
+    def test_a_declined_touch_id_still_unlocks_by_recovery_but_adds_no_wrap(self):
+        other_mac = FakeMac(approve=False)
+        fresh = self.make_service(self.root / "restored2.db", other_mac)
+        import_workspace_backup(fresh, self.backup())
+        status = fresh.unlock_secure(recovery_key=self.recovery)
+        self.assertTrue(status["unlocked"])
+        self.assertFalse(status["deviceWrapAdded"])
+
+    def test_a_recovery_unlock_with_a_passphrase_adds_a_linux_wrap(self):
+        fresh = self.make_service(self.root / "restored3.db", FakeLinux())
+        import_workspace_backup(fresh, self.backup())
+        with self.assertRaises(SecureSetupError):
+            fresh.unlock_secure(recovery_key=self.recovery, passphrase="short")
+        self.assertFalse(fresh.secure_status()["unlocked"])
+        status = fresh.unlock_secure(recovery_key=self.recovery, passphrase=PASSPHRASE)
+        self.assertTrue(status["deviceWrapAdded"])
+        fresh.lock_secure()
+        fresh.unlock_secure(passphrase=PASSPHRASE)
+        self.assertTrue(fresh.secure_status()["unlocked"])
+
+    def test_a_passphrase_can_be_added_later_while_unlocked_on_linux_only(self):
+        fresh = self.make_service(self.root / "restored4.db", FakeLinux())
+        import_workspace_backup(fresh, self.backup())
+        with self.assertRaises(SecureLockedError):
+            fresh.add_passphrase(PASSPHRASE)
+        fresh.unlock_secure(recovery_key=self.recovery)
+        fresh.add_passphrase(PASSPHRASE)
+        fresh.lock_secure()
+        fresh.unlock_secure(passphrase=PASSPHRASE)
+        self.assertTrue(fresh.secure_status()["unlocked"])
+        with self.assertRaises(SecureSetupError):
+            self.service.add_passphrase(PASSPHRASE)  # a Mac uses Touch ID instead
+
+    def test_marking_refuses_a_passphrase_it_would_not_store(self):
+        with self.assertRaises(SecureSetupError):
+            self.service.mark_secure(self.page_note(title="Second")["id"], passphrase=PASSPHRASE)
+        mac = self.make_service(self.root / "mac2.db", FakeMac())
+        with self.assertRaises(SecureSetupError):
+            mac.mark_secure(self.page_note(mac)["id"], passphrase=PASSPHRASE)
+
+    # 3: each sealed blob is bound to its note
+    def test_swapping_sealed_blobs_between_notes_fails(self):
+        import sqlite3
+        other = self.page_note(title="Other", markdown="other ZEBRA-OTHER")
+        self.service.mark_secure(other["id"])
+        with sqlite3.connect(self.database_path) as connection:
+            rows = dict(connection.execute("SELECT id, sealed FROM notes WHERE secure = 1").fetchall())
+            connection.execute("UPDATE notes SET sealed = ? WHERE id = ?", (rows[other["id"]], self.note["id"]))
+        with self.assertRaises(SecureAuthError):
+            self.service.get_note(self.note["id"])
+
+    def test_the_seal_id_travels_in_a_backup_and_is_required(self):
+        backup = self.backup()
+        secure = [n for n in backup["notes"] if n.get("secure")][0]
+        self.assertTrue(secure["sealId"])
+        del secure["sealId"]
+        with self.assertRaises(WorkspaceImportError):
+            import_workspace_backup(self.make_service(self.root / "nos.db", FakeMac()), backup)
+
+    # 4: agents cannot delete
+    def test_the_cli_will_not_delete_a_secure_note(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = cli_main(["--database", str(self.database_path), "notes", "delete", str(self.note["id"])])
+        self.assertEqual(code, 2)
+        self.assertEqual(self.service.get_note(self.note["id"])["id"], self.note["id"])
+
+    # extras
+    def test_a_save_without_words_cannot_wipe_a_secure_note(self):
+        opened = self.service.get_note(self.note["id"])
+        for content in (None, "missing"):
+            body = {"title": "Cards", "revision": opened["revision"]}
+            if content is None:
+                body["content"] = None
+            with self.assertRaises(SecureSetupError):
+                self.service.update_note(self.note["id"], body)
+        self.assertEqual(self.service.get_note(self.note["id"])["content"]["markdown"], f"my card is {SECRET}")
+
+    def test_the_words_need_the_app_header_over_http(self):
+        app = create_app(self.root / "hdr.db", secure_platform=FakeMac(), bound_host=None)
+        client = TestClient(app, headers={"x-personal-note": "1"})
+        note = client.post("/api/notes", json={"title": "T", "noteType": "page"}).json()
+        client.put(f"/api/notes/{note['id']}", json={"title": "T", "content": {"markdown": "hello ZEBRA"}, "revision": note["revision"]})
+        client.post(f"/api/notes/{note['id']}/secure", json={})
+        self.assertEqual(client.get(f"/api/notes/{note['id']}").json()["content"]["markdown"], "hello ZEBRA")
+        casual = TestClient(app).get(f"/api/notes/{note['id']}").json()
+        self.assertTrue(casual["locked"])
+        self.assertIsNone(casual["content"])
 
 
 if __name__ == "__main__":
