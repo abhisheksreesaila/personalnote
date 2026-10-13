@@ -412,7 +412,7 @@ Reported on the Mac (preview 4): underline a word, move the text; the underline 
 Reported on the Mac (preview 4): a new notebook's dialog could not be cancelled. Reviewed: PASS (4f31486); checked in Chromium (WebKit does not start on the build machine).
 - [x] Cancel, X and Esc close it with the name empty, and make no notebook
 - [x] Enter with a name creates it (it used to cancel)
-## F-064 A real Inbox [todo]
+## F-064 A real Inbox [doing]
 Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Needs: design
 - [ ] new notes and quick notes land in Inbox (one built-in place, not a notebook you can rename or delete) until filed; existing notes stay where they are
 - [ ] Inbox's count is its unfiled notes and it empties as notes are filed; a note made with a notebook's + goes into that notebook
