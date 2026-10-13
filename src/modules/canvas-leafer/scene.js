@@ -29,7 +29,7 @@ import { clearMarkdownLayouts, layoutMarkdown } from './markdown-layout.js'
 import { anchorStroke, mapMarks, placeMarks, quoteOf, wholeWords } from './text-marks.js'
 import { followLinks, linkRanges, linkWord } from './text-links.js'
 import { ERASER_RADIUS, samplePath } from './ink-model.js'
-import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal, writingWidth } from './text-ops.js'
+import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal, writingBox } from './text-ops.js'
 import { prettifySelection } from '../editor/prettify.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
@@ -1261,7 +1261,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       let object = newText({ id: newId(), z: nextZ(doc), point, style: defaults.text?.() ?? {} })
       // F-048: new text is Markdown, in a box that wraps at this width: by default at the right margin of the page it starts on, so writing
       // flows down the page. `plain` makes the plain point text made before (as wide as its words; still edited in notes that have one).
-      if (!options.plain) object = { ...object, format: 'markdown', mode: 'box', geometry: { ...object.geometry, width: options.width ?? writingWidth(point) } }
+      if (!options.plain) {
+        const box = options.width ? { x: point.x, width: options.width } : writingBox(point) // (a click too near the margin starts further left)
+        object = { ...object, format: 'markdown', mode: 'box', geometry: { ...object.geometry, x: box.x, width: box.width } }
+      }
       else if (options.width) object = { ...object, mode: 'box', geometry: { ...object.geometry, width: options.width } }
       return startTextEdit(object, { select: options.select ?? true })
     },

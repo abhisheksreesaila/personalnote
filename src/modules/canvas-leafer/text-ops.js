@@ -14,12 +14,16 @@ const byId = (doc, id) => doc.objects.find((object) => object?.id === id)
 // From a page point to the right margin of the page it is on: the width a new text wraps at, while it is written and after (F-069), so its
 // lines never run past the page edge. Never narrower than a short line (past the margin the pages grow as usual).
 export const PAGE_MARGIN = 56
-export function writingWidth(point, { pageW = PAGE.width, margin = PAGE_MARGIN, min = 200 } = {}) {
+// A click closer to the margin than a short line is moved left, so the text starts where a short line still ends at the margin.
+export function writingBox(point, { pageW = PAGE.width, margin = PAGE_MARGIN, min = 200 } = {}) {
   const column = Math.max(0, Math.floor(point.x / pageW))
-  return Math.max(min, Math.round((column + 1) * pageW - margin - point.x))
+  const right = (column + 1) * pageW - margin
+  const x = Math.min(point.x, right - min)
+  return { x, width: Math.round(right - x) }
 }
+export const writingWidth = (point, options) => writingBox(point, options).width
 
-export const nextZ =(doc) => doc.objects.reduce((top, object, index) => Math.max(top, (object?.z ?? index) + 1), 0)
+export const nextZ = (doc) => doc.objects.reduce((top, object, index) => Math.max(top, (object?.z ?? index) + 1), 0)
 
 // A text made by a click: the way the former Fabric engine makes one (an IText, so a point text that is as wide as its words).
 // `style` is the model's text style (fontFamily, fontSize, color ...).

@@ -23,10 +23,11 @@ function installStyle() {
 .md-editor { position: absolute; left: 0; top: 0; transform-origin: 0 0; z-index: 5; -webkit-text-size-adjust: none; }
 .md-editor .cm-editor { background: transparent; }
 .md-editor .cm-editor.cm-focused { outline: none; }
-.md-editor .cm-scroller { display: block; overflow: visible; font-family: inherit; line-height: inherit; }
+.md-editor .cm-scroller { overflow: visible; font-family: inherit; line-height: inherit; }
+/* A wrapped text is exactly as wide as its wrap width: the flex item may shrink below its longest word (min-width: 0), which its break-word wrapping then breaks */
 .md-editor.md-wrapped .cm-editor, .md-editor.md-wrapped .cm-content { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 .md-editor .md-edge { position: absolute; top: -3px; bottom: -3px; right: -1px; width: 1px; pointer-events: none; z-index: 2;
-  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--sk-muted, #6b6257) 38%, transparent) 14%, color-mix(in srgb, var(--sk-muted, #6b6257) 38%, transparent) 86%, transparent); }
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--sk-muted, ${QUIET_COLOR}) 38%, transparent) 14%, color-mix(in srgb, var(--sk-muted, ${QUIET_COLOR}) 38%, transparent) 86%, transparent); }
 @media print { .md-editor .md-edge { display: none; } }
 .md-editor .cm-content { padding: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; font-kerning: normal; }
 .md-editor .cm-line { padding: 0; position: relative; letter-spacing: 0; }
