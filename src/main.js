@@ -503,7 +503,7 @@ const state = {
   activeNoteId: null,
   activeNoteType: 'canvas',
   selectedNotebookId: null,
-  sectionOpen: {},
+  sectionOpen: readFolded(safeStorage()),
   pages: { columns: 1, rows: 1 },
   tool: 'text',
   color: '#20201e',
@@ -2042,6 +2042,7 @@ function revealNotebook(notebookId) {
 
 function setSectionOpen(id, open) {
   state.sectionOpen[id] = open
+  writeFolded(safeStorage(), state.sectionOpen)
 }
 
 

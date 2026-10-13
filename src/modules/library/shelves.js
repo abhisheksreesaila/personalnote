@@ -155,6 +155,17 @@ export function mountShelves(root, options) {
   // dragenter says yes to a drop target too: the ring appears the moment the pointer arrives, and engines that send dragover only now and then still see a valid target.
   const hovering = (event) => {
     if (!drag) return
+    // Hovering a folded section's head springs it open after half a second.
+    const head = event.target.closest?.('[data-fold]')
+    if (head && !options.isOpen(head.dataset.fold)) {
+      if (spring?.id !== head.dataset.fold) {
+        clearSpring()
+        const id = head.dataset.fold
+        spring = { id, timer: setTimeout(() => { spring = null; options.setOpen(id, true); applyOpen(id) }, SPRING_OPEN_MS) }
+      }
+    } else if (spring && spring.id !== head?.dataset.fold) {
+      clearSpring()
+    }
     const found = targetFor(event)
     setTarget(found)
     if (found) {

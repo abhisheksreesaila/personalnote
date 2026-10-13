@@ -127,6 +127,7 @@ try {
   const sectionHead = (id) => rowOf(`[data-sec="${id}"] > [data-fold]`)
   const inSection = (section, notebookId) => page.evaluate(([name, id]) => document.querySelector(`[data-sec="${name}"] [data-notebook-select="${id}"]`) !== null, [section, notebookId])
 
+  check('on a fresh start the Archive is folded and every other section is open', await page.evaluate(() => ['inbox', 'projects', 'areas', 'resources'].every((id) => document.querySelector(`[data-sec="${id}"]`).classList.contains('open')) && !document.querySelector('[data-sec="archive"]').classList.contains('open')))
 
   // ---- F-065: file by drag ----
   const old = await call('POST', '/notebooks', { name: 'Old taxes', category: 'projects' })
@@ -205,6 +206,105 @@ try {
   check('a failed notebook move puts it back in its section, with the toast', (await inSection('projects', house.id)) && (await toast()).includes("Couldn't move it"))
   await page.unroute('**/api/notebooks/*')
 
+  // ---- F-066: sections fold smoothly ----
+  await open()
+  const fold = (id) => page.evaluate((section) => {
+    const element = document.querySelector(`[data-sec="${section}"]`)
+    return { open: element.classList.contains('open'), expanded: element.querySelector('[data-fold]').getAttribute('aria-expanded'), rows: getComputedStyle(element.querySelector('.fold')).gridTemplateRows }
+  }, id)
+  const clickHead = async (id) => { await sectionHead(id).click({ position: { x: 40, y: 12 } }); await settle(260) }
+  await page.evaluate(() => { document.querySelector('[data-sec="inbox"]').__same = true })
+  await page.click('[data-fold="inbox"]')
+  await settle(60)
+  const midFold = await fold('inbox')
+  await settle(300)
+  const folded = await fold('inbox')
+  check('the Inbox folds when its head is clicked (class and aria-expanded)', !folded.open && folded.expanded === 'false', JSON.stringify(folded))
+  check('it folds by animating the row height, not by re-rendering', (await page.evaluate(() => document.querySelector('[data-sec="inbox"]').__same === true)) && midFold.rows !== folded.rows, JSON.stringify([midFold, folded]))
+  check('the fold takes 180 ms', await page.evaluate(() => getComputedStyle(document.querySelector('[data-sec="inbox"] .fold')).transitionDuration === '0.18s'))
+  await page.click('[data-fold="inbox"]')
+  await settle(260)
+  for (const id of ['projects', 'areas', 'resources', 'archive']) {
+    const start = await fold(id)
+    await clickHead(id)
+    check(`${id} folds or unfolds with its head`, (await fold(id)).open !== start.open)
+    await clickHead(id)
+    check(`${id} comes back`, (await fold(id)).open === start.open)
+  }
+  // keyboard: a section head folds on Enter and on Space
+  await page.focus('[data-sec="areas"] > [data-fold]')
+  await page.keyboard.press('Enter')
+  await settle(260)
+  check('Enter on a focused section head folds it', !(await fold('areas')).open)
+  await page.keyboard.press('Space')
+  await settle(260)
+  check('Space unfolds it', (await fold('areas')).open)
+  await page.click('[data-fold="inbox"]')
+  await settle(260)
+  check('a folded section is not reachable by keyboard (inert)', await page.evaluate(() => document.querySelector('[data-sec="inbox"] .fold').inert))
+  await page.click('[data-fold="inbox"]')
+  await settle(260)
+
+  // remembered on this machine
+  await clickHead('projects')
+  await page.click('[data-fold="inbox"]')
+  await settle(260)
+  await open()
+  check('folded sections are remembered after a reload (Inbox and Projects folded, Areas open)', !(await fold('inbox')).open && !(await fold('projects')).open && (await fold('areas')).open, JSON.stringify([await fold('inbox'), await fold('projects'), await fold('areas')]))
+  await page.click('[data-fold="inbox"]')
+  await clickHead('projects')
+  await open()
+  check('unfolding is remembered too', (await fold('inbox')).open && (await fold('projects')).open)
+
+  // spring open: hold a dragged note over a folded section's head
+  await clickHead('resources')
+  const grab = async (title) => {
+    const at = await centreOf(noteRow(title))
+    await page.mouse.move(at.x, at.y)
+    await page.mouse.down()
+    await page.mouse.move(at.x + 6, at.y + 6, { steps: 3 })
+    return at
+  }
+  const origin = await grab('Recipe')
+  const headAt = await centreOf(sectionHead('resources'))
+  await page.mouse.move(headAt.x, headAt.y, { steps: 12 })
+  await page.waitForTimeout(250)
+  check('a section does not spring open after a short hover', !(await fold('resources')).open)
+  await page.waitForTimeout(450)
+  check('a folded section springs open after about half a second of hovering while dragging', (await fold('resources')).open)
+  await page.mouse.up()
+  await settle(500)
+  // passing over a folded section and leaving before the time never opens it
+  await clickHead('areas')
+  const passFrom = await grab('Quote')
+  const areasAt = await centreOf(sectionHead('areas'))
+  await page.mouse.move(areasAt.x, areasAt.y, { steps: 8 })
+  await page.waitForTimeout(150)
+  await page.mouse.move(passFrom.x, passFrom.y, { steps: 8 })
+  await page.waitForTimeout(700)
+  check('passing over a folded section and leaving does not open it', !(await fold('areas')).open)
+  await page.mouse.up()
+  await settle(400)
+  await clickHead('areas')
+
+  // reduced motion: no animation at all
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const reduced = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('[data-sec="inbox"] .fold')).transitionDuration))
+  check('prefers-reduced-motion: the fold does not animate', reduced < 0.001, String(reduced))
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+
+  // storage that is missing or throws must not break the sidebar
+  const blockedContext = await browser.newContext({ viewport: { width: 1360, height: 900 } })
+  const blocked = await blockedContext.newPage()
+  const blockedErrors = []
+  blocked.on('pageerror', (error) => blockedErrors.push(error.message))
+  await blocked.addInitScript(() => { Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked') } }) })
+  await blocked.goto(`http://127.0.0.1:${UI_PORT}/notes`)
+  await blocked.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+  await blocked.click('[data-fold="inbox"]')
+  await blocked.waitForTimeout(300)
+  check('with browser storage blocked the sidebar still loads and folds', blockedErrors.length === 0 && (await blocked.evaluate(() => !document.querySelector('[data-sec="inbox"]').classList.contains('open'))), blockedErrors.join(' | '))
+  await blockedContext.close()
 
 
   check('no page errors', errors.length === 0, errors.join(' | '))
