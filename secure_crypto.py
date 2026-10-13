@@ -231,6 +231,12 @@ class Keyring:
             self._last_used = self._clock()
         return key
 
+    def touch(self) -> None:
+        """Renew the quiet time of keys that are still held (a key already expired stays gone)."""
+        self._expire()
+        if self._keys:
+            self._last_used = self._clock()
+
     def lock(self) -> None:
         self._keys.clear()
 

@@ -1143,6 +1143,11 @@ class NoteService:
             "idleSeconds": self.keyring.idle_timeout,  # the page counts the same quiet time down
         }
 
+    def touch_secure(self) -> dict:
+        """The page saw activity: keep held keys from timing out. Cannot unlock."""
+        self.keyring.touch()
+        return self.secure_status()
+
     def lock_secure(self) -> dict:
         """Forget every key held in memory (and the Touch ID yes); secure notes read as locked again."""
         self.keyring.lock()

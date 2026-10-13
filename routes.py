@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -390,7 +391,8 @@ def create_app(
             return forbidden()
         body = await payload(request)
         try:
-            return JSONResponse(service.unlock_secure(passphrase=body.get("passphrase"), recovery_key=body.get("recoveryKey")))
+            # Touch ID and scrypt wait or burn time: off the event loop, so the page's other requests keep being answered.
+            return JSONResponse(await asyncio.to_thread(service.unlock_secure, passphrase=body.get("passphrase"), recovery_key=body.get("recoveryKey")))
         except Exception as error:
             return json_error(error)
 
@@ -400,9 +402,17 @@ def create_app(
         if not from_this_app(request):
             return forbidden()
         try:
-            return JSONResponse(service.add_passphrase((await payload(request)).get("passphrase")))
+            passphrase = (await payload(request)).get("passphrase")
+            return JSONResponse(await asyncio.to_thread(service.add_passphrase, passphrase))
         except Exception as error:
             return json_error(error)
+
+    @app.post("/api/secure/touch")
+    def secure_touch(request):
+        """The open page is in use: renew the quiet time. Never unlocks anything."""
+        if not from_this_app(request):
+            return forbidden()
+        return JSONResponse(service.touch_secure())
 
     @app.post("/api/secure/lock")
     def secure_lock(request):
@@ -417,7 +427,7 @@ def create_app(
             return forbidden()
         body = await payload(request)
         try:
-            return JSONResponse(service.mark_secure(note_id, revision=body.get("revision"), passphrase=body.get("passphrase")))
+            return JSONResponse(await asyncio.to_thread(service.mark_secure, note_id, revision=body.get("revision"), passphrase=body.get("passphrase")))
         except Exception as error:
             return json_error(error)
 
