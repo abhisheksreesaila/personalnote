@@ -27,6 +27,7 @@ function invisibleDragImage() {
  *  moveNote(noteId, notebookId) -> Promise<boolean>        applies at once, reports whether the server kept it
  *  moveNotebook(notebookId, category) -> Promise<boolean>  same
  *  createNotebook(category, name) -> Promise<boolean>
+ *  openDialog(category, name)                              the full notebook dialog, prefilled
  *  noteNotebookId(noteId) / notebookCategory(notebookId)   what is where now
  */
 export function mountShelves(root, options) {
@@ -59,17 +60,12 @@ export function mountShelves(root, options) {
     const head = event.target.closest('[data-fold]')
     if (head && root.contains(head)) toggle(head.dataset.fold)
   })
-  root.addEventListener('keydown', (event) => {
-    if (event.target.matches?.('.namer-input')) return
-    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches?.('[data-fold][role="button"]')) {
-      event.preventDefault()
-      toggle(event.target.dataset.fold)
-    }
-  })
 
   // ---------------------------------------------------------------- drag and drop
+  let pointer = null // where the pointer last was during a drag
   function moveGhost(event) {
     if (ghost && (event.clientX || event.clientY)) {
+      pointer = { x: event.clientX, y: event.clientY }
       ghost.style.left = `${event.clientX + 12}px`
       ghost.style.top = `${event.clientY - 14}px`
     }
@@ -79,15 +75,17 @@ export function mountShelves(root, options) {
     if (!drag) return null
     const found = event.target instanceof Element ? event.target : null
     if (drag.kind === 'note') {
-      const notebook = found?.closest('[data-notebook-drop]')
-      return notebook && notebook.dataset.notebookDrop !== String(options.noteNotebookId(drag.id) ?? '') ? notebook : null
+      const place = found?.closest('[data-notebook-drop], [data-inbox-drop]')
+      if (!place) return null
+      const where = options.noteNotebookId(drag.id) // null: already in the Inbox
+      return (place.matches('[data-inbox-drop]') ? where !== null : place.dataset.notebookDrop !== String(where ?? '')) ? place : null
     }
     const section = found?.closest('[data-sec-drop]')
     return section && section.dataset.secDrop !== options.notebookCategory(drag.id) ? section : null
   }
 
   // The element that carries the ring: a notebook row itself, or the head of the section being dropped on.
-  const ringOf = (element) => (element?.matches('[data-sec-drop]') ? element.querySelector('[data-fold]') : element)
+  const ringOf = (element) => (element?.matches('[data-sec-drop], [data-inbox-drop]') ? element.querySelector('[data-fold]') : element)
 
   function isArchiveTarget(element) {
     if (!element) return false
@@ -172,7 +170,7 @@ export function mountShelves(root, options) {
     setTarget(found)
     if (found) {
       event.preventDefault()
-      event.dataTransfer.dropEffect = 'move'
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
     }
   }
   root.addEventListener('dragenter', hovering)
@@ -205,11 +203,12 @@ export function mountShelves(root, options) {
     event.preventDefault()
     const moving = drag
     const intoArchive = isArchiveTarget(dropped)
-    const destination = moving.kind === 'note' ? Number(dropped.dataset.notebookDrop) : dropped.dataset.secDrop
+    const toInbox = dropped.matches('[data-inbox-drop]')
+    const destination = moving.kind === 'note' ? (toInbox ? null : Number(dropped.dataset.notebookDrop)) : dropped.dataset.secDrop
     cleanUp()
     // main.js re-renders in the first, synchronous part of the call, so the row is already in its new place when the flash is set.
     const pending = moving.kind === 'note' ? options.moveNote(moving.id, destination) : options.moveNotebook(moving.id, destination)
-    land(`[data-notebook-select="${moving.kind === 'note' ? destination : moving.id}"]`)
+    land(toInbox ? '[data-sec="inbox"] .sec-head' : `[data-notebook-select="${moving.kind === 'note' ? destination : moving.id}"]`)
     if (intoArchive) gulp()
     return pending
   })
@@ -219,7 +218,7 @@ export function mountShelves(root, options) {
   // ---------------------------------------------------------------- naming a notebook in place
   const namerHtml = () => `
     <div class="namer" data-namer="${naming.category}">
-      <span class="notebook-dot namer-dot"></span>
+      <button type="button" class="notebook-dot namer-dot" title="Choose a colour and more" aria-label="Choose a colour and more"></button>
       <input class="namer-input" aria-label="Notebook name" placeholder="Notebook name" maxlength="80" autocomplete="off" spellcheck="false">
     </div>
     <div class="namer-hint">Enter to keep · Esc to drop</div>`
@@ -231,7 +230,7 @@ export function mountShelves(root, options) {
     return category
   }
 
-  function showNamer() {
+  function showNamer(focus = true) {
     root.querySelectorAll('.namer, .namer-hint').forEach((node) => node.remove())
     if (!naming) return
     const inner = root.querySelector(`[data-sec="${naming.category}"] .fold > .inner`)
@@ -240,7 +239,7 @@ export function mountShelves(root, options) {
     inner.insertAdjacentHTML('beforeend', namerHtml())
     const input = inner.querySelector('.namer-input')
     input.value = naming.value
-    input.focus()
+    if (focus) input.focus()
   }
 
   async function commitNaming() {
@@ -262,6 +261,15 @@ export function mountShelves(root, options) {
     showNamer()
   }, true)
 
+  // The row's colour dot opens the full dialog with the name typed so far (it works by touch, unlike Shift+click).
+  root.addEventListener('pointerdown', (event) => { if (naming && event.target.closest('.namer-dot')) naming.opening = true })
+  root.addEventListener('click', (event) => {
+    if (!naming || !event.target.closest('.namer-dot')) return
+    const { category, value } = naming
+    stopNaming()
+    options.openDialog(category, value.trim())
+  })
+
   root.addEventListener('input', (event) => {
     if (naming && event.target.matches('.namer-input')) naming.value = event.target.value
   })
@@ -280,7 +288,7 @@ export function mountShelves(root, options) {
     if (!event.target.matches?.('.namer-input') || !naming) return
     // Esc and Enter remove the row themselves (naming is already null by then). Otherwise leaving the field keeps a name and drops an empty one.
     setTimeout(() => {
-      if (!naming || document.activeElement?.matches?.('.namer-input')) return
+      if (!naming || naming.opening || document.activeElement?.closest?.('.namer')) return // still in the row (its colour button, too)
       if (naming.value.trim()) void commitNaming()
       else stopNaming()
     }, 120)
@@ -288,9 +296,22 @@ export function mountShelves(root, options) {
 
   return {
     // main.js calls this after it replaced the sidebar's HTML: put back what lives only in the DOM.
+    // main.js calls this just before it replaces the sidebar's HTML.
+    beforeRender() {
+      if (naming) naming.hadFocus = document.activeElement?.matches?.('.namer-input') ?? false
+    },
     afterRender() {
       for (const id of ['inbox', ...CATEGORIES]) applyOpen(id)
-      showNamer()
+      showNamer(naming?.hadFocus ?? false) // only a row that had the focus gets it back: one you clicked away from must stay dropped
+      if (drag) {
+        // The list was re-rendered mid-drag (a save, a sync): the lift and the ring were on elements that are gone, so put them back.
+        const again = drag.kind === 'note' ? root.querySelector(`[data-note-id="${drag.id}"]`) : root.querySelector(`[data-notebook-drag="${drag.id}"]`)?.closest('.nav-row')
+        if (again) { drag.el = again; again.classList.add('lifting') }
+        target = null
+        setLid(false)
+        const under = pointer ? document.elementFromPoint(pointer.x, pointer.y) : null
+        if (under && root.contains(under)) hovering({ target: under, preventDefault() {} })
+      }
     },
     applyOpen,
     bumpInbox() {

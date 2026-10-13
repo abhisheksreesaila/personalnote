@@ -124,7 +124,9 @@ try {
   const toast = () => page.evaluate(() => { const t = document.querySelector('#toast'); return t.hidden ? '' : t.textContent })
   const serverNote = async (id) => (await call('GET', '/notes')).find((note) => note.id === id)
   const serverNotebook = async (id) => (await call('GET', '/notebooks')).find((notebook) => notebook.id === id)
-  const sectionHead = (id) => rowOf(`[data-sec="${id}"] > [data-fold]`)
+  // The ring and the lid answer a dragenter/dragover: look for them for up to a second rather than once.
+  const eventually = async (read, ms = 1500) => { let value; for (let waited = 0; waited < ms; waited += 50) { value = await read(); if (value) return value; await page.waitForTimeout(50) } return value }
+  const sectionHead = (id) => rowOf(`[data-sec="${id}"] [data-fold]`)
   const inSection = (section, notebookId) => page.evaluate(([name, id]) => document.querySelector(`[data-sec="${name}"] [data-notebook-select="${id}"]`) !== null, [section, notebookId])
 
   check('on a fresh start the Archive is folded and every other section is open', await page.evaluate(() => ['inbox', 'projects', 'areas', 'resources'].every((id) => document.querySelector(`[data-sec="${id}"]`).classList.contains('open')) && !document.querySelector('[data-sec="archive"]').classList.contains('open')))
@@ -140,12 +142,11 @@ try {
   // mouse down/move/up, the plainest gesture: an Inbox note onto a notebook
   await mouseDrag(noteRow('Receipt'), rowOf(`[data-notebook-drop="${house.id}"]`), {
     during: async () => {
-      const mid = await page.evaluate(() => ({
-        ghost: Boolean(document.querySelector('.drag-ghost')),
-        lifting: document.querySelectorAll('.lifting').length,
-        ringed: document.querySelectorAll('.drop-target').length,
+      const mid = await eventually(() => page.evaluate(() => {
+        const state = { ghost: Boolean(document.querySelector('.drag-ghost')), lifting: document.querySelectorAll('.lifting').length, ringed: document.querySelectorAll('.drop-target').length }
+        return state.ghost && state.lifting === 1 && state.ringed === 1 ? state : null
       }))
-      check('mid-drag: a ghost follows the pointer, the row lifts and the target is ringed', mid.ghost && mid.lifting === 1 && mid.ringed === 1, JSON.stringify(mid))
+      check('mid-drag: a ghost follows the pointer, the row lifts and the target is ringed', Boolean(mid), JSON.stringify(mid))
     },
   })
   check('dropping an Inbox note on a notebook: the Inbox count drops and the notebook count rises', (await inboxCount()) === filedBefore - 1 && (await countOf(house.id)) === houseBefore + 1, JSON.stringify([filedBefore, await inboxCount(), houseBefore, await countOf(house.id)]))
@@ -169,11 +170,11 @@ try {
   // a notebook onto Archive: the lid opens while hovering, the notebook changes section
   await mouseDrag(rowOf(`[data-notebook-drag="${old.id}"]`), sectionHead('archive'), {
     during: async () => {
-      const lid = await page.evaluate(() => ({
-        open: document.querySelector('.sec-box').classList.contains('open'),
-        ringed: Boolean(document.querySelector('[data-sec="archive"] > .sec-head.drop-target')),
+      const lid = await eventually(() => page.evaluate(() => {
+        const state = { open: document.querySelector('.sec-box').classList.contains('open'), ringed: Boolean(document.querySelector('[data-sec="archive"] .sec-head.drop-target')) }
+        return state.open && state.ringed ? state : null
       }))
-      check('hovering a notebook over Archive opens the lid and rings the section', lid.open && lid.ringed, JSON.stringify(lid))
+      check('hovering a notebook over Archive opens the lid and rings the section', Boolean(lid), JSON.stringify(lid))
     },
     hover: 150,
   })
@@ -193,6 +194,39 @@ try {
   await open()
   await mouseDrag(noteRow('Stay put'), page.locator('#rail-new-note'))
   check('dropping on something that is not a notebook leaves the note in the Inbox', (await serverNote(stray.id)).notebookId === null)
+
+  check('the Archive shelf shows how many notebooks it holds', (await page.textContent('[data-sec="archive"] .sec-head .notebook-count')).trim() === '1', await page.textContent('[data-sec="archive"] .sec-head'))
+
+  // a note dragged onto the Inbox shelf is unfiled again
+  const filed = batch.find((note) => note.title === 'Idea')
+  await open()
+  await page.click(`[data-notebook-select="${garden.id}"]`)
+  await settle(300)
+  const beforeInbox = await inboxCount()
+  await mouseDrag(page.locator(`[data-note-id="${filed.id}"]`).first(), sectionHead('inbox'), {
+    during: async () => {
+      const ring = await eventually(() => page.evaluate(() => Boolean(document.querySelector('[data-sec="inbox"] .sec-head.drop-target'))))
+      check('hovering a filed note over the Inbox shelf rings it', ring)
+    },
+  })
+  check('dropping a filed note on the Inbox shelf unfiles it', (await serverNote(filed.id)).notebookId === null && (await inboxCount()) === beforeInbox + 1, JSON.stringify([await serverNote(filed.id), beforeInbox, await inboxCount()]))
+
+  // a stale revision is refused, the row goes back, and the retry works because the revision was refreshed
+  const stale = await call('POST', '/notes', { title: 'Stale one' })
+  await call('PATCH', `/notes/${stale.id}/notebook`, { notebookId: null, revision: stale.revision }) // the server moves on to revision 2
+  await open()
+  await call('PATCH', `/notes/${stale.id}/notebook`, { notebookId: null, revision: stale.revision + 1 }) // ...and 3, behind the page's back
+  await mouseDrag(noteRow('Stale one'), rowOf(`[data-notebook-drop="${house.id}"]`))
+  check('a stale revision puts the note back with the toast', (await serverNote(stale.id)).notebookId === null && (await inboxTitles()).includes('Stale one') && (await toast()).includes("Couldn't move it"))
+  await mouseDrag(noteRow('Stale one'), rowOf(`[data-notebook-drop="${house.id}"]`))
+  check('and trying again works', (await serverNote(stale.id)).notebookId === house.id)
+  const staleBook = await call('POST', '/notebooks', { name: 'Stale book', category: 'projects' })
+  await open()
+  await call('PUT', `/notebooks/${staleBook.id}`, { name: 'Stale book 2', revision: 1 })
+  await mouseDrag(rowOf(`[data-notebook-drag="${staleBook.id}"]`), sectionHead('areas'))
+  check('a stale notebook revision puts it back with the toast', (await serverNotebook(staleBook.id)).category === 'projects' && (await inSection('projects', staleBook.id)))
+  await mouseDrag(rowOf(`[data-notebook-drag="${staleBook.id}"]`), sectionHead('areas'))
+  check('and trying again works', (await serverNotebook(staleBook.id)).category === 'areas')
 
   // a failed move puts everything back and shows the toast
   await page.route('**/api/notes/*/notebook', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"no"}' }))
@@ -232,7 +266,7 @@ try {
     check(`${id} comes back`, (await fold(id)).open === start.open)
   }
   // keyboard: a section head folds on Enter and on Space
-  await page.focus('[data-sec="areas"] > [data-fold]')
+  await page.focus('[data-sec="areas"] [data-fold]')
   await page.keyboard.press('Enter')
   await settle(260)
   check('Enter on a focused section head folds it', !(await fold('areas')).open)
@@ -245,16 +279,16 @@ try {
   await page.click('[data-fold="inbox"]')
   await settle(260)
 
-  // remembered on this machine
-  await clickHead('projects')
+  // remembered on this machine (Resources: no note of the newest is in it, so opening a note does not unfold it again)
+  await clickHead('areas')
   await page.click('[data-fold="inbox"]')
   await settle(260)
   await open()
-  check('folded sections are remembered after a reload (Inbox and Projects folded, Areas open)', !(await fold('inbox')).open && !(await fold('projects')).open && (await fold('areas')).open, JSON.stringify([await fold('inbox'), await fold('projects'), await fold('areas')]))
+  check('folded sections are remembered after a reload (Inbox and Areas folded, Resources open)', !(await fold('inbox')).open && !(await fold('areas')).open && (await fold('resources')).open, JSON.stringify([await fold('inbox'), await fold('areas'), await fold('resources')]))
   await page.click('[data-fold="inbox"]')
-  await clickHead('projects')
+  await clickHead('areas')
   await open()
-  check('unfolding is remembered too', (await fold('inbox')).open && (await fold('projects')).open)
+  check('unfolding is remembered too', (await fold('inbox')).open && (await fold('areas')).open)
 
   // spring open: hold a dragged note over a folded section's head
   await clickHead('resources')
@@ -354,6 +388,28 @@ try {
   check("a notebook's ... button still opens the dialog for editing", await page.evaluate(() => document.querySelector('#notebook-dialog').open && document.querySelector('#notebook-name').value === 'Orchard'))
   await page.keyboard.press('Escape')
 
+  // the + is a real button: Tab to it and Enter (or Space) starts naming
+  await open()
+  await settle(900) // the editor takes the focus when a note opens; let it, then move the focus to the +
+  await page.focus('[data-new-notebook="resources"]')
+  await page.keyboard.press('Enter')
+  await settle(200)
+  check('Enter on the focused + starts naming (a real button, not a span)', await page.evaluate(() => document.querySelector('[data-new-notebook="resources"]').tagName === 'BUTTON' && document.activeElement?.classList.contains('namer-input')))
+  await page.keyboard.press('Escape')
+  await page.focus('[data-new-notebook="resources"]')
+  await page.keyboard.press('Space')
+  await settle(200)
+  check('Space on the focused + starts naming too', await page.evaluate(() => document.activeElement?.classList.contains('namer-input')))
+  // the colour dot hands the typed name to the full dialog (works by touch)
+  await page.keyboard.type('Pick a colour')
+  await page.click('.namer-dot')
+  await settle(300)
+  const handed = await page.evaluate(() => ({ open: document.querySelector('#notebook-dialog').open, name: document.querySelector('#notebook-name').value, row: Boolean(document.querySelector('.namer')), category: document.querySelector('[name="notebook-category"]:checked')?.value }))
+  check('the row\'s colour dot opens the dialog with the typed name and the section', handed.open && handed.name === 'Pick a colour' && !handed.row && handed.category === 'resources', JSON.stringify(handed))
+  check('and making nothing yet', !(await notebookNames()).includes('Pick a colour'))
+  await page.keyboard.press('Escape')
+  await settle(200)
+  check('the + tooltip says how to reach the dialog', (await plusOf('areas').getAttribute('title')).includes('Shift'))
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
   await browser?.close()

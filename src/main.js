@@ -858,11 +858,11 @@ function renderNoteList() {
 
   // Inbox first: the notes not filed yet, with a count that empties as they are filed.
   const inboxHtml = `
-    <div class="sec inbox-sec${openClass('inbox')}" data-sec="inbox">
-      <button class="sec-head inbox-head" data-fold="inbox" aria-expanded="${isSectionOpen(state.sectionOpen, 'inbox')}">
+    <div class="sec inbox-sec${openClass('inbox')}" data-sec="inbox" data-inbox-drop>
+      <div class="sec-top"><button class="sec-head inbox-head" data-fold="inbox" aria-expanded="${isSectionOpen(state.sectionOpen, 'inbox')}">
         <span class="sec-ic"><i data-lucide="inbox"></i></span><span class="lbl">Inbox</span>
         <span class="badge ${unfiled.length ? '' : 'zero'}" id="inbox-badge" title="Notes not filed yet">${unfiled.length}</span>${chevron}
-      </button>
+      </button></div>
       <div class="fold"><div class="inner">
         <div class="nav-notes" role="group" aria-label="Inbox">
           ${unfiled.length ? unfiled.map((note) => noteRowHtml(note)).join('') : '<div class="empty-notebook"><span>All filed. New notes land here.</span></div>'}
@@ -875,10 +875,12 @@ function renderNoteList() {
     const icon = section.id === 'archive' ? ARCHIVE_BOX : `<i data-lucide="${SECTION_ICONS[section.id]}"></i>`
     return `
       <div class="sec${openClass(section.id)}" data-sec="${section.id}" data-sec-drop="${section.id}">
-        <div class="sec-head" role="button" tabindex="0" data-fold="${section.id}" aria-expanded="${isSectionOpen(state.sectionOpen, section.id)}">
-          <span class="sec-ic">${icon}</span><span class="lbl">${section.label}</span>
-          ${section.id === 'archive' ? '' : `<span class="sec-add" role="button" tabindex="0" data-new-notebook="${section.id}" title="New notebook in ${section.label}" aria-label="New notebook in ${section.label}"><i data-lucide="plus"></i></span>`}
-          ${chevron}
+        <div class="sec-top">
+          <button class="sec-head" data-fold="${section.id}" aria-expanded="${isSectionOpen(state.sectionOpen, section.id)}">
+            <span class="sec-ic">${icon}</span><span class="lbl">${section.label}</span>
+            ${section.id === 'archive' ? `<span class="notebook-count" title="Notebooks in the Archive">${section.notebooks.length}</span>` : ''}${chevron}
+          </button>
+          ${section.id === 'archive' ? '' : `<button class="sec-add" type="button" data-new-notebook="${section.id}" title="New notebook in ${section.label} (Shift-click: choose a colour)" aria-label="New notebook in ${section.label}"><i data-lucide="plus"></i></button>`}
         </div>
         <div class="fold"><div class="inner">
           ${section.notebooks.map((notebook) => notebookRowHtml(notebook, selectedNotebook)).join('')}
@@ -889,6 +891,7 @@ function renderNoteList() {
 
   // Keep the outline's scroll position across re-renders.
   const scrollTop = elements.list.scrollTop
+  shelves?.beforeRender()
   elements.notebookList.innerHTML = inboxHtml + sectionHtml
   elements.list.scrollTop = scrollTop
   if (lastInboxCount > unfiled.length) shelves?.bumpInbox() // a note just left the Inbox
@@ -2010,6 +2013,8 @@ async function moveNote(noteId, notebookId) { // notebookId null: back to the In
     state.selectedNotebookId = before.selected
     renderNoteList()
     showToast("Couldn't move it. Try again.")
+    // A refusal is often a stale revision: take the server's, so the retry can go through.
+    try { Object.assign(note, { revision: (await api(`/notes/${noteId}`)).revision }) } catch {}
     return false
   }
 }
@@ -2030,6 +2035,7 @@ async function moveNotebook(notebookId, category) {
     notebook.category = before.category
     renderNoteList()
     showToast("Couldn't move it. Try again.")
+    try { Object.assign(notebook, { revision: (await api('/notebooks')).find((item) => item.id === notebookId)?.revision ?? notebook.revision }) } catch {}
     return false
   }
 }
@@ -3504,6 +3510,7 @@ shelves = mountShelves(elements.list, {
   noteNotebookId: (id) => state.notes.find((note) => note.id === id)?.notebookId ?? null,
   notebookCategory: (id) => state.notebooks.find((notebook) => notebook.id === id)?.category,
   createNotebook: createNotebookInline,
+  openDialog: (category, name) => { openNotebookDialog(null, category); elements.notebookName.value = name },
 })
 
 // Cancel and the X are plain buttons, so the empty Name never blocks them and Enter reaches Create.
