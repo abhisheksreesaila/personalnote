@@ -363,8 +363,37 @@ Captain (2026-10-12, after preview 2): with the Text tool the words could be typ
 Needs: F-049, F-050
 - [x] with the Text tool, a mouse drag or double-click selects words in the text being typed (the editor sits above the pointer layer)
 - [x] an underline drawn under the last (or only) line of a Markdown text is a mark of its words and moves with the text
-## F-054 Focus write mode [todo]
-Captain (2026-10-12, queued for the release after preview 2): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."
-- [ ] a Focus write mode: drawing and ink input off, the canvas chrome quiet, typing goes straight into Markdown text with nothing else in the way
-- [ ] typing latency measured (speed test row) and kept low on the Mac, in and out of focus mode
-- [ ] one key or button in and out; Esc leaves it
+## F-054 Focus write mode [done]
+Superseded by F-059 Editor first (brief docs/briefs/editor-first-and-secure-notes.md, approved 2026-10-13): the editor feel becomes the default rather than a separate mode.
+Captain (2026-10-12): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."
+
+## F-056 Secure unlock spike (Mac) [todo]
+Brief: docs/briefs/editor-first-and-secure-notes.md · Needs: none
+Riskiest assumption first: Touch ID, the keychain and screen-share exclusion from the pywebview app on macOS.
+- [ ] the Mac app can ask for Touch ID (falling back to the Mac password) and learn yes or no
+- [ ] a random key is stored in and read back from the login keychain, only after that Touch ID yes
+- [ ] the window can be kept out of screen sharing and screenshots, and let back in
+- [ ] a hidden Help menu item runs all three on the captain's Mac and shows the result; the Linux app answers "passphrase" instead
+## F-057 Secure notes: locked words on disk [todo]
+Needs: F-056
+- [ ] a whole note can be marked secure; its content is encrypted at rest (AES-GCM, key from the keychain on Mac, from a passphrase on Linux); its title stays readable (assumed)
+- [ ] search, Markdown export and the agent CLI never see its words; backups carry it still encrypted
+- [ ] a one-time recovery key is shown when the first secure note is made, and it opens the notes on another machine
+## F-058 Secure notes: lock, unlock, never on a shared screen [todo]
+Needs: F-057 · Design first (designer skill)
+- [ ] a secure note shows its own colour and a lock in the note list, and opens locked
+- [ ] one touch (Touch ID) unlocks it; while it is open the window is kept out of screen sharing
+- [ ] it locks again when you leave it, after 5 quiet minutes, or when the Mac sleeps
+## F-059 Editor first [todo]
+Needs: none
+- [ ] a note opens at 100% with the caret ready in its text (a new note gets an empty Markdown text at the top of the first page); page edges, page map and zoom stay quiet until needed
+- [ ] picking a drawing tool (pen, highlighter, shape, sticky, connector) smoothly zooms out to show the whole page; Esc or typing back in the text returns to 100%
+- [ ] every tool stays in the dock; nothing is hidden or removed; typing latency (speed test row) is no worse
+## F-060 Text outline hugs the words [todo]
+Needs: none
+- [ ] a Markdown text's outline sits exactly on its words (no empty space above the first line)
+- [ ] the outline shows when the text is picked with the Select tool, never while writing in it
+## F-061 Code colours (only if free) [todo]
+Needs: none
+- [ ] code inside ``` fences is coloured by its language (from the fence, or guessed), on the canvas and in the editor, loaded only when a code block appears
+- [ ] dropped if it costs any typing speed or a noticeable bundle increase
