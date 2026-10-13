@@ -367,8 +367,9 @@ Needs: F-049, F-050
 Superseded by F-059 Editor first (brief docs/briefs/editor-first-and-secure-notes.md, approved 2026-10-13): the editor feel becomes the default rather than a separate mode.
 Captain (2026-10-12): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."
 
-## F-056 Secure unlock spike (Mac) [review]
-Reviewed: PASS after fixes (0bc2774). Built (secure_platform.py, Help > Test secure unlock…); the real proof is a run on the captain's Mac in the next preview.
+## F-056 Secure unlock spike (Mac) [blocked]
+Blocked: install v0.5.0-preview.4 on the Mac, choose Help > Test secure unlock…, approve Touch ID, take a screenshot during the 10 seconds, and tell me the final message and whether the window showed in the screenshot.
+Reviewed: PASS after fixes (0bc2774). Shipped in v0.5.0-preview.4 https://github.com/abhisheksreesaila/personalnote/releases/tag/v0.5.0-preview.4
 Brief: docs/briefs/editor-first-and-secure-notes.md · Needs: none
 Riskiest assumption first: Touch ID, the keychain and screen-share exclusion from the pywebview app on macOS.
 - [ ] the Mac app can ask for Touch ID (falling back to the Mac password) and learn yes or no
