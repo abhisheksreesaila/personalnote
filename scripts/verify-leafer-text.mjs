@@ -524,7 +524,7 @@ try {
     const drawn = await inkBox(page, clip)
     await scene(page, 'editText', id, { select: false })
     await page.waitForSelector('.leafer-text-editor')
-    await page.evaluate(() => { document.querySelector('.leafer-text-editor').style.caretColor = 'transparent' })
+    await page.evaluate(() => { document.querySelector('.leafer-text-editor').style.caretColor = 'transparent'; for (const edge of document.querySelectorAll('.text-edge, .md-edge')) edge.style.display = 'none' }) // (the caret and the faint wrap-edge line are not part of the words)
     await page.waitForTimeout(120)
     const typed = await inkBox(page, clip)
     await page.screenshot({ path: `${SHOTS}/${label}.png`, clip })

@@ -727,19 +727,16 @@ try {
     await again.close()
     await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
 
-    // right: a point text typed toward the right edge widens the grid like a dragged object
-    await scene(tp, 'createText', { x: 600, y: 200 }, { plain: true }) // a plain point text (Markdown text wraps at the page margin instead)
+    // right: a point text typed toward the right edge wraps at the page margin (F-069), so the grid does not widen
+    await scene(tp, 'createText', { x: 600, y: 200 }, { plain: true }) // a plain point text (it is started further left, and wrapped, like Markdown text)
     await tp.waitForSelector('.leafer-text-editor')
-    let widened = null
-    for (let i = 0; i < 80 && !widened; i += 1) {
-      await tp.keyboard.type('w')
-      if ((await grid(tp)).columns === 2) widened = await editor()
-    }
-    check('typing a point text toward the right edge adds a page on the right while typing', Boolean(widened) && widened.right <= W + 1 && widened.right > W - 100, JSON.stringify(widened))
+    await tp.keyboard.type('w'.repeat(80))
+    const held = await editor()
+    check('typing a point text toward the right edge wraps at the page margin and adds no page', (await grid(tp)).columns === 1 && Boolean(held) && held.right <= W - 56 + 1, JSON.stringify([held, await grid(tp)]))
     await settle()
     await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
     td = await doc(tp)
-    check('undo removes the text and the right-hand page', td.page.columns === 1 && !td.objects.some((o) => o.type === 'text'), JSON.stringify(td.page))
+    check('undo removes the text', td.page.columns === 1 && !td.objects.some((o) => o.type === 'text'), JSON.stringify(td.page))
 
     // dictation into a text box
     const began = await scene(tp, 'beginDictation', { x: 100, y: 900 }, { width: 300 })
@@ -795,18 +792,18 @@ try {
     await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
     check('undo removes it', !(await doc(tp)).objects.some((o) => o.type === 'text' && o.content === 'x'))
 
-    // mid input method: a composition near the right edge grows the page, and the composed words come out once
+    // mid input method: a composition near the right edge wraps at the margin (no new page), and the composed words come out once
     await scene(tp, 'createText', { x: 640, y: 200 }, { plain: true })
     await tp.waitForSelector('.leafer-text-editor')
     const cdp = await typeContext.newCDPSession(tp)
     await cdp.send('Input.imeSetComposition', { text: 'こんにちは世界こんにちは世界こんにちは', selectionStart: 19, selectionEnd: 19 })
     await tp.waitForTimeout(100)
-    check('a composition that reaches the right edge adds a page while still composing', (await grid(tp)).columns === 2 && await tp.evaluate(() => document.querySelector('.leafer-text-editor')?.value.length > 0), JSON.stringify(await grid(tp)))
+    check('a composition that reaches the right edge wraps at the margin and adds no page while still composing', (await grid(tp)).columns === 1 && (await editor()).right <= W - 56 + 1 && await tp.evaluate(() => document.querySelector('.leafer-text-editor')?.value.length > 0), JSON.stringify(await grid(tp)))
     await cdp.send('Input.insertText', { text: 'こんにちは世界こんにちは世界こんにちは' })
     await tp.waitForTimeout(100)
     await settle()
     td = await doc(tp)
-    check('the composed words are in the note once, with the page', td.page.columns === 2 && td.objects.some((o) => o.type === 'text' && o.content === 'こんにちは世界こんにちは世界こんにちは'), JSON.stringify([td.page, td.objects.filter((o) => o.type === 'text').map((o) => o.content)]))
+    check('the composed words are in the note once, on one page', td.page.columns === 1 && td.objects.some((o) => o.type === 'text' && o.content === 'こんにちは世界こんにちは世界こんにちは'), JSON.stringify([td.page, td.objects.filter((o) => o.type === 'text').map((o) => o.content)]))
     await cdp.detach()
     await tp.evaluate(() => window.__personalNote.leaferEdits.undo())
 

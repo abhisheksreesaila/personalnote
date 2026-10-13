@@ -981,17 +981,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     lod.exit() // (typing is always on the live vectors)
     if (overlay.isOpen) overlay.commit()
     if (!began) onBegin('Edit text')
-    // F-069: a text as wide as its words (the former engine's point text) wraps at the right margin of its page while it is written, and
-    // is a box of that width once it has words, so its lines never run on past the page edge.
-    let boxing = null
-    if (object.type === 'text' && object.mode === 'point' && isUpright(object.geometry)) {
-      boxing = writingBox({ x: object.geometry.x ?? 0 })
-      const boxed = { ...object, mode: 'box', geometry: { ...object.geometry, ...boxing } }
-      if (!entry) boxing = null // (an existing text keeps its own point object until the words reach the document; a new one is simply made a box)
-      object = boxed
-    }
     const size = entry ? entry.size : { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }
-    textEdit = { id: object.id, entry, object, size, select, armed: false, floor: null, lineHeight: overlayFont(object).lineHeight, boxing }
+    textEdit = { id: object.id, entry, object, size, select, armed: false, floor: null, lineHeight: overlayFont(object).lineHeight }
     lastEdited = null
     editing.clear()
     if (entry?.built.text) entry.built.text.visible = false
@@ -1009,7 +1000,6 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       links: isMarkdownText(object) ? linkRanges(doc, object.id) : [],
       font: overlayFont(object),
       wrap: width !== undefined,
-      edge: object.type !== 'sticky', // (a sticky's paper is its edge)
       width: width ?? 0,
       matrix: overlayMatrix(),
       caret,
@@ -1028,7 +1018,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // grows a text right and down, so the overlay stays where it is. (A turned text can need room on the left or top too; that growth is
   // deferred to the settle of the draft commit and of the session's end, which prepend as usual.)
   function growPagesForWords(edit, size) {
-    const object = edit.boxing ? edit.object : edit.entry?.object ?? edit.object
+    const object = edit.entry?.object ?? edit.object
     const geometry = fitGeometry(object, size)
     const box = rectEdges(boundingRect({ ...object, geometry }, { width: geometry.width, height: geometry.height }))
     const grow = growForText(pages, box, { lineHeight: object.type === 'sticky' ? 0 : edit.lineHeight })
@@ -1079,14 +1069,13 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       return true
     }
     const { entry } = edit
-    const object = edit.boxing ? { ...entry.object, mode: 'box', geometry: { ...entry.object.geometry, x: edit.boxing.x, width: edit.boxing.width } } : entry.object
-    if ((entry.object.content ?? '') === value) return false
+    const object = entry.object
+    if ((object.content ?? '') === value) return false
     if (object.type === 'text' && !value.trim() && !final) return false // an emptied text is removed when the session ends
     const next = { ...object, content: value }
     if (object.marks?.length) next.marks = mapMarks(object.marks, object.content ?? '', value) // F-050: marks follow their words
     const plan = planSetContent(doc, { id: entry.id, content: value, geometry: fitGeometry(next, contentSize(next)) })
     if (!plan.op.changes.length) return false
-    if (edit.boxing) plan.op.changes = plan.op.changes.map((change) => (change.id === entry.id ? { ...change, after: { ...change.after, mode: 'box' } } : change))
     if (next.marks) { // each keeps where it is drawn now, for an agent's rewrite that loses its words
       const placed = placeMarks(next.marks, layoutOf(next).words)
       next.marks = next.marks.map((mark, index) => ({ ...mark, at: { x: placed[index].x, y: placed[index].y } }))
@@ -1097,7 +1086,6 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     commit(plan.op, { selection: { before: [entry.id], after: [entry.id] }, floor: final ? null : edit.floor })
     if (edit.floor) edit.floor = { ...pages }
     for (const change of linked) { const other = entries.get(change.id); if (other) rebuild(other) } // shown again when its words went
-    edit.boxing = null // (a box from here on)
     edit.object = entry.object
     edit.size = { width: entry.object.geometry.width ?? 0, height: entry.object.geometry.height ?? 0 }
     return true
