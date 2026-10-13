@@ -202,7 +202,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("attachment", response.headers["content-disposition"])
         backup = response.json()
         self.assertEqual(backup["format"], "personal-note-workspace")
-        self.assertEqual(backup["version"], 2)
+        self.assertEqual(backup["version"], 3)
         self.assertNotIn("id", backup["notes"][0])
         exported_note = next(item for item in backup["notes"] if item["title"] == note["title"])
         self.assertEqual(exported_note["content"], note["content"])

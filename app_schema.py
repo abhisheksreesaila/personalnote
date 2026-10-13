@@ -68,7 +68,7 @@ ON workspace_changes(resource_kind, resource_id, sequence);
 """
 
 
-def initialize_schema(connection: sqlite3.Connection) -> int:
+def initialize_schema(connection: sqlite3.Connection) -> int | None:
     connection.executescript(SCHEMA)
     note_columns = {
         row[1] for row in connection.execute("PRAGMA table_info(notes)").fetchall()
@@ -133,6 +133,7 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
     workspace = connection.execute(
         "SELECT workspace_id, sequence FROM workspace_state WHERE id = 1"
     ).fetchone()
+    fresh_database = workspace is None
     if workspace is None:
         connection.execute(
             "INSERT INTO workspace_state (id, workspace_id) VALUES (1, ?)",
@@ -142,7 +143,11 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
     default_notebook = connection.execute(
         "SELECT id FROM notebooks ORDER BY id LIMIT 1"
     ).fetchone()
-    if default_notebook is None:
+    if default_notebook is None and not (fresh_database or notebook_column_added):
+        # The Inbox is a place to start, so a workspace whose notebooks were all deleted stays that way.
+        default_notebook_id = None
+    elif default_notebook is None:
+        # A brand-new database starts with one notebook; so does one from before notebooks existed (its notes need somewhere to go).
         cursor = connection.execute(
             "INSERT INTO notebooks (name, color) VALUES (?, ?)",
             ("My Notes", "#B86B4B"),
@@ -153,7 +158,7 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
 
     # Only a database from before notebooks existed has notes with no notebook to file: they go to the first notebook.
     # Afterwards NULL means Inbox (F-064), so it must never be filled in again on a later start.
-    if notebook_column_added:
+    if notebook_column_added and default_notebook_id is not None:
         connection.execute(
             "UPDATE notes SET notebook_id = ? WHERE notebook_id IS NULL",
             (default_notebook_id,),
@@ -200,4 +205,4 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
                 (sequence, resource_kind, resource_id, revision, created_at),
             )
     connection.commit()
-    return int(default_notebook_id)
+    return default_notebook_id

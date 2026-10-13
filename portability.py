@@ -25,8 +25,10 @@ from page_note import normalize_page_document
 BACKUP_FORMAT = "personal-note-workspace"
 # Version 2 (F-026): canvas notes are JSON Canvas 1.0 with `pn` extensions, pictures and ink/shape SVGs embedded as data URLs so the
 # file is self-contained. Version 1 (Fabric JSON canvases) is still accepted on import.
-BACKUP_VERSION = 2
-SUPPORTED_BACKUP_VERSIONS = (1, 2)
+# Version 3 (F-064): a note may have no notebook (`notebookResourceId` null = Inbox). An older build reads only versions 1 and 2, so it
+# refuses a version 3 file with "Unsupported Personal Note backup format" instead of misfiling those notes.
+BACKUP_VERSION = 3
+SUPPORTED_BACKUP_VERSIONS = (1, 2, 3)
 _DATA_URL = re.compile(
     r"^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$",
     re.IGNORECASE,

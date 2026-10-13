@@ -304,7 +304,7 @@ class BackupTests(Folder):
         fixture = FIXTURES["app-all-tools"]
         service.update_note(note["id"], {"title": "Rich", "revision": note["revision"], "content": fixture["content"], "pageState": fixture["pageState"]})
         backup = workspace_backup(service)
-        self.assertEqual(backup["version"], 2)
+        self.assertEqual(backup["version"], 3)
         exported = backup["notes"][0]["content"]
         self.assertTrue(jc.validate_json_canvas(exported)["ok"])
         self.assertTrue(all(n["file"].startswith("data:") for n in exported["nodes"] if n["type"] == "file"), "no path into a media folder that the backup does not carry")

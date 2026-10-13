@@ -70,6 +70,19 @@ class InboxServiceTests(unittest.TestCase):
         self.assertIsNone(self.service.get_note(note["id"])["notebookId"])
         self.assertEqual(len(self.service.list_notebooks()), 1)  # no "My Notes" is invented
 
+    def test_a_restart_does_not_bring_back_deleted_notebooks(self):
+        for item in self.service.list_notebooks():
+            self.service.delete_notebook(item["id"])
+        reopened = NoteService(self.path)
+        self.assertEqual(reopened.list_notebooks(), [])
+
+    def test_a_brand_new_database_starts_with_one_notebook(self):
+        self.assertEqual([item["name"] for item in NoteService(Path(self.directory.name) / "new.db").list_notebooks()], ["My Notes"])
+
+    def test_backups_say_version_3_so_an_older_build_refuses_them(self):
+        backup = workspace_backup(self.service)
+        self.assertEqual(backup["version"], 3)
+
     def test_deleting_the_only_notebook_does_not_invent_another(self):
         for item in self.service.list_notebooks():
             self.service.delete_notebook(item["id"])

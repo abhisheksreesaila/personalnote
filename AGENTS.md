@@ -28,7 +28,7 @@ These are internal contracts, not a public plugin SDK.
 3. A note's `noteType` is immutable after creation.
 4. Voice may persist final editable transcript text only. Do not add IndexedDB, SQLite, filesystem, backup, or export storage for PCM/audio.
 5. Local transcription failure must be visible and must leave the note intact.
-6. Backup JSON is lossless and versioned (version 2 carries JSON Canvas with pictures inline; version 1 still imports). Import, including an Obsidian vault import, is validated, transactional, and merge-only; it never deletes or overwrites existing notes.
+6. Backup JSON is lossless and versioned (version 3 adds Inbox notes, which have no notebook, so an older build refuses it rather than misfiling them; version 2 carries JSON Canvas with pictures inline; versions 1 and 2 still import). Import, including an Obsidian vault import, is validated, transactional, and merge-only; it never deletes or overwrites existing notes.
 7. Markdown export (the reading-order projection) is explicitly lossy and never fetches remote assets. Pictures and ink/shape SVGs are content-addressed files `media/<sha256>.<ext>` beside the database, never inside a note row.
 8. Local agents (Claude Code and similar) are first-class clients through `bin/personal-note` (`personal_note_cli.py`), which goes through `NoteService` with revision checks. There is still no model worker, automatic suggestions, chat, sync, authentication, or remote agent endpoint; agents act only when they run the CLI.
 9. `src/workspace-theme.css` is screen-only. Do not change saved canvas appearance or print output when changing app chrome.

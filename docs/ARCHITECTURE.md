@@ -47,7 +47,7 @@ Objects and the desk (F-012): a note opens zoomed out so every page is on the de
 
 ### Persistence
 
-An unfiled note has no notebook (`notes.notebook_id` is NULL): that is the Inbox, a built-in place rather than a notebook row. New notes land there unless a notebook is named, and the schema migration fills in a notebook only for a database from before notebooks existed. Backups carry `notebookResourceId: null` for these notes and import keeps them unfiled.
+An unfiled note has no notebook (`notes.notebook_id` is NULL): that is the Inbox, a built-in place rather than a notebook row. New notes land there unless a notebook is named, and the schema migration fills in a notebook only for a database from before notebooks existed. Backups (format version 3) carry `notebookResourceId: null` for these notes and import keeps them unfiled; an older build refuses a version 3 file. Opening the database itself in an older build is not safe: it files every Inbox note into the first notebook. A workspace whose notebooks were all deleted stays empty (only a brand-new database starts with "My Notes").
 
 `routes.py` defines the local HTTP surface. `services.py::NoteService` is the only owner of canonical note and notebook reads/writes. `app_schema.py` performs idempotent schema creation and migration. All endpoints work without voice or mind-map code running in the browser.
 
