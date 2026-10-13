@@ -16,4 +16,4 @@ Secure notes need words that are unreadable on disk, one touch to open on a Mac,
 - Marking a note secure runs a VACUUM and FTS optimize so old plain words leave the file.
 - Pictures used by a secure note stay plain files in `media/` (not covered).
 - Pictures stay plain. Old `.fabric-backup` copies and backups exported before a note was secured keep that note's words.
-- Each secure note has its own seal id bound into its ciphertext, so blobs cannot be swapped between notes. After a recovery-key unlock the machine adds its own wrap (Touch ID, or a passphrase on Linux).
+- Each secure note has its own seal id bound into its ciphertext, so a sealed blob moved to another note without its seal id fails to open (someone who can edit the file can still swap whole rows). After a recovery-key unlock the machine adds its own wrap (Touch ID, or a passphrase on Linux).

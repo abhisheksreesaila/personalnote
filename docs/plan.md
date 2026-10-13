@@ -376,14 +376,16 @@ Riskiest assumption first: Touch ID, the keychain and screen-share exclusion fro
 - [x] a random key is stored in and read back from the login keychain, only after that Touch ID yes
 - [x] the window can be kept out of screen sharing and screenshots, and let back in
 - [x] a Help menu item (Test secure unlock…) runs all three on the captain's Mac and shows the result; off a Mac the platform module reports "passphrase" (the Linux app has no menu)
-## F-057 Secure notes: locked words on disk [review]
+## F-057 Secure notes: locked words on disk [done]
+Reviewed: PASS after fixes (4cb1dab). Keychain access control: app-enforced Touch ID kept; the stable self-signed signature (release workflow) stops the keychain asking again after updates.
 Needs: F-056
 Carry from the F-056 review: the spike's keychain item has no access control (Touch ID first is enforced by the app only), and an ad-hoc signed build asks for the keychain password again after each update; decide kSecAttrAccessControl (biometry) and signing here.
-- [ ] a whole note can be marked secure; its content is encrypted at rest (AES-GCM, key from the keychain on Mac, from a passphrase on Linux); its title stays readable (assumed)
-- [ ] search, Markdown export and the agent CLI never see its words; backups carry it still encrypted
-- [ ] a one-time recovery key is shown when the first secure note is made, and it opens the notes on another machine
+- [x] a whole note can be marked secure; its content is encrypted at rest (AES-GCM, key from the keychain on Mac, from a passphrase on Linux); its title stays readable (assumed)
+- [x] search, Markdown export and the agent CLI never see its words; backups carry it still encrypted
+- [x] a one-time recovery key is shown when the first secure note is made, and it opens the notes on another machine
 ## F-058 Secure notes: lock, unlock, never on a shared screen [todo]
 Needs: F-057 · Design first (designer skill)
+Carry from F-057: the app's api() must send the x-personal-note header when reading an unlocked secure note (otherwise it only sees the locked view); reload a note after unlock before saving it; show the recovery key once with a clear warning; after a recovery unlock on Linux, ask for a passphrase for this machine.
 - [ ] a secure note shows its own colour and a lock in the note list, and opens locked
 - [ ] one touch (Touch ID) unlocks it; while it is open the window is kept out of screen sharing
 - [ ] it locks again when you leave it, after 5 quiet minutes, or when the Mac sleeps
