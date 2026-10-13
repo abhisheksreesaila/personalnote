@@ -141,10 +141,16 @@ def build_parser() -> argparse.ArgumentParser:
     write_note.set_defaults(handler=command_notes_write)
     create_note = note_commands.add_parser("create", help="Create a canvas, mind-map or page note", parents=[agent_option])
     create_note.add_argument("--title", required=True)
-    create_note.add_argument("--notebook-id", type=int)
+    create_note.add_argument("--notebook-id", type=int, help="Omit to leave the note in the Inbox")
     create_note.add_argument("--type", dest="note_type", choices=("canvas", "mindmap", "page"), default="canvas")
     create_note.add_argument("--text", help="Initial text (Markdown for a page); not valid for mind maps")
     create_note.set_defaults(handler=command_notes_create)
+    move_note = note_commands.add_parser("move", help="File a note into a notebook, or back to the Inbox")
+    move_note.add_argument("note_id", type=int)
+    destination = move_note.add_mutually_exclusive_group(required=True)
+    destination.add_argument("--notebook-id", type=int)
+    destination.add_argument("--inbox", action="store_true", help="Unfile the note")
+    move_note.set_defaults(handler=command_notes_move)
     delete_note = note_commands.add_parser("delete", help="Delete a note")
     delete_note.add_argument("note_id", type=int)
     delete_note.set_defaults(handler=command_notes_delete)
@@ -278,6 +284,10 @@ def command_notes_create(service: NoteService, args: argparse.Namespace) -> dict
         note = service.get_note(note["id"])
     service.record_agent_activity(args.agent, note["id"], "writing")
     return note
+
+
+def command_notes_move(service: NoteService, args: argparse.Namespace) -> dict:
+    return service.move_note(args.note_id, {"notebookId": None if args.inbox else args.notebook_id})
 
 
 def command_notes_delete(service: NoteService, args: argparse.Namespace) -> dict:

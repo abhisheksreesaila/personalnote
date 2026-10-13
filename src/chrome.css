@@ -120,6 +120,7 @@
     color: var(--ui-muted); background: transparent; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease;
   }
   .app-shell .nav-edit svg { width: 15px; height: 15px; }
+  .app-shell .nav-new-note { right: 28px; }
   .app-shell .nav-row:hover .nav-edit, .app-shell .nav-edit:focus-visible { opacity: 1; background: color-mix(in srgb, var(--sk-panel) 70%, var(--sk-accent-soft)); }
   .app-shell .nav-row:hover .notebook-count, .app-shell .nav-edit:focus-visible ~ .notebook-tab .notebook-count { opacity: 0; }
 
@@ -380,7 +381,8 @@
     .app-shell .note-list-item { min-height: 40px; }
     .app-shell .nav-add, .app-shell .nav-edit { opacity: 1; width: 32px; height: 32px; }
     .app-shell .nav-edit { top: 6px; right: 2px; }
-    .app-shell .nav-row .notebook-count { margin-right: 28px; }
+    .app-shell .nav-new-note { right: 36px; }
+    .app-shell .nav-row .notebook-count { margin-right: 62px; }
 
     .app-shell .topbar { inset: 8px 8px auto 8px; height: 40px; gap: 8px; }
     .app-shell .glass-button.sidebar-toggle { display: grid; flex: 0 0 40px; }
@@ -444,7 +446,7 @@
 
   @media (hover: none) {
     .app-shell .nav-add, .app-shell .nav-edit { opacity: 1; }
-    .app-shell .nav-row .notebook-count { margin-right: 26px; }
+    .app-shell .nav-row .notebook-count { margin-right: 52px; }
   }
 
   /* ---------- Preferences ---------- */

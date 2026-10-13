@@ -185,7 +185,7 @@ def markdown_archive(service) -> bytes:
             "Embedded PNG, JPEG, WebP, and GIF data images are extracted into `assets/`.\n",
         )
         for index, note in enumerate(backup["notes"], start=1):
-            notebook = notebooks.get(note.get("notebookResourceId"), {})
+            notebook = notebooks.get(note.get("notebookResourceId"), {"name": "Inbox"})  # no notebook: unfiled
             notebook_name = safe_name(notebook.get("name", "notebook"), "notebook")
             base = safe_name(note.get("title", "untitled-note"), f"note-{index}")
             path = f"notes/{notebook_name}/{base}.md"

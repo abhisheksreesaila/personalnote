@@ -54,6 +54,7 @@ NOTE_TYPES = {"canvas", "mindmap", "page"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")
 DEFAULT_NOTEBOOK_CATEGORY = "projects"
+INBOX_NAME = "Inbox"  # the built-in home of unfiled notes (notes.notebook_id IS NULL); not a notebook row
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
 PAGE_WIDTH = 860
@@ -654,20 +655,8 @@ class NoteService:
             ).fetchone()
             if notebook is None:
                 raise NotFoundError("Notebook not found")
-            destination = connection.execute(
-                "SELECT id FROM notebooks WHERE id != ? ORDER BY id LIMIT 1",
-                (notebook_id,),
-            ).fetchone()
-            if destination is None:
-                destination_resource_id = self.new_resource_id()
-                cursor = connection.execute(
-                    "INSERT INTO notebooks (resource_id, name, color) VALUES (?, ?, ?)",
-                    (destination_resource_id, "My Notes", DEFAULT_NOTEBOOK_COLOR),
-                )
-                destination_id = cursor.lastrowid
-                self.record_change(connection, "notebook", destination_resource_id, 1, "created")
-            else:
-                destination_id = destination["id"]
+            # Its notes are not lost and not guessed into another notebook: they go back to the Inbox to be filed again.
+            destination_id = None
             moved_notes = connection.execute(
                 "SELECT id, resource_id, revision FROM notes WHERE notebook_id = ?",
                 (notebook_id,),
@@ -744,10 +733,11 @@ class NoteService:
         try:
             requested_notebook_id = int(payload.get("notebookId"))
         except (TypeError, ValueError):
-            requested_notebook_id = self.default_notebook_id
+            requested_notebook_id = None
         resource_id = self.new_resource_id()
         with self.connection() as connection:
-            notebook_id = requested_notebook_id if self.notebook_exists(connection, requested_notebook_id) else self.default_notebook_id
+            # No notebook asked for (or one that is gone): the note is unfiled and lands in the Inbox (notebook_id NULL).
+            notebook_id = requested_notebook_id if requested_notebook_id is not None and self.notebook_exists(connection, requested_notebook_id) else None
             cursor = connection.execute(
                 "INSERT INTO notes (resource_id, note_type, title, content, content_format, notebook_id) VALUES (?, ?, ?, ?, ?, ?)",
                 (resource_id, note_type, title, initial_text, content_format, notebook_id),
@@ -1056,12 +1046,16 @@ class NoteService:
         return top + 40.0
 
     def move_note(self, note_id: int, payload: dict) -> dict:
-        try:
-            notebook_id = int(payload.get("notebookId"))
-        except (TypeError, ValueError):
-            raise NotFoundError("Notebook not found") from None
+        """File a note into a notebook, or back to the Inbox with an explicit `"notebookId": null`."""
+        if "notebookId" in payload and payload["notebookId"] is None:
+            notebook_id = None
+        else:
+            try:
+                notebook_id = int(payload.get("notebookId"))
+            except (TypeError, ValueError):
+                raise NotFoundError("Notebook not found") from None
         with self.connection() as connection:
-            if not self.notebook_exists(connection, notebook_id):
+            if notebook_id is not None and not self.notebook_exists(connection, notebook_id):
                 raise NotFoundError("Notebook not found")
             current = connection.execute(
                 "SELECT * FROM notes WHERE id = ?", (note_id,)
@@ -1481,7 +1475,7 @@ class NoteService:
     def snapshot_note(self, row, notebook_resources: dict) -> dict:
         note = {
             "resourceId": row["resource_id"],
-            "notebookResourceId": notebook_resources[row["notebook_id"]],
+            "notebookResourceId": notebook_resources.get(row["notebook_id"]),  # None = Inbox
             "noteType": row["note_type"],
             "title": row["title"],
             "contentFormat": self.format_of(row),
@@ -1518,7 +1512,7 @@ class NoteService:
             rows = connection.execute(
                 """
                 SELECT notes.id, notes.note_type, notes.title, notes.content, notes.content_format, notes.page_state, notes.secure, notebooks.name AS notebook_name
-                FROM notes JOIN notebooks ON notebooks.id = notes.notebook_id ORDER BY notes.id
+                FROM notes LEFT JOIN notebooks ON notebooks.id = notes.notebook_id ORDER BY notes.id
                 """
             ).fetchall()
         return [
@@ -1526,7 +1520,7 @@ class NoteService:
                 "id": row["id"],
                 "noteType": row["note_type"],
                 "title": row["title"],
-                "notebookName": row["notebook_name"],
+                "notebookName": row["notebook_name"] or INBOX_NAME,
                 "content": self.parse_json(row["content"], DEFAULT_CONTENT),
                 "contentFormat": self.format_of(row),
                 "pageState": self.parse_json(row["page_state"], DEFAULT_PAGE_STATE),
@@ -1569,8 +1563,8 @@ class NoteService:
         for note in notes:
             if not isinstance(note, dict):
                 raise WorkspaceImportError("Each note must be an object")
-            if note.get("notebookResourceId") not in notebook_keys:
-                raise WorkspaceImportError("Every note must reference an included notebook")
+            if note.get("notebookResourceId") is not None and note.get("notebookResourceId") not in notebook_keys:
+                raise WorkspaceImportError("Every note must reference an included notebook, or none (the Inbox)")
             if note.get("noteType", "canvas") not in NOTE_TYPES:
                 raise WorkspaceImportError("Backup contains an unsupported note type")
             if not isinstance(note.get("content"), dict):
@@ -1637,7 +1631,7 @@ class NoteService:
                         content,
                         content_format,
                         json.dumps(page_state, separators=(",", ":")),
-                        imported_notebooks[note["notebookResourceId"]],
+                        imported_notebooks.get(note.get("notebookResourceId")),  # no notebook: the Inbox
                         1 if sealed else 0,
                         secure_key_id,
                         seal_id,
@@ -1758,7 +1752,7 @@ class NoteService:
                   snippet(note_search, 2, '', '', ' … ', 18) AS search_excerpt
                 FROM note_search
                 JOIN notes ON notes.id = CAST(note_search.note_id AS INTEGER)
-                JOIN notebooks ON notebooks.id = notes.notebook_id
+                LEFT JOIN notebooks ON notebooks.id = notes.notebook_id
                 WHERE note_search MATCH ?
                 ORDER BY bm25(note_search), notes.updated_at DESC
                 LIMIT 30
@@ -1771,8 +1765,8 @@ class NoteService:
                 "title": note["title"],
                 "noteType": note["note_type"],
                 "notebookId": note["notebook_id"],
-                "notebookName": note["notebook_name"],
-                "notebookColor": note["notebook_color"],
+                "notebookName": note["notebook_name"] or INBOX_NAME,
+                "notebookColor": note["notebook_color"] or DEFAULT_NOTEBOOK_COLOR,
                 "excerpt": note["search_excerpt"] or "",
                 "updatedAt": note["updated_at"],
             }

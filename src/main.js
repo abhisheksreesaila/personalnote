@@ -502,7 +502,7 @@ const state = {
   activeNoteId: null,
   activeNoteType: 'canvas',
   selectedNotebookId: null,
-  inboxOpen: false,
+  inboxOpen: true,
   archiveOpen: false,
   pages: { columns: 1, rows: 1 },
   tool: 'text',
@@ -805,10 +805,8 @@ function escapeHtml(value) {
   return element.innerHTML
 }
 
-function noteRowHtml(note, { dotFor = null } = {}) {
-  const dot = dotFor
-    ? `<span class="notebook-dot" style="--notebook-color:${dotFor.color}" title="${escapeHtml(dotFor.name)}"></span>`
-    : `<i data-lucide="${note.noteType === 'mindmap' ? 'git-fork' : note.noteType === 'page' ? 'file-pen' : 'file-text'}"></i>`
+function noteRowHtml(note) {
+  const dot = `<i data-lucide="${note.secure ? 'lock' : note.noteType === 'mindmap' ? 'git-fork' : note.noteType === 'page' ? 'file-pen' : 'file-text'}"></i>`
   return `
     <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''}" data-note-id="${note.id}" draggable="true">
       ${dot}
@@ -827,6 +825,7 @@ function notebookRowHtml(notebook, selectedNotebook) {
         <span class="notebook-name">${escapeHtml(notebook.name)}</span>
         <span class="notebook-count">${notebook.count}</span>
       </button>
+      <button class="nav-edit nav-new-note" data-new-note-in="${notebook.id}" title="New note in ${escapeHtml(notebook.name)}" aria-label="New note in ${escapeHtml(notebook.name)}"><i data-lucide="plus"></i></button>
       <button class="nav-edit" data-edit-notebook="${notebook.id}" title="Edit ${escapeHtml(notebook.name)}" aria-label="Edit notebook ${escapeHtml(notebook.name)}"><i data-lucide="more-horizontal"></i></button>
     </div>
     ${isSelected ? `
@@ -838,24 +837,22 @@ function notebookRowHtml(notebook, selectedNotebook) {
 
 function renderNoteList() {
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
+  // An unfiled note has no notebook (it sits in the Inbox), so no notebook is open for it.
   const selectedNotebook = state.notebooks.find((notebook) => notebook.id === state.selectedNotebookId)
-    || state.notebooks.find((notebook) => notebook.id === activeNote?.notebookId)
-    || state.notebooks[0]
-  if (selectedNotebook) state.selectedNotebookId = selectedNotebook.id
+  if (!selectedNotebook) state.selectedNotebookId = null
 
   const sections = notebookOutline(state.notebooks, state.notes)
   const selectedSection = sections.find((section) => section.notebooks.some((item) => item.id === selectedNotebook?.id))
   const archiveOpen = state.archiveOpen || selectedSection?.id === 'archive'
-  const notebookById = new Map(state.notebooks.map((notebook) => [notebook.id, notebook]))
-  const recent = state.inboxOpen ? inboxNotes(state.notes) : []
+  const unfiled = inboxNotes(state.notes)
 
   const inboxHtml = `
     <button class="nav-item inbox-tab ${state.inboxOpen ? 'active' : ''}" data-inbox-toggle aria-expanded="${state.inboxOpen}">
-      <i data-lucide="inbox"></i><span class="notebook-name">Inbox</span><span class="notebook-count" title="Most recent notes">${inboxNotes(state.notes).length}</span>
+      <i data-lucide="inbox"></i><span class="notebook-name">Inbox</span><span class="notebook-count" title="Notes not filed yet">${unfiled.length}</span>
     </button>
     ${state.inboxOpen ? `
-      <div class="nav-notes" role="group" aria-label="Recent notes">
-        ${recent.length ? recent.map((note) => noteRowHtml(note, { dotFor: notebookById.get(note.notebookId) || { color: '#B86B4B', name: 'Notebook' } })).join('') : '<div class="empty-notebook"><span>No notes yet</span></div>'}
+      <div class="nav-notes" role="group" aria-label="Inbox">
+        ${unfiled.length ? unfiled.map((note) => noteRowHtml(note)).join('') : '<div class="empty-notebook"><span>All filed. New notes land here.</span></div>'}
       </div>` : ''}
   `
 
@@ -885,28 +882,32 @@ function renderNoteList() {
   elements.notebookList.innerHTML = inboxHtml + sectionHtml
   elements.list.scrollTop = scrollTop
 
-  const notebookForCrumb = state.notebooks.find((item) => item.id === activeNote?.notebookId) || selectedNotebook
-  elements.breadcrumbCategory.textContent = categoryLabel(notebookForCrumb?.category)
-  elements.breadcrumbNotebook.textContent = notebookForCrumb?.name || 'Notebook'
+  const notebookForCrumb = state.notebooks.find((item) => item.id === activeNote?.notebookId)
+  elements.breadcrumbCategory.textContent = notebookForCrumb ? categoryLabel(notebookForCrumb.category) : 'Not filed yet'
+  elements.breadcrumbNotebook.textContent = notebookForCrumb ? notebookForCrumb.name : 'Inbox'
   renderNotebookPicker()
   createIcons({ icons })
 }
 
 function renderNotebookPicker() {
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
-  const notebook = state.notebooks.find((item) => item.id === activeNote?.notebookId)
-  if (!notebook) {
+  if (!activeNote) {
     elements.notebookPicker.innerHTML = ''
     return
   }
+  const notebook = state.notebooks.find((item) => item.id === activeNote.notebookId) // none: the note is in the Inbox
   elements.notebookPicker.innerHTML = `
-    <span class="picker-dot" style="--notebook-color:${notebook.color}"></span>
-    <span>${escapeHtml(notebook.name)}</span><i data-lucide="chevron-down"></i>
+    ${notebook ? `<span class="picker-dot" style="--notebook-color:${notebook.color}"></span>` : '<i data-lucide="inbox"></i>'}
+    <span>${escapeHtml(notebook ? notebook.name : 'Inbox')}</span><i data-lucide="chevron-down"></i>
   `
-  elements.notebookPickerMenu.innerHTML = state.notebooks.map((item) => `
-    <button role="menuitem" data-move-to-notebook="${item.id}" class="${item.id === notebook.id ? 'active' : ''}">
+  elements.notebookPickerMenu.innerHTML = `
+    <button role="menuitem" data-move-to-notebook="inbox" class="${notebook ? '' : 'active'}">
+      <i data-lucide="inbox"></i><span>Inbox</span>${notebook ? '' : '<i data-lucide="check"></i>'}
+    </button>
+  ` + state.notebooks.map((item) => `
+    <button role="menuitem" data-move-to-notebook="${item.id}" class="${item.id === notebook?.id ? 'active' : ''}">
       <span class="picker-dot" style="--notebook-color:${item.color}"></span>
-      <span>${escapeHtml(item.name)}</span>${item.id === notebook.id ? '<i data-lucide="check"></i>' : ''}
+      <span>${escapeHtml(item.name)}</span>${item.id === notebook?.id ? '<i data-lucide="check"></i>' : ''}
     </button>
   `).join('')
 }
@@ -1954,8 +1955,7 @@ async function mergeRemoteNote(note) {
 async function createNote(notebookId, noteType = 'canvas') {
   if (state.creatingNote) return
   state.creatingNote = true
-  const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
-  const destinationId = Number(notebookId) || state.selectedNotebookId || activeNote?.notebookId || state.notebooks[0]?.id
+  const destinationId = Number(notebookId) || null // no notebook named: the note lands in the Inbox
   try {
     const note = await api('/notes', {
       method: 'POST',
@@ -1975,9 +1975,9 @@ async function createNote(notebookId, noteType = 'canvas') {
   }
 }
 
-async function moveNote(noteId, notebookId) {
+async function moveNote(noteId, notebookId) { // notebookId null: back to the Inbox
   const note = state.notes.find((item) => item.id === noteId)
-  if (!note || note.notebookId === notebookId) return
+  if (!note || (note.notebookId ?? null) === notebookId) return
   const result = await api(`/notes/${noteId}/notebook`, {
     method: 'PATCH',
     body: JSON.stringify({ notebookId, revision: note.revision }),
@@ -1996,7 +1996,7 @@ function openNotebookDialog(notebook = null, category = 'projects') {
   document.querySelector('#save-notebook').textContent = notebook ? 'Save changes' : 'Create'
   document.querySelector('#delete-notebook').hidden = !notebook
   document.querySelector('#notebook-dialog-note').textContent = notebook
-    ? 'Deleting it moves its notes into another notebook.'
+    ? 'Deleting it moves its notes to the Inbox.'
     : 'Give related notes a quiet place of their own.'
   const color = notebook?.color || '#B86B4B'
   const colorInput = document.querySelector(`[name="notebook-color"][value="${color}"]`)
@@ -2049,7 +2049,7 @@ function recentSearchResults() {
     const notebook = state.notebooks.find((item) => item.id === note.notebookId)
     return {
       ...note,
-      notebookName: notebook?.name || 'Notebook',
+      notebookName: notebook?.name || 'Inbox',
       notebookColor: notebook?.color || '#B86B4B',
       excerpt: '',
     }
@@ -3377,7 +3377,8 @@ elements.notebookPickerMenu.addEventListener('click', async (event) => {
   if (!item) return
   elements.notebookPickerMenu.hidden = true
   elements.notebookPicker.setAttribute('aria-expanded', 'false')
-  await moveNote(state.activeNoteId, Number(item.dataset.moveToNotebook))
+  const target = item.dataset.moveToNotebook
+  await moveNote(state.activeNoteId, target === 'inbox' ? null : Number(target))
 })
 document.addEventListener('click', (event) => {
   if (!elements.shareMenu.hidden && !event.target.closest('.share-wrap')) setShareMenuOpen(false)
@@ -3410,6 +3411,8 @@ elements.list.addEventListener('click', (event) => {
     setSidebarOpen(false)
     return
   }
+  const newNote = event.target.closest('[data-new-note-in]')
+  if (newNote) return void createNote(Number(newNote.dataset.newNoteIn))
   const add = event.target.closest('[data-new-notebook]')
   if (add) return openNotebookDialog(null, add.dataset.newNotebook)
   const edit = event.target.closest('[data-edit-notebook]')
@@ -3733,7 +3736,7 @@ async function initialize() {
   loadCapabilitySettings()
   try {
     ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
-    state.selectedNotebookId = state.notes[0]?.notebookId || state.notebooks[0]?.id || null
+    state.selectedNotebookId = state.notes[0]?.notebookId ?? null
     if (!state.notes.length) await createNote()
     else await selectNote(state.notes[0].id)
     agentSync = mountAgentSync({

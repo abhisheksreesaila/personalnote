@@ -73,7 +73,8 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
     note_columns = {
         row[1] for row in connection.execute("PRAGMA table_info(notes)").fetchall()
     }
-    if "notebook_id" not in note_columns:
+    notebook_column_added = "notebook_id" not in note_columns
+    if notebook_column_added:
         connection.execute(
             "ALTER TABLE notes ADD COLUMN notebook_id INTEGER REFERENCES notebooks(id)"
         )
@@ -150,10 +151,13 @@ def initialize_schema(connection: sqlite3.Connection) -> int:
     else:
         default_notebook_id = default_notebook[0]
 
-    connection.execute(
-        "UPDATE notes SET notebook_id = ? WHERE notebook_id IS NULL",
-        (default_notebook_id,),
-    )
+    # Only a database from before notebooks existed has notes with no notebook to file: they go to the first notebook.
+    # Afterwards NULL means Inbox (F-064), so it must never be filled in again on a later start.
+    if notebook_column_added:
+        connection.execute(
+            "UPDATE notes SET notebook_id = ? WHERE notebook_id IS NULL",
+            (default_notebook_id,),
+        )
     for table in ("notebooks", "notes"):
         missing = connection.execute(
             f"SELECT id FROM {table} WHERE resource_id IS NULL OR resource_id = ''"
