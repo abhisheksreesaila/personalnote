@@ -421,7 +421,8 @@ Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Nee
 - [x] new notes and quick notes land in Inbox (one built-in place, not a notebook you can rename or delete) until filed; existing notes stay where they are
 - [x] Inbox's count is its unfiled notes and it empties as notes are filed; a note made with a notebook's + goes into that notebook
 - [x] agents (CLI), backups and import know the Inbox (an imported note keeps its notebook, or lands in Inbox)
-## F-065 File by drag [review]
+## F-065 File by drag [blocked]
+Blocked: in v0.5.0-preview.5 on the Mac, drag an Inbox note onto a notebook and a notebook onto Archive, and tell me whether both landed.
 Reviewed: PASS (dd7e581) in Chromium; waits on a real drag in the Mac app (WebKit) in v0.5.0-preview.5. A note dropped on the Inbox shelf unfiles it.
 Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Needs: F-064
 - [x] drag a note from Inbox or any notebook onto a notebook to move it; the row lifts and the target highlights
