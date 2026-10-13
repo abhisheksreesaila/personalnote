@@ -212,6 +212,10 @@ class Keyring:
     def set_idle_timeout(self, seconds: float | None) -> None:
         self._idle_timeout = seconds
 
+    @property
+    def idle_timeout(self) -> float | None:
+        return self._idle_timeout
+
     def _expire(self) -> None:
         if self._keys and self._idle_timeout is not None and self._clock() - self._last_used > self._idle_timeout:
             self._keys.clear()

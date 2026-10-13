@@ -1140,6 +1140,7 @@ class NoteService:
             "configured": configured,
             "unlocked": self.keyring.is_unlocked,
             "secureNotes": count,
+            "idleSeconds": self.keyring.idle_timeout,  # the page counts the same quiet time down
         }
 
     def lock_secure(self) -> dict:
@@ -1773,7 +1774,9 @@ class NoteService:
                 "notebookId": note["notebook_id"],
                 "notebookName": note["notebook_name"],
                 "notebookColor": note["notebook_color"],
-                "excerpt": note["search_excerpt"] or "",
+                # A secure note is found by its title only: it never carries words, and the page marks it.
+                "excerpt": "" if note["secure"] else note["search_excerpt"] or "",
+                "secure": bool(note["secure"]),
                 "updatedAt": note["updated_at"],
             }
             for note in rows

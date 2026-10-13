@@ -28,6 +28,7 @@ PROCESS_START = time.perf_counter()
 
 from app_paths import app_data_dir, default_database_path, instance_file, resource_root  # noqa: E402
 import desktop_menu  # noqa: E402
+import secure_platform  # noqa: E402
 from chromium_app import child_env, find_chromium, focus_window, profile_owner_pid, run_chromium_window  # noqa: E402
 
 HOST = "127.0.0.1"
@@ -285,8 +286,19 @@ def window_url(base_url: str, platform: str = sys.platform, query: str = "") -> 
 class DesktopApi:
     """The only Python the page can call (macOS window only): double-clicking the top bar zooms the window."""
 
-    def __init__(self, zoom: Callable[[], None]):
+    def __init__(self, zoom: Callable[[], None], capture: Callable[[bool], bool] | None = None):
         self._zoom = zoom
+        self._capture = capture
+
+    def set_capture_hidden(self, hidden) -> bool:
+        """Secure notes (F-058): keep the window out of screen sharing and screenshots while one is open. True when applied."""
+        if self._capture is None:
+            return False
+        try:
+            return bool(self._capture(bool(hidden)))
+        except Exception:
+            logger.warning("Could not change the window's screen-share setting.", exc_info=True)
+            return False
 
     def zoom_window(self) -> bool:
         try:
@@ -302,6 +314,19 @@ def _page_call(window, call: str) -> None:
         window.evaluate_js(f"window.personalNote && window.personalNote.{call}")
     except Exception:
         logger.warning("Could not tell the page about the window state.", exc_info=True)
+
+
+def make_lock_on_sleep(lock_keys: Callable[[], object], window) -> Callable[[str], None]:
+    """What runs when the Mac sleeps or the screen locks: forget the keys here, then tell the page to show its covers."""
+
+    def lock(reason: str) -> None:
+        try:
+            lock_keys()
+        except Exception:
+            logger.warning("Could not lock secure notes on %s.", reason, exc_info=True)
+        _page_call(window, "lockSecure()")
+
+    return lock
 
 
 def setup_mac_window(window, actions: "desktop_menu.MenuActions", menus=None) -> None:
@@ -350,7 +375,9 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool,
     webview.settings["ALLOW_DOWNLOADS"] = True  # backup and Markdown export are downloads
     mac = sys.platform == "darwin"
     mac_zoom: list[Callable[[], None]] = []  # filled once the window exists; the page's js_api needs the window first
-    window_options = {"js_api": DesktopApi(lambda: mac_zoom[0]())} if mac else {}
+    window_holder: list = []
+    capture = lambda hidden: secure_platform.set_capture_hidden(window_holder[0], hidden)  # noqa: E731
+    window_options = {"js_api": DesktopApi(lambda: mac_zoom[0](), capture=capture)} if mac else {}
     window = webview.create_window(
         WINDOW_TITLE,
         window_url(base_url, query=query),
@@ -360,8 +387,14 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool,
         text_select=True,
         **window_options,
     )
+    window_holder.append(window)
     menus = None
     if mac:
+        try:
+            lock_keys = lambda: server.app.state.note_service.lock_secure()  # noqa: E731
+            secure_platform.watch_lock_events(make_lock_on_sleep(lock_keys, window))
+        except Exception:
+            logger.warning("Secure notes will not lock on sleep.", exc_info=True)
         try:
             from webview.menu import Menu, MenuAction, MenuSeparator
 

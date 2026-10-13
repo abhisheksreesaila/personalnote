@@ -298,3 +298,57 @@ class RaceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeCenter:
+    def __init__(self):
+        self.observers = {}
+        self.removed = []
+
+    def addObserverForName_object_queue_usingBlock_(self, name, _object, _queue, block):
+        token = object()
+        self.observers[name] = block
+        return token
+
+    def removeObserver_(self, token):
+        self.removed.append(token)
+
+
+class FakeWorkspace:
+    def __init__(self):
+        self.center = FakeCenter()
+
+    def notificationCenter(self):
+        return self.center
+
+
+class LockEventTests(unittest.TestCase):
+    def test_sleep_and_screen_lock_events_each_call_back(self):
+        workspace, distributed = FakeWorkspace(), FakeCenter()
+        calls = []
+        stop = sp.watch_lock_events(lambda why: calls.append(why), workspace=workspace, distributed=distributed)
+        self.assertTrue(callable(stop))
+        for name in ("NSWorkspaceWillSleepNotification", "NSWorkspaceScreensDidSleepNotification", "NSWorkspaceSessionDidResignActiveNotification"):
+            workspace.center.observers[name](None)
+        distributed.observers["com.apple.screenIsLocked"](None)
+        self.assertEqual(calls, ["sleep", "screen sleep", "session switch", "screen locked"])
+
+    def test_a_failing_callback_does_not_break_the_notification(self):
+        workspace, distributed = FakeWorkspace(), FakeCenter()
+
+        def boom(_why):
+            raise RuntimeError("no")
+
+        sp.watch_lock_events(boom, workspace=workspace, distributed=distributed)
+        workspace.center.observers["NSWorkspaceWillSleepNotification"](None)
+
+    def test_stopping_removes_every_observer(self):
+        workspace, distributed = FakeWorkspace(), FakeCenter()
+        stop = sp.watch_lock_events(lambda why: None, workspace=workspace, distributed=distributed)
+        stop()
+        self.assertEqual(len(workspace.center.removed), 3)
+        self.assertEqual(len(distributed.removed), 2)
+
+    def test_off_a_mac_there_is_nothing_to_watch(self):
+        with mock.patch.object(sp.sys, "platform", "linux"):
+            self.assertIsNone(sp.watch_lock_events(lambda why: None))

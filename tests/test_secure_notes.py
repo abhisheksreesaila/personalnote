@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 from pathlib import Path
 
 from starlette.testclient import TestClient
@@ -718,3 +719,34 @@ class ReviewFixTests(SecureCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AutoLockSettingsTests(SecureCase):
+    def test_the_status_tells_the_page_how_long_the_quiet_time_is(self):
+        app = create_app(self.root / "idle.db", secure_platform=self.mac, bound_host=None)
+        client = TestClient(app, headers={"x-personal-note": "1"})
+        self.assertEqual(client.get("/api/secure/status").json()["idleSeconds"], 300)
+
+    def test_the_quiet_time_can_be_shortened_for_checks(self):
+        with mock.patch.dict(os.environ, {"PERSONAL_NOTE_SECURE_IDLE_SECONDS": "7"}):
+            app = create_app(self.root / "idle2.db", secure_platform=self.mac, bound_host=None)
+        client = TestClient(app, headers={"x-personal-note": "1"})
+        self.assertEqual(client.get("/api/secure/status").json()["idleSeconds"], 7)
+
+    def test_a_garbage_setting_keeps_five_minutes(self):
+        with mock.patch.dict(os.environ, {"PERSONAL_NOTE_SECURE_IDLE_SECONDS": "soon"}):
+            app = create_app(self.root / "idle3.db", secure_platform=self.mac, bound_host=None)
+        self.assertEqual(TestClient(app).get("/api/secure/status").json()["idleSeconds"], 300)
+
+
+class SearchShowsSecureNotesTests(SecureCase):
+    def test_a_secure_note_is_found_by_title_and_marked_secure_with_no_excerpt(self):
+        service = self.service_for(self.mac) if hasattr(self, "service_for") else NoteService(self.root / "s.db", secure_platform=self.mac, scrypt_cost=2**4)
+        note = service.create_note({"title": "Banking quokka", "noteType": "page"})
+        saved = service.update_note(note["id"], {"title": "Banking quokka", "content": {"markdown": f"pin {SECRET}"}, "revision": note["revision"]})
+        service.mark_secure(note["id"], revision=saved["revision"])
+        found = service.search("quokka")
+        self.assertEqual([item["title"] for item in found], ["Banking quokka"])
+        self.assertTrue(found[0]["secure"])
+        self.assertEqual(found[0]["excerpt"], "")
+        self.assertEqual(service.search("ZEBRA"), [])

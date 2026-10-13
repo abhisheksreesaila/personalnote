@@ -7,7 +7,9 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+import desktop
 from desktop import (
+    DesktopApi,
     LocalServer,
     MISSING_CHROMIUM,
     report_startup_error,
@@ -366,3 +368,46 @@ class WindowUrlTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CaptureBridgeTests(unittest.TestCase):
+    def test_the_page_can_hide_and_restore_the_window_from_screen_sharing(self):
+        calls = []
+        api = DesktopApi(lambda: None, capture=lambda hidden: calls.append(hidden) or True)
+        self.assertTrue(api.set_capture_hidden(True))
+        self.assertTrue(api.set_capture_hidden(False))
+        self.assertEqual(calls, [True, False])
+
+    def test_a_failure_is_reported_as_false_never_raised(self):
+        def boom(_hidden):
+            raise RuntimeError("no window")
+
+        self.assertFalse(DesktopApi(lambda: None, capture=boom).set_capture_hidden(True))
+
+    def test_without_a_capture_function_the_answer_is_false(self):
+        self.assertFalse(DesktopApi(lambda: None).set_capture_hidden(True))
+
+    def test_anything_truthy_hides(self):
+        calls = []
+        api = DesktopApi(lambda: None, capture=lambda hidden: calls.append(hidden) or True)
+        api.set_capture_hidden("yes")
+        self.assertEqual(calls, [True])
+
+
+class LockOnSleepTests(unittest.TestCase):
+    def test_locking_forgets_the_keys_and_tells_the_page(self):
+        window = FakeWindow([])
+        locked = []
+        lock = desktop.make_lock_on_sleep(lambda: locked.append(True), window)
+        lock("sleep")
+        self.assertEqual(locked, [True])
+        self.assertTrue(any("lockSecure" in script for script in window.scripts))
+
+    def test_the_page_is_told_even_when_the_server_side_lock_fails(self):
+        window = FakeWindow([])
+
+        def boom():
+            raise RuntimeError("x")
+
+        desktop.make_lock_on_sleep(boom, window)("sleep")
+        self.assertTrue(any("lockSecure" in script for script in window.scripts))

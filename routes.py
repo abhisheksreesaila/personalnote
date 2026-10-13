@@ -138,6 +138,18 @@ class LoopbackHostMiddleware:
         await self.app(scope, receive, send)
 
 
+SECURE_IDLE_SECONDS = 300.0  # secure notes lock again after 5 quiet minutes
+
+
+def secure_idle_seconds() -> float:
+    """The quiet time before secure notes lock. `PERSONAL_NOTE_SECURE_IDLE_SECONDS` shortens it for checks; nonsense keeps 5 minutes."""
+    try:
+        value = float(os.environ.get("PERSONAL_NOTE_SECURE_IDLE_SECONDS", ""))
+    except ValueError:
+        return SECURE_IDLE_SECONDS
+    return value if value > 0 else SECURE_IDLE_SECONDS
+
+
 def create_app(
     database_path: Path | str | None = None,
     voice: VoiceRuntime | None = None,
@@ -151,6 +163,7 @@ def create_app(
     data_path = Path(database_path or default_database_path())
     speedtest_process: dict = {}  # the speed test this app started: one at a time
     service = NoteService(data_path, secure_platform=secure_platform)
+    service.keyring.set_idle_timeout(secure_idle_seconds())
     # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service

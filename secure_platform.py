@@ -202,6 +202,70 @@ def set_capture_hidden(window: Any, hidden: bool) -> bool:
         return False
 
 
+# ---- Sleep and screen lock ----------------------------------------------------------------------
+
+WORKSPACE_LOCK_EVENTS = (
+    ("NSWorkspaceWillSleepNotification", "sleep"),
+    ("NSWorkspaceScreensDidSleepNotification", "screen sleep"),
+    ("NSWorkspaceSessionDidResignActiveNotification", "session switch"),
+)
+DISTRIBUTED_LOCK_EVENTS = (
+    ("com.apple.screenIsLocked", "screen locked"),
+    ("com.apple.screensaver.didstart", "screen saver"),
+)
+
+
+def watch_lock_events(callback: Callable[[str], None], workspace: Any = None, distributed: Any = None) -> Callable[[], None] | None:
+    """Calls `callback(reason)` when the Mac goes to sleep, the screen sleeps or locks, the screen saver starts, or another user takes over.
+
+    Secure notes lock on every one of these. Returns a function that stops watching, or None off a Mac. A callback that raises is
+    logged, never passed on to AppKit. UNVERIFIED on a Mac until tried there.
+    """
+    if workspace is None and not available():
+        return None
+    try:
+        if workspace is None:
+            from AppKit import NSWorkspace
+
+            workspace = NSWorkspace.sharedWorkspace()
+        if distributed is None:
+            from Foundation import NSDistributedNotificationCenter
+
+            distributed = NSDistributedNotificationCenter.defaultCenter()
+    except Exception:
+        logger.warning("Could not watch for sleep and screen lock.", exc_info=True)
+        return None
+
+    def handler(reason: str):
+        def run(_notification):
+            try:
+                callback(reason)
+            except Exception:
+                logger.warning("Locking secure notes on %s failed.", reason, exc_info=True)
+
+        return run
+
+    registered: list[tuple[Any, Any]] = []
+    try:
+        center = workspace.notificationCenter()
+        for name, reason in WORKSPACE_LOCK_EVENTS:
+            registered.append((center, center.addObserverForName_object_queue_usingBlock_(name, None, None, handler(reason))))
+        for name, reason in DISTRIBUTED_LOCK_EVENTS:
+            registered.append((distributed, distributed.addObserverForName_object_queue_usingBlock_(name, None, None, handler(reason))))
+    except Exception:
+        logger.warning("Could not watch for sleep and screen lock.", exc_info=True)
+
+    def stop() -> None:
+        for center, token in registered:
+            try:
+                center.removeObserver_(token)
+            except Exception:
+                logger.warning("Could not stop watching for sleep.", exc_info=True)
+        registered.clear()
+
+    return stop
+
+
 # ---- The Help > "Test secure unlock…" check -----------------------------------------------------
 
 
