@@ -415,21 +415,24 @@ Reported on the Mac (preview 4): underline a word, move the text; the underline 
 Reported on the Mac (preview 4): a new notebook's dialog could not be cancelled. Reviewed: PASS (4f31486); checked in Chromium (WebKit does not start on the build machine).
 - [x] Cancel, X and Esc close it with the name empty, and make no notebook
 - [x] Enter with a name creates it (it used to cancel)
-## F-064 A real Inbox [doing]
+## F-064 A real Inbox [done]
+Reviewed: PASS after fixes (dd7e581). Backups are format 3; an older build opening the database files Inbox notes into a notebook (ARCHITECTURE.md).
 Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Needs: design
-- [ ] new notes and quick notes land in Inbox (one built-in place, not a notebook you can rename or delete) until filed; existing notes stay where they are
-- [ ] Inbox's count is its unfiled notes and it empties as notes are filed; a note made with a notebook's + goes into that notebook
-- [ ] agents (CLI), backups and import know the Inbox (an imported note keeps its notebook, or lands in Inbox)
-## F-065 File by drag [todo]
+- [x] new notes and quick notes land in Inbox (one built-in place, not a notebook you can rename or delete) until filed; existing notes stay where they are
+- [x] Inbox's count is its unfiled notes and it empties as notes are filed; a note made with a notebook's + goes into that notebook
+- [x] agents (CLI), backups and import know the Inbox (an imported note keeps its notebook, or lands in Inbox)
+## F-065 File by drag [review]
+Reviewed: PASS (dd7e581) in Chromium; waits on a real drag in the Mac app (WebKit) in v0.5.0-preview.5. A note dropped on the Inbox shelf unfiles it.
 Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Needs: F-064
-- [ ] drag a note from Inbox or any notebook onto a notebook to move it; the row lifts and the target highlights
-- [ ] drag a notebook onto Projects, Areas, Resources or Archive to change its section
-- [ ] the Archive lid opens as something drops in and closes after; all motion under 200 ms, plain CSS
+- [x] drag a note from Inbox or any notebook onto a notebook to move it; the row lifts and the target highlights
+- [x] drag a notebook onto Projects, Areas, Resources or Archive to change its section
+- [x] the Archive lid opens as something drops in and closes after; all motion under 200 ms, plain CSS
 - [ ] works with the mouse in the Mac app's web view (WebKit) as in the browser
-## F-066 Sections fold smoothly [todo]
+## F-066 Sections fold smoothly [done]
 Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Needs: none
-- [ ] Inbox, Projects, Areas, Resources and Archive each fold and unfold with a chevron, smoothly; the folded state is remembered on this machine
-- [ ] a folded section springs open after about half a second of hovering while dragging
-## F-067 Name a notebook in place [todo]
+- [x] Inbox, Projects, Areas, Resources and Archive each fold and unfold with a chevron, smoothly; the folded state is remembered on this machine
+- [x] a folded section springs open after about half a second of hovering while dragging
+## F-067 Name a notebook in place [done]
+The + opens the inline row; its colour dot (or Shift+click on +) opens the full dialog.
 Brief: docs/briefs/para-sidebar.md · Design: docs/design/para-sidebar.md · Needs: none
-- [ ] a section's + adds a notebook row named in place (Enter keeps it, Esc drops it); the dialog stays for colour and editing
+- [x] a section's + adds a notebook row named in place (Enter keeps it, Esc drops it); the dialog stays for colour and editing
