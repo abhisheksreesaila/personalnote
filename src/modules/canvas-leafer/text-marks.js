@@ -5,7 +5,7 @@ import { hunksOf, mapPosition, untouched } from '../../core/text-diff.js'
 
 const QUOTE_CONTEXT = 32
 const WORD = /[\p{L}\p{N}_']/u
-const UNDERLINE_REACH = 0.35 // a word's box reaches this much of its height below (and above) it: an underline sits just under the letters
+const UNDERLINE_REACH = 0.5 // a word's box reaches this much of its height below (and above) it: an underline sits just under the letters, by hand often a little lower
 
 export const quoteOf = (source, pos, end) => ({ exact: source.slice(pos, end), prefix: source.slice(Math.max(0, pos - QUOTE_CONTEXT), pos), suffix: source.slice(end, end + QUOTE_CONTEXT) })
 

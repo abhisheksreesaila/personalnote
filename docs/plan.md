@@ -355,6 +355,13 @@ Needs: F-050
 Needs: F-048..F-051 (F-052 if ready)
 - [x] the Page type leaves the New note menu (old page notes still open)
 - [x] Mac and Linux packages as a GitHub pre-release: v0.5.0-preview.2 https://github.com/abhisheksreesaila/personalnote/releases/tag/v0.5.0-preview.2
+## F-055 Preview 2 fixes: selecting text, underlines that stay [done]
+Reviewed: PASS (follow-ups: middle-button pan and touch on the words being typed as before; the editor layer never scrolls; underline vs handwriting boundary tests).
+Known: verify-leafer-hybrid's group-drag and typing-grid checks fail intermittently on the released code too (2 of 4 runs); needs its own look.
+Captain (2026-10-12, after preview 2): with the Text tool the words could be typed but not selected with the mouse; an underline under the text stayed behind when the text moved.
+Needs: F-049, F-050
+- [x] with the Text tool, a mouse drag or double-click selects words in the text being typed (the editor sits above the pointer layer)
+- [x] an underline drawn under the last (or only) line of a Markdown text is a mark of its words and moves with the text
 ## F-054 Focus write mode [todo]
 Captain (2026-10-12, queued for the release after preview 2): "the editor (writing has to be zippy)., we need a focus write mode, where drawing is off, so people can write as fast you can."
 - [ ] a Focus write mode: drawing and ink input off, the canvas chrome quiet, typing goes straight into Markdown text with nothing else in the way

@@ -22,6 +22,16 @@ test('an underline just below a word still belongs to it', () => {
   assert.equal(anchor?.quote.exact, 'harbour')
 })
 
+test('a hand-drawn underline a little lower (half a line under the word) still belongs to it', () => {
+  const anchor = anchorStroke({ x: 46, y: 29, width: 76, height: 2 }, WORDS, SOURCE, [{ x: 46, y: 29 }, { x: 70, y: 31 }, { x: 96, y: 29 }, { x: 122, y: 30 }])
+  assert.equal(anchor?.quote.exact, 'harbour')
+})
+
+test('handwriting a line below the words stays ink', () => {
+  const scrawl = Array.from({ length: 12 }, (_, i) => ({ x: 10 + i * 14, y: 42 + (i % 2) * 14 })) // a word written one line-height under the text
+  assert.equal(anchorStroke({ x: 10, y: 42, width: 154, height: 14 }, WORDS, SOURCE, scrawl), null)
+})
+
 test('a stroke away from every word is not a mark', () => {
   assert.equal(anchorStroke({ x: 20, y: 80, width: 40, height: 30 }, WORDS, SOURCE, [{ x: 20, y: 80 }, { x: 60, y: 110 }]), null)
 })

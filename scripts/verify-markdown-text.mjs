@@ -310,6 +310,50 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
   await page.waitForTimeout(800)
 
+  // With the Text tool on, the mouse selects words in the text being typed (a drag, a double-click); a hand-drawn underline under a
+  // one-line text is a mark of its words, and moving the text carries it.
+  await pn(() => window.__personalNote.createNote())
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
+  await page.waitForTimeout(800)
+  await pn(() => { window.__personalNote.leaferCanvas().setView({ x: 120, y: 40, scale: 1 }); window.__personalNote.setTool('text') })
+  await page.mouse.click(host.x + 200, host.y + 130)
+  await page.waitForTimeout(300)
+  await page.keyboard.type('The harbour walk at dusk')
+  await page.waitForTimeout(300)
+  const loneLine = await pn(() => { const r = document.querySelector('.md-editor .cm-line')?.getBoundingClientRect(); return r && { x: r.left, y: r.top + r.height / 2 } })
+  const editorPick = () => pn(() => { const content = document.querySelector('.md-editor .cm-content'); return content && content.value.slice(content.selectionStart, content.selectionEnd) })
+  await page.mouse.move(loneLine.x + 2, loneLine.y); await page.mouse.down()
+  await page.mouse.move(loneLine.x + 150, loneLine.y, { steps: 8 }); await page.mouse.up()
+  await page.waitForTimeout(200)
+  check('with the Text tool a mouse drag selects words of the text being typed', (await editorPick()) === 'The harbour', JSON.stringify(await editorPick()))
+  await page.mouse.dblclick(loneLine.x + 210, loneLine.y)
+  await page.waitForTimeout(200)
+  check('and a double-click selects a word', (await editorPick()) === 'walk', JSON.stringify(await editorPick()))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(1200)
+  const lone = (await objectsNow()).find((object) => object.type === 'text' && object.content === 'The harbour walk at dusk')
+  const loneInfo = await pn((id) => window.__personalNote.leaferCanvas().markdownInfo(id), lone.id)
+  const loneWord = loneInfo.words.find((word) => word.from === 4)
+  const below = { x: host.x + 120 + lone.geometry.x + loneWord.x, y: host.y + 40 + lone.geometry.y + loneWord.y + loneWord.height + 10 }
+  await pn(() => window.__personalNote.setTool('pen'))
+  const looseInk = async () => (await objectsNow()).filter((object) => object.type === 'ink').length
+  const looseBefore = await looseInk()
+  await stroke(Array.from({ length: 11 }, (_, i) => ({ x: below.x - 4 + (loneWord.width + 8) * i / 10, y: below.y + Math.sin(i) * 1.5 })))
+  const underlined = (await objectsNow()).find((object) => object.id === lone.id)
+  check('an underline drawn under a one-line text is a mark of its word, not loose ink', underlined.marks?.length === 1 && underlined.marks[0].anchor.quote.exact === 'harbour' && (await looseInk()) === looseBefore, JSON.stringify([underlined.marks?.map((mark) => mark.anchor.quote.exact), await looseInk(), looseBefore]))
+  await pn((id) => { window.__personalNote.setTool('select'); window.__personalNote.leaferCanvas().select([id]) }, lone.id)
+  await page.waitForTimeout(300)
+  const grip = { x: below.x + 30, y: below.y - loneWord.height / 2 - 10 }
+  await page.mouse.move(grip.x, grip.y); await page.mouse.down()
+  for (let i = 1; i <= 10; i += 1) { await page.mouse.move(grip.x, grip.y + i * 15); await page.waitForTimeout(30) }
+  await page.mouse.up()
+  await page.waitForTimeout(600)
+  const carried = (await objectsNow()).find((object) => object.id === lone.id)
+  check('moving the text carries its underline with it', carried.geometry.y > lone.geometry.y + 100 && carried.marks?.length === 1 && (await looseInk()) === looseBefore, JSON.stringify([lone.geometry.y, carried.geometry.y, carried.marks?.length]))
+  await pn(async (id) => window.__personalNote.selectNote(id), noteId)
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
+  await page.waitForTimeout(800)
+
   // Markdown export carries the Markdown
   const zip = path.join(scratch, 'export.zip')
   fs.writeFileSync(zip, Buffer.from(await (await fetch(`${API}/api/export/markdown`)).arrayBuffer()))

@@ -509,6 +509,8 @@
   /* While the Select tool is on, Leafer takes the pointer; the Hand (or held Space) gives it back to the input surface that does the panning. */
   .app-shell.leafer-picking .input-surface { pointer-events: none; }
   .app-shell.leafer-picking #leafer-host { pointer-events: auto; }
+  .leafer-editor-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; overflow: clip; touch-action: none; } /* (after the input surface: the words being typed sit over it) */
+  .leafer-editor-layer .md-editor { pointer-events: auto; }
   .leafer-text-editor { z-index: 5; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; } /* (the host is not selectable; the words being typed are) */
   .connect-surface { position: absolute; inset: 0; z-index: 3; touch-action: none; cursor: crosshair; }
   .connect-surface[hidden] { display: none; }

@@ -898,10 +898,16 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // Two editors with one contract: the plain one (a textarea, text.js) and, for Markdown text, the one that keeps it formatted while it is
   // typed (markdown-editor.js, F-049). That one brings CodeMirror, so it loads a moment after the canvas does; a Markdown text opened before
   // it is there is edited in the plain one.
-  const plainOverlay = createTextOverlay({ host })
+  // The editors live in a layer of their own over the canvas host, set above the surface that takes the pointer for the Text tool, so a
+  // press, a drag or a double-click on the words being typed reaches them (to place the caret or select words) instead of the canvas.
+  const editorLayer = document.createElement('div')
+  editorLayer.className = 'leafer-editor-layer'
+  if (host.parentElement) host.parentElement.append(editorLayer); else host.append(editorLayer)
+  editorLayer.addEventListener('scroll', () => { editorLayer.scrollTop = 0; editorLayer.scrollLeft = 0 }) // (the browser keeps a caret in view by scrolling it; the app moves the view itself)
+  const plainOverlay = createTextOverlay({ host: editorLayer })
   let markdownEditor = null
   let activeEditor = plainOverlay
-  const loadEditor = () => import('./markdown-editor.js').then((module) => { markdownEditor ??= module.createMarkdownEditor({ host }) }).catch(() => {})
+  const loadEditor = () => import('./markdown-editor.js').then((module) => { markdownEditor ??= module.createMarkdownEditor({ host: editorLayer }) }).catch(() => {})
   if (globalThis.requestIdleCallback) requestIdleCallback(() => loadEditor(), { timeout: 4000 }) // (when the canvas is idle: never in the way of a pan)
   else setTimeout(loadEditor, 1500)
   const overlay = {
@@ -1769,7 +1775,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         if (!isUpright(og)) continue
         const layout = layoutOf(object)
         const box = { x: g.x - og.x, y: g.y - og.y, width: g.width, height: g.height }
-        if (box.x > layout.width || box.y > layout.height || box.x + box.width < 0 || box.y + box.height < 0) continue
+        const slack = layout.words.reduce((most, word) => Math.max(most, word.height), 0) // (an underline under the last line starts below the text's box)
+        if (box.x > layout.width + slack || box.y > layout.height + slack || box.x + box.width < -slack || box.y + box.height < -slack) continue
         const trail = (ink.points ?? [{ x: g.width / 2, y: g.height / 2 }]).map((point) => ({ x: point.x + box.x, y: point.y + box.y }))
         const anchor = anchorStroke(box, layout.words, object.content ?? '', trail)
         if (!anchor) continue
@@ -1939,7 +1946,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     lodBuildAll: () => lod.buildAll(),
     lodForceSlow: () => lod.forceSlow(),
     lodTest: lod.test,
-    destroy() { for (const [type, fn] of [['pointermove', inputMove], ['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); app.destroy() },
+    destroy() { for (const [type, fn] of [['pointermove', inputMove], ['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); editorLayer.remove(); app.destroy() },
   }
   return api
 }
