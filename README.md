@@ -40,7 +40,7 @@ Releases are built by GitHub Actions when a `v*` tag is pushed (`.github/workflo
 
 1. Download `personal-note-macos-arm64.zip` from the Releases page and unzip it.
 2. Move **Personal Note** to Applications.
-3. The app is not notarized (only ad-hoc signed), so macOS blocks the first launch.
+3. The app is not notarized (it is signed with the project's own self-signed certificate, so updates stay the same app to the keychain), so macOS blocks the first launch.
    - macOS 14 and earlier: right-click the app, choose **Open**, then **Open** again.
    - macOS 15 and later: right-click › Open no longer works for such apps. Double-click the app once, then open **System Settings › Privacy & Security**, scroll to the message about "Personal Note" and click **Open Anyway**.
    - Or remove the quarantine flag in Terminal: `xattr -dr com.apple.quarantine "/Applications/Personal Note.app"`.
