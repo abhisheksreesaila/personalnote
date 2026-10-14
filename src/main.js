@@ -1343,7 +1343,7 @@ let togglingTool = false // F-070: the double-tap's own tool change
 let writingSpot = null // F-070 { noteId, id, start, end }: where the caret was when drawing took over; any other tool change forgets it
 function setTool(tool) {
   if (!TOOLS.has(tool)) tool = 'select'
-  if (!togglingTool) writingSpot = null
+  if (!togglingTool && !applyingTemporaryHand) writingSpot = null // (the space-bar hand and its release are temporary: the way back stays)
   if (!applyingTemporaryHand) temporaryHand.cancel()
   if (tool !== state.tool) pageOpened = false
   state.tool = tool
