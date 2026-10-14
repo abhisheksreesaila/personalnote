@@ -178,6 +178,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const leafer = app.tree
   for (const layer of [app.tree, app.sky]) if (layer.renderer?.config) layer.renderer.config.usePartRender = perf.partRender
   const chrome = new Group({ hittable: false })
+  let focusHidden = [] // F-073: the nodes focus mode hid
   const world = new Group()
   leafer.add(chrome)
   leafer.add(world)
@@ -1972,6 +1973,19 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     lodState: () => lod.stats(),
     lodExit: () => lod.exit(),
     setDrawing(on) { drawingTool = Boolean(on) },
+    // F-073 focus mode: the page furniture (edges, folds, labels) and every object but `keepId` are not drawn; nothing in the note changes.
+    // `setFocusLook(false)` brings back exactly what was drawn before.
+    setFocusLook(on, keepId = null) {
+      lod.exit()
+      chrome.visible = !on
+      if (on) {
+        focusHidden = []
+        for (const entry of entries.values()) if (entry.id !== keepId && entry.node.visible !== false) { entry.node.visible = false; focusHidden.push(entry.node) }
+      } else {
+        for (const node of focusHidden) node.visible = true
+        focusHidden = []
+      }
+    },
     // Resolves when the page bitmaps are made for the view as it is (they are made in idle time after a jump or a zoom), or after `maxMs`; at once when
     // there are none to wait for. The speed test sets a view and waits for this, as a person who pauses before the next pan does.
     whenBitmapsReady(maxMs = 8000) {

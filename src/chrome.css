@@ -635,3 +635,15 @@
   .page-minimap, .zoom-control { transition: opacity 200ms ease; }
   .writing-quiet .page-minimap:not(:hover):not(:focus-within), .writing-quiet .zoom-control:not(:hover):not(:focus-within) { opacity: 0; }
 }
+/* F-073 focus mode: only the words, on paper. The strip shows on hover; the hint fades by itself. */
+@media screen {
+  .focus-strip, .focus-hint { display: none; position: fixed; z-index: 40; color: var(--ui-muted); font: 500 12.5px var(--ui-font); }
+  .app-shell.focus-mode { --rail-width: 0px; background: var(--paper); }
+  .focus-mode :is(.sidebar, .topbar, .tool-dock, .page-minimap, .zoom-control, .scroll-indicator, .selection-bar, .properties-panel, .sidebar-scrim) { display: none !important; }
+  .focus-mode .focus-strip { display: flex; inset: 0 0 auto; height: 52px; align-items: center; gap: 16px; padding: 0 20px; background: var(--paper); opacity: 0; transition: opacity .16s; }
+  .focus-strip:hover, .focus-strip:focus-within { opacity: 1; }
+  .focus-strip b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .focus-strip button { color: inherit; background: none; border: 1px solid var(--glass-border); border-radius: 10px; padding: 7px 10px; cursor: pointer; }
+  .focus-mode .focus-hint { display: block; left: 50%; bottom: 28px; transform: translateX(-50%); pointer-events: none; animation: focus-hint 2.6s forwards; }
+  @keyframes focus-hint { 70% { opacity: .9; } to { opacity: 0; } }
+}
