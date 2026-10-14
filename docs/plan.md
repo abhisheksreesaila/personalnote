@@ -447,12 +447,13 @@ Reported on the Mac (preview 5): typing runs past the page's right edge and only
 - [x] while typing, a Markdown text wraps at the same width it will have when typing ends (never wider than the page)
 - [x] a subtle mark shows the right edge the words wrap at while writing
 - [x] a text started near the margin, classic text boxes and point texts also wrap at the margin while typed (an existing text keeps its place; centred legacy texts are left alone)
-## F-070 Double-tap ⌘ toggles pen and text [todo]
+## F-070 Double-tap ⌘ toggles pen and text [done]
 Brief: docs/briefs/focus-search-switch.md · Design: none needed (pill only) · Needs: none
-- [ ] two clean taps of ⌘ alone (Ctrl on Linux/Windows) within ~300 ms toggle writing ↔ the last pen tool, even with the caret in text
-- [ ] ⌘ used in a shortcut (⌘C, ⌘Z, ⌘-click…) between or during the taps never toggles (key-timing unit test plus real-keyboard check)
-- [ ] switching back to text puts the caret where it was; a small pill flashes "Pen" or "Text"
-- [ ] dock and single-key shortcuts unchanged
+Reviewed: PASS after fixes (wheel zoom cancels a tap, pill at top centre, caret spot kept through the space-bar hand). Mac ⌘ path not yet tried on a real Mac.
+- [x] two clean taps of ⌘ alone (Ctrl on Linux/Windows) within ~300 ms toggle writing ↔ the last pen tool, even with the caret in text
+- [x] ⌘ used in a shortcut (⌘C, ⌘Z, ⌘-click…) between or during the taps never toggles (key-timing unit test plus real-keyboard check)
+- [x] switching back to text puts the caret where it was; a small pill flashes "Pen" or "Text"
+- [x] dock and single-key shortcuts unchanged
 ## F-071 Middle-click toggles pen and text [todo]
 Brief: docs/briefs/focus-search-switch.md · Needs: F-070
 - [ ] a middle-button click without moving toggles like double-tap ⌘; a middle-drag still pans
