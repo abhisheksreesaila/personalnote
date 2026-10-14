@@ -639,7 +639,7 @@
 @media screen {
   .focus-strip, .focus-hint { display: none; position: fixed; z-index: 40; color: var(--ui-muted); font: 500 12.5px var(--ui-font); }
   .app-shell.focus-mode { --rail-width: 0px; background: var(--paper); }
-  .focus-mode :is(.sidebar, .topbar, .tool-dock, .page-minimap, .zoom-control, .scroll-indicator, .selection-bar, .properties-panel, .sidebar-scrim, .mobile-capture-controls, .ink-options-popover) { display: none !important; }
+  .focus-mode :is(.sidebar, .topbar, .tool-dock, .page-minimap, .zoom-control, .scroll-indicator, .selection-bar, .properties-panel, .sidebar-scrim, .mobile-capture-controls, .ink-options-popover, .md-edge, .text-edge) { display: none !important; }
   .focus-mode .focus-strip { display: flex; inset: 0 0 auto; height: 52px; align-items: center; gap: 16px; padding: 0 20px; background: var(--paper); opacity: 0; transition: opacity .16s; }
   .focus-strip:hover, .focus-strip:focus-within { opacity: 1; }
   .focus-strip b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }

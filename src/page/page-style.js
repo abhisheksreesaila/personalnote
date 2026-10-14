@@ -116,6 +116,12 @@ const CSS = `
   .page-desk { padding: 0 0 96px; }
   .page-paper { padding: 56px 22px 240px; border-radius: 0; box-shadow: none; }
 }
+/* focus mode (F-073): the page is only its words, in a column on paper; no toolbar, sheet marks or tray */
+.app-shell.focus-mode .page-host { inset: 0; border: 0; border-radius: 0; background: var(--paper); }
+.focus-mode .page-desk { padding: 0 16px 120px; }
+.focus-mode .page-stage { width: 680px; }
+.focus-mode .page-paper { padding: 96px 0 360px; background: transparent; box-shadow: none; }
+.focus-mode :is(.page-toolbar, .page-sheets, .page-tray, .page-draw-hint, .page-link-hint) { display: none; }
 }
 `
 
