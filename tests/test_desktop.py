@@ -395,6 +395,48 @@ class CaptureBridgeTests(unittest.TestCase):
         self.assertEqual(calls, [True])
 
 
+class FullScreenBridgeTests(unittest.TestCase):
+    def test_the_page_can_enter_and_leave_full_screen(self):
+        calls = []
+        api = DesktopApi(lambda: None, full_screen=lambda on: calls.append(on) or True)
+        self.assertTrue(api.set_full_screen(True))
+        self.assertTrue(api.set_full_screen(False))
+        self.assertEqual(calls, [True, False])
+
+    def test_a_failure_is_reported_as_false_never_raised(self):
+        def boom(_on):
+            raise RuntimeError("no window")
+
+        self.assertFalse(DesktopApi(lambda: None, full_screen=boom).set_full_screen(True))
+
+    def test_without_a_full_screen_function_the_answer_is_false(self):
+        self.assertFalse(DesktopApi(lambda: None).set_full_screen(True))
+
+    def test_anything_truthy_means_enter(self):
+        calls = []
+        DesktopApi(lambda: None, full_screen=lambda on: calls.append(on) or True).set_full_screen("yes")
+        self.assertEqual(calls, [True])
+
+    def test_it_only_toggles_when_the_window_is_not_already_there(self):
+        toggles = []
+        state = {"full": False}
+
+        def toggle():
+            toggles.append(1)
+            state["full"] = not state["full"]
+
+        apply = desktop.make_full_screen(lambda: state["full"], toggle)
+        self.assertTrue(apply(True))
+        self.assertTrue(apply(True))  # already there: nothing happens
+        self.assertEqual(len(toggles), 1)
+        self.assertTrue(apply(False))
+        self.assertTrue(apply(False))
+        self.assertEqual(len(toggles), 2)
+
+    def test_an_unreadable_window_state_is_a_refusal(self):
+        self.assertFalse(desktop.make_full_screen(lambda: None, lambda: None)(True))
+
+
 class ThreadStrictWindow:
     """Like pywebview's Cocoa window: evaluate_js must never be called on the thread that delivered the notification."""
 
