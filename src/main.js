@@ -3113,11 +3113,12 @@ inputSurface.addEventListener('pointercancel', endMousePan)
 
 // Middle-mouse drag pans from any tool, and keeps the press away from drawing, selecting and placing.
 let middlePan = null
+const MIDDLE_PASTE_GUARD = 400 + 300 // the longest click (400 ms) plus the time the browser needs to start its paste
 let middleSettlesAt = 0 // a paste the browser starts from the middle press (Linux primary selection) is dropped until this time
 const middleClick = createMiddleClick() // F-071: a middle click that does not travel toggles writing and pen like double-tap Cmd
 onCanvasInput('pointerdown', (event) => {
   if (event.button !== 1 || event.pointerType === 'touch' || state.activeNoteType !== 'canvas') return
-  middleSettlesAt = Infinity
+  middleSettlesAt = performance.now() + MIDDLE_PASTE_GUARD
   middleClick.down({ x: event.clientX, y: event.clientY, time: event.timeStamp })
   middlePan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: viewportOffsetX, offsetY: viewportOffsetY }
   event.currentTarget.setPointerCapture(event.pointerId)
@@ -3135,7 +3136,7 @@ onCanvasInput('pointermove', (event) => {
 function endMiddlePan(event) {
   if (middlePan?.pointerId !== event.pointerId) return
   middlePan = null
-  middleSettlesAt = performance.now() + 300
+  middleSettlesAt = performance.now() + 300 // bounded: the guard never outlives the release by more than this
   event.currentTarget.style.cursor = event.currentTarget === inputSurface ? toolCursor() : ''
   event.stopImmediatePropagation()
   const clicked = event.type === 'pointerup' && middleClick.up({ time: event.timeStamp })
@@ -3145,13 +3146,16 @@ function endMiddlePan(event) {
 onCanvasInput('pointerup', endMiddlePan, { capture: true })
 onCanvasInput('pointercancel', endMiddlePan, { capture: true })
 onCanvasInput('mousedown', (event) => { if (event.button === 1) event.preventDefault() })
+const inPaper = (target) => target instanceof Node && elements.paper.contains(target)
+onCanvasInput('lostpointercapture', (event) => { if (middlePan?.pointerId === event.pointerId) { middlePan = null; middleClick.cancel(); middleSettlesAt = 0 } }) // capture lost with no release: nothing stays guarded
+window.addEventListener('blur', () => { middleSettlesAt = 0 })
 for (const type of ['paste', 'beforeinput']) window.addEventListener(type, (event) => {
-  if (performance.now() >= middleSettlesAt || (type === 'beforeinput' && event.inputType !== 'insertFromPaste')) return
+  if (performance.now() >= middleSettlesAt || !inPaper(event.target) || (type === 'beforeinput' && event.inputType !== 'insertFromPaste')) return
   event.preventDefault()
   event.stopImmediatePropagation()
 }, true)
 // No Linux primary-selection paste into the words and no browser autoscroll from a middle press (those run on the mouse events).
-for (const type of ['mousedown', 'mouseup', 'auxclick']) window.addEventListener(type, (event) => { if (event.button === 1 && state.activeNoteType === 'canvas') event.preventDefault() }, true)
+for (const type of ['mousedown', 'mouseup', 'auxclick']) window.addEventListener(type, (event) => { if (event.button === 1 && state.activeNoteType === 'canvas' && inPaper(event.target)) event.preventDefault() }, true)
 
 // A press with the mouse places a sticky or starts a text where the page is pressed. A finger or a pen places on the click that ends the
 // tap (below): a phone only raises its keyboard for focus given at the end of a gesture, and the compatibility mouse events a tap sends
