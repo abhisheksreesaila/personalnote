@@ -458,15 +458,17 @@ Reviewed: PASS after fixes (wheel zoom cancels a tap, pill at top centre, caret 
 Brief: docs/briefs/focus-search-switch.md · Needs: F-070
 Reviewed: PASS after fixes (paste guard bounded, middle-click handling only on the paper).
 - [x] a middle-button click without moving toggles like double-tap ⌘; a middle-drag still pans
-## F-072 Omnibar [todo]
+## F-072 Omnibar [done]
 Brief: docs/briefs/focus-search-switch.md · Design: docs/design/omnibar-focus.md (to do) · Needs: design
-- [ ] search sits as a slim bar at the top centre; the top-right search box is gone, ⌘K still opens it
-- [ ] opened, a large centred panel finds notes by title and words, notebooks and actions (new note, quick note, make secure, focus mode, switch skin); arrows and Enter pick, Esc closes
-- [ ] secure notes show by title only
-- [ ] at phone width it is a search icon that fills the screen
+Reviewed: PASS after fixes (no stray "New note" on Enter while words load, IME guard). Option C chosen. The focus mode action is added with F-073. CSS budget raised to 17.6 KiB for omnibar + focus mode.
+- [x] search sits as a slim bar at the top centre; the top-right search box is gone, ⌘K still opens it
+- [x] opened, a large centred panel finds notes by title and words, notebooks and actions (new note, quick note, make secure, focus mode, switch skin); arrows and Enter pick, Esc closes
+- [x] secure notes show by title only
+- [x] at phone width it is a search icon that fills the screen
 ## F-073 Focus mode [todo]
 Brief: docs/briefs/focus-search-switch.md · Design: docs/design/omnibar-focus.md (to do) · Needs: design
 - [ ] ⌘. or a top-bar button shows only the words in a centred column on paper colour: no sidebar, dock, page map, page edges or desk; drawing off
 - [ ] a faint word count on hover; Esc or ⌘. restores everything exactly as it was
 - [ ] the Mac app goes full screen with it and leaves full screen after
+- [ ] the omnibar offers a Focus mode action
 - [ ] typing speed (speed test row) unchanged
