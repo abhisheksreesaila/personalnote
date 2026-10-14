@@ -425,13 +425,47 @@ class FullScreenBridgeTests(unittest.TestCase):
             toggles.append(1)
             state["full"] = not state["full"]
 
-        apply = desktop.make_full_screen(lambda: state["full"], toggle)
+        apply = desktop.make_full_screen(lambda: state["full"], toggle, sleep=lambda _s: None)
         self.assertTrue(apply(True))
         self.assertTrue(apply(True))  # already there: nothing happens
         self.assertEqual(len(toggles), 1)
         self.assertTrue(apply(False))
         self.assertTrue(apply(False))
         self.assertEqual(len(toggles), 2)
+
+    def test_it_waits_for_the_window_to_finish_the_move(self):
+        state = {"full": False, "reads": 0}
+
+        def is_full():
+            state["reads"] += 1
+            return state["full"] and state["reads"] > 4  # the move shows up a few reads after the toggle
+
+        apply = desktop.make_full_screen(is_full, lambda: state.update(full=True), sleep=lambda _s: None)
+        self.assertTrue(apply(True))
+        self.assertGreater(state["reads"], 4)
+
+    def test_a_move_that_never_arrives_is_a_refusal(self):
+        apply = desktop.make_full_screen(lambda: False, lambda: None, timeout=0.2, poll=0.05, sleep=lambda _s: None)
+        self.assertFalse(apply(True))
+
+    def test_quick_repeated_asks_never_toggle_twice_for_one_target(self):
+        toggles = []
+        state = {"full": False}
+
+        def toggle():
+            toggles.append(1)
+            time.sleep(0.05)  # the move takes a moment
+            state["full"] = not state["full"]
+
+        apply = desktop.make_full_screen(lambda: state["full"], toggle, poll=0.01)
+        results = []
+        threads = [threading.Thread(target=lambda: results.append(apply(True))) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(5)
+        self.assertEqual(results, [True] * 4)
+        self.assertEqual(len(toggles), 1)
 
     def test_an_unreadable_window_state_is_a_refusal(self):
         self.assertFalse(desktop.make_full_screen(lambda: None, lambda: None)(True))
