@@ -209,6 +209,12 @@ export function createTextOverlay({ host }) {
     },
     // The selected range in the field, and a replacement for it ([start, end) -> text), the selection left on the new words.
     get selection() { return area ? { start: area.selectionStart, end: area.selectionEnd } : null },
+    setSelection(start, end = start) {
+      if (!area) return false
+      const max = area.value.length
+      area.setSelectionRange(Math.min(start, max), Math.min(end, max))
+      return true
+    },
     replaceRange(start, end, text) {
       if (!area || composing) return false
       area.value = `${area.value.slice(0, start)}${text}${area.value.slice(end)}`

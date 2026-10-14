@@ -933,6 +933,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     open(options) { activeEditor = options.markdown && markdownEditor ? markdownEditor : plainOverlay; return activeEditor.open(options) },
     setValue: (...args) => activeEditor.setValue(...args),
     replaceRange: (...args) => activeEditor.replaceRange(...args),
+    setSelection: (...args) => activeEditor.setSelection(...args),
     setMatrix: (matrix) => activeEditor.setMatrix(matrix),
     setWidth: (width) => activeEditor.setWidth(width),
     commit: () => activeEditor.commit(),
@@ -1263,6 +1264,18 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     },
     // Ends a text edit in progress (the words typed so far are kept). The host calls it before it saves or leaves the note.
     finishTextEdit() { if (overlay.isOpen) overlay.commit() },
+    // F-070: which text is being written and where its caret (or selection) is, so writing can come back to the same spot. Null when nothing is.
+    textCaret() {
+      if (!textEdit || !overlay.isOpen) return null
+      const range = overlay.selection
+      return range ? { id: textEdit.id, start: range.start, end: range.end } : null
+    },
+    // Writes in that text again with the caret where it was. False when the text is gone.
+    resumeText({ id, start, end }) {
+      if (!textApi.editText(id, { select: false })) return false
+      overlay.setSelection(start, end)
+      return true
+    },
     // Starts editing the words of a text or sticky (by id, or the topmost one at a page point, with the caret there). False when nothing editable is there.
     // A text whose box hugs its words is still written into anywhere along its lines, up to where they wrap (as in any editor).
     editText(target, options = {}) {

@@ -306,6 +306,12 @@ export function createMarkdownEditor({ host }) {
       return true
     },
     get selection() { if (!view) return null; const { from, to } = view.state.selection.main; return { start: from, end: to } },
+    setSelection(start, end = start) {
+      if (!view) return false
+      const max = view.state.doc.length
+      view.dispatch({ selection: EditorSelection.range(Math.min(start, max), Math.min(end, max)), scrollIntoView: true })
+      return true
+    },
     replaceRange(start, end, text) {
       if (!view || view.composing) return false
       view.dispatch({ changes: { from: start, to: end, insert: text }, selection: EditorSelection.range(start, start + text.length) })
