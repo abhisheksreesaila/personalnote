@@ -21,6 +21,12 @@ export function writingBox(point, { pageW = PAGE.width, margin = PAGE_MARGIN, mi
   const x = Math.min(point.x, right - min)
   return { x, width: Math.round(right - x) }
 }
+// An existing text keeps its x: the width from there to the right margin of its page, or null when that is under `least` (too little to wrap in).
+export function marginRoom(x, { pageW = PAGE.width, margin = PAGE_MARGIN, least = 40 } = {}) {
+  const column = Math.max(0, Math.floor(x / pageW))
+  const room = Math.round((column + 1) * pageW - margin - x)
+  return room >= least ? room : null
+}
 export const writingWidth = (point, options) => writingBox(point, options).width
 
 export const nextZ = (doc) => doc.objects.reduce((top, object, index) => Math.max(top, (object?.z ?? index) + 1), 0)

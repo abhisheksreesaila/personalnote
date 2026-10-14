@@ -29,7 +29,7 @@ import { clearMarkdownLayouts, layoutMarkdown } from './markdown-layout.js'
 import { anchorStroke, mapMarks, placeMarks, quoteOf, wholeWords } from './text-marks.js'
 import { followLinks, linkRanges, linkWord } from './text-links.js'
 import { ERASER_RADIUS, samplePath } from './ink-model.js'
-import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal, writingBox } from './text-ops.js'
+import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal, marginRoom, writingBox } from './text-ops.js'
 import { prettifySelection } from '../editor/prettify.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
@@ -984,11 +984,15 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // F-069: a text as wide as its words (the former engine's point text) wraps at the right margin of its page while it is written, and
     // is a box of that width once it has words, so its lines never run on past the page edge.
     let boxing = null
-    if (object.type === 'text' && object.mode === 'point' && isUpright(object.geometry)) {
-      boxing = writingBox({ x: object.geometry.x ?? 0 })
-      const boxed = { ...object, mode: 'box', geometry: { ...object.geometry, ...boxing } }
-      if (!entry) boxing = null // (an existing text keeps its own point object until the words reach the document; a new one is simply made a box)
-      object = boxed
+    if (object.type === 'text' && object.mode === 'point' && isUpright(object.geometry) && (object.style?.textAlign ?? 'left') === 'left') {
+      // A new text starts further left when it is too near the margin; an existing one keeps its x (it is a box from there to the margin,
+      // or stays a point text when there is hardly any room). Its own object stays a point text until the words reach the document.
+      const room = entry ? marginRoom(object.geometry.x ?? 0) : null
+      const place = entry ? (room ? { x: object.geometry.x ?? 0, width: room } : null) : writingBox({ x: object.geometry.x ?? 0 })
+      if (place) {
+        if (entry) boxing = place
+        object = { ...object, mode: 'box', geometry: { ...object.geometry, ...place } }
+      }
     }
     const size = entry ? entry.size : { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }
     textEdit = { id: object.id, entry, object, size, select, armed: false, floor: null, lineHeight: overlayFont(object).lineHeight, boxing }

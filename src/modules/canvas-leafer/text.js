@@ -179,7 +179,7 @@ export function createTextOverlay({ host }) {
         edge = document.createElement('div')
         edge.className = 'text-edge'
         edge.setAttribute('aria-hidden', 'true')
-        const ink = 'color-mix(in srgb, var(--sk-muted, ${QUIET_COLOR}) 38%, transparent)'
+        const ink = `color-mix(in srgb, var(--sk-muted, ${QUIET_COLOR}) 38%, transparent)`
         Object.assign(edge.style, { position: 'absolute', left: '0', top: '0', width: '1px', pointerEvents: 'none', zIndex: '6', transformOrigin: '0 0', background: `linear-gradient(to bottom, transparent, ${ink} 14%, ${ink} 86%, transparent)` })
         host.append(edge)
       }

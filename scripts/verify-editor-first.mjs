@@ -311,13 +311,15 @@ try {
   await fetch(`${API}/api/notes/${classicNote.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Classic', notebookId: classicNote.notebookId, revision: classicNote.revision, pageState: { columns: 1, rows: 2 }, content: { nodes: [
     classicNode('res_pointmid', 'point', 100, 100, 160, 'Point text'), classicNode('res_pointedge', 'point', 640, 300, 100, 'Edge text'),
     classicNode('res_boxmid', 'box', 100, 500, 400, 'Box text'), classicNode('res_boxedge', 'box', 640, 700, 150, 'Edge box'),
+    { ...classicNode('res_centred', 'point', 300, 900, 200, 'Centred'), pn: { type: 'text', mode: 'point', z: 0, geometry: classicGeometry(300, 900, 200, 40), style: { ...classicStyle, textAlign: 'center' } } },
   ], edges: [] } }) })
   await pn(async (id) => { await window.__personalNote.refreshWorkspaceLists(); await window.__personalNote.selectNote(id) }, classicNote.id)
-  await page.waitForFunction(() => window.__personalNote.leaferEdits.doc.objects.length === 4, null, { timeout: 15000 })
+  await page.waitForFunction(() => window.__personalNote.leaferEdits.doc.objects.length === 5, null, { timeout: 15000 })
   await page.waitForTimeout(800)
   await pn(() => document.activeElement?.blur())
   await pn(() => window.__personalNote.leaferCanvas().setView({ x: 120, y: 40, scale: 1 }))
   const ids = (await objects()).map((object) => object.id) // (the app gives its own ids: they follow the order they were saved in)
+  const original = (await objects()).map((object) => ({ mode: object.mode, geometry: object.geometry, content: object.content }))
   const names = ['point text, mid-page', 'point text, near the edge', 'box text, mid-page', 'box text, near the edge']
   for (const label of names) {
     const id = ids[names.indexOf(label)]
@@ -334,7 +336,26 @@ try {
     await page.keyboard.press('Escape')
     await page.waitForTimeout(700)
     const after = (await objects()).find((object) => object.id === id)
-    check(`${label}: once written it is the box it was typed in, ending at the margin`, after.mode === 'box' && after.geometry.x + after.geometry.width <= 860 - 56 + 0.5, JSON.stringify([after.mode, after.geometry]))
+    const was = original[names.indexOf(label)]
+    check(`${label}: once written it is the box it was typed in, ending at the margin, still starting where it did`, after.mode === 'box' && after.geometry.x + after.geometry.width <= 860 - 56 + 0.5 && after.geometry.x === was.geometry.x, JSON.stringify([after.mode, after.geometry, was.geometry]))
+    if (was.mode === 'point') {
+      await pn(() => window.__personalNote.leaferEdits.undo())
+      await page.waitForTimeout(300)
+      const undone = (await objects()).find((object) => object.id === id)
+      check(`${label}: undo returns it to a point text with its old place and size`, undone.mode === 'point' && JSON.stringify(undone.geometry) === JSON.stringify(was.geometry) && undone.content === was.content, JSON.stringify([undone.mode, undone.geometry, was.geometry]))
+    }
+  }
+  // a centred legacy point text is left as it is: opening and typing in it moves nothing
+  {
+    const id = ids[4]
+    await pn((textId) => window.__personalNote.leaferCanvas().editText(textId, { select: false }), id)
+    await page.waitForTimeout(400)
+    await page.keyboard.type(' more', { delay: 5 })
+    await page.waitForTimeout(900)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(700)
+    const centred = (await objects()).find((object) => object.id === id)
+    check('a centred point text stays a point text and keeps its place when edited', centred.mode === 'point' && centred.geometry.x === 300 && centred.geometry.y === 900 && centred.content.endsWith(' more'), JSON.stringify([centred.mode, centred.geometry]))
   }
   check('and no hairline is left behind', (await pn(() => document.querySelector('.text-edge'))) === null)
 

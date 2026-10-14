@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { applyChanges } from '../../core/document/operations.js'
 import { applyMatrix, placementMatrix } from './placement.js'
-import { fitGeometry, newShape, writingBox, writingWidth, planSetShapeFill, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newShape, marginRoom, writingBox, writingWidth, planSetShapeFill, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
 
 const box = { x: 100, y: 50, width: 240, height: 200, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const doc = () => ({
@@ -142,4 +142,12 @@ test('writingBox moves a text started too near the right margin left, so its lin
   assert.deepEqual(writingBox({ x: 80 }, { pageW: 860 }), { x: 80, width: 724 })
   const { x, width } = writingBox({ x: 800 }, { pageW: 860 })
   assert.ok(x + width <= 860 - 56)
+})
+
+test('marginRoom is the width from an existing text to its page margin, never moving the text', () => {
+  assert.equal(marginRoom(640, { pageW: 860 }), 164)
+  assert.equal(marginRoom(100, { pageW: 860 }), 704)
+  assert.equal(marginRoom(860 + 640, { pageW: 860 }), 164)
+  assert.equal(marginRoom(780, { pageW: 860 }), null) // 24px of room: too little to wrap in
+  assert.equal(marginRoom(900, { pageW: 860 }), 764) // (second page, 40px into it)
 })
