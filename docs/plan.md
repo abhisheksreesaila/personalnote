@@ -442,7 +442,8 @@ Reviewed: PASS after fixes (d8f9447). A click folds or opens a notebook's notes;
 Reported on the Mac (preview 5): an open notebook's notes can only be hidden by folding the whole section.
 - [x] clicking an open notebook's row folds its notes (clicking again opens them), with the same smooth fold as sections
 - [x] the note being written stays reachable (its notebook opens when the note is opened from search or the breadcrumb)
-## F-069 Text wraps at the page edge while typing [doing]
+## F-069 Text wraps at the page edge while typing [done]
 Reported on the Mac (preview 5): typing runs past the page's right edge and only wraps when typing stops.
-- [ ] while typing, a Markdown text wraps at the same width it will have when typing ends (never wider than the page)
-- [ ] a subtle mark shows the right edge the words wrap at while writing
+- [x] while typing, a Markdown text wraps at the same width it will have when typing ends (never wider than the page)
+- [x] a subtle mark shows the right edge the words wrap at while writing
+- [x] a text started near the margin, classic text boxes and point texts also wrap at the margin while typed (an existing text keeps its place; centred legacy texts are left alone)
