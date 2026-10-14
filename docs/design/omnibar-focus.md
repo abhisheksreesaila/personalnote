@@ -2,7 +2,7 @@
 
 Brief: docs/briefs/focus-search-switch.md · Tickets: F-072 (omnibar), F-073 (focus mode).
 Mock: https://claude.ai/artifact/5H94xn5pywpxRpsgiRUZt6 (source `docs/design/omnibar-focus-mock.html`; re-implement, don't ship it).
-Chosen: **pending the captain's pick** (one option for the omnibar, one for focus mode).
+Chosen: **Omnibar C (the bar grows)** and **Focus mode C (quiet strip)**, picked by the captain on 2026-10-13.
 
 ## Options
 Omnibar
