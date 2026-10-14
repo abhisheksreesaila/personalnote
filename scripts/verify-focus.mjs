@@ -232,6 +232,9 @@ try {
   check('an object made while focus is on is not drawn', shapeSpots.every((rgb) => near(rgb, paper)), JSON.stringify(shapeSpots))
   await page.keyboard.press('Escape')
   await wait(1200)
+  const shapeBox = await pn(() => { const c = window.__personalNote.leaferCanvas(); const o = window.__personalNote.leaferEdits.doc.objects.find((x) => x.type === 'shape'); const b = c.screenBox(o.id); const h = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: Math.round(h.left + b.x + b.width / 2), y: Math.round(h.top + b.y + b.height / 2) } })
+  const shapeNow = (await pixels([[shapeBox.x, shapeBox.y]]))[0]
+  check('the shape made in focus is drawn again after Esc (not paper colour)', !near(shapeNow, paper, 30), JSON.stringify([shapeBox, shapeNow, paper]))
   check('and only the objects that are really there are shown again afterwards', (await pn(() => window.__personalNote.leaferEdits.doc.objects.some((o) => o.type === 'shape'))) && (await pn(() => window.__personalNote.leaferEdits.doc.objects.length)) >= 3)
 
   // --- a page note
@@ -240,7 +243,36 @@ try {
   await pn(async (id) => { await window.__personalNote.refreshWorkspaceLists(); await window.__personalNote.selectNote(id) }, pageNote.id)
   await page.waitForFunction(() => document.querySelector('#page-host .cm-content'), null, { timeout: 15000 })
   await wait(800)
+  const savedContent = async () => JSON.stringify((await (await fetch(`${API}/api/notes/${pageNote.id}`)).json()).content)
+  // a drawing made by hand on empty paper (Draw mode), so there is ink to hide and to leave alone
+  await pn(() => document.querySelector('[data-page-mode="draw"]').click())
+  const paperBox = await pn(() => { const r = document.querySelector('.page-paper').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width } })
+  const drag = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); for (let i = 1; i <= 8; i += 1) await page.mouse.move(x + i * 14, y + Math.sin(i) * 20, { steps: 2 }); await page.mouse.up() }
+  await drag(paperBox.x + 180, paperBox.y + 420)
+  await pn(() => document.querySelector('[data-page-mode="write"]').click())
+  await wait(2200)
+  const inkBefore = await savedContent()
+  check('the page note has a drawing', /"drawings":\[\{/.test(inkBefore), inkBefore.slice(-200))
   const pageRevision = await noteRevision(pageNote.id)
+  const deskScroll = async () => pn(() => document.querySelector('.page-desk').scrollTop)
+
+  // enter and leave with no typing: nothing saved
+  await page.keyboard.press('Control+.')
+  await wait(900)
+  check('a page note: the existing drawing is not shown in focus', await pn(() => [...document.querySelectorAll('.page-drawing')].every((e) => getComputedStyle(e).display === 'none') && getComputedStyle(document.querySelector('.page-ink')).display === 'none'))
+  // a mouse drag on empty paper must not draw
+  await drag(680 - 150, 640)
+  await drag(680 - 150, 300)
+  await page.keyboard.press('Escape')
+  await wait(2500)
+  check('a mouse drag on empty paper in focus draws nothing: the same ink is saved and the revision is unchanged', (await savedContent()) === inkBefore && (await noteRevision(pageNote.id)) === pageRevision, `${await noteRevision(pageNote.id)} vs ${pageRevision}`)
+  check('the drawing is shown again after leaving', await pn(() => [...document.querySelectorAll('.page-drawing')].every((e) => getComputedStyle(e).display !== 'none')))
+  await page.keyboard.press('Control+.')
+  await wait(800)
+  await page.keyboard.press('Control+.')
+  await wait(1500)
+  check('entering and leaving a page note with no typing saves nothing', (await savedContent()) === inkBefore && (await noteRevision(pageNote.id)) === pageRevision)
+
   await page.click('#focus-button')
   await wait(900)
   check('a page note enters focus mode too', await inFocus())
@@ -261,7 +293,21 @@ try {
   await wait(900)
   check('and back on afterwards', await pn(() => document.querySelector('#page-host').classList.contains('page-drawing-mode')))
   await pn(() => document.querySelector('[data-page-mode="write"]').click())
-  void pageRevision
+
+  // --- a long page note: the scroll position comes back
+  const longNote = (await (await fetch(`${API}/api/notes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Long', notebookId: pageNote.notebookId, noteType: 'page' }) })).json())
+  await fetch(`${API}/api/notes/${longNote.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Long', notebookId: pageNote.notebookId, revision: longNote.revision, pageState: { columns: 1, rows: 1 }, content: { markdown: Array.from({ length: 90 }, (_, i) => `Paragraph ${i} of a long page note.`).join('\n\n') } }) })
+  await pn(async (id) => { await window.__personalNote.refreshWorkspaceLists(); await window.__personalNote.selectNote(id) }, longNote.id)
+  await page.waitForFunction(() => document.querySelector('#page-host .cm-content'), null, { timeout: 15000 })
+  await wait(900)
+  await pn(() => { document.querySelector('.page-desk').scrollTop = 700; document.activeElement?.blur() })
+  await wait(400)
+  const scrollBefore = await deskScroll()
+  await page.keyboard.press('Control+.')
+  await wait(900)
+  await page.keyboard.press('Escape')
+  await wait(1500)
+  check('the page scroll position is the same after leaving focus', scrollBefore > 300 && Math.abs((await deskScroll()) - scrollBefore) <= 2, JSON.stringify([scrollBefore, await deskScroll()]))
 
   // --- the Mac app's window bridge, and the browser's full screen
   await pn(() => { window.__fsCalls = []; window.pywebview = { api: { set_full_screen: async (on) => { window.__fsCalls.push(on); return true } } } })

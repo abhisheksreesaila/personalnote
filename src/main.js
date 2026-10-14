@@ -4033,7 +4033,7 @@ const focus = createFocusMode({
     closeInkOptions()
     if (saved.page) {
       elements.shell.classList.add('focus-mode')
-      if (saved.draw) elements.pageHost.querySelector('[data-page-mode="write"]')?.click() // (drawing is off)
+      pageEditor.setNoDrawing(true) // (drawing is off, and the drawings are not shown)
       if (!saved.focused) pageEditor.focus()
       focusStartedEditing = !saved.focused
     } else {
@@ -4063,6 +4063,7 @@ const focus = createFocusMode({
     cancelAnimationFrame(focusKeepFrame)
     elements.shell.classList.remove('focus-mode')
     if (saved.page) {
+      pageEditor?.setNoDrawing(false)
       if (saved.draw) elements.pageHost.querySelector('[data-page-mode="draw"]')?.click()
       if (focusStartedEditing && elements.pageHost.contains(document.activeElement)) document.activeElement.blur()
     } else {

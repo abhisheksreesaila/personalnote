@@ -121,7 +121,7 @@ const CSS = `
 .focus-mode .page-desk { padding: 0 16px 120px; }
 .focus-mode .page-stage { width: 680px; }
 .focus-mode .page-paper { padding: 96px 0 360px; background: transparent; box-shadow: none; }
-.focus-mode :is(.page-toolbar, .page-sheets, .page-tray, .page-draw-hint, .page-link-hint) { display: none; }
+.focus-mode :is(.page-toolbar, .page-sheets, .page-tray, .page-draw-hint, .page-link-hint, .page-ink, .page-drawing) { display: none; }
 }
 `
 
