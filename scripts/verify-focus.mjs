@@ -163,6 +163,19 @@ try {
   const savedText = await pn(() => window.__personalNote.leaferEdits.doc.objects.find((o) => o.type === 'text').content)
   check('what was typed in focus is in the note', savedText.endsWith('And a last line.'), savedText.slice(-40))
 
+  // --- the omnibar's Focus mode action
+  await page.keyboard.press('Control+k')
+  await page.waitForFunction(() => document.querySelector('#search-backdrop')?.classList.contains('open'), null, { timeout: 3000 })
+  await page.keyboard.type('focus mode')
+  await wait(500)
+  await page.keyboard.press('Enter')
+  await wait(1000)
+  check('the omnibar has a Focus mode action and it enters focus mode', await inFocus())
+  check('with the omnibar closed behind it', await pn(() => !document.querySelector('#search-backdrop').classList.contains('open')))
+  await page.keyboard.press('Escape')
+  await wait(1000)
+  check('and Esc leaves', !(await inFocus()))
+
   // --- the Mac app's window bridge, and the browser's full screen
   await pn(() => { window.__fsCalls = []; window.pywebview = { api: { set_full_screen: async (on) => { window.__fsCalls.push(on); return true } } } })
   await page.keyboard.press('Control+.')

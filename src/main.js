@@ -2796,6 +2796,7 @@ function omniActions() {
     { id: 'new-note', title: 'New note', icon: 'plus', top: true, keywords: 'create add', run: () => createNote(state.selectedNotebookId ?? undefined) },
     { id: 'quick-note', title: 'Quick note', icon: 'zap', top: true, keycap: quickNoteKeycap(navigator.platform), keywords: 'inbox capture', run: () => createNote() },
   ]
+  actions.push({ id: 'focus', title: 'Focus mode', icon: 'focus', top: true, keycap: `${modifierLabel(navigator.platform)}.`, keywords: 'write quiet distraction full screen words only', run: () => { closeSearch(); toggleFocus() } })
   if (note) actions.push({ id: 'make-secure', title: note.secure ? 'Make this note ordinary' : 'Make this note secure', icon: note.secure ? 'lock-open' : 'lock', top: true, keywords: 'lock private password', run: () => toggleSecureActiveNote() })
   const current = startSkins().current
   for (const skin of SKINS) {
@@ -3962,7 +3963,7 @@ function refreshFocusCount() {
 }
 
 const focus = createFocusMode({
-  canFocus: () => state.activeNoteType === 'canvas' && !state.loading && !state.noteLocked && !leaferSwitching && Boolean(leaferCanvas) && elements.printPreview.hidden && !document.querySelector('dialog[open]') && elements.searchBackdrop.hidden,
+  canFocus: () => state.activeNoteType === 'canvas' && !state.loading && !state.noteLocked && !leaferSwitching && Boolean(leaferCanvas) && elements.printPreview.hidden && !document.querySelector('dialog[open]') && !elements.searchBackdrop.classList.contains('open'),
   capture: () => ({
     tool: state.tool, zoom: state.canvasZoom, view: { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() },
     selection: leaferCanvas.selection(), caret: leaferCanvas.textCaret(), sidebarOpen: elements.sidebar.classList.contains('open'),
@@ -4018,6 +4019,7 @@ function settleFocusRestore() {
   focusRestore.timer = setTimeout(() => { setViewTo(focusRestore.view); focusRestore = null }, 450)
 }
 const tryFocus = () => { if (!focus.enter() && state.activeNoteType !== 'canvas') showToast('Focus mode is for notes you write on the canvas') }
+function toggleFocus() { if (focusActive) focus.leave(); else tryFocus() } // (the shortcut, the top-bar button and the omnibar's action)
 document.querySelector('#focus-button').addEventListener('click', tryFocus)
 document.querySelector('#focus-leave').addEventListener('click', () => focus.leave())
 document.querySelector('#focus-kbd').textContent = /mac|iphone|ipad/i.test(navigator.platform) ? '⌘ .' : 'Ctrl .'
@@ -4027,7 +4029,7 @@ window.addEventListener('keydown', (event) => {
   if (focusShortcut(event, navigator.platform)) {
     event.preventDefault()
     event.stopPropagation()
-    if (!event.repeat) { if (focusActive) focus.leave(); else tryFocus() }
+    if (!event.repeat) toggleFocus()
   } else if (focusActive && event.key === 'Escape' && !event.isComposing && !document.querySelector('dialog[open]')) {
     event.preventDefault()
     event.stopPropagation()
