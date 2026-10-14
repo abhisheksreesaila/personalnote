@@ -39,6 +39,7 @@ import { mountShelves } from './modules/library/shelves.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
+import { createDoubleTap, tapKeyFor } from './modules/editor/double-tap.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
 import { chooseOpeningView, fitView, isDrawingTool, openingView, pageLabel, pageView, scrollThumbs, stepZoom, viewForPage, visiblePages, writingView, zoomPercent } from './modules/editor/navigation.js'
 import {
@@ -420,6 +421,7 @@ document.querySelector('#app').innerHTML = `
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span></span><button id="toast-action" type="button">Undo</button></div>
+  <div class="toast" id="tool-pill" style="pointer-events:none" role="status" aria-live="polite" hidden></div>
 
 `
 
@@ -462,6 +464,7 @@ const elements = {
   notebookDialog: document.querySelector('#notebook-dialog'),
   toast: document.querySelector('#toast'),
   toastAction: document.querySelector('#toast-action'),
+  toolPill: document.querySelector('#tool-pill'),
   mobileSpeak: document.querySelector('#mobile-speak'),
   mobileConnect: document.querySelector('#mobile-connect'),
   notebookForm: document.querySelector('#notebook-form'),
@@ -1333,12 +1336,15 @@ const temporaryHand = createTemporaryHand()
 let applyingTemporaryHand = false
 
 const toolCursor = () => (state.tool === 'hand' ? 'grab' : state.tool === 'text' ? 'text' : state.tool === 'eraser' ? 'none' : state.tool === 'connect' || state.tool === 'sticky' || state.tool === 'shape' ? 'crosshair' : 'default')
+const PEN_TOOLS = new Set(['pen', 'highlight', 'eraser'])
+let lastPenTool = null
 const TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'shape', 'pen', 'highlight', 'eraser', 'connect'])
 function setTool(tool) {
   if (!TOOLS.has(tool)) tool = 'select'
   if (!applyingTemporaryHand) temporaryHand.cancel()
   if (tool !== state.tool) pageOpened = false
   state.tool = tool
+  if (PEN_TOOLS.has(tool)) lastPenTool = tool
   if (OPENS_PAGE.has(tool)) openPageForDrawing() // F-059: whiteboard tools open the page up (the pen and highlighter do at their first drawing)
   document.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool))
   if (tool === 'text' || tool === 'sticky' || tool === 'shape') leaferCanvas?.clearSelection() // placing words: no handles on the canvas meanwhile
@@ -3790,6 +3796,38 @@ function toggleLeaferLock() {
   const selection = leaferCanvas.selection()
   if (selection.length) leaferCanvas.lockSelection(!selection.some((id) => leaferCanvas.isLocked(id)))
 }
+
+// F-070: double-tap the command key (Control on Linux and Windows) toggles writing and the last pen tool, even with the caret in the words.
+// Nothing here stops the keys: a shortcut that uses the modifier still runs as it did, and cancels the tap.
+const doubleTap = createDoubleTap({ key: tapKeyFor(navigator.platform) })
+let toolPillTimer = 0
+let writingSpot = null // { noteId, id, start, end }: where the caret was when drawing took over
+function flashToolPill(label) {
+  elements.toolPill.textContent = label
+  elements.toolPill.hidden = false
+  clearTimeout(toolPillTimer)
+  toolPillTimer = setTimeout(() => { elements.toolPill.hidden = true }, 900)
+}
+function toggleWritingAndPen() {
+  if (state.activeNoteType !== 'canvas' || state.loading || state.noteLocked || leaferSwitching || !leaferCanvas || !elements.printPreview.hidden || document.querySelector('dialog[open]') || !elements.searchBackdrop.hidden) return
+  if (PEN_TOOLS.has(state.tool)) {
+    setTool('text')
+    flashToolPill('Text')
+    const spot = writingSpot
+    writingSpot = null
+    if (spot && spot.noteId === state.activeNoteId) leaferCanvas.resumeText(spot)
+    return
+  }
+  const caret = leaferCanvas.textCaret()
+  writingSpot = caret ? { noteId: state.activeNoteId, ...caret } : null
+  leaferCanvas.finishTextEdit() // the words typed so far become an edit before drawing starts
+  setTool(lastPenTool ?? 'pen')
+  flashToolPill(state.tool === 'highlight' ? 'Highlight' : state.tool === 'eraser' ? 'Eraser' : 'Pen')
+}
+window.addEventListener('keydown', (event) => doubleTap.keydown({ key: event.key, repeat: event.repeat, time: event.timeStamp }), true)
+window.addEventListener('keyup', (event) => { if (doubleTap.keyup({ key: event.key, time: event.timeStamp })) toggleWritingAndPen() }, true)
+window.addEventListener('pointerdown', () => doubleTap.pointerdown(), true)
+window.addEventListener('blur', () => doubleTap.reset())
 
 document.addEventListener('keydown', (event) => {
   const activeElement = document.activeElement
