@@ -1,6 +1,7 @@
 // The rules for text and sticky editing on the document model (F-029), as pure functions: no Leafer, no DOM, tested in Node.
 // scene.js and text.js call these; an edit is an `op` of { id, before, after } changes for the undo history (core/document/history.js).
 import { paletteKeyFor } from '../../core/document/palette.js'
+import { PAGE } from '../../core/document/schema.js'
 import { isLocked } from '../../core/document/operations.js'
 import { SHAPE_RADIUS, SHAPE_SIZE, STICKY_MIN_HEIGHT, STICKY_PADDING, STICKY_WIDTH } from '../editor/objects.js'
 import { applyMatrix, placementMatrix } from './placement.js'
@@ -9,6 +10,24 @@ import { prettifyText } from '../editor/prettify.js'
 const UPRIGHT = { rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const isTextual = (object) => object?.type === 'text' || object?.type === 'sticky'
 const byId = (doc, id) => doc.objects.find((object) => object?.id === id)
+
+// From a page point to the right margin of the page it is on: the width a new text wraps at, while it is written and after (F-069), so its
+// lines never run past the page edge. Never narrower than a short line (past the margin the pages grow as usual).
+export const PAGE_MARGIN = 56
+// A click closer to the margin than a short line is moved left, so the text starts where a short line still ends at the margin.
+export function writingBox(point, { pageW = PAGE.width, margin = PAGE_MARGIN, min = 200 } = {}) {
+  const column = Math.max(0, Math.floor(point.x / pageW))
+  const right = (column + 1) * pageW - margin
+  const x = Math.min(point.x, right - min)
+  return { x, width: Math.round(right - x) }
+}
+// An existing text keeps its x: the width from there to the right margin of its page, or null when that is under `least` (too little to wrap in).
+export function marginRoom(x, { pageW = PAGE.width, margin = PAGE_MARGIN, least = 40 } = {}) {
+  const column = Math.max(0, Math.floor(x / pageW))
+  const room = Math.round((column + 1) * pageW - margin - x)
+  return room >= least ? room : null
+}
+export const writingWidth = (point, options) => writingBox(point, options).width
 
 export const nextZ = (doc) => doc.objects.reduce((top, object, index) => Math.max(top, (object?.z ?? index) + 1), 0)
 

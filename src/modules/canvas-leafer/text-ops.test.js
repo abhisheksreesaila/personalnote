@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { applyChanges } from '../../core/document/operations.js'
 import { applyMatrix, placementMatrix } from './placement.js'
-import { fitGeometry, newShape, planSetShapeFill, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newShape, marginRoom, writingBox, writingWidth, planSetShapeFill, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetStyle, toLocal } from './text-ops.js'
 
 const box = { x: 100, y: 50, width: 240, height: 200, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
 const doc = () => ({
@@ -121,4 +121,33 @@ test('choosing an object colour recolours the selected shapes, and only those th
   assert.deepEqual(op.changes.map((change) => change.id), ['a'])
   assert.deepEqual([op.changes[0].after.fill, op.changes[0].after.fillKey], ['#bf5af2', 'c4'])
   assert.equal(planSetShapeFill(d, { ids: ['a'], fill: '#ffd60a' }).op.changes.length, 0)
+})
+
+test('writingWidth runs from where a text starts to the right margin of its page', () => {
+  assert.equal(writingWidth({ x: 80 }, { pageW: 860 }), 724)
+  assert.equal(writingWidth({ x: 560 }, { pageW: 860 }), 244)
+  assert.equal(writingWidth({ x: 860 + 80 }, { pageW: 860 }), 724) // on the second page: its own margin
+})
+
+test('writingWidth is never narrower than a short line, and a point left of the page still has the first page margin', () => {
+  assert.equal(writingWidth({ x: 780 }, { pageW: 860 }), 200)
+  assert.equal(writingWidth({ x: -30 }, { pageW: 860 }), 834)
+})
+
+test('writingBox moves a text started too near the right margin left, so its lines still end at the margin', () => {
+  assert.deepEqual(writingBox({ x: 780 }, { pageW: 860 }), { x: 604, width: 200 })
+  assert.deepEqual(writingBox({ x: 604 }, { pageW: 860 }), { x: 604, width: 200 })
+  assert.deepEqual(writingBox({ x: 603 }, { pageW: 860 }), { x: 603, width: 201 })
+  assert.deepEqual(writingBox({ x: 860 + 790 }, { pageW: 860 }), { x: 860 + 604, width: 200 }) // on its own page
+  assert.deepEqual(writingBox({ x: 80 }, { pageW: 860 }), { x: 80, width: 724 })
+  const { x, width } = writingBox({ x: 800 }, { pageW: 860 })
+  assert.ok(x + width <= 860 - 56)
+})
+
+test('marginRoom is the width from an existing text to its page margin, never moving the text', () => {
+  assert.equal(marginRoom(640, { pageW: 860 }), 164)
+  assert.equal(marginRoom(100, { pageW: 860 }), 704)
+  assert.equal(marginRoom(860 + 640, { pageW: 860 }), 164)
+  assert.equal(marginRoom(780, { pageW: 860 }), null) // 24px of room: too little to wrap in
+  assert.equal(marginRoom(900, { pageW: 860 }), 764) // (second page, 40px into it)
 })

@@ -29,7 +29,7 @@ import { clearMarkdownLayouts, layoutMarkdown } from './markdown-layout.js'
 import { anchorStroke, mapMarks, placeMarks, quoteOf, wholeWords } from './text-marks.js'
 import { followLinks, linkRanges, linkWord } from './text-links.js'
 import { ERASER_RADIUS, samplePath } from './ink-model.js'
-import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal } from './text-ops.js'
+import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal, marginRoom, writingBox } from './text-ops.js'
 import { prettifySelection } from '../editor/prettify.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
@@ -981,8 +981,21 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     lod.exit() // (typing is always on the live vectors)
     if (overlay.isOpen) overlay.commit()
     if (!began) onBegin('Edit text')
+    // F-069: a text as wide as its words (the former engine's point text) wraps at the right margin of its page while it is written, and
+    // is a box of that width once it has words, so its lines never run on past the page edge.
+    let boxing = null
+    if (object.type === 'text' && object.mode === 'point' && isUpright(object.geometry) && (object.style?.textAlign ?? 'left') === 'left') {
+      // A new text starts further left when it is too near the margin; an existing one keeps its x (it is a box from there to the margin,
+      // or stays a point text when there is hardly any room). Its own object stays a point text until the words reach the document.
+      const room = entry ? marginRoom(object.geometry.x ?? 0) : null
+      const place = entry ? (room ? { x: object.geometry.x ?? 0, width: room } : null) : writingBox({ x: object.geometry.x ?? 0 })
+      if (place) {
+        if (entry) boxing = place
+        object = { ...object, mode: 'box', geometry: { ...object.geometry, ...place } }
+      }
+    }
     const size = entry ? entry.size : { width: object.geometry.width ?? 0, height: object.geometry.height ?? 0 }
-    textEdit = { id: object.id, entry, object, size, select, armed: false, floor: null, lineHeight: overlayFont(object).lineHeight }
+    textEdit = { id: object.id, entry, object, size, select, armed: false, floor: null, lineHeight: overlayFont(object).lineHeight, boxing }
     lastEdited = null
     editing.clear()
     if (entry?.built.text) entry.built.text.visible = false
@@ -1000,6 +1013,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       links: isMarkdownText(object) ? linkRanges(doc, object.id) : [],
       font: overlayFont(object),
       wrap: width !== undefined,
+      edge: object.type !== 'sticky', // (a sticky's paper is its edge)
       width: width ?? 0,
       matrix: overlayMatrix(),
       caret,
@@ -1018,7 +1032,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // grows a text right and down, so the overlay stays where it is. (A turned text can need room on the left or top too; that growth is
   // deferred to the settle of the draft commit and of the session's end, which prepend as usual.)
   function growPagesForWords(edit, size) {
-    const object = edit.entry?.object ?? edit.object
+    const object = edit.boxing ? edit.object : edit.entry?.object ?? edit.object
     const geometry = fitGeometry(object, size)
     const box = rectEdges(boundingRect({ ...object, geometry }, { width: geometry.width, height: geometry.height }))
     const grow = growForText(pages, box, { lineHeight: object.type === 'sticky' ? 0 : edit.lineHeight })
@@ -1069,13 +1083,14 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       return true
     }
     const { entry } = edit
-    const object = entry.object
-    if ((object.content ?? '') === value) return false
+    const object = edit.boxing ? { ...entry.object, mode: 'box', geometry: { ...entry.object.geometry, x: edit.boxing.x, width: edit.boxing.width } } : entry.object
+    if ((entry.object.content ?? '') === value) return false
     if (object.type === 'text' && !value.trim() && !final) return false // an emptied text is removed when the session ends
     const next = { ...object, content: value }
     if (object.marks?.length) next.marks = mapMarks(object.marks, object.content ?? '', value) // F-050: marks follow their words
     const plan = planSetContent(doc, { id: entry.id, content: value, geometry: fitGeometry(next, contentSize(next)) })
     if (!plan.op.changes.length) return false
+    if (edit.boxing) plan.op.changes = plan.op.changes.map((change) => (change.id === entry.id ? { ...change, after: { ...change.after, mode: 'box' } } : change))
     if (next.marks) { // each keeps where it is drawn now, for an agent's rewrite that loses its words
       const placed = placeMarks(next.marks, layoutOf(next).words)
       next.marks = next.marks.map((mark, index) => ({ ...mark, at: { x: placed[index].x, y: placed[index].y } }))
@@ -1086,6 +1101,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     commit(plan.op, { selection: { before: [entry.id], after: [entry.id] }, floor: final ? null : edit.floor })
     if (edit.floor) edit.floor = { ...pages }
     for (const change of linked) { const other = entries.get(change.id); if (other) rebuild(other) } // shown again when its words went
+    edit.boxing = null // (a box from here on)
     edit.object = entry.object
     edit.size = { width: entry.object.geometry.width ?? 0, height: entry.object.geometry.height ?? 0 }
     return true
@@ -1130,13 +1146,6 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       onEnd()
       onTextEvent('end')
     }
-  }
-
-  // From a page point to the right margin of its page (never narrower than a short line: past the margin the pages grow as usual).
-  const PAGE_MARGIN = 56
-  const writingWidth = (point) => {
-    const column = Math.max(0, Math.floor(point.x / PAGE.width))
-    return Math.max(200, Math.round((column + 1) * PAGE.width - PAGE_MARGIN - point.x))
   }
 
   const newId = () => `res_${globalThis.crypto.randomUUID().replaceAll('-', '')}`
@@ -1268,7 +1277,10 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       let object = newText({ id: newId(), z: nextZ(doc), point, style: defaults.text?.() ?? {} })
       // F-048: new text is Markdown, in a box that wraps at this width: by default at the right margin of the page it starts on, so writing
       // flows down the page. `plain` makes the plain point text made before (as wide as its words; still edited in notes that have one).
-      if (!options.plain) object = { ...object, format: 'markdown', mode: 'box', geometry: { ...object.geometry, width: options.width ?? writingWidth(point) } }
+      if (!options.plain) {
+        const box = options.width ? { x: point.x, width: options.width } : writingBox(point) // (a click too near the margin starts further left)
+        object = { ...object, format: 'markdown', mode: 'box', geometry: { ...object.geometry, x: box.x, width: box.width } }
+      }
       else if (options.width) object = { ...object, mode: 'box', geometry: { ...object.geometry, width: options.width } }
       return startTextEdit(object, { select: options.select ?? true })
     },
