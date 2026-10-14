@@ -454,9 +454,10 @@ Reviewed: PASS after fixes (wheel zoom cancels a tap, pill at top centre, caret 
 - [x] ⌘ used in a shortcut (⌘C, ⌘Z, ⌘-click…) between or during the taps never toggles (key-timing unit test plus real-keyboard check)
 - [x] switching back to text puts the caret where it was; a small pill flashes "Pen" or "Text"
 - [x] dock and single-key shortcuts unchanged
-## F-071 Middle-click toggles pen and text [todo]
+## F-071 Middle-click toggles pen and text [done]
 Brief: docs/briefs/focus-search-switch.md · Needs: F-070
-- [ ] a middle-button click without moving toggles like double-tap ⌘; a middle-drag still pans
+Reviewed: PASS after fixes (paste guard bounded, middle-click handling only on the paper).
+- [x] a middle-button click without moving toggles like double-tap ⌘; a middle-drag still pans
 ## F-072 Omnibar [todo]
 Brief: docs/briefs/focus-search-switch.md · Design: docs/design/omnibar-focus.md (to do) · Needs: design
 - [ ] search sits as a slim bar at the top centre; the top-right search box is gone, ⌘K still opens it
