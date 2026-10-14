@@ -150,7 +150,7 @@ try {
   await page.fill('#search-input', 'Cards')
   await page.waitForTimeout(800)
   const hit = page.locator('.search-result.is-secure')
-  check('search finds it by title, with the lock and no excerpt', (await hit.count()) === 1 && (await hit.locator('svg.lucide-lock').count()) === 1 && (await hit.locator('small').count()) === 0)
+  check('search finds it by title, with the lock and no excerpt', (await hit.count()) === 1 && (await hit.locator('svg.lucide-lock').count()) === 1 && !/\bquokka|ZEBRA|4111/i.test(await hit.locator('.omni-sub').innerText()) && (await hit.locator('.omni-sub').innerText()).startsWith('Secure note'))
   await page.keyboard.press('Escape')
   await page.waitForTimeout(400)
 

@@ -1,7 +1,7 @@
 /* Secure notes (F-058): the sidebar row, the quiet cover, the open-note pill and edge, and the sheets. Screen only; print is untouched
    (AGENTS.md invariant 9). The colours are the skin tokens --sk-secure, -soft and -line (src/skins.css). Kept small: the CSS budget is tight. */
 @media screen {
-  .app-shell .note-list-item.is-secure, .app-shell .note-list-item.is-secure.active, .search-result.is-secure .search-result-icon { color: var(--sk-secure); }
+  .app-shell .note-list-item.is-secure, .app-shell .note-list-item.is-secure.active { color: var(--sk-secure); }
   .app-shell .note-list-item.is-secure > svg { opacity: 1; }
   .app-shell .note-list-item .secure-row-lock { width: 12px; height: 12px; flex: none; color: var(--sk-secure); }
 

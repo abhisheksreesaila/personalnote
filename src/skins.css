@@ -85,7 +85,7 @@
   .dialog-danger:hover { background: color-mix(in srgb, var(--sk-danger) 88%, var(--sk-ink)); }
 
   /* Geometry: controls and panels follow the skin's radii and shadows. */
-  .tool-dock, .ink-options-popover, .note-create-menu, .notebook-picker-menu, .spotlight,
+  .tool-dock, .ink-options-popover, .note-create-menu, .notebook-picker-menu,
   .notebook-dialog, .properties-panel, .print-summary {
     border-radius: var(--sk-radius);
     box-shadow: var(--sk-shadow);
@@ -102,7 +102,7 @@
     font-family: "Geist Mono", ui-monospace, monospace;
   }
 
-  .search-backdrop.open, .notebook-dialog::backdrop { background: color-mix(in srgb, var(--sk-ink) 45%, transparent); }
+  .notebook-dialog::backdrop { background: color-mix(in srgb, var(--sk-ink) 45%, transparent); }
 
   /* Skin switcher: three swatches in the sidebar footer. */
   .sidebar-footer { justify-content: flex-start; }
