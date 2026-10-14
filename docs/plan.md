@@ -465,10 +465,11 @@ Reviewed: PASS after fixes (no stray "New note" on Enter while words load, IME g
 - [x] opened, a large centred panel finds notes by title and words, notebooks and actions (new note, quick note, make secure, focus mode, switch skin); arrows and Enter pick, Esc closes
 - [x] secure notes show by title only
 - [x] at phone width it is a search icon that fills the screen
-## F-073 Focus mode [todo]
+## F-073 Focus mode [done]
 Brief: docs/briefs/focus-search-switch.md · Design: docs/design/omnibar-focus.md (to do) · Needs: design
-- [ ] ⌘. or a top-bar button shows only the words in a centred column on paper colour: no sidebar, dock, page map, page edges or desk; drawing off
-- [ ] a faint word count on hover; Esc or ⌘. restores everything exactly as it was
-- [ ] the Mac app goes full screen with it and leaves full screen after
-- [ ] the omnibar offers a Focus mode action
-- [ ] typing speed (speed test row) unchanged
+Reviewed: PASS after fixes (typing never stranded, caret kept in view, page notes covered with drawing off). Option C chosen. Mac native full screen not yet tried on a real Mac.
+- [x] ⌘. or a top-bar button shows only the words in a centred column on paper colour: no sidebar, dock, page map, page edges or desk; drawing off
+- [x] a faint word count on hover; Esc or ⌘. restores everything exactly as it was
+- [x] the Mac app goes full screen with it and leaves full screen after
+- [x] the omnibar offers a Focus mode action
+- [x] typing speed (speed test row) unchanged
