@@ -4017,7 +4017,8 @@ function settleFocusRestore() {
   clearTimeout(focusRestore.timer)
   focusRestore.timer = setTimeout(() => { setViewTo(focusRestore.view); focusRestore = null }, 450)
 }
-document.querySelector('#focus-button').addEventListener('click', () => focus.enter())
+const tryFocus = () => { if (!focus.enter() && state.activeNoteType !== 'canvas') showToast('Focus mode is for notes you write on the canvas') }
+document.querySelector('#focus-button').addEventListener('click', tryFocus)
 document.querySelector('#focus-leave').addEventListener('click', () => focus.leave())
 document.querySelector('#focus-kbd').textContent = /mac|iphone|ipad/i.test(navigator.platform) ? '⌘ .' : 'Ctrl .'
 document.querySelector('#focus-button').title = `Focus mode (${/mac|iphone|ipad/i.test(navigator.platform) ? '⌘.' : 'Ctrl+.'})`
@@ -4026,7 +4027,7 @@ window.addEventListener('keydown', (event) => {
   if (focusShortcut(event, navigator.platform)) {
     event.preventDefault()
     event.stopPropagation()
-    if (!event.repeat) focus.toggle()
+    if (!event.repeat) { if (focusActive) focus.leave(); else tryFocus() }
   } else if (focusActive && event.key === 'Escape' && !event.isComposing && !document.querySelector('dialog[open]')) {
     event.preventDefault()
     event.stopPropagation()
