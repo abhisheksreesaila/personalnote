@@ -447,3 +447,24 @@ Reported on the Mac (preview 5): typing runs past the page's right edge and only
 - [x] while typing, a Markdown text wraps at the same width it will have when typing ends (never wider than the page)
 - [x] a subtle mark shows the right edge the words wrap at while writing
 - [x] a text started near the margin, classic text boxes and point texts also wrap at the margin while typed (an existing text keeps its place; centred legacy texts are left alone)
+## F-070 Double-tap ⌘ toggles pen and text [todo]
+Brief: docs/briefs/focus-search-switch.md · Design: none needed (pill only) · Needs: none
+- [ ] two clean taps of ⌘ alone (Ctrl on Linux/Windows) within ~300 ms toggle writing ↔ the last pen tool, even with the caret in text
+- [ ] ⌘ used in a shortcut (⌘C, ⌘Z, ⌘-click…) between or during the taps never toggles (key-timing unit test plus real-keyboard check)
+- [ ] switching back to text puts the caret where it was; a small pill flashes "Pen" or "Text"
+- [ ] dock and single-key shortcuts unchanged
+## F-071 Middle-click toggles pen and text [todo]
+Brief: docs/briefs/focus-search-switch.md · Needs: F-070
+- [ ] a middle-button click without moving toggles like double-tap ⌘; a middle-drag still pans
+## F-072 Omnibar [todo]
+Brief: docs/briefs/focus-search-switch.md · Design: docs/design/omnibar-focus.md (to do) · Needs: design
+- [ ] search sits as a slim bar at the top centre; the top-right search box is gone, ⌘K still opens it
+- [ ] opened, a large centred panel finds notes by title and words, notebooks and actions (new note, quick note, make secure, focus mode, switch skin); arrows and Enter pick, Esc closes
+- [ ] secure notes show by title only
+- [ ] at phone width it is a search icon that fills the screen
+## F-073 Focus mode [todo]
+Brief: docs/briefs/focus-search-switch.md · Design: docs/design/omnibar-focus.md (to do) · Needs: design
+- [ ] ⌘. or a top-bar button shows only the words in a centred column on paper colour: no sidebar, dock, page map, page edges or desk; drawing off
+- [ ] a faint word count on hover; Esc or ⌘. restores everything exactly as it was
+- [ ] the Mac app goes full screen with it and leaves full screen after
+- [ ] typing speed (speed test row) unchanged
