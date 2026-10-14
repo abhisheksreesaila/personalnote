@@ -2778,7 +2778,8 @@ function setupVoiceInput() {
 }
 
 // ---- The omnibar (F-072): a slim bar at the top centre that grows into grouped results ----
-const omni = { open: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], wordsFailed: false }
+const IME_KEY = 229 // a key pressed while an input method is composing reports keyCode 229
+const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], wordsFailed: false }
 
 function omniActions() {
   const note = state.notes.find((item) => item.id === state.activeNoteId)
@@ -2800,7 +2801,7 @@ function omniRowHtml(item, index, tokens) {
   const ret = '<i class="omni-ret" data-lucide="corner-down-left"></i>'
   if (item.kind === 'note' || item.kind === 'words') {
     const view = searchResultView(item)
-    const sub = item.secure ? 'Secure note · unlock to open' : item.kind === 'words' ? highlight(item.excerpt, tokens) : escapeHtml(item.notebookName)
+    const sub = item.secure ? `Secure note · ${modifierLabel(navigator.platform) === '⌘' ? 'opens with Touch ID' : 'unlock to open'}` : item.kind === 'words' ? highlight(item.excerpt, tokens) : escapeHtml(item.notebookName)
     return `<button class="omni-row search-result ${view.className}${sel ? ' sel' : ''}" ${base} data-search-note-id="${item.id}">
       <span class="omni-ic"><i data-lucide="${view.icon}"></i></span>
       <span class="omni-copy"><span class="omni-title">${highlight(item.title, tokens)}</span><span class="omni-sub">${sub}</span></span>
@@ -2814,16 +2815,22 @@ function omniRowHtml(item, index, tokens) {
     <span class="omni-copy"><span class="omni-title">${highlight(item.title, tokens)}</span></span>${item.hint ? `<span class="omni-meta">${item.hint}</span>` : ''}${item.keycap ? `<kbd>${item.keycap}</kbd>` : ''}${ret}</button>`
 }
 
+const omniKey = (item) => (item ? `${item.kind === 'words' ? 'note' : item.kind}:${item.id ?? item.title}` : '')
 function renderOmni() {
+  const keep = omniKey(omni.items[omni.sel]) // the selection stays on the same item when more results land
   const query = elements.searchInput.value.trim()
   const tokens = queryTokens(query)
   const notes = state.notes.filter((note) => note.id !== pendingDelete?.note.id)
   const wordHits = omni.wordHits.filter((hit) => hit.id !== pendingDelete?.note.id)
   omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: state.notebooks, actions: omniActions(), wordHits })
   omni.items = flatten(omni.groups)
+  const kept = omni.items.findIndex((item) => omniKey(item) === keep)
+  if (kept >= 0) omni.sel = kept
+  const waiting = omni.pending && (omni.filter === 'All' || omni.filter === 'Notes') // the word search is still out: no "nothing" yet
   document.querySelector('#omni-chips').innerHTML = FILTERS.map((name) => `<button type="button" class="omni-chip" data-omni-chip="${name}" aria-pressed="${name === omni.filter}">${name}</button>`).join('')
   let html = ''
-  if (!omni.items.length) {
+  if (!omni.items.length && waiting) html = ''
+  else if (!omni.items.length) {
     html = `<div class="omni-none"><strong>${query ? `Nothing matches “${escapeHtml(query)}”` : 'Nothing here yet'}</strong><span>Secure notes match by title only.</span></div>`
     if (query && (omni.filter === 'All' || omni.filter === 'Notes')) {
       omni.items = [{ kind: 'create', title: query }]
@@ -2838,7 +2845,8 @@ function renderOmni() {
   if (!omni.items.length || omni.items[0].kind === 'create') omni.sel = 0
   elements.searchResults.innerHTML = html
   createIcons({ icons })
-  elements.searchInput.setAttribute('aria-activedescendant', omni.items.length ? `omni-row-${omni.sel}` : '')
+  if (omni.items.length) elements.searchInput.setAttribute('aria-activedescendant', `omni-row-${omni.sel}`)
+  else elements.searchInput.removeAttribute('aria-activedescendant')
 }
 
 function setOmniSelection(index, { scroll = true } = {}) {
@@ -2866,6 +2874,7 @@ function openSearch() {
 
 function closeSearch() {
   omni.open = false
+  omni.pending = false
   searchSequence += 1
   clearTimeout(searchTimer)
   elements.searchBackdrop.classList.remove('open')
@@ -2883,6 +2892,8 @@ function queueSearch() {
   omni.sel = 0
   omni.wordsFailed = false
   omni.wordHits = [] // word matches belong to the query they were found for
+  omni.pending = Boolean(query)
+  omni.items = []
   if (!query) return renderOmni()
   renderOmni()
   searchTimer = setTimeout(async () => {
@@ -2896,6 +2907,7 @@ function queueSearch() {
       omni.wordHits = []
       omni.wordsFailed = true
     }
+    omni.pending = false
     renderOmni()
   }, 120)
 }
@@ -3750,9 +3762,9 @@ elements.searchInput.addEventListener('keydown', (event) => {
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
     setOmniSelection(moveSelection(omni.sel, event.key === 'ArrowDown' ? 1 : -1, omni.items.length))
-  } else if (event.key === 'Enter' && !event.isComposing) {
+  } else if (event.key === 'Enter' && !event.isComposing && event.keyCode !== IME_KEY) {
     event.preventDefault()
-    runOmniItem(omni.items[omni.sel])
+    if (!(omni.pending && omni.items[omni.sel]?.kind === 'create')) runOmniItem(omni.items[omni.sel])
   }
 })
 // The mouse moves the selection (so Enter acts on what is under it) and a click picks. Mouse down keeps the typing focus.
@@ -3962,7 +3974,7 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault()
     if (omni.open) closeSearch()
     else openSearch()
-  } else if (event.key === 'Escape' && omni.open) {
+  } else if (event.key === 'Escape' && omni.open && !event.isComposing && event.keyCode !== IME_KEY) {
     closeSearch()
   } else if (event.key === 'Escape' && elements.properties.classList.contains('open')) {
     setPropertiesOpen(false)
