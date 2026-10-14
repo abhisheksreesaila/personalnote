@@ -359,6 +359,26 @@ try {
   }
   check('and no hairline is left behind', (await pn(() => document.querySelector('.text-edge'))) === null)
 
+  // F-070 on the plain textarea editor (a classic text, not Markdown): double-tap there and back keeps the caret
+  {
+    await pn((textId) => window.__personalNote.leaferCanvas().editText(textId, { select: false }), ids[2])
+    await page.waitForTimeout(400)
+    const isArea = await pn(() => document.activeElement?.tagName === 'TEXTAREA')
+    await pn(() => document.activeElement.setSelectionRange(3, 3))
+    await page.keyboard.press('ArrowRight')
+    const plainBefore = await pn(() => document.activeElement.selectionStart)
+    const tapPlain = async () => { await page.keyboard.down('Control'); await page.waitForTimeout(60); await page.keyboard.up('Control') }
+    await tapPlain(); await page.waitForTimeout(100); await tapPlain()
+    await page.waitForTimeout(400)
+    check('plain editor: two taps switch to the pen and close the editor', isArea && (await pn(() => window.__personalNote.state.tool)) === 'pen' && !(await pn(() => document.querySelector('.leafer-text-editor'))))
+    await tapPlain(); await page.waitForTimeout(100); await tapPlain()
+    await page.waitForTimeout(400)
+    const back = await pn(() => ({ tool: window.__personalNote.state.tool, tag: document.activeElement?.tagName, start: document.activeElement?.selectionStart, end: document.activeElement?.selectionEnd, caret: window.__personalNote.leaferCanvas().textCaret() }))
+    check('plain editor: two more taps return to the same text with the caret at the same place', back.tool === 'text' && back.tag === 'TEXTAREA' && back.start === plainBefore && plainBefore === 4 && back.end === plainBefore && back.caret?.id === ids[2], JSON.stringify([plainBefore, back]))
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(500)
+  }
+
   // F-070 double-tap the command key (Control here, Linux) toggles writing and the pen, real keys, caret in the words
   {
     await pn(() => window.__personalNote.createNote())
@@ -401,6 +421,10 @@ try {
     await tap(); await page.waitForTimeout(60); await page.keyboard.down('Control'); await page.keyboard.press('c'); await page.waitForTimeout(40); await page.keyboard.up('Control')
     await page.waitForTimeout(300)
     check('a Ctrl+C during the second tap never toggles', (await tool()) === 'text')
+    await tap(); await page.keyboard.down('Control'); await page.mouse.wheel(0, 40); await page.keyboard.up('Control'); await tap()
+    await page.waitForTimeout(300)
+    check('a Ctrl+scroll zoom between two taps never toggles', (await tool()) === 'text')
+    await page.waitForTimeout(500)
     await tap(); await page.keyboard.press('Shift'); await tap()
     await page.waitForTimeout(300)
     check('another key between the taps cancels', (await tool()) === 'text')

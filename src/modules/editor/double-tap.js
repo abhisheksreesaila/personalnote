@@ -33,8 +33,8 @@ export function createDoubleTap({ key = 'Meta', gap = DOUBLE_TAP.gap, hold = DOU
       lastTapEnd = time
       return false
     },
-    /** A mouse button or touch went down (a modifier-click is not a tap). */
-    pointerdown() { dirty = true; cancel() },
+    /** Anything else that makes the modifier mean something (a mouse press, a wheel zoom): the tap in progress and the one before it are void. */
+    interrupt() { dirty = true; cancel() },
     /** The window lost focus: forget everything. */
     reset() { downAt = null; dirty = false; lastTapEnd = null },
   }

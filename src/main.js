@@ -421,7 +421,7 @@ document.querySelector('#app').innerHTML = `
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span></span><button id="toast-action" type="button">Undo</button></div>
-  <div class="toast" id="tool-pill" style="pointer-events:none" role="status" aria-live="polite" hidden></div>
+  <div class="toast" id="tool-pill" style="pointer-events:none;top:64px;bottom:auto;padding:6px 14px" role="status" aria-live="polite" hidden></div>
 
 `
 
@@ -1339,8 +1339,11 @@ const toolCursor = () => (state.tool === 'hand' ? 'grab' : state.tool === 'text'
 const PEN_TOOLS = new Set(['pen', 'highlight', 'eraser'])
 let lastPenTool = null
 const TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'shape', 'pen', 'highlight', 'eraser', 'connect'])
+let togglingTool = false // F-070: the double-tap's own tool change
+let writingSpot = null // F-070 { noteId, id, start, end }: where the caret was when drawing took over; any other tool change forgets it
 function setTool(tool) {
   if (!TOOLS.has(tool)) tool = 'select'
+  if (!togglingTool) writingSpot = null
   if (!applyingTemporaryHand) temporaryHand.cancel()
   if (tool !== state.tool) pageOpened = false
   state.tool = tool
@@ -3801,7 +3804,6 @@ function toggleLeaferLock() {
 // Nothing here stops the keys: a shortcut that uses the modifier still runs as it did, and cancels the tap.
 const doubleTap = createDoubleTap({ key: tapKeyFor(navigator.platform) })
 let toolPillTimer = 0
-let writingSpot = null // { noteId, id, start, end }: where the caret was when drawing took over
 function flashToolPill(label) {
   elements.toolPill.textContent = label
   elements.toolPill.hidden = false
@@ -3811,7 +3813,8 @@ function flashToolPill(label) {
 function toggleWritingAndPen() {
   if (state.activeNoteType !== 'canvas' || state.loading || state.noteLocked || leaferSwitching || !leaferCanvas || !elements.printPreview.hidden || document.querySelector('dialog[open]') || !elements.searchBackdrop.hidden) return
   if (PEN_TOOLS.has(state.tool)) {
-    setTool('text')
+    togglingTool = true
+    try { setTool('text') } finally { togglingTool = false }
     flashToolPill('Text')
     const spot = writingSpot
     writingSpot = null
@@ -3819,14 +3822,16 @@ function toggleWritingAndPen() {
     return
   }
   const caret = leaferCanvas.textCaret()
-  writingSpot = caret ? { noteId: state.activeNoteId, ...caret } : null
   leaferCanvas.finishTextEdit() // the words typed so far become an edit before drawing starts
-  setTool(lastPenTool ?? 'pen')
+  togglingTool = true
+  try { setTool(lastPenTool ?? 'pen') } finally { togglingTool = false }
+  writingSpot = caret ? { noteId: state.activeNoteId, ...caret } : null
   flashToolPill(state.tool === 'highlight' ? 'Highlight' : state.tool === 'eraser' ? 'Eraser' : 'Pen')
 }
 window.addEventListener('keydown', (event) => doubleTap.keydown({ key: event.key, repeat: event.repeat, time: event.timeStamp }), true)
 window.addEventListener('keyup', (event) => { if (doubleTap.keyup({ key: event.key, time: event.timeStamp })) toggleWritingAndPen() }, true)
-window.addEventListener('pointerdown', () => doubleTap.pointerdown(), true)
+window.addEventListener('pointerdown', () => doubleTap.interrupt(), true)
+window.addEventListener('wheel', () => doubleTap.interrupt(), { capture: true, passive: true }) // (Cmd/Ctrl + scroll zooms)
 window.addEventListener('blur', () => doubleTap.reset())
 
 document.addEventListener('keydown', (event) => {
