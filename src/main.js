@@ -3,7 +3,8 @@ import './workspace-theme.css'
 import './skins.css'
 import './chrome.css'
 import './secure.css'
-import { mountSkinSwitcher, startSkins } from './skins.js'
+import { mountSkinSwitcher, SKINS, startSkins } from './skins.js'
+import { buildGroups, FILTERS, flatten, highlight, moveSelection, queryTokens } from './modules/omnibar/omnibar.js'
 import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
 import { createIcons, icons } from './icons.js'
 import { createSecureSession } from './modules/secure/session.js'
@@ -131,8 +132,10 @@ document.querySelector('#app').innerHTML = `
           <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
           <div class="save-state" id="save-state"><span></span>Saved on this device</div>
         </div>
+        <div class="omni-slot">
+          <button class="search-button" id="search-button" title="Search or jump to (Ctrl+K)" aria-label="Search or jump to" aria-haspopup="dialog"><i data-lucide="search"></i><span>Search or jump to…</span><kbd id="search-kbd">Ctrl K</kbd></button>
+        </div>
         <div class="topbar-actions">
-          <button class="search-button" id="search-button" title="Search notes (Ctrl+K)" aria-label="Search notes"><i data-lucide="search"></i><span>Search everything</span><kbd id="search-kbd">Ctrl K</kbd></button>
           <div class="share-wrap">
             <button class="icon-button glass-button share-button" id="share-button" title="Share or export" aria-label="Share or export" aria-haspopup="menu" aria-expanded="false"><i data-lucide="share"></i></button>
             <div class="share-menu" id="share-menu" role="menu" aria-label="Share or export" hidden>
@@ -336,14 +339,15 @@ document.querySelector('#app').innerHTML = `
   </div>
 
   <div class="search-backdrop" id="search-backdrop" hidden>
-    <section class="spotlight" role="dialog" aria-modal="true" aria-label="Search notes">
+    <section class="spotlight" role="dialog" aria-modal="true" aria-label="Search or jump to">
       <div class="spotlight-input-row">
         <i data-lucide="search"></i>
-        <input id="search-input" type="search" placeholder="Search every note" autocomplete="off" aria-label="Search every note" />
-        <button class="search-close" id="search-close" aria-label="Close search">Esc</button>
+        <input id="search-input" type="text" role="combobox" aria-expanded="true" aria-controls="search-results" aria-autocomplete="list" placeholder="Search notes, words, notebooks, actions" autocomplete="off" spellcheck="false" aria-label="Search notes, words, notebooks and actions" />
+        <button class="search-close" id="search-close" aria-label="Close search"><span class="k-esc">Esc</span><span class="k-cancel">Cancel</span></button>
       </div>
-      <div class="search-results" id="search-results"></div>
-      <footer class="search-footer"><span><i data-lucide="corner-down-left"></i> Open</span><span><i data-lucide="arrow-up-down"></i> Navigate</span></footer>
+      <div class="omni-chips" id="omni-chips" role="group" aria-label="Show"></div>
+      <div class="search-results" id="search-results" role="listbox" aria-label="Results"></div>
+      <footer class="search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Move</span><span><kbd>↵</kbd> Open</span><span><kbd>Esc</kbd> Close</span></footer>
     </section>
   </div>
 
@@ -1582,12 +1586,13 @@ function syncSecureMenu() {
   button.querySelector('svg, i')?.setAttribute('data-lucide', note?.secure ? 'lock-open' : 'lock')
   createIcons({ icons })
 }
-document.querySelector('#secure-note').addEventListener('click', () => {
+function toggleSecureActiveNote() {
   const note = state.notes.find((item) => item.id === state.activeNoteId)
   if (!note) return
   setPropertiesOpen(false)
   void (note.secure ? secure.makeOrdinary(note.id) : secure.makeSecure(note.id)).catch((error) => { console.error(error); showToast(error.message || 'Something went wrong') })
-})
+}
+document.querySelector('#secure-note').addEventListener('click', toggleSecureActiveNote)
 window.personalNote = {
   ...windowHooks,
   // The Mac slept or its screen locked (desktop.py): cover the secure note at once.
@@ -2087,7 +2092,7 @@ async function mergeRemoteNote(note) {
   return mergeLeaferNote(note)
 }
 
-async function createNote(notebookId, noteType = 'canvas') {
+async function createNote(notebookId, noteType = 'canvas', title) {
   if (state.creatingNote) return
   state.creatingNote = true
   const destinationId = Number(notebookId) || null // no notebook named: the note lands in the Inbox
@@ -2095,7 +2100,7 @@ async function createNote(notebookId, noteType = 'canvas') {
     const note = await api('/notes', {
       method: 'POST',
       body: JSON.stringify({
-        title: noteType === 'mindmap' ? 'Untitled mind map' : 'Untitled note',
+        title: title || (noteType === 'mindmap' ? 'Untitled mind map' : 'Untitled note'),
         notebookId: destinationId,
         noteType,
       }),
@@ -2250,18 +2255,6 @@ async function deleteNotebook() {
   state.selectedNotebookId = result.destinationNotebookId
   elements.notebookDialog.close()
   renderNoteList()
-}
-
-function recentSearchResults() {
-  return state.notes.slice(0, 8).map((note) => {
-    const notebook = state.notebooks.find((item) => item.id === note.notebookId)
-    return {
-      ...note,
-      notebookName: notebook?.name || 'Inbox',
-      notebookColor: notebook?.color || '#B86B4B',
-      excerpt: '',
-    }
-  })
 }
 
 function setPropertiesOpen(open) {
@@ -2784,62 +2777,141 @@ function setupVoiceInput() {
   })
 }
 
-function renderSearchResults(allResults, query = '') {
-  const results = allResults.filter((result) => result.id !== pendingDelete?.note.id)
-  if (!results.length) {
-    elements.searchResults.innerHTML = `
-      <div class="search-empty"><i data-lucide="search-x"></i><strong>No notes found</strong><span>Try a title, phrase, or idea.</span></div>
-    `
-  } else {
-    elements.searchResults.innerHTML = `
-      <p class="search-results-label">${query ? `${results.length} ${results.length === 1 ? 'result' : 'results'}` : 'Recently edited'}</p>
-      ${results.map((result) => { const view = searchResultView(result); return `
-        <button class="search-result ${view.className}" data-search-note-id="${result.id}">
-          <span class="search-result-icon" style="--notebook-color:${result.notebookColor}"><i data-lucide="${view.icon}"></i></span>
-          <span class="search-result-copy">
-            <strong>${escapeHtml(result.title || 'Untitled note')}</strong>
-            ${view.excerpt ? `<small>${escapeHtml(view.excerpt)}</small>` : ''}
-          </span>
-          <span class="search-result-notebook"><i data-lucide="notebook-tabs"></i>${escapeHtml(result.notebookName)}</span>
-        </button>
-      ` }).join('')}
-    `
+// ---- The omnibar (F-072): a slim bar at the top centre that grows into grouped results ----
+const omni = { open: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], wordsFailed: false }
+
+function omniActions() {
+  const note = state.notes.find((item) => item.id === state.activeNoteId)
+  const actions = [
+    { id: 'new-note', title: 'New note', icon: 'plus', top: true, keywords: 'create add', run: () => createNote(state.selectedNotebookId ?? undefined) },
+    { id: 'quick-note', title: 'Quick note', icon: 'zap', top: true, keycap: quickNoteKeycap(navigator.platform), keywords: 'inbox capture', run: () => createNote() },
+  ]
+  if (note) actions.push({ id: 'make-secure', title: note.secure ? 'Make this note ordinary' : 'Make this note secure', icon: note.secure ? 'lock-open' : 'lock', top: true, keywords: 'lock private password', run: () => toggleSecureActiveNote() })
+  const current = startSkins().current
+  for (const skin of SKINS) {
+    actions.push({ id: `skin-${skin.id}`, title: `Skin: ${skin.name}`, icon: 'palette', hint: skin.id === current ? 'Current' : '', keywords: 'switch skin theme appearance look', run: () => { startSkins().select(skin.id); skinSwitcher.sync() } })
   }
+  return actions
+}
+
+function omniRowHtml(item, index, tokens) {
+  const sel = index === omni.sel
+  const base = `id="omni-row-${index}" role="option" aria-selected="${sel}" data-omni="${index}" tabindex="-1"`
+  const ret = '<i class="omni-ret" data-lucide="corner-down-left"></i>'
+  if (item.kind === 'note' || item.kind === 'words') {
+    const view = searchResultView(item)
+    const sub = item.secure ? 'Secure note · unlock to open' : item.kind === 'words' ? highlight(item.excerpt, tokens) : escapeHtml(item.notebookName)
+    return `<button class="omni-row search-result ${view.className}${sel ? ' sel' : ''}" ${base} data-search-note-id="${item.id}">
+      <span class="omni-ic"><i data-lucide="${view.icon}"></i></span>
+      <span class="omni-copy"><span class="omni-title">${highlight(item.title, tokens)}</span><span class="omni-sub">${sub}</span></span>
+      ${item.kind === 'words' || item.secure ? `<span class="omni-meta">${escapeHtml(item.notebookName)}</span>` : ''}${ret}</button>`
+  }
+  if (item.kind === 'notebook') {
+    return `<button class="omni-row${sel ? ' sel' : ''}" ${base}><span class="omni-ic"><span class="omni-dot" style="--c:${escapeHtml(item.color || 'var(--sk-accent)')}"></span></span>
+      <span class="omni-copy"><span class="omni-title">${highlight(item.name, tokens)}</span><span class="omni-sub">Notebook · ${item.noteCount} ${item.noteCount === 1 ? 'note' : 'notes'}</span></span>${ret}</button>`
+  }
+  return `<button class="omni-row${sel ? ' sel' : ''}" ${base}><span class="omni-ic"><i data-lucide="${item.icon}"></i></span>
+    <span class="omni-copy"><span class="omni-title">${highlight(item.title, tokens)}</span></span>${item.hint ? `<span class="omni-meta">${item.hint}</span>` : ''}${item.keycap ? `<kbd>${item.keycap}</kbd>` : ''}${ret}</button>`
+}
+
+function renderOmni() {
+  const query = elements.searchInput.value.trim()
+  const tokens = queryTokens(query)
+  const notes = state.notes.filter((note) => note.id !== pendingDelete?.note.id)
+  const wordHits = omni.wordHits.filter((hit) => hit.id !== pendingDelete?.note.id)
+  omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: state.notebooks, actions: omniActions(), wordHits })
+  omni.items = flatten(omni.groups)
+  document.querySelector('#omni-chips').innerHTML = FILTERS.map((name) => `<button type="button" class="omni-chip" data-omni-chip="${name}" aria-pressed="${name === omni.filter}">${name}</button>`).join('')
+  let html = ''
+  if (!omni.items.length) {
+    html = `<div class="omni-none"><strong>${query ? `Nothing matches “${escapeHtml(query)}”` : 'Nothing here yet'}</strong><span>Secure notes match by title only.</span></div>`
+    if (query && (omni.filter === 'All' || omni.filter === 'Notes')) {
+      omni.items = [{ kind: 'create', title: query }]
+      html += '<div class="omni-group"><button class="omni-row sel" id="omni-row-0" role="option" aria-selected="true" data-omni="0" tabindex="-1"><span class="omni-ic"><i data-lucide="plus"></i></span><span class="omni-copy"><span class="omni-title">New note “' + escapeHtml(query) + '”</span></span><i class="omni-ret" data-lucide="corner-down-left"></i></button></div>'
+    }
+  } else {
+    let index = 0
+    omni.sel = Math.min(omni.sel, omni.items.length - 1)
+    html = omni.groups.map((group) => `<div class="omni-group" role="group" aria-label="${group.label}"><h4>${group.label}</h4>${group.items.map((item) => omniRowHtml(item, index++, tokens)).join('')}</div>`).join('')
+  }
+  if (omni.wordsFailed && query) html += '<p class="omni-note">Couldn’t search inside notes.</p>'
+  if (!omni.items.length || omni.items[0].kind === 'create') omni.sel = 0
+  elements.searchResults.innerHTML = html
   createIcons({ icons })
+  elements.searchInput.setAttribute('aria-activedescendant', omni.items.length ? `omni-row-${omni.sel}` : '')
+}
+
+function setOmniSelection(index, { scroll = true } = {}) {
+  if (!omni.items.length) return
+  omni.sel = index
+  elements.searchResults.querySelectorAll('.omni-row').forEach((row, i) => { row.classList.toggle('sel', i === index); row.setAttribute('aria-selected', String(i === index)) })
+  elements.searchInput.setAttribute('aria-activedescendant', `omni-row-${index}`)
+  if (scroll) document.querySelector(`#omni-row-${index}`)?.scrollIntoView({ block: 'nearest' })
 }
 
 function openSearch() {
+  const bar = elements.searchButton.getBoundingClientRect()
+  const panel = elements.searchBackdrop.firstElementChild
+  // The panel unrolls from the bar: same centre, same top edge (a phone fills the screen instead, see chrome.css).
+  panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top) - 2)}px`)
+  panel.style.setProperty('--omni-x', `${Math.round(bar.width ? bar.left + bar.width / 2 : window.innerWidth / 2)}px`)
+  Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], wordsFailed: false })
+  elements.searchInput.value = ''
   elements.searchBackdrop.hidden = false
-  renderSearchResults(recentSearchResults())
+  elements.searchButton.setAttribute('aria-expanded', 'true')
+  renderOmni()
   elements.searchInput.focus()
-  elements.searchInput.select()
-  requestAnimationFrame(() => {
-    elements.searchBackdrop.classList.add('open')
-  })
+  requestAnimationFrame(() => elements.searchBackdrop.classList.add('open'))
 }
 
 function closeSearch() {
+  omni.open = false
+  searchSequence += 1
+  clearTimeout(searchTimer)
   elements.searchBackdrop.classList.remove('open')
-  setTimeout(() => { elements.searchBackdrop.hidden = true }, 160)
+  elements.searchButton.setAttribute('aria-expanded', 'false')
+  setTimeout(() => { if (!elements.searchBackdrop.classList.contains('open')) elements.searchBackdrop.hidden = true }, 160)
 }
 
 let searchTimer
 let searchSequence = 0
+// Typing shows the title, notebook and action matches at once; the word matches (the full-text search) fill in when they arrive.
 function queueSearch() {
   clearTimeout(searchTimer)
   const query = elements.searchInput.value.trim()
-  if (!query) return renderSearchResults(recentSearchResults())
   const sequence = ++searchSequence
-  elements.searchResults.innerHTML = '<div class="search-loading"><span class="saving-spinner"></span>Searching your notes</div>'
+  omni.sel = 0
+  omni.wordsFailed = false
+  omni.wordHits = [] // word matches belong to the query they were found for
+  if (!query) return renderOmni()
+  renderOmni()
   searchTimer = setTimeout(async () => {
     try {
       const results = await api(`/search?q=${encodeURIComponent(query)}`)
-      if (sequence === searchSequence) renderSearchResults(results, query)
+      if (sequence !== searchSequence) return
+      omni.wordHits = results
     } catch (error) {
+      if (sequence !== searchSequence) return
       console.error(error)
-      elements.searchResults.innerHTML = '<div class="search-empty"><strong>Search is unavailable</strong><span>Your notes are still safe on this device.</span></div>'
+      omni.wordHits = []
+      omni.wordsFailed = true
     }
+    renderOmni()
   }, 120)
+}
+
+function runOmniItem(item) {
+  if (!item) return
+  closeSearch()
+  if (item.kind === 'note' || item.kind === 'words') void selectNote(item.id)
+  else if (item.kind === 'notebook') {
+    revealNotebook(item.id)
+    state.selectedNotebookId = item.id
+    renderNoteList()
+    if (mobileLayout.matches) setSidebarOpen(true)
+    requestAnimationFrame(() => elements.list.querySelector(`[data-nbk="${item.id}"]`)?.scrollIntoView({ block: 'nearest' }))
+  } else if (item.kind === 'create') void createNote(state.selectedNotebookId ?? undefined, 'canvas', item.title)
+  else if (item.kind === 'action') Promise.resolve(item.run()).catch((error) => { console.error(error); showToast(error.message || 'Something went wrong') })
 }
 
 async function deleteActiveNote() {
@@ -3675,27 +3747,31 @@ elements.searchBackdrop.addEventListener('click', (event) => {
 })
 elements.searchInput.addEventListener('input', queueSearch)
 elements.searchInput.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowDown') {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
-    elements.searchResults.querySelector('.search-result')?.focus()
-  } else if (event.key === 'Enter') {
+    setOmniSelection(moveSelection(omni.sel, event.key === 'ArrowDown' ? 1 : -1, omni.items.length))
+  } else if (event.key === 'Enter' && !event.isComposing) {
     event.preventDefault()
-    elements.searchResults.querySelector('.search-result')?.click()
+    runOmniItem(omni.items[omni.sel])
   }
 })
-elements.searchResults.addEventListener('click', (event) => {
-  const result = event.target.closest('[data-search-note-id]')
-  if (!result) return
-  selectNote(Number(result.dataset.searchNoteId))
-  closeSearch()
+// The mouse moves the selection (so Enter acts on what is under it) and a click picks. Mouse down keeps the typing focus.
+elements.searchBackdrop.addEventListener('mousedown', (event) => { if (event.target.closest('.omni-row, .omni-chip')) event.preventDefault() })
+elements.searchResults.addEventListener('mousemove', (event) => {
+  const row = event.target.closest('[data-omni]')
+  if (row && Number(row.dataset.omni) !== omni.sel) setOmniSelection(Number(row.dataset.omni), { scroll: false })
 })
-elements.searchResults.addEventListener('keydown', (event) => {
-  if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
-  event.preventDefault()
-  const results = [...elements.searchResults.querySelectorAll('.search-result')]
-  const index = results.indexOf(document.activeElement)
-  if (event.key === 'ArrowUp' && index <= 0) elements.searchInput.focus()
-  else results[Math.max(0, Math.min(results.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus()
+elements.searchResults.addEventListener('click', (event) => {
+  const row = event.target.closest('[data-omni]')
+  if (row) runOmniItem(omni.items[Number(row.dataset.omni)])
+})
+document.querySelector('#omni-chips').addEventListener('click', (event) => {
+  const chip = event.target.closest('[data-omni-chip]')
+  if (!chip) return
+  omni.filter = chip.dataset.omniChip
+  omni.sel = 0
+  renderOmni()
+  elements.searchInput.focus()
 })
 
 // Native scrolling is gone (the canvas is window-sized), so the keyboard pans it. Only when focus is
@@ -3884,9 +3960,9 @@ document.addEventListener('keydown', (event) => {
     elements.shareButton.focus()
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault()
-    if (elements.searchBackdrop.hidden) openSearch()
-    else closeSearch()
-  } else if (event.key === 'Escape' && !elements.searchBackdrop.hidden) {
+    if (omni.open) closeSearch()
+    else openSearch()
+  } else if (event.key === 'Escape' && omni.open) {
     closeSearch()
   } else if (event.key === 'Escape' && elements.properties.classList.contains('open')) {
     setPropertiesOpen(false)
@@ -3990,7 +4066,7 @@ async function initialize() {
     agentSync = mountAgentSync({
       api,
       saveStateElement: elements.saveState,
-      chipAnchor: elements.searchButton,
+      chipAnchor: document.querySelector('.share-wrap'),
       getActive: () => {
         const note = state.notes.find((item) => item.id === state.activeNoteId)
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
@@ -4029,7 +4105,7 @@ async function initialize() {
   document.querySelector('#quick-note-kbd').textContent = quickNoteKeycap(navigator.platform)
   document.querySelector('#search-kbd').textContent = `${modifier}${glue}K`
   document.querySelector('#print-kbd').textContent = `${modifier}${glue}P`
-  elements.searchButton.title = `Search notes (${modifier}${glue}K)`
+  elements.searchButton.title = `Search or jump to (${modifier}${glue}K)`
 }
 
 document.fonts.ready.then(refreshCanvasTextMetrics)

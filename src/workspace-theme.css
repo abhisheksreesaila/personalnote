@@ -11,8 +11,8 @@
   /* Scope geometry to controls, not color swatches, ink previews or canvas objects. */
   .icon-button, .tool-button,
   .tool-dock, .properties-trigger,
-  .search-button, .voice-button, .notebook-tab, .note-list-item,
-  .search-result, .search-result-icon, .notebook-picker-menu, .spotlight,
+  .voice-button, .notebook-tab, .note-list-item,
+  .notebook-picker-menu,
   .notebook-dialog, .voice-caption, .ink-options-popover, .note-create-menu,
   .mindmap-branch-chooser,
   .mindmap-zoom, .mindmap-minimap, .mindmap-segments {
@@ -21,7 +21,7 @@
   }
 
   .sidebar, .topbar, .tool-dock, .properties-panel,
-  .search-button, .voice-button, .properties-trigger,
+  .voice-button, .properties-trigger,
   .ink-options-popover, .voice-caption, .print-preview-bar, .mindmap-hint,
   .note-title:hover, .note-title:focus {
     backdrop-filter: none;
@@ -30,27 +30,24 @@
 
   .sidebar, .sidebar-footer,
   .properties-heading, .property-section, .settings-section,
-  .mindmap-inspector section, .spotlight-input-row, .search-footer,
+  .mindmap-inspector section,
   .print-summary { border-color: var(--line); }
   .sidebar, .properties-panel { box-shadow: none; }
   .paper { color-scheme: light; animation: none; }
 
   .note-title, .properties-heading h2,
   .dialog-heading-row h2, .dialog-note,
-  .spotlight-input-row input, .search-result-copy strong, .search-empty strong,
   .notebook-name-input,
   .print-preview-title strong, .print-summary > strong, .print-error strong,
   .mindmap-inspector header strong, .mindmap-branch-chooser button { font-family: var(--ui-font); font-style: normal; }
   .properties-heading h2 { font-size: 15px; }
-  .spotlight-input-row input { font-size: 18px; }
   .dialog-heading-row h2 { font-size: 20px; }
 
   .properties-trigger, .voice-button { transform: none; will-change: auto; }
 
   .notebook-picker,
   .property-note-info strong, .setting-row, .setting-field-heading,
-  .spotlight-input-row input, .search-result-copy strong,
-  .search-empty strong, .mindmap-inspector header strong, .print-summary dd,
+  .mindmap-inspector header strong, .print-summary dd,
   .paper-select select { color: var(--ink); }
   .ink-options-heading > span, .ink-options-heading button, .stroke-options > span,
   .properties-heading span,
@@ -59,9 +56,7 @@
   .setting-field-heading small, .setting-row small, .setting-row svg,
   .settings-footer-status,
   .dialog-eyebrow, .field-label, .color-fieldset legend, .dialog-note,
-  .search-results-label, .search-result-copy small,
-  .search-result-notebook, .search-empty, .search-loading, .search-footer,
-  .spotlight-input-row > svg, .search-empty svg, .print-preview-title span,
+  .print-preview-title span,
   .print-summary > p, .print-summary dt,
   .print-sheet-number, .print-sheet-card footer, .print-error span,
   .mindmap-inspector header span, .mindmap-inspector section > label,
@@ -70,7 +65,6 @@
   .notebook-picker:hover,
   .notebook-picker[aria-expanded="true"], .notebook-picker-menu button:hover,
   .notebook-picker-menu button.active, .icon-button:hover, .tool-button:hover,
-  .search-result:hover, .search-result:focus-visible,
   .mindmap-zoom button:hover, .mindmap-inspector button:hover,
   .mindmap-branch-chooser button:hover, .mindmap-branch-chooser button.active {
     color: var(--ink); background: var(--surface-cool);
@@ -78,8 +72,8 @@
   .delete-note-action, .delete-notebook, .print-error { color: var(--terracotta); }
 
   .note-create-menu, .notebook-picker-menu, .tool-dock, .ink-options-popover,
-  .search-button, .voice-button, .properties-trigger, .voice-caption, .page-count,
-  .properties-panel, .spotlight, .notebook-dialog,
+  .voice-button, .properties-trigger, .voice-caption, .page-count,
+  .properties-panel, .notebook-dialog,
   .mindmap-branch-chooser, .mindmap-zoom, .mindmap-minimap, .mindmap-hint,
   .print-preview-bar, .print-summary {
     color: var(--ink); background: var(--surface); border-color: var(--line); box-shadow: none;
@@ -88,7 +82,7 @@
     color: var(--rail); background: var(--accent); box-shadow: none;
   }
 
-  .stroke-width-button, .search-close, .search-result-icon,
+  .stroke-width-button,
   .notebook-name-input,
   .property-section .notebook-picker, .font-family-control, .font-size-row output,
   .delete-note-action, .dialog-cancel,
@@ -107,7 +101,7 @@
   }
   .dialog-danger { color: var(--rail); background: var(--terracotta); border-color: var(--terracotta); }
   .notebook-color input:checked + span { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--notebook-color); }
-  .search-backdrop.open, .notebook-dialog::backdrop { background: rgba(0, 0, 0, .65); backdrop-filter: none; }
+  .notebook-dialog::backdrop { background: rgba(0, 0, 0, .65); backdrop-filter: none; }
   .print-preview { color: var(--ink); background: var(--canvas); }
   .print-sheet-card { color-scheme: light; box-shadow: none; }
   .mindmap-hint { backdrop-filter: none; }

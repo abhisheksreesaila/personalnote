@@ -1,0 +1,321 @@
+// F-072 the omnibar, in the real app: Vite dev server on PN_VERIFY_PORT (default 4870) with a real API on the next port over a scratch
+// database, headless Chromium, real keyboard and mouse. Run one at a time; it stops everything it starts and removes only its own scratch folder.
+//   PN_VERIFY_PORT=4880 node scripts/verify-omnibar.mjs        (PN_SHOT=/path/shot.png also saves pictures)
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawn } from 'node:child_process'
+import { createServer } from 'vite'
+import { chromium } from 'playwright'
+
+const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4870)
+const API_PORT = UI_PORT + 1
+const API = `http://127.0.0.1:${API_PORT}`
+const results = []
+const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'pn-verify-omnibar-'))
+const python = fs.existsSync('.venv/bin/python') ? '.venv/bin/python' : 'python3'
+const api = spawn(python, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(API_PORT)], { env: { ...process.env, PERSONAL_NOTE_DB: path.join(scratch, 'verify.db') }, stdio: 'ignore' })
+const apiUp = async () => { for (let i = 0; i < 100; i++) { try { if ((await fetch(`${API}/api/notebooks`)).ok) return } catch {} await new Promise((r) => setTimeout(r, 150)) } throw new Error('API did not start') }
+const server = await createServer({ server: { port: UI_PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': API } }, logLevel: 'error' })
+const headers = { 'content-type': 'application/json', 'x-personal-note': '1' }
+const call = async (method, url, body) => {
+  const response = await fetch(`${API}${url}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  return { status: response.status, body: response.status === 204 ? null : await response.json() }
+}
+let browser
+try {
+  await apiUp()
+  await server.listen()
+  const travel = (await call('POST', '/api/notebooks', { name: 'Travel', color: '#2f9d8f', category: 'projects' })).body
+  const home = (await call('POST', '/api/notebooks', { name: 'Home', color: '#d9822b', category: 'areas' })).body
+  const makeNote = async (title, markdown, notebookId) => {
+    const created = (await call('POST', '/api/notes', { title, notebookId, noteType: 'page' })).body
+    const saved = (await call('PUT', `/api/notes/${created.id}`, { title, notebookId, revision: created.revision, pageState: { columns: 1, rows: 1 }, content: { markdown } })).body
+    return { id: created.id, revision: saved.revision }
+  }
+  const tide = await makeNote('Tide tables', 'Low tide at 6:42 so the pools are open before breakfast', travel.id)
+  const packing = await makeNote('Packing list', 'Bring the lighthouse key and a paper map', travel.id)
+  const shelves = await makeNote('Kitchen shelves', 'Two shelves, oak, hidden brackets', home.id)
+  const cards = await makeNote('Card numbers', 'ZEBRA-CARD-4111 quokkaphrase', home.id)
+  const longTitle = 'A very long title that goes on and on and on past the end of any sensible panel width so that it must be cut with an ellipsis'
+  const long = await makeNote(longTitle, 'Short body', home.id)
+  await call('POST', `/api/notes/${cards.id}/secure`, { revision: cards.revision, passphrase: 'correct horse battery' })
+  await call('POST', '/api/secure/lock')
+
+  browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
+  const context = await browser.newContext({ viewport: { width: 1360, height: 900 } })
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`http://127.0.0.1:${UI_PORT}/notes`)
+  await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+  await page.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 30000 })
+  await page.waitForTimeout(800)
+  const pn = (fn, arg) => page.evaluate(fn, arg)
+  const shot = async (name, target = page) => { if (process.env.PN_SHOT) await target.screenshot({ path: process.env.PN_SHOT.replace('.png', `-${name}.png`) }) }
+  const open = () => page.locator('#search-backdrop:not([hidden])')
+  const panel = () => page.locator('.spotlight')
+  const rows = () => page.locator('.omni-row')
+  const titles = () => page.locator('.omni-row .omni-title').allTextContents()
+  const groups = () => page.locator('.omni-group h4').allTextContents()
+  const active = () => pn(() => window.__personalNote.state.activeNoteId)
+  const waitClosed = () => page.waitForSelector('#search-backdrop', { state: 'hidden', timeout: 3000 }).then(() => true, () => false)
+  const waitOpen = () => page.waitForFunction(() => document.querySelector('#search-backdrop')?.classList.contains('open') && getComputedStyle(document.querySelector('.spotlight')).opacity === '1', null, { timeout: 3000 }).then(() => true, () => false)
+  // Start on an ordinary note: while a locked secure note is open its cover sits over the top bar (as it did over the old button), so only the keyboard reaches search.
+  await pn((id) => window.__personalNote.selectNote(id), tide.id)
+  await page.waitForFunction((id) => window.__personalNote.state.activeNoteId === id && !window.__personalNote.state.loading, tide.id, { timeout: 30000 })
+  await page.waitForTimeout(600)
+
+  // ---- the bar ----
+  const bar = await pn(() => { const r = document.querySelector('#search-button').getBoundingClientRect(); const m = document.querySelector('.main-view').getBoundingClientRect(); return { x: r.left + r.width / 2, w: r.width, h: r.height, top: r.top, mainX: m.left + m.width / 2, inActions: Boolean(document.querySelector('.topbar-actions #search-button')), count: document.querySelectorAll('.topbar-actions .search-button').length } })
+  check('a slim bar sits at the top centre of the window', Math.abs(bar.x - bar.mainX) < 10 && bar.h <= 40 && bar.w >= 200 && bar.top < 30, JSON.stringify(bar))
+  check('the old top-right search button is gone', !bar.inActions && bar.count === 0)
+  const overlap = await pn(() => { const b = document.querySelector('#search-button').getBoundingClientRect(); return ['.topbar-title', '.topbar-actions'].map((s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.right > b.left && r.left < b.right }) })
+  check('the bar does not run into the note title or the buttons on the right', !overlap[0] && !overlap[1], JSON.stringify(overlap))
+  await shot('1-bar')
+
+  // ---- opening: Ctrl+K, Meta+K, click ----
+  await page.keyboard.press('Control+k')
+  check('Ctrl+K opens it', await waitOpen())
+  check('the typing focus is in the field', await pn(() => document.activeElement?.id === 'search-input'))
+  const geometry = await pn(() => { const p = document.querySelector('.spotlight').getBoundingClientRect(); const b = document.querySelector('#search-button').getBoundingClientRect(); return { dx: Math.abs((p.left + p.width / 2) - (b.left + b.width / 2)), dy: Math.abs(p.top - b.top), w: p.width, h: p.height, dim: getComputedStyle(document.querySelector('#search-backdrop')).backgroundColor, blur: getComputedStyle(document.querySelector('#search-backdrop')).backdropFilter } })
+  check('it grows from the bar: same centre and top edge, about 560 px wide, no dim', geometry.dx < 6 && geometry.dy < 6 && Math.abs(geometry.w - 560) < 2 && /rgba\(0, 0, 0, 0\)|transparent/.test(geometry.dim) && (geometry.blur === 'none' || geometry.blur === ''), JSON.stringify(geometry))
+  check('empty query: Recent notes and the top actions', (await groups()).join() === 'Recent,Actions' && (await page.locator('.omni-group[aria-label="Recent"] .omni-row').count()) === 4 && (await titles()).includes('New note') && (await titles()).includes('Quick note'), JSON.stringify([await groups(), await titles()]))
+  check('the four chips are there, All is pressed', (await page.locator('.omni-chip').allTextContents()).join() === 'All,Notes,Notebooks,Actions' && (await page.locator('.omni-chip[aria-pressed="true"]').textContent()) === 'All')
+  check('the first row is selected', await pn(() => document.querySelector('.omni-row')?.classList.contains('sel')))
+  await shot('2-empty')
+  await page.keyboard.press('Control+k')
+  check('Ctrl+K again closes it', await waitClosed())
+  await page.keyboard.press('Meta+k')
+  check('Cmd+K (Meta) opens it too', await waitOpen())
+  await page.keyboard.press('Escape')
+  check('Esc closes it', await waitClosed())
+  await page.click('#search-button')
+  check('clicking the bar opens it', await waitOpen())
+  await page.mouse.click(60, 700)
+  check('clicking outside closes it', await waitClosed())
+
+  // ---- typing: titles, words (with snippet), notebooks, actions ----
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('tide')
+  await page.waitForSelector('.omni-group[aria-label="Notes"]')
+  check('typing finds a note by title, with the match marked', (await titles()).includes('Tide tables') && (await page.locator('.omni-row mark').first().textContent()).toLowerCase() === 'tide')
+  await page.fill('#search-input', 'lighthouse')
+  await page.waitForSelector('.omni-group[aria-label="In your words"]', { timeout: 5000 })
+  const words = page.locator('.omni-group[aria-label="In your words"] .omni-row')
+  check('and by the words inside, with a snippet and the notebook', (await words.count()) === 1 && (await words.locator('.omni-title').textContent()) === 'Packing list' && /lighthouse/i.test(await words.locator('.omni-sub').textContent()) && (await words.locator('.omni-meta').textContent()) === 'Travel')
+  await shot('3-words')
+  await page.fill('#search-input', 'travel')
+  await page.waitForSelector('.omni-group[aria-label="Notebooks"]')
+  check('and a notebook by name', (await groups()).includes('Notebooks') && (await page.locator('.omni-group[aria-label="Notebooks"] .omni-title').first().textContent()) === 'Travel')
+  await page.fill('#search-input', 'switch skin')
+  await page.waitForSelector('.omni-group[aria-label="Actions"]')
+  check('and actions ("switch skin" lists the three skins)', (await titles()).join() === 'Skin: Crayon,Skin: Paper,Skin: Night', (await titles()).join())
+
+  // ---- chips ----
+  await page.fill('#search-input', 'home')
+  await page.waitForTimeout(500)
+  await page.click('.omni-chip[data-omni-chip="Notebooks"]')
+  check('the Notebooks chip keeps only notebooks and the typing focus', (await groups()).join() === 'Notebooks' && (await pn(() => document.activeElement?.id === 'search-input')), (await groups()).join())
+  await page.click('.omni-chip[data-omni-chip="Actions"]')
+  check('the Actions chip shows nothing for a query no action matches (and says so)', (await page.locator('.omni-none strong').count()) === 1)
+  await page.click('.omni-chip[data-omni-chip="Notes"]')
+  check('the Notes chip narrows to notes', (await groups()).every((g) => g === 'Notes' || g === 'In your words'))
+  await page.click('.omni-chip[data-omni-chip="All"]')
+
+  // ---- arrows and Enter ----
+  await page.fill('#search-input', '')
+  await page.waitForTimeout(200)
+  await page.keyboard.press('Control+a')
+  await page.keyboard.type('shelves')
+  await page.waitForSelector('.omni-row')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowUp')
+  check('the arrows move the selection and wrap', (await pn(() => document.querySelectorAll('.omni-row.sel').length)) === 1)
+  await page.fill('#search-input', 'e')
+  await page.waitForSelector('.omni-row')
+  const total = await rows().count()
+  await page.keyboard.press('ArrowUp')
+  const wrapped = await pn(() => [...document.querySelectorAll('.omni-row')].findIndex((row) => row.classList.contains('sel')))
+  await page.keyboard.press('ArrowDown')
+  const back = await pn(() => [...document.querySelectorAll('.omni-row')].findIndex((row) => row.classList.contains('sel')))
+  check('ArrowUp from the first row goes to the last, ArrowDown comes back', wrapped === total - 1 && back === 0, `${wrapped}/${total}/${back}`)
+  await page.fill('#search-input', 'shelves')
+  await page.waitForTimeout(500)
+  await page.keyboard.press('Enter')
+  await page.waitForFunction((id) => window.__personalNote.state.activeNoteId === id, shelves.id, { timeout: 15000 })
+  check('Enter opens the selected note and closes the bar', (await active()) === shelves.id && (await waitClosed()))
+  await page.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 15000 })
+  await page.waitForTimeout(700)
+
+  // ---- the mouse: hover selects, click opens ----
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('packing')
+  await page.waitForSelector('[data-search-note-id]')
+  await page.locator('.omni-row').first().hover()
+  await page.locator('.omni-row').first().click()
+  await page.waitForFunction((id) => window.__personalNote.state.activeNoteId === id, packing.id, { timeout: 15000 })
+  check('a click on a result opens that note', (await active()) === packing.id)
+  await page.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 15000 })
+  await page.waitForTimeout(700)
+
+  // ---- a notebook row opens that notebook in the sidebar ----
+  await page.keyboard.press('Control+k')
+  check('(it opens again right after opening a note)', await waitOpen())
+  await page.keyboard.type('home')
+  await page.waitForSelector('.omni-group[aria-label="Notebooks"]', { timeout: 5000 }).catch(async () => { await shot('fail-notebook'); console.log(await pn(() => ({ v: document.querySelector('#search-input')?.value, html: document.querySelector('#search-results')?.innerText.slice(0, 300), hidden: document.querySelector('#search-backdrop').hidden, notebooks: window.__personalNote.state.notebooks.map((n) => n.name) }))) })
+  await page.locator('.omni-group[aria-label="Notebooks"] .omni-row').click()
+  await page.waitForTimeout(500)
+  check('picking a notebook opens and selects it in the sidebar', await pn((id) => document.querySelector(`[data-nbk="${id}"]`)?.classList.contains('open') && window.__personalNote.state.selectedNotebookId === id, home.id))
+
+  // ---- secure notes: title only, with a lock ----
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('quokkaphrase')
+  await page.waitForTimeout(700)
+  check('a secure note is never found by its words', (await page.locator('.omni-row.search-result').count()) === 0)
+  await page.fill('#search-input', 'Card')
+  await page.waitForSelector('.omni-row.is-secure')
+  const secure = page.locator('.omni-row.is-secure')
+  const secureText = await secure.innerText()
+  check('it is found by title, with a lock and no words', (await secure.count()) === 1 && (await secure.locator('svg.lucide-lock').count()) === 1 && /Secure note/.test(secureText) && !/ZEBRA|4111|quokka/i.test(secureText), secureText)
+  check('and nothing in the page holds its words', !(await pn(() => document.documentElement.outerHTML.includes('ZEBRA') || document.documentElement.outerHTML.includes('4111'))))
+  await shot('4-secure')
+
+  // ---- actions ----
+  await page.fill('#search-input', 'dark')
+  await page.fill('#search-input', 'skin night')
+  await page.waitForSelector('.omni-row')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(500)
+  check('the skin action switches the skin', (await pn(() => document.documentElement.dataset.skin)) === 'night')
+  await shot('5-night')
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('skin paper')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  const before = await pn(() => window.__personalNote.state.notes.length)
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('new note')
+  await page.waitForSelector('.omni-row')
+  await page.keyboard.press('Enter')
+  await page.waitForFunction((n) => window.__personalNote.state.notes.length === n + 1, before, { timeout: 15000 })
+  check('the New note action makes a note and opens it', (await pn(() => window.__personalNote.state.notes.length)) === before + 1)
+  await page.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 15000 })
+  await page.waitForTimeout(700)
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('quick note')
+  await page.waitForSelector('.omni-row')
+  await page.keyboard.press('Enter')
+  await page.waitForFunction((n) => window.__personalNote.state.notes.length === n + 2, before, { timeout: 8000 }).catch(async () => { console.log(await pn(() => ({ v: document.querySelector('#search-input').value, hidden: document.querySelector('#search-backdrop').hidden, rows: [...document.querySelectorAll('.omni-row')].map((r) => r.innerText.replace(/\n/g, ' | ')), creating: window.__personalNote.state.creatingNote, n: window.__personalNote.state.notes.length }))) })
+  await page.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 15000 })
+  const quick = await pn(() => { const s = window.__personalNote.state; return s.notes.find((n) => n.id === s.activeNoteId) })
+  check('the Quick note action makes an inbox note', quick && quick.notebookId == null && quick.title === 'Untitled note', JSON.stringify(quick))
+  await page.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 15000 })
+  await page.waitForTimeout(700)
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('make this note secure')
+  await page.waitForSelector('.omni-row')
+  check('Make this note secure is offered for the open note', (await titles()).includes('Make this note secure'))
+  await page.keyboard.press('Escape')
+  await waitClosed()
+
+  // ---- states ----
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('zzqx nothing')
+  await page.waitForSelector('.omni-none')
+  const none = await page.locator('.spotlight').innerText()
+  check('no results: says so, mentions secure notes, offers New note “…” selected', /Nothing matches “zzqx nothing”/.test(none) && /Secure notes match by title only/.test(none) && (await page.locator('.omni-row.sel .omni-title').textContent()) === 'New note “zzqx nothing”', none)
+  await shot('6-none')
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => window.__personalNote.state.notes.some((n) => n.title === 'zzqx nothing'), null, { timeout: 15000 })
+  check('Enter on it creates a note with that title', true)
+  await page.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 15000 })
+  await page.waitForTimeout(700)
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('very long title')
+  await page.waitForSelector('.omni-row')
+  const cut = await pn(() => { const t = document.querySelector('.omni-row .omni-title'); const p = document.querySelector('.spotlight'); return { clipped: t.scrollWidth > t.clientWidth, ellipsis: getComputedStyle(t).textOverflow, wide: p.scrollWidth - p.clientWidth, h: t.getBoundingClientRect().height } })
+  check('a long title is one line with an ellipsis and does not widen the panel', cut.clipped && cut.ellipsis === 'ellipsis' && cut.wide <= 0 && cut.h < 24, JSON.stringify(cut))
+  await shot('7-long')
+  await page.keyboard.press('Escape')
+  await waitClosed()
+  await page.route('**/api/search*', (route) => route.fulfill({ status: 500, body: 'no' }))
+  await page.keyboard.press('Control+k')
+  await waitOpen()
+  await page.keyboard.type('tide')
+  await page.waitForSelector('.omni-note', { timeout: 5000 })
+  check('if the word search fails, title results still show with a muted line', (await titles()).includes('Tide tables') && /Couldn’t search inside notes/.test(await page.locator('.omni-note').textContent()))
+  await page.unroute('**/api/search*')
+  await page.keyboard.press('Escape')
+  await waitClosed()
+
+  // ---- other skins and a narrower window ----
+  for (const skin of ['crayon', 'night']) {
+    await pn((id) => document.documentElement.setAttribute('data-skin', id), skin)
+    await page.keyboard.press('Control+k')
+    await waitOpen()
+    await page.keyboard.type('tide')
+    await page.waitForTimeout(500)
+    await shot(`8-${skin}`)
+    await page.keyboard.press('Escape')
+    await waitClosed()
+  }
+  await pn(() => document.documentElement.setAttribute('data-skin', 'paper'))
+  await page.setViewportSize({ width: 1000, height: 800 })
+  await page.waitForTimeout(300)
+  const narrow = await pn(() => { const b = document.querySelector('#search-button').getBoundingClientRect(); return ['.topbar-title', '.topbar-actions'].map((s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.right > b.left && r.left < b.right }) })
+  check('at 1000 px the bar still clears the title and the buttons', !narrow[0] && !narrow[1], JSON.stringify(narrow))
+  await shot('9-narrow')
+  check('no page errors', errors.length === 0, errors.join(' | '))
+  await context.close()
+
+  // ---- a phone ----
+  const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+  const phone = await phoneContext.newPage()
+  const phoneErrors = []
+  phone.on('pageerror', (error) => phoneErrors.push(error.message))
+  await phone.goto(`http://127.0.0.1:${UI_PORT}/notes`)
+  await phone.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+  await phone.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 30000 })
+  await phone.waitForTimeout(600)
+  const icon = await phone.evaluate(() => { const r = document.querySelector('#search-button').getBoundingClientRect(); const s = document.querySelector('#search-button span'); return { w: r.width, h: r.height, text: getComputedStyle(s).display, inView: r.right <= innerWidth && r.left >= 0 } })
+  check('at phone width the bar is a search icon', icon.w <= 44 && icon.h >= 40 && icon.text === 'none' && icon.inView, JSON.stringify(icon))
+  await phone.tap('#search-button')
+  await phone.waitForFunction(() => document.querySelector('#search-backdrop')?.classList.contains('open') && getComputedStyle(document.querySelector('.spotlight')).opacity === '1', null, { timeout: 3000 })
+  await phone.waitForTimeout(300)
+  const full = await phone.evaluate(() => { const r = document.querySelector('.spotlight').getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height, footer: getComputedStyle(document.querySelector('.search-footer')).display, cancel: getComputedStyle(document.querySelector('.k-cancel')).display, esc: getComputedStyle(document.querySelector('.k-esc')).display, over: document.documentElement.scrollWidth - innerWidth } })
+  check('tapped, the search fills the screen with a Cancel button and no footer', full.l === 0 && full.t === 0 && full.w === 390 && full.h >= 843 && full.footer === 'none' && full.cancel !== 'none' && full.esc === 'none' && full.over <= 0, JSON.stringify(full))
+  await phone.keyboard.type('tide')
+  await phone.waitForSelector('.omni-row')
+  await shot('10-phone', phone)
+  await phone.tap('.omni-row')
+  await phone.waitForFunction((id) => window.__personalNote.state.activeNoteId === id, tide.id, { timeout: 15000 })
+  check('on a phone, tapping a result opens the note', (await phone.evaluate(() => window.__personalNote.state.activeNoteId)) === tide.id)
+  await phone.waitForTimeout(400)
+  await phone.tap('#search-button')
+  await phone.waitForTimeout(400)
+  await phone.tap('#search-close')
+  check('Cancel closes it', await phone.waitForSelector('#search-backdrop', { state: 'hidden', timeout: 3000 }).then(() => true, () => false))
+  check('no page errors on the phone', phoneErrors.length === 0, phoneErrors.join(' | '))
+} catch (error) {
+  console.error(error)
+  results.push(false)
+} finally {
+  await browser?.close()
+  await server.close()
+  api.kill()
+  try { fs.rmSync(scratch, { recursive: true, force: true }) } catch {}
+}
+const failed = results.filter((ok) => !ok).length
+console.log(`\n${results.length - failed}/${results.length} checks passed`)
+process.exit(failed ? 1 : 0)
