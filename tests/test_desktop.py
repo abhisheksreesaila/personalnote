@@ -395,6 +395,82 @@ class CaptureBridgeTests(unittest.TestCase):
         self.assertEqual(calls, [True])
 
 
+class FullScreenBridgeTests(unittest.TestCase):
+    def test_the_page_can_enter_and_leave_full_screen(self):
+        calls = []
+        api = DesktopApi(lambda: None, full_screen=lambda on: calls.append(on) or True)
+        self.assertTrue(api.set_full_screen(True))
+        self.assertTrue(api.set_full_screen(False))
+        self.assertEqual(calls, [True, False])
+
+    def test_a_failure_is_reported_as_false_never_raised(self):
+        def boom(_on):
+            raise RuntimeError("no window")
+
+        self.assertFalse(DesktopApi(lambda: None, full_screen=boom).set_full_screen(True))
+
+    def test_without_a_full_screen_function_the_answer_is_false(self):
+        self.assertFalse(DesktopApi(lambda: None).set_full_screen(True))
+
+    def test_anything_truthy_means_enter(self):
+        calls = []
+        DesktopApi(lambda: None, full_screen=lambda on: calls.append(on) or True).set_full_screen("yes")
+        self.assertEqual(calls, [True])
+
+    def test_it_only_toggles_when_the_window_is_not_already_there(self):
+        toggles = []
+        state = {"full": False}
+
+        def toggle():
+            toggles.append(1)
+            state["full"] = not state["full"]
+
+        apply = desktop.make_full_screen(lambda: state["full"], toggle, sleep=lambda _s: None)
+        self.assertTrue(apply(True))
+        self.assertTrue(apply(True))  # already there: nothing happens
+        self.assertEqual(len(toggles), 1)
+        self.assertTrue(apply(False))
+        self.assertTrue(apply(False))
+        self.assertEqual(len(toggles), 2)
+
+    def test_it_waits_for_the_window_to_finish_the_move(self):
+        state = {"full": False, "reads": 0}
+
+        def is_full():
+            state["reads"] += 1
+            return state["full"] and state["reads"] > 4  # the move shows up a few reads after the toggle
+
+        apply = desktop.make_full_screen(is_full, lambda: state.update(full=True), sleep=lambda _s: None)
+        self.assertTrue(apply(True))
+        self.assertGreater(state["reads"], 4)
+
+    def test_a_move_that_never_arrives_is_a_refusal(self):
+        apply = desktop.make_full_screen(lambda: False, lambda: None, timeout=0.2, poll=0.05, sleep=lambda _s: None)
+        self.assertFalse(apply(True))
+
+    def test_quick_repeated_asks_never_toggle_twice_for_one_target(self):
+        toggles = []
+        state = {"full": False}
+
+        def toggle():
+            toggles.append(1)
+            time.sleep(0.05)  # the move takes a moment
+            state["full"] = not state["full"]
+
+        apply = desktop.make_full_screen(lambda: state["full"], toggle, poll=0.01)
+        results = []
+        threads = [threading.Thread(target=lambda: results.append(apply(True))) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(5)
+        self.assertEqual(results, [True] * 4)
+        self.assertEqual(len(toggles), 1)
+
+    def test_an_unreadable_window_state_is_a_refusal(self):
+        self.assertFalse(desktop.make_full_screen(lambda: None, lambda: None)(True))
+
+
 class ThreadStrictWindow:
     """Like pywebview's Cocoa window: evaluate_js must never be called on the thread that delivered the notification."""
 

@@ -178,6 +178,12 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   const leafer = app.tree
   for (const layer of [app.tree, app.sky]) if (layer.renderer?.config) layer.renderer.config.usePartRender = perf.partRender
   const chrome = new Group({ hittable: false })
+  let focusLook = null // F-073: { keep } while focus mode is on
+  function hideForFocus(entry) {
+    if (!focusLook || entry.id === focusLook.keep || entry.focusWas !== undefined) return
+    entry.focusWas = entry.node.visible !== false
+    entry.node.visible = false
+  }
   const world = new Group()
   leafer.add(chrome)
   leafer.add(world)
@@ -504,6 +510,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     entries.set(object.id, entry)
     entryOfNode.set(built.node, entry)
     configure(entry)
+    hideForFocus(entry)
     return entry
   }
 
@@ -1972,6 +1979,18 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     lodState: () => lod.stats(),
     lodExit: () => lod.exit(),
     setDrawing(on) { drawingTool = Boolean(on) },
+    // F-073 focus mode: the page furniture (edges, folds, labels) and every object but `keepId` are not drawn; nothing in the note changes.
+    // Objects that appear while it is on (an agent's change, a reload) are hidden as they are made; `setFocusLook(false)` shows again only
+    // the nodes that are still here and that it hid, as they were.
+    setFocusLook(on, keepId = null) {
+      lod.exit()
+      chrome.visible = !on
+      focusLook = on ? { keep: keepId } : null
+      for (const entry of entries.values()) {
+        if (on) hideForFocus(entry)
+        else if (entry.focusWas !== undefined) { entry.node.visible = entry.focusWas; delete entry.focusWas }
+      }
+    },
     // Resolves when the page bitmaps are made for the view as it is (they are made in idle time after a jump or a zoom), or after `maxMs`; at once when
     // there are none to wait for. The speed test sets a view and waits for this, as a person who pauses before the next pan does.
     whenBitmapsReady(maxMs = 8000) {

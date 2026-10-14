@@ -43,6 +43,8 @@ import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.
 import { createDoubleTap, tapKeyFor } from './modules/editor/double-tap.js'
 import { createMiddleClick } from './modules/editor/middle-click.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
+import { writingBox } from './modules/canvas-leafer/text-ops.js'
+import { countWords, createFocusMode, focusShortcut, focusView } from './modules/editor/focus-mode.js'
 import { chooseOpeningView, fitView, isDrawingTool, openingView, pageLabel, pageView, scrollThumbs, stepZoom, viewForPage, visiblePages, writingView, zoomPercent } from './modules/editor/navigation.js'
 import {
   clampView,
@@ -146,11 +148,14 @@ document.querySelector('#app').innerHTML = `
               <button role="menuitem" id="share-vault"><i data-lucide="folder-down"></i><span>Obsidian vault</span></button>
             </div>
           </div>
+          <button class="icon-button glass-button" id="focus-button" data-keeps-text-editing title="Focus mode (Ctrl+.)" aria-label="Focus mode"><i data-lucide="focus"></i></button>
           <button class="icon-button glass-button" id="fold-all" title="Fold all linked objects into their words" aria-label="Fold all linked objects" hidden><i data-lucide="fold-vertical"></i></button>
           <button class="icon-button glass-button" id="clear-note" title="Clear all" aria-label="Clear all"><i data-lucide="eraser"></i></button>
           <button class="icon-button glass-button properties-trigger" id="top-properties" title="Settings and properties" aria-label="Open settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
         </div>
       </header>
+      <div class="focus-strip" id="focus-strip"><b id="focus-title"></b><span id="focus-count"></span><button type="button" id="focus-leave" data-keeps-text-editing><i data-lucide="x"></i>Leave focus <kbd>Esc</kbd></button></div>
+      <div class="focus-hint" id="focus-hint" aria-hidden="true">Esc or <span id="focus-kbd">Ctrl .</span> to leave</div>
 
       <section class="workspace" id="workspace">
         <div class="selection-bar" id="selection-bar" role="toolbar" aria-label="Selected objects" hidden>
@@ -1346,8 +1351,11 @@ let lastPenTool = null
 const TOOLS = new Set(['select', 'hand', 'text', 'sticky', 'shape', 'pen', 'highlight', 'eraser', 'connect'])
 let togglingTool = false // F-070: the double-tap's own tool change
 let writingSpot = null // F-070 { noteId, id, start, end }: where the caret was when drawing took over; any other tool change forgets it
+let focusActive = false // F-073: while focus mode is on, writing is the only tool
+let focusRestore = null // F-073 { view, scroll, timer }: the window is changing size on the way out; the view is put back once it has settled
 function setTool(tool) {
   if (!TOOLS.has(tool)) tool = 'select'
+  if (focusActive) tool = 'text'
   if (!togglingTool && !applyingTemporaryHand) writingSpot = null // (the space-bar hand and its release are temporary: the way back stays)
   if (!applyingTemporaryHand) temporaryHand.cancel()
   if (tool !== state.tool) pageOpened = false
@@ -1881,6 +1889,7 @@ async function stopDictationForSwitch() {
 
 async function selectNote(id, { reload = false } = {}) {
   if (id === state.activeNoteId && !reload) return
+  if (focusActive) { focus.leave(); clearTimeout(focusRestore?.timer); focusRestore = null } // (the other note opens in its own view)
   leaferSwitching += 1
   await stopDictationForSwitch()
   leaferCanvas.clearSelection()
@@ -2787,6 +2796,7 @@ function omniActions() {
     { id: 'new-note', title: 'New note', icon: 'plus', top: true, keywords: 'create add', run: () => createNote(state.selectedNotebookId ?? undefined) },
     { id: 'quick-note', title: 'Quick note', icon: 'zap', top: true, keycap: quickNoteKeycap(navigator.platform), keywords: 'inbox capture', run: () => createNote() },
   ]
+  actions.push({ id: 'focus', title: 'Focus mode', icon: 'focus', top: true, keycap: `${modifierLabel(navigator.platform)}.`, keywords: 'write quiet distraction full screen words only', run: () => { closeSearch(); toggleFocus() } })
   if (note) actions.push({ id: 'make-secure', title: note.secure ? 'Make this note ordinary' : 'Make this note secure', icon: note.secure ? 'lock-open' : 'lock', top: true, keywords: 'lock private password', run: () => toggleSecureActiveNote() })
   const current = startSkins().current
   for (const skin of SKINS) {
@@ -3911,6 +3921,208 @@ function toggleLeaferLock() {
 
 // F-070: double-tap the command key (Control on Linux and Windows) toggles writing and the last pen tool, even with the caret in the words.
 // Nothing here stops the keys: a shortcut that uses the modifier still runs as it did, and cancels the tap.
+// ---- Focus mode (F-073): only the words, in a centred column on paper. Nothing in the note changes; leaving puts everything back.
+// Canvas notes: the text being written, else the one text selected, else the topmost text (a new, empty one for an empty note). The other
+// objects and the page furniture are only not drawn while focus is on, so saved content is never moved or reflowed. Page notes are all
+// words already: the toolbar and sheet marks go, the paper becomes the column, and drawing is switched off.
+const focusStrip = document.querySelector('#focus-strip')
+let focusTextId = null
+let focusStartedEditing = false
+let focusEnteredFullscreen = false
+let focusCountTimer = 0
+let focusScroll = 0 // how far the words have been scrolled to keep the caret in sight (canvas pixels of view)
+let focusKeepFrame = 0
+const isPageNote = () => state.activeNoteType === 'page'
+
+function focusCandidate(saved) {
+  const objects = (leaferEdits.doc?.objects ?? []).filter(Boolean)
+  const texts = objects.filter((object) => object.type === 'text' && object.geometry)
+  const byId = (id) => texts.find((object) => object.id === id)
+  const topmost = [...texts].sort((a, b) => Number(b.format === 'markdown') - Number(a.format === 'markdown') || a.geometry.y - b.geometry.y || a.geometry.x - b.geometry.x)[0]
+  return byId(saved.caret?.id) ?? (saved.selection.length === 1 ? byId(saved.selection[0]) : null) ?? topmost ?? null
+}
+function focusBox() {
+  const text = (leaferEdits.doc?.objects ?? []).find((object) => object?.id === focusTextId)
+  if (text?.geometry) return { x: text.geometry.x, y: text.geometry.y, width: text.geometry.width ?? writingBox({ x: text.geometry.x }).width }
+  return { y: 80, ...writingBox({ x: 80 }) }
+}
+function layoutFocus() {
+  const view = focusView({ viewW: viewSize.width, text: focusBox(), scale: state.displayScale })
+  setViewTo({ ...view, y: view.y + focusScroll })
+}
+
+// The line being typed stays in the window, with room below it (the view moves, never the words).
+function caretRect() {
+  const selection = getSelection()
+  if (!selection?.rangeCount) return null
+  const range = selection.getRangeAt(0)
+  let rect = range.getClientRects()[0] ?? range.getBoundingClientRect()
+  if (!rect || (!rect.height && !rect.width)) {
+    const node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement
+    rect = (node?.closest?.('.cm-line') ?? node)?.getBoundingClientRect()
+  }
+  return rect && rect.height > 0 && rect.height < 300 ? rect : null
+}
+function keepCaretInView() {
+  if (!focusActive || isPageNote()) return
+  cancelAnimationFrame(focusKeepFrame)
+  focusKeepFrame = requestAnimationFrame(() => {
+    const editor = document.querySelector('.leafer-text-editor')
+    if (!focusActive || !editor || (!editor.contains(document.activeElement) && document.activeElement !== editor)) return
+    const rect = caretRect()
+    if (!rect) return
+    const top = 72
+    const bottom = viewSize.height - Math.max(120, viewSize.height * 0.22)
+    const dy = rect.bottom > bottom ? bottom - rect.bottom : rect.top < top ? top - rect.top : 0
+    if (dy) { focusScroll += dy; layoutFocus() }
+  })
+}
+document.addEventListener('selectionchange', keepCaretInView)
+document.addEventListener('input', keepCaretInView, true)
+
+const isFullscreenNow = () => Boolean(document.fullscreenElement) || document.documentElement.classList.contains('chrome-mac-fullscreen')
+// Full screen changes one move at a time: asks that come while a move is under way leave only the last one wanted, done when it ends.
+let fullscreenWanted = null
+let fullscreenBusy = false
+async function setWindowFullscreen(on) {
+  fullscreenWanted = on
+  if (fullscreenBusy) return
+  fullscreenBusy = true
+  let last = null // (what this burst of asks last did: the same ask again is not repeated)
+  try {
+    while (fullscreenWanted !== null) {
+      const want = fullscreenWanted
+      fullscreenWanted = null
+      if (want === last) continue
+      last = want
+      const bridge = window.pywebview?.api?.set_full_screen // the Mac app's own full screen
+      try {
+        if (bridge) await bridge(want)
+        else if (want) await document.documentElement.requestFullscreen?.()
+        else if (document.fullscreenElement) await document.exitFullscreen()
+      } catch { /* the window said no: focus mode works the same without full screen */ }
+    }
+  } finally { fullscreenBusy = false }
+}
+
+function refreshFocusCount() {
+  const editor = document.querySelector('.leafer-text-editor')
+  const source = isPageNote() ? pageEditor?.getDocument()?.markdown : editor ? editor.value ?? editor.textContent : (leaferEdits.doc?.objects ?? []).find((object) => object?.id === focusTextId)?.content
+  const words = countWords(source)
+  document.querySelector('#focus-count').textContent = `${words} ${words === 1 ? 'word' : 'words'}`
+  document.querySelector('#focus-title').textContent = document.querySelector('#note-title')?.value || 'Untitled note'
+}
+
+const focus = createFocusMode({
+  canFocus: () => !state.loading && !state.noteLocked && !leaferSwitching && elements.printPreview.hidden && !document.querySelector('dialog[open]') && !elements.searchBackdrop.classList.contains('open')
+    && (state.activeNoteType === 'canvas' ? Boolean(leaferCanvas) : isPageNote() && Boolean(pageEditor)),
+  capture: () => isPageNote()
+    ? { page: true, draw: elements.pageHost.classList.contains('page-drawing-mode'), scroll: elements.pageHost.querySelector('.page-desk')?.scrollTop ?? 0,
+        focused: elements.pageHost.contains(document.activeElement), sidebarOpen: elements.sidebar.classList.contains('open'), propertiesOpen: elements.properties.classList.contains('open'), fullscreen: isFullscreenNow() }
+    : {
+        tool: state.tool, zoom: state.canvasZoom, view: { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() },
+        selection: leaferCanvas.selection(), caret: leaferCanvas.textCaret(), sidebarOpen: elements.sidebar.classList.contains('open'),
+        propertiesOpen: elements.properties.classList.contains('open'), fullscreen: isFullscreenNow(),
+      },
+  enter(saved) {
+    focusActive = true
+    focusScroll = 0
+    setSidebarOpen(false)
+    setPropertiesOpen(false)
+    setShareMenuOpen(false)
+    closeInkOptions()
+    if (saved.page) {
+      elements.shell.classList.add('focus-mode')
+      pageEditor.setNoDrawing(true) // (drawing is off, and the drawings are not shown)
+      if (!saved.focused) pageEditor.focus()
+      focusStartedEditing = !saved.focused
+    } else {
+      const text = focusCandidate(saved)
+      focusTextId = text?.id ?? null
+      leaferInk?.cancel()
+      leaferConnect?.cancel()
+      setTool('text')
+      elements.shell.classList.add('focus-mode')
+      leaferCanvas.setFocusLook(true, focusTextId)
+      handleWorkspaceResize() // (the sidebar's room is the window's now; this also lays the words out)
+      focusStartedEditing = !leaferCanvas.isEditingText()
+      if (focusStartedEditing) {
+        if (focusTextId) leaferCanvas.editText(focusTextId, { select: false })
+        else leaferCanvas.createText({ x: 80, y: 80 }, { select: false })
+      }
+    }
+    focusEnteredFullscreen = !saved.fullscreen
+    if (focusEnteredFullscreen) void setWindowFullscreen(true)
+    refreshFocusCount()
+    clearInterval(focusCountTimer)
+    focusCountTimer = setInterval(() => { if (focusStrip.matches(':hover')) refreshFocusCount() }, 400)
+  },
+  leave(saved) {
+    focusActive = false
+    clearInterval(focusCountTimer)
+    cancelAnimationFrame(focusKeepFrame)
+    elements.shell.classList.remove('focus-mode')
+    if (saved.page) {
+      pageEditor?.setNoDrawing(false)
+      if (saved.draw) elements.pageHost.querySelector('[data-page-mode="draw"]')?.click()
+      if (focusStartedEditing && elements.pageHost.contains(document.activeElement)) document.activeElement.blur()
+    } else {
+      if (focusStartedEditing && leaferCanvas.isEditingText()) leaferCanvas.finishTextEdit() // (the words are kept; an untouched text changes nothing)
+      leaferCanvas.setFocusLook(false)
+      setTool(saved.tool)
+      if (saved.selection.length && !leaferCanvas.isEditingText()) leaferCanvas.select(saved.selection)
+      if (saved.caret && !leaferCanvas.isEditingText()) leaferCanvas.resumeText(saved.caret) // (the writing was closed during focus: it opens again where the caret was)
+    }
+    setSidebarOpen(saved.sidebarOpen)
+    if (saved.propertiesOpen) setPropertiesOpen(true)
+    if (focusEnteredFullscreen) void setWindowFullscreen(false)
+    focusEnteredFullscreen = false
+    focusTextId = null
+    clearTimeout(focusRestore?.timer)
+    focusRestore = { view: saved.view, scroll: saved.scroll, timer: 0 }
+    if (saved.page) settleFocusRestore()
+    else handleWorkspaceResize() // (the sidebar's room is back; the saved view is put on again here, and again after the window has settled)
+  },
+})
+function settleFocusRestore() {
+  if (!focusRestore) return
+  const put = () => {
+    if (focusRestore.view) setViewTo(focusRestore.view)
+    if (focusRestore.scroll !== undefined) { const desk = elements.pageHost.querySelector('.page-desk'); if (desk) desk.scrollTop = focusRestore.scroll }
+  }
+  put()
+  clearTimeout(focusRestore.timer)
+  focusRestore.timer = setTimeout(() => { put(); focusRestore = null }, 450)
+}
+const tryFocus = () => { if (!focus.enter() && !['canvas', 'page'].includes(state.activeNoteType)) showToast('Focus mode is for notes you write on the page') }
+function toggleFocus() { if (focusActive) focus.leave(); else tryFocus() } // (the shortcut, the top-bar button and the omnibar's action)
+document.querySelector('#focus-button').addEventListener('click', tryFocus)
+document.querySelector('#focus-leave').addEventListener('click', () => focus.leave())
+document.querySelector('#focus-kbd').textContent = /mac|iphone|ipad/i.test(navigator.platform) ? '⌘ .' : 'Ctrl .'
+document.querySelector('#focus-button').title = `Focus mode (${/mac|iphone|ipad/i.test(navigator.platform) ? '⌘.' : 'Ctrl+.'})`
+document.addEventListener('fullscreenchange', () => { if (focusActive && focusEnteredFullscreen && !document.fullscreenElement) focus.leave() }) // (the browser's own Esc left full screen)
+window.addEventListener('keydown', (event) => {
+  if (focusShortcut(event, navigator.platform)) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!event.repeat) toggleFocus()
+  } else if (focusActive && event.key === 'Escape' && !event.isComposing && !document.querySelector('dialog[open]')) {
+    event.preventDefault()
+    event.stopPropagation()
+    focus.leave()
+  } else if (focusActive && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') focus.leave() // (search opens on the full window)
+}, true)
+for (const type of ['wheel', 'pointerdown']) window.addEventListener(type, () => { if (focusRestore && !focusActive) { clearTimeout(focusRestore.timer); focusRestore = null } }, { capture: true, passive: true }) // (the person moved the view: theirs wins)
+// Only the words take the pointer in focus mode: a press anywhere else must not start a new text, close the one being written or move the caret.
+// On a page note the pen and Alt-drag (which would draw) are turned away.
+for (const type of ['pointerdown', 'mousedown']) {
+  window.addEventListener(type, (event) => {
+    if (!focusActive) return
+    const turnAway = isPageNote() ? (event.pointerType === 'pen' || event.altKey) && event.target.closest?.('.page-host') : !event.target.closest?.('.leafer-text-editor, .cm-editor, .focus-strip')
+    if (turnAway) { event.preventDefault(); event.stopImmediatePropagation() }
+  }, true)
+}
+
 const doubleTap = createDoubleTap({ key: tapKeyFor(navigator.platform) })
 let toolPillTimer = 0
 function flashToolPill(label) {
@@ -3920,6 +4132,7 @@ function flashToolPill(label) {
   toolPillTimer = setTimeout(() => { elements.toolPill.hidden = true }, 900)
 }
 function toggleWritingAndPen() {
+  if (focusActive) { flashToolPill('Drawing is off in focus mode'); return } // (focus is for words: the double-tap and the middle click change nothing)
   if (state.activeNoteType !== 'canvas' || state.loading || state.noteLocked || leaferSwitching || !leaferCanvas || !elements.printPreview.hidden || document.querySelector('dialog[open]') || !elements.searchBackdrop.hidden) return
   if (PEN_TOOLS.has(state.tool)) {
     togglingTool = true
@@ -4123,11 +4336,14 @@ async function initialize() {
 document.fonts.ready.then(refreshCanvasTextMetrics)
 document.fonts.addEventListener('loadingdone', refreshCanvasTextMetrics)
 function handleWorkspaceResize() {
+  if (state.activeNoteType === 'page' && focusRestore && !focusActive) return settleFocusRestore()
   if (state.activeNoteType !== 'canvas') return
   const previous = { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }
   state.displayScale = getDisplayScale()
   syncCanvasSize()
   refreshPageColors()
+  if (focusActive) return layoutFocus() // F-073: the words stay in the middle of the window
+  if (focusRestore) return settleFocusRestore() // F-073: coming back, the view is the one that was left
   const center = { x: viewSize.width / 2, y: viewSize.height / 2 }
   const next = zoomAtPoint(previous, getCanvasScale(), center)
   setCanvasViewportOffset(next.x, next.y)

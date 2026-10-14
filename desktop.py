@@ -286,9 +286,20 @@ def window_url(base_url: str, platform: str = sys.platform, query: str = "") -> 
 class DesktopApi:
     """The only Python the page can call (macOS window only): double-clicking the top bar zooms the window."""
 
-    def __init__(self, zoom: Callable[[], None], capture: Callable[[bool], bool] | None = None):
+    def __init__(self, zoom: Callable[[], None], capture: Callable[[bool], bool] | None = None, full_screen: Callable[[bool], bool] | None = None):
         self._zoom = zoom
         self._capture = capture
+        self._full_screen = full_screen
+
+    def set_full_screen(self, on) -> bool:
+        """Focus mode (F-073): the window goes into (or out of) native full screen. True when the window is where it was asked to be."""
+        if self._full_screen is None:
+            return False
+        try:
+            return bool(self._full_screen(bool(on)))
+        except Exception:
+            logger.warning("Could not change the window's full screen.", exc_info=True)
+            return False
 
     def set_capture_hidden(self, hidden) -> bool:
         """Secure notes (F-058): keep the window out of screen sharing and screenshots while one is open. True when applied."""
@@ -307,6 +318,35 @@ class DesktopApi:
         except Exception:
             logger.warning("Could not zoom the window.", exc_info=True)
             return False
+
+
+def make_full_screen(
+    is_full: Callable[[], bool | None], toggle: Callable[[], object], timeout: float = 2.0, poll: float = 0.05, sleep: Callable[[float], None] = time.sleep
+) -> Callable[[bool], bool]:
+    """Asks for native full screen without ever flipping the wrong way.
+
+    The toggle runs only when the window is not already there, one ask at a time (a quick second ask waits for the first move to finish and
+    then finds the window where it wanted it), and the answer is True only once the window has actually arrived.
+    """
+    lock = threading.Lock()
+
+    def apply(on: bool) -> bool:
+        with lock:
+            current = is_full()
+            if current is None:
+                return False
+            if bool(current) == bool(on):
+                return True
+            toggle()
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                now = is_full()
+                if now is not None and bool(now) == bool(on):
+                    return True
+                sleep(poll)
+            return False
+
+    return apply
 
 
 def _page_call(window, call: str) -> None:
@@ -392,7 +432,11 @@ def run_window(base_url: str, database: Path, server: LocalServer, timing: bool,
     mac_zoom: list[Callable[[], None]] = []  # filled once the window exists; the page's js_api needs the window first
     window_holder: list = []
     capture = lambda hidden: secure_platform.set_capture_hidden(window_holder[0], hidden)  # noqa: E731
-    window_options = {"js_api": DesktopApi(lambda: mac_zoom[0](), capture=capture)} if mac else {}
+    full_screen = make_full_screen(  # one switch for the whole window: its lock is what keeps quick asks in order
+        lambda: desktop_menu.on_main_thread(lambda: desktop_menu.is_full_screen(window_holder[0].native)),
+        lambda: desktop_menu.on_main_thread(lambda: window_holder[0].native.toggleFullScreen_(None)),
+    )
+    window_options = {"js_api": DesktopApi(lambda: mac_zoom[0](), capture=capture, full_screen=full_screen)} if mac else {}
     window = webview.create_window(
         WINDOW_TITLE,
         window_url(base_url, query=query),

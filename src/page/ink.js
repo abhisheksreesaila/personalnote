@@ -60,6 +60,7 @@ export function mountInkLayer({ view, host, paper, desk }) {
   let tool = 'pen'
   let textSize = 'l'
   let drawMode = false
+  let frozen = false // focus mode (F-073): no drawing, erasing or opening of drawings; the page is only its words
   let drawing = null
   let editingText = null
   let linking = null // the drawing waiting for a word to link to
@@ -231,6 +232,7 @@ export function mountInkLayer({ view, host, paper, desk }) {
 
   // ---------- pointer ----------
   on(paper, 'pointerdown', (event) => {
+    if (frozen) return
     if (linking) {
       if (event.target.closest?.('button')) return
       event.preventDefault()
@@ -472,6 +474,7 @@ export function mountInkLayer({ view, host, paper, desk }) {
     button.textContent = linked.length && linked.every((entry) => entry.folded) ? 'Unfold all drawings' : 'Fold all drawings'
   }
   on(paper, 'click', (event) => {
+    if (frozen) return
     const linkButton = event.target.closest?.('[data-drawing-link]')
     if (linkButton) {
       event.preventDefault()
@@ -538,6 +541,7 @@ export function mountInkLayer({ view, host, paper, desk }) {
     toolbar,
     paint,
     setMode,
+    setFrozen(on) { frozen = Boolean(on); if (frozen) { setMode(false); drawing = null }; view.requestMeasure() },
     drawingElement,
     destroy() {
       cancelAnimationFrame(hoverFrame)

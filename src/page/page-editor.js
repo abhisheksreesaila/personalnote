@@ -141,6 +141,8 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
       return true
     },
     // Opening a page puts the caret at the end of its text, ready to carry on writing.
+    // Focus mode (F-073): no drawing of any kind while it is on (the pen, the mouse, the eraser, clicking a drawing).
+    setNoDrawing(on) { ink.setFrozen(on) },
     focus() { view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true }); view.focus() },
     destroy() {
       resize.disconnect()
