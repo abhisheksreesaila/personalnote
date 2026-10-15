@@ -473,3 +473,20 @@ Reviewed: PASS after fixes (typing never stranded, caret kept in view, page note
 - [x] the Mac app goes full screen with it and leaves full screen after
 - [x] the omnibar offers a Focus mode action
 - [x] typing speed (speed test row) unchanged
+## F-074 One notes button [todo]
+Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md · Needs: none
+- [ ] at any width the sidebar is closed by default and a round notes button at the top left opens it as a floating panel over the desk (the desk does not shift)
+- [ ] the button, Esc or a click on the desk closes it; open or closed is remembered on this machine (storage guarded)
+- [ ] opening a note keeps the panel open on a wide window and closes it on a narrow one
+- [ ] Quick note, Inbox, PARA shelves, drag to file and the skin dots work inside the panel exactly as before
+## F-075 Title pill, Focus and search on top [todo]
+Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md · Needs: F-074
+- [ ] the top bar becomes islands: a centred title pill (editable title + save state, errors shown there) and, top right, a Focus button beside the search pill
+- [ ] a ⋯ in the title pill holds print, PNG, backup, Markdown, Obsidian vault, Clear all, Fold all and Settings; nothing that was on the top bar is lost
+- [ ] ⌘K, ⌘. and ⌘P still work; focus mode still hides all chrome and restores it
+## F-076 Side tool island [todo]
+Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md · Needs: F-075
+- [ ] the bottom dock becomes a vertical island on the right: select, text, pen, shape, sticky, a colour dot, +, mic
+- [ ] + opens hand, highlighter, connect, image, eraser and prettify; the colour dot opens the colour and width options; every shortcut and hold-for-options still works
+- [ ] undo/redo sit in a bottom-left island, zoom (−, %, +, fit) in a bottom-right island; the minimap leaves the resting view
+- [ ] mind-map notes show their actions in the same island; every verify-* script and the speed test pass

@@ -1,0 +1,340 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Spatial Notebook - Q4 launch board</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;700&amp;family=Geist+Mono:wght@400;500;600&amp;family=Geist:wght@400;500;600&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&amp;family=Caveat:wght@600&amp;display=swap" rel="stylesheet">
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Theme Configuration -->
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-highest": "#e7e2d8",
+            "primary-container": "#1f1b16",
+            "primary": "#000000",
+            "muted": "#6b6357",
+            "ink": "#1f1b16",
+            "secondary-fixed-dim": "#cbc6bb",
+            "background": "#fef9ee",
+            "on-secondary": "#ffffff",
+            "draw-black": "#1f1b16",
+            "desk": "#e9e4da",
+            "tertiary-fixed": "#e4e1e7",
+            "on-surface": "#1d1c16",
+            "paper": "#fbfaf5",
+            "draw-blue": "#2f73b5",
+            "panel": "#fffdf8",
+            "on-primary-container": "#8a837c",
+            "on-error": "#ffffff",
+            "inverse-primary": "#cec5bd",
+            "surface": "#fef9ee",
+            "on-tertiary-container": "#848388",
+            "surface-tint": "#635d57",
+            "on-primary-fixed-variant": "#4b4640",
+            "surface-container-high": "#ede8de",
+            "primary-fixed-dim": "#cec5bd",
+            "primary-fixed": "#eae1d8",
+            "on-secondary-fixed-variant": "#49473e",
+            "on-tertiary": "#ffffff",
+            "on-background": "#1d1c16",
+            "on-secondary-container": "#68645b",
+            "tertiary": "#000000",
+            "surface-container-low": "#f8f3e9",
+            "inverse-on-surface": "#f5f0e6",
+            "surface-dim": "#dedad0",
+            "secondary": "#625e55",
+            "danger": "#b93a27",
+            "draw-orange": "#e08a2e",
+            "on-surface-variant": "#4c463f",
+            "on-tertiary-fixed-variant": "#47464b",
+            "inverse-surface": "#32302a",
+            "on-secondary-fixed": "#1d1c14",
+            "hairline": "#e2dbcd",
+            "secondary-container": "#e8e2d6",
+            "accent-soft": "#ece6da",
+            "surface-container-lowest": "#ffffff",
+            "draw-red": "#d64a3b",
+            "secure-bg": "#efe9fb",
+            "surface-container": "#f2ede3",
+            "on-tertiary-fixed": "#1b1b1f",
+            "on-primary": "#ffffff",
+            "soft-ink": "#4a443b",
+            "error-container": "#ffdad6",
+            "dot-terracotta": "#b86b4b",
+            "draw-green": "#3c7d55",
+            "secondary-fixed": "#e8e2d6",
+            "outline": "#7d766e",
+            "tertiary-container": "#1b1b1f",
+            "surface-variant": "#e7e2d8",
+            "error": "#ba1a1a",
+            "surface-bright": "#fef9ee",
+            "outline-variant": "#cec5bc",
+            "on-primary-fixed": "#1f1b16",
+            "on-error-container": "#93000a",
+            "secure": "#6a46c9",
+            "tertiary-fixed-dim": "#c8c5cb"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "space-xl": "2rem",
+            "gutter": "1rem",
+            "space-lg": "1.5rem",
+            "margin": "1rem"
+          },
+          "fontFamily": {
+            "label": ["Geist", "sans-serif"],
+            "mono-shortcut": ["Geist Mono", "monospace"],
+            "headline-md": ["Bricolage Grotesque", "sans-serif"],
+            "display-lg": ["Bricolage Grotesque", "sans-serif"],
+            "display-lg-mobile": ["Bricolage Grotesque", "sans-serif"],
+            "body-sm": ["Geist", "sans-serif"],
+            "body-lg": ["Newsreader", "serif"],
+            "handwritten": ["Caveat", "cursive"]
+          },
+          "fontSize": {
+            "label": ["13px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "mono-shortcut": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+            "headline-md": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "display-lg": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "display-lg-mobile": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "body-lg": ["22px", { "lineHeight": "34px", "fontWeight": "400" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+      font-size: 20px;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    
+    /* Desk Dot Grid Canvas Texture */
+    .desk-canvas {
+      background-color: #e9e4da;
+      background-image: radial-gradient(rgba(60, 45, 20, 0.12) 1.5px, transparent 1.5px);
+      background-size: 24px 24px;
+    }
+
+    /* Ambient Spatial Shadow System */
+    .floating-shadow {
+      box-shadow: 0 12px 32px -12px rgba(60, 40, 10, 0.22), 0 1px 2px rgba(31, 27, 22, 0.05);
+    }
+    
+    .paper-shadow {
+      box-shadow: 0 24px 48px -18px rgba(50, 36, 18, 0.18), 0 2px 6px rgba(31, 27, 22, 0.04);
+    }
+
+    .sticky-shadow {
+      box-shadow: 0 10px 25px -5px rgba(60, 45, 20, 0.2), 0 4px 6px -2px rgba(60, 45, 20, 0.05);
+    }
+  </style>
+</head>
+<body class="desk-canvas min-h-screen w-full relative selection:bg-secondary-container selection:text-ink text-ink overflow-x-hidden">
+<!-- ================= TOP FLOATING BAR (Shared TopNavBar Anchor) ================= -->
+<!-- Top Left Floating Island (Menu / Sidebar Toggle) -->
+<div class="fixed top-4 left-4 z-40 bg-panel border border-hairline rounded-full p-1.5 flex items-center justify-center shadow-sm pointer-events-auto">
+  <button aria-label="Toggle menu" class="w-9 h-9 rounded-full flex items-center justify-center text-ink hover:bg-surface-container transition-colors active:scale-95 duration-150" title="Toggle menu">
+    <span class="material-symbols-outlined" data-icon="menu">menu</span>
+  </button>
+</div>
+
+<!-- Top Right Floating Island (Search Pill) -->
+<div class="fixed top-4 right-4 z-40 bg-panel border border-hairline rounded-full px-3 py-1.5 flex items-center gap-2 shadow-sm pointer-events-auto hover:border-outline-variant focus-within:ring-1 focus-within:ring-ink transition-all">
+  <span class="material-symbols-outlined text-muted text-[18px]" data-icon="search">search</span>
+  <input aria-label="Search or jump to..." class="bg-transparent border-0 p-0 text-body-sm font-body-sm placeholder:text-muted focus:ring-0 w-36 sm:w-52 text-ink" placeholder="Search or jump to... ⌘K" type="text">
+  <kbd class="font-mono-shortcut text-mono-shortcut bg-surface-container px-1.5 py-0.5 rounded border border-hairline text-muted shadow-2xs">⌘K</kbd>
+</div>
+<!-- ================= RIGHT FLOATING DOCK (Shared SideNavBar Anchor) ================= -->
+<aside class="fixed right-4 top-1/2 -translate-y-1/2 z-40 rounded-full w-14 py-3 flex flex-col items-center gap-3 pointer-events-auto bg-panel border border-hairline shadow-sm">
+<!-- Active Tool: Select (near_me) -->
+<button class="bg-ink text-paper rounded-full p-2.5 shadow-sm active:scale-90 transition-transform duration-150 flex items-center justify-center" title="Select tool">
+<span class="material-symbols-outlined" data-icon="near_me" data-weight="fill" style="font-variation-settings: 'FILL' 1;">near_me</span>
+</button>
+<!-- Tool: Text (title) -->
+<button class="text-secondary p-2.5 rounded-full hover:bg-surface-container active:scale-90 transition-transform duration-150 flex items-center justify-center" title="Text tool">
+<span class="material-symbols-outlined" data-icon="title">title</span>
+</button>
+<!-- Tool: Pen (edit) -->
+<button class="text-secondary p-2.5 rounded-full hover:bg-surface-container active:scale-90 transition-transform duration-150 flex items-center justify-center" title="Pen tool">
+<span class="material-symbols-outlined" data-icon="edit">edit</span>
+</button>
+<!-- Tool: Shape (crop_square) -->
+<button class="text-secondary p-2.5 rounded-full hover:bg-surface-container active:scale-90 transition-transform duration-150 flex items-center justify-center" title="Shape tool">
+<span class="material-symbols-outlined" data-icon="crop_square">crop_square</span>
+</button>
+<!-- Tool: Sticky Note (note) -->
+<button class="text-secondary p-2.5 rounded-full hover:bg-surface-container active:scale-90 transition-transform duration-150 flex items-center justify-center" title="Sticky Note tool">
+<span class="material-symbols-outlined" data-icon="note">note</span>
+</button>
+<div class="w-7 h-px bg-hairline my-0.5"></div>
+<!-- Active Ink Color Swatch & Palette trigger -->
+<div class="relative group">
+<button class="w-7 h-7 rounded-full bg-ink ring-2 ring-hairline ring-offset-2 transition-transform hover:scale-105 active:scale-95" title="Current Ink Color: Dark Ink"></button>
+<!-- Palette Flyout (Hover) -->
+<div class="absolute right-14 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-2 p-2 bg-panel rounded-full border border-hairline shadow-md animate-in fade-in duration-150">
+<button class="w-5 h-5 rounded-full bg-draw-black ring-1 ring-hairline hover:scale-125 transition-transform" title="Black ink"></button>
+<button class="w-5 h-5 rounded-full bg-draw-red ring-1 ring-hairline hover:scale-125 transition-transform" title="Red ink"></button>
+<button class="w-5 h-5 rounded-full bg-draw-orange ring-1 ring-hairline hover:scale-125 transition-transform" title="Orange ink"></button>
+<button class="w-5 h-5 rounded-full bg-draw-green ring-1 ring-hairline hover:scale-125 transition-transform" title="Green ink"></button>
+<button class="w-5 h-5 rounded-full bg-draw-blue ring-1 ring-hairline hover:scale-125 transition-transform" title="Blue ink"></button>
+</div>
+</div>
+<!-- More Options (+) -->
+<button class="text-secondary p-2.5 rounded-full hover:bg-surface-container active:scale-90 transition-transform duration-150 flex items-center justify-center" title="More tools">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+<div class="w-7 h-px bg-hairline my-0.5"></div>
+<!-- Dock Voice CTA (mic) -->
+<button class="w-9 h-9 rounded-full bg-ink text-paper flex items-center justify-center shadow-md hover:bg-surface-container-high hover:text-ink transition-colors active:scale-95 duration-150" title="Voice note">
+<span class="material-symbols-outlined" data-icon="mic">mic</span>
+</button>
+</aside>
+<!-- ================= BOTTOM-LEFT ISLAND (Undo / Redo) ================= -->
+<div class="fixed bottom-4 left-4 z-40 bg-panel border border-hairline rounded-full px-2 py-1.5 flex items-center gap-1 shadow-sm">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-ink hover:bg-surface-container transition-colors active:scale-90 duration-150" title="Undo (Ctrl+Z)">
+<span class="material-symbols-outlined" data-icon="undo">undo</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-ink hover:bg-surface-container transition-colors active:scale-90 duration-150" title="Redo (Ctrl+Y)">
+<span class="material-symbols-outlined" data-icon="redo">redo</span>
+</button>
+</div>
+<!-- ================= BOTTOM-RIGHT ISLAND (Canvas Zoom) ================= -->
+<div class="fixed bottom-4 right-4 z-40 bg-panel border border-hairline rounded-full px-3 py-1.5 flex items-center gap-2 shadow-sm font-mono-shortcut text-mono-shortcut text-muted">
+<button class="hover:text-ink p-1 rounded hover:bg-surface-container transition-colors active:scale-90" title="Zoom Out">
+<span class="material-symbols-outlined" data-icon="remove">remove</span>
+</button>
+<span class="font-medium text-ink min-w-[34px] text-center select-none">100%</span>
+<button class="hover:text-ink p-1 rounded hover:bg-surface-container transition-colors active:scale-90" title="Zoom In">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</div>
+<!-- ================= MAIN SPATIAL CANVAS WORKSPACE ================= -->
+<main class="w-full min-h-screen flex items-center justify-center pt-24 pb-20 px-4 md:px-8">
+<!-- Central Paper Note Surface -->
+<div class="relative w-full max-w-[720px] bg-paper border border-[rgba(226,219,205,0.8)] rounded-[6px] paper-shadow p-8 md:p-14 transition-all">
+<!-- Subtle Stationery Header Cue -->
+<div class="flex items-center justify-between border-b border-hairline pb-4 mb-6">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-dot-terracotta/70"></span>
+<span class="font-label text-label text-muted tracking-wide uppercase">Workspace // Sprint Note</span>
+</div>
+<div class="text-right">
+<span class="font-mono-shortcut text-mono-shortcut text-muted">Edited 12m ago · 4 items</span>
+</div>
+</div>
+<!-- Note Title -->
+<h1 class="font-headline-md text-headline-md md:font-display-lg md:text-display-lg text-ink font-bold tracking-tight mb-4">
+        Q4 launch board
+      </h1>
+<!-- Note Subhead / Editorial Lead Paragraph -->
+<p class="font-body-lg text-body-lg text-ink mb-8 leading-relaxed selection:bg-accent-soft">
+        Ship the beta by Nov 1. Pricing page, onboarding email, demo video.
+      </p>
+<!-- Checklist & Task Flow with Target Anchor -->
+<div class="space-y-4">
+<!-- Target Item 1 (Target of Hand-drawn Sticky Note Arrow) -->
+<div class="relative group flex items-start gap-3.5 p-2 -ml-2 rounded-lg hover:bg-surface-container-low transition-colors" id="target-pricing-item">
+<label class="relative flex items-center mt-0.5 cursor-pointer">
+<input checked="" class="w-5 h-5 rounded border-outline text-ink focus:ring-0 focus:ring-offset-0 transition-colors" type="checkbox">
+</label>
+<div class="flex-1">
+<span class="font-body-sm text-body-sm text-muted line-through">
+              Finalize pricing tiers &amp; checkout
+            </span>
+<div class="flex items-center gap-2 mt-1">
+<span class="font-mono-shortcut text-[10px] px-1.5 py-0.5 rounded bg-surface-container border border-hairline text-muted">v0.9-rc</span>
+<span class="font-label text-label text-muted">Stripe Webhooks connected</span>
+</div>
+</div>
+</div>
+<!-- Task Item 2 -->
+<div class="group flex items-start gap-3.5 p-2 -ml-2 rounded-lg hover:bg-surface-container-low transition-colors">
+<label class="relative flex items-center mt-0.5 cursor-pointer">
+<input class="w-5 h-5 rounded border-outline text-ink focus:ring-0 focus:ring-offset-0 transition-colors" type="checkbox">
+</label>
+<div class="flex-1">
+<span class="font-body-sm text-body-sm text-ink">
+              Polish onboarding walkthrough email
+            </span>
+<p class="text-muted text-xs mt-0.5 font-label">Drafting 3 variant subject lines in Resend</p>
+</div>
+</div>
+<!-- Task Item 3 -->
+<div class="group flex items-start gap-3.5 p-2 -ml-2 rounded-lg hover:bg-surface-container-low transition-colors">
+<label class="relative flex items-center mt-0.5 cursor-pointer">
+<input class="w-5 h-5 rounded border-outline text-ink focus:ring-0 focus:ring-offset-0 transition-colors" type="checkbox">
+</label>
+<div class="flex-1">
+<span class="font-body-sm text-body-sm text-ink">
+              Record 90-second product demo video
+            </span>
+<p class="text-muted text-xs mt-0.5 font-label">Include spatial canvas interactions &amp; tactile pen swatches</p>
+</div>
+</div>
+</div>
+<!-- Subtle Marginalia Footer -->
+<div class="mt-12 pt-6 border-t border-hairline/60 flex items-center justify-between text-muted font-label text-[12px]">
+<div class="flex items-center gap-3">
+<span class="flex items-center gap-1 hover:text-ink cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[16px]" data-icon="attachment">attachment</span>
+            2 attachments
+          </span>
+<span class="flex items-center gap-1 hover:text-ink cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[16px]" data-icon="forum">forum</span>
+            3 comments
+          </span>
+</div>
+<span class="font-mono-shortcut text-muted">Paper Sheet #402</span>
+</div>
+<!-- ================= TILTED STICKY NOTE ATTACHMENT ================= -->
+<div class="absolute -top-7 -right-4 sm:-right-10 w-52 sm:w-60 bg-[#fef5a7] border border-[#f3e78b] p-4 rounded-sm sticky-shadow transform rotate-[3deg] transition-transform hover:rotate-1 hover:scale-105 z-20">
+<!-- Adhesive Tape Visual Cue -->
+<div class="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-5 bg-white/70 backdrop-blur-xs border border-white/40 shadow-xs rotate-[-2deg]"></div>
+<div class="flex items-center justify-between mb-1 text-[#83762b]">
+<span class="text-[11px] font-mono-shortcut font-semibold">FEEDBACK STICKY</span>
+<span class="material-symbols-outlined text-[14px]" data-icon="push_pin">push_pin</span>
+</div>
+<p class="font-handwritten text-lg leading-tight text-[#3d360f]">
+          Key feedback: Keep chrome invisible until hovered!
+        </p>
+<div class="mt-2 text-right">
+<span class="font-handwritten text-xs text-[#70641b]">— Sam</span>
+</div>
+</div>
+<!-- ================= ORGANIC HAND-DRAWN ARROW SVG ================= -->
+<!-- Curving gracefully from the sticky note pointing directly to the Pricing page bullet -->
+<svg class="absolute pointer-events-none z-30 overflow-visible right-24 sm:right-32 top-8 w-44 h-40 hidden sm:block" fill="none" viewBox="0 0 180 160">
+<!-- Curved Organic Path -->
+<path d="M 140 10 C 130 50, 70 80, 25 125" fill="none" stroke="#b86b4b" stroke-dasharray="2 0.5" stroke-linecap="round" stroke-width="2"></path>
+<!-- Arrowhead Pointing at Finalize Pricing Checklist -->
+<path d="M 22 110 L 25 125 L 39 123" fill="none" stroke="#b86b4b" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<!-- Accent annotation text near arrow -->
+<text fill="#b86b4b" font-family="Caveat, cursive" font-size="16" transform="rotate(-8 85 65)" x="85" y="65">priority</text>
+</svg>
+</div>
+</main>
+
+
+</body></html>
