@@ -21,7 +21,7 @@ const server = await createServer({ server: { port: 4750, strictPort: true, host
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 try {
-  const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage()
+  const page = await (await browser.newContext({ viewport: { width: 1508, height: 800 } })).newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/api/**', async (route) => {

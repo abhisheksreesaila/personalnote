@@ -19,6 +19,7 @@ const engine = process.env.PN_VERIFY_BROWSER === 'webkit' ? webkit : chromium //
 const browser = await engine.launch({ headless: true, ...(engine === chromium ? { args: ['--disable-dev-shm-usage'] } : {}) })
 try {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage()
+  await page.addInitScript(() => localStorage.setItem('pn.notesPanelOpen', '1')) // (F-074: the notes panel is closed by default; this check works inside it)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/api/**', async (route) => {

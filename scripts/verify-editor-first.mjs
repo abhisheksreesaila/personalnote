@@ -26,6 +26,7 @@ try {
   await server.listen()
   browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
   const page = await (await browser.newContext({ viewport: { width: 1360, height: 900 } })).newPage()
+  await page.addInitScript(() => localStorage.setItem('pn.notesPanelOpen', '1')) // (F-074: the notes panel is closed by default; this check works inside it)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`http://127.0.0.1:${UI_PORT}/notes`)
@@ -513,6 +514,8 @@ try {
     await page.waitForTimeout(400)
     check('Ctrl+V well after a middle click still pastes', (await pn(() => document.querySelector('.md-editor .cm-content')?.textContent ?? '')).includes('PASTED'), await pn(() => document.querySelector('.md-editor .cm-content')?.textContent))
     // a middle click on the sidebar neither toggles nor is swallowed
+    await pn(() => { if (!document.querySelector('#sidebar').classList.contains('open')) document.querySelector('#toggle-sidebar').click() }) // (a click on the desk closed the panel)
+    await page.waitForTimeout(300)
     const sideTool = await tool()
     const sideBox = await pn(() => { const r = document.querySelector('#sidebar').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
     await page.mouse.move(sideBox.x, sideBox.y)

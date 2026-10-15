@@ -55,14 +55,14 @@
     position: fixed; inset: 72px auto 16px 16px; width: var(--sidebar-width);
     display: flex; flex-direction: column; gap: 2px; padding: 14px 10px;
     background: var(--sk-panel); border: 1px solid var(--sk-edge); border-radius: var(--sk-radius);
-    box-shadow: var(--sk-shadow); transform: none; z-index: 23;
+    box-shadow: var(--sk-shadow); transform: none; z-index: 45; /* above a locked note's cover (z 40) so the notes stay reachable */
   }
   /* Closed, the panel is gone (and inert); opened it fades in, nothing slides or zooms. */
   @media (min-width: 801px) {
     .app-shell .sidebar { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 150ms ease, visibility 0s linear 150ms; }
     .app-shell .sidebar.open { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity 150ms ease; }
     .app-shell .glass-button.sidebar-toggle {
-      position: fixed; top: 16px; left: 16px; z-index: 24; width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid;
+      position: fixed; top: 16px; left: 16px; z-index: 46; width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid;
       background: var(--sk-panel); border-color: var(--sk-edge); box-shadow: var(--sk-shadow); -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: auto;
     }
     .app-shell .glass-button.sidebar-toggle svg { width: 20px; height: 20px; }
@@ -210,7 +210,7 @@
     background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; z-index: 10;
   }
   .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }
-  @media (min-width: 801px) { .app-shell .topbar { left: 72px; } } /* clear of the notes button */
+  @media (min-width: 801px) { .app-shell { --topbar-left: 72px; } .app-shell .topbar { left: var(--topbar-left); } } /* clear of the notes button */
   .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0; pointer-events: auto; }
   .app-shell .crumb { flex: none; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font-size: 12.5px; white-space: nowrap; }
   .app-shell .crumb b { font-weight: 500; color: var(--ink-soft); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
@@ -232,6 +232,7 @@
   /* The omnibar's slim bar (F-072): top centre of the window, centred on the window rather than on whatever sits beside it. */
   .app-shell { --omni-w: clamp(200px, 22vw, 320px); }
   .app-shell .omni-slot { position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
+  @media (min-width: 801px) { .app-shell .omni-slot { left: calc(50% - (var(--topbar-left) - 16px) / 2); } } /* (still centred on the window, though the top bar now starts after the notes button) */
   .app-shell .search-button {
     width: var(--omni-w); height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border-radius: 999px; color: var(--ui-muted);
     overflow: hidden; white-space: nowrap; cursor: text; transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
@@ -422,7 +423,7 @@
   /* ---------- Phones and narrow tablets ---------- */
   @media (max-width: 800px) {
     .app-shell .sidebar {
-      inset: 8px auto 8px 8px; width: min(86vw, 330px); transform: translateX(calc(-100% - 24px)); z-index: 40;
+      inset: 8px auto 8px 8px; width: min(86vw, 330px); transform: translateX(calc(-100% - 24px)); z-index: 45;
       transition: transform 280ms var(--ease-out); background: var(--glass-solid);
     }
     .app-shell .sidebar.open { transform: none; }
@@ -602,7 +603,7 @@
   :root.chrome-mac .app-shell .topbar-title { height: var(--mac-bar); }
   @media (min-width: 801px) {
     :root.chrome-mac .app-shell .glass-button.sidebar-toggle { top: 4px; left: var(--mac-lights); width: var(--mac-bar); height: var(--mac-bar); }
-    :root.chrome-mac .app-shell .topbar { left: calc(var(--mac-lights) + var(--mac-bar) + 8px); }
+    :root.chrome-mac .app-shell { --topbar-left: calc(var(--mac-lights) + var(--mac-bar) + 8px); }
   }
   :root.chrome-mac-fullscreen .app-shell .mac-drag-strip { display: none; }
   @media (max-width: 800px) {

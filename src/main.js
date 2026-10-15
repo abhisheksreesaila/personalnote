@@ -4198,7 +4198,7 @@ document.addEventListener('keydown', (event) => {
     setPropertiesOpen(false)
   } else if (event.key === 'Escape' && !elements.inkOptionsPopover.hidden) {
     closeInkOptions()
-  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open')) {
+  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open') && !document.querySelector('dialog[open]') && !event.target.matches?.('input, textarea, .namer, .namer *')) { // (Esc in a dialog or a text field, such as the naming row, closes only that)
     setSidebarOpen(false, true)
   } else if (pendingClearUndo && !isTyping && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
     event.preventDefault()
