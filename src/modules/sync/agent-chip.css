@@ -15,6 +15,7 @@
   text-overflow: ellipsis;
 }
 .agent-chip[hidden] { display: none; }
+.agent-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .agent-chip::before {
   content: '';
   width: 7px;
