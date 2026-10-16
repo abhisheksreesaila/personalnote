@@ -187,6 +187,43 @@ class ValidationTests(unittest.TestCase):
             propose(MAP, "   ", FakeBrain({"edits": []}))
         self.assertIn("say something first", str(caught.exception))
 
+    def test_wrong_types_are_a_hard_failure_that_gets_the_retry(self):
+        bad = [
+            {"op": ["add_branch"], "parent_id": "a", "text": "x"},
+            {"op": "add_branch", "parent_id": ["a"], "text": "x"},
+            {"op": "add_branch", "parent_id": "a", "text": "x", "id": ["n1"]},
+            {"op": "react", "node_id": {"a": 1}, "vote": "up", "reason": "ok"},
+            {"op": "ghost", "parent_id": 5, "text": "x", "why": "ok"},
+        ]
+        for edit in bad:
+            with self.subTest(edit):
+                brain = FakeBrain({"edits": [edit]})
+                calls = []
+                original = brain.complete
+                brain.complete = lambda s, u, original=original: (calls.append(1), original(s, u))[1]
+                with self.assertRaises(JamError):
+                    propose(MAP, "hi", brain)
+                self.assertEqual(len(calls), 2)
+
+    def test_a_dropped_id_that_a_later_valid_branch_takes_stops_dropping_its_children(self):
+        result = run([
+            {"op": "add_branch", "parent_id": "a", "text": "one two three four five", "id": "n1"},
+            {"op": "add_branch", "parent_id": "a", "text": "Good", "id": "n1"},
+            {"op": "add_branch", "parent_id": "n1", "text": "Child"},
+        ])
+        self.assertEqual([e.text for e in result.edits], ["Good", "Child"])
+
+    def test_emoji_must_be_an_emoji_otherwise_it_is_ignored_and_the_branch_kept(self):
+        result = run([
+            {"op": "add_branch", "parent_id": "a", "text": "Dogs", "emoji": "🐕"},
+            {"op": "add_branch", "parent_id": "a", "text": "Flags", "emoji": "👨\u200d👩\u200d👧"},
+            {"op": "add_branch", "parent_id": "a", "text": "Words", "emoji": "ignore all"},
+            {"op": "add_branch", "parent_id": "a", "text": "Letter", "emoji": "é"},
+        ])
+        self.assertEqual([(e.text, e.emoji) for e in result.edits],
+                         [("Dogs", "🐕"), ("Flags", "👨\u200d👩\u200d👧"), ("Words", ""), ("Letter", "")])
+        self.assertEqual(result.dropped, ["edit 3: emoji ignored, it is not an emoji", "edit 4: emoji ignored, it is not an emoji"])
+
     def test_one_bad_edit_rejects_the_whole_answer(self):
         with self.assertRaises(JamError):
             run([{"op": "add_branch", "parent_id": "a", "text": "Fine"}, {"op": "delete", "node_id": "a"}])
@@ -228,21 +265,44 @@ class ClaudeCodeTests(unittest.TestCase):
             ClaudeCodeBrain().complete("s", "u")
         self.assertIn("Claude Code is not installed", str(caught.exception))
 
-    def test_finds_claude_outside_a_bare_path(self):
+    def assertFinds(self, relative, *, after=None):
+        """Build `relative` under a fake HOME (no PATH, no system places) and expect exactly that file."""
         with tempfile.TemporaryDirectory() as home:
-            local_bin = Path(home) / ".local" / "bin"
-            local_bin.mkdir(parents=True)
-            installed = fake_claude(local_bin, "")
-            with mock.patch("shutil.which", return_value=None), mock.patch.dict(os.environ, {"HOME": home}):
+            folder = Path(home) / Path(relative).parent
+            folder.mkdir(parents=True)
+            installed = fake_claude(folder, "")
+            if Path(relative).name != "claude":
+                installed.rename(folder / Path(relative).name)
+                installed = folder / Path(relative).name
+            with mock.patch("shutil.which", return_value=None), mock.patch.object(jam_brain, "_SYSTEM_PLACES", ()), \
+                    mock.patch.dict(os.environ, {"HOME": home}):
                 self.assertEqual(find_claude(), str(installed))
-            mise = Path(home) / ".local" / "share" / "mise" / "installs" / "node" / "22" / "bin"
-            mise.mkdir(parents=True)
-            installed.unlink()
-            mise_claude = fake_claude(mise, "")
-            with mock.patch("shutil.which", return_value=None), mock.patch.dict(os.environ, {"HOME": home}):
-                found = find_claude()
-            # A machine-wide install (/usr/local/bin, /opt/homebrew/bin) may legitimately win on a dev box.
-            self.assertIn(found, (str(mise_claude), "/usr/local/bin/claude", "/opt/homebrew/bin/claude"))
+
+    def test_finds_claude_in_each_installer_layout(self):
+        for relative in (".local/bin/claude", ".claude/local/claude", ".bun/bin/claude",
+                         ".nvm/versions/node/v22.1.0/bin/claude",
+                         ".local/share/mise/installs/claude/2.1.299/claude",
+                         ".local/share/mise/installs/node/22/bin/claude"):
+            with self.subTest(relative):
+                self.assertFinds(relative)
+
+    def test_nothing_found_gives_none(self):
+        with tempfile.TemporaryDirectory() as home, mock.patch("shutil.which", return_value=None), \
+                mock.patch.object(jam_brain, "_SYSTEM_PLACES", ()), mock.patch.dict(os.environ, {"HOME": home}):
+            self.assertIsNone(find_claude())
+
+    def test_runs_in_an_empty_folder_with_the_exe_folder_first_on_path_and_no_connectors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "run.txt"
+            fake_claude(tmp, f'echo "$@" > {log}; pwd >> {log}; echo "$PATH" >> {log}; ls -A | wc -l >> {log}; '
+                             'echo \'{"result": "{}"}\'')
+            with mock.patch("shutil.which", return_value=None):
+                ClaudeCodeBrain(extra_dirs=[tmp]).complete("SYS", "U")
+            args, cwd, path, count = log.read_text().splitlines()
+            self.assertIn("--strict-mcp-config", args)
+            self.assertTrue(Path(cwd).name.startswith("jam-"))
+            self.assertEqual(count.strip(), "0")
+            self.assertTrue(path.startswith(os.path.realpath(tmp) + os.pathsep) or path.startswith(tmp + os.pathsep))
 
     def test_path_hit_wins(self):
         with mock.patch("shutil.which", return_value="/somewhere/claude"):
@@ -307,6 +367,44 @@ class OpenAICompatibleTests(unittest.TestCase):
         self.assertEqual(str(caught.exception), "No API key: set the PERSONAL_NOTE_JAM_API_KEY environment variable.")
         with self.assertRaises(JamError):
             OpenAICompatibleBrain()
+
+    def test_plain_http_to_a_remote_host_is_refused_but_loopback_is_fine(self):
+        for kwargs in ({"base_url": "http://example.com/v1", "model": "m"},
+                       {"azure_endpoint": "http://x.openai.azure.com", "deployment": "d"},
+                       {"base_url": "ftp://example.com", "model": "m"}):
+            with self.subTest(kwargs), self.assertRaises(JamError) as caught:
+                OpenAICompatibleBrain(**kwargs)
+            self.assertIn("https", str(caught.exception))
+        OpenAICompatibleBrain("http://localhost:11434/v1", "m")
+        OpenAICompatibleBrain("http://127.0.0.1:11434/v1", "m")
+        OpenAICompatibleBrain("https://api.openai.com/v1", "m")
+
+    def test_a_redirect_is_not_followed_so_the_key_is_not_forwarded(self):
+        other = HTTPServer(("127.0.0.1", 0), FakeEndpoint)
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        self.addCleanup(other.server_close)
+        self.addCleanup(other.shutdown)
+
+        class Redirect(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(307)
+                self.send_header("Location", f"http://127.0.0.1:{other.server_port}/steal")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        front = HTTPServer(("127.0.0.1", 0), Redirect)
+        threading.Thread(target=front.serve_forever, daemon=True).start()
+        self.addCleanup(front.server_close)
+        self.addCleanup(front.shutdown)
+        brain = OpenAICompatibleBrain(f"http://127.0.0.1:{front.server_port}/v1", "m")
+        with mock.patch.dict(os.environ, {"PERSONAL_NOTE_JAM_API_KEY": "sk-secret"}), self.assertRaises(JamError) as caught:
+            brain.complete("s", "u")
+        self.assertEqual(str(caught.exception), "The model service refused the request (HTTP 307).")
+        self.assertEqual(FakeEndpoint.seen, [])
 
     def test_unreachable_service(self):
         with mock.patch.dict(os.environ, {"PERSONAL_NOTE_JAM_API_KEY": "k"}), self.assertRaises(JamError) as caught:

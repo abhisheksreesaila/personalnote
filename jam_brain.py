@@ -18,12 +18,15 @@ import re
 import shutil
 import subprocess
 import tempfile
+import unicodedata
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from download_tls import open_url
+from urllib.parse import urlparse
+
+from download_tls import https_context
 
 MAX_EDITS = 12
 MAX_GHOSTS = 3
@@ -32,6 +35,7 @@ MAX_TEXT = 40
 MAX_REASON = 80
 MAX_EMOJI = 8
 JAM_KEY_ENV = "PERSONAL_NOTE_JAM_API_KEY"
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 ALLOWED_OPS = {"add_branch", "react", "ghost"}
 
 
@@ -165,6 +169,12 @@ def _text(value, what: str, required=True) -> str:
     return value.strip()
 
 
+def is_emoji(text: str) -> bool:
+    """Only symbols, emoji modifiers and joiners: no letters, digits, spaces or punctuation."""
+    return 0 < len(text) <= MAX_EMOJI and all(
+        unicodedata.category(c) in ("So", "Sk", "Cf", "Mn", "Me") and c not in "\u200b\u200c\ufeff" for c in text)
+
+
 def _too_long(text: str, limit: int, what: str, words: int | None = None) -> str | None:
     if len(text) > limit:
         return f"{what} longer than {limit} characters"
@@ -194,9 +204,13 @@ def parse_edits(raw: str, map_json: dict) -> JamEdits:
         if not isinstance(item, dict):
             raise JamError("The brain gave an edit that is not an object.")
         op = item.get("op")
+        if not isinstance(op, str):
+            raise JamError("The brain gave an edit whose op is not text.")
         if op not in ALLOWED_OPS:
             raise JamError(f"The brain tried \"{op}\", which is not allowed: it may only add, react or suggest.")
         anchor = item.get("node_id") if op == "react" else item.get("parent_id")
+        if not isinstance(anchor, str):
+            raise JamError("The brain gave an edit that names its node in a way that is not text.")
         new_id = _text(item.get("id"), "branch id", required=False) if op == "add_branch" else ""
         if new_id and new_id in existing:
             raise JamError(f"The brain reused the id {new_id!r}, which would replace an existing node.")
@@ -211,8 +225,10 @@ def parse_edits(raw: str, map_json: dict) -> JamEdits:
         if op == "add_branch":
             text = _text(item.get("text"), "branch text")
             emoji = _text(item.get("emoji"), "emoji", required=False)
-            problem = (_too_long(text, MAX_TEXT, "text") or _too_long(text, MAX_TEXT, "text", MAX_WORDS)
-                       or _too_long(emoji, MAX_EMOJI, "emoji"))
+            if emoji and not is_emoji(emoji):
+                dropped.append(f"edit {number}: emoji ignored, it is not an emoji")
+                emoji = ""
+            problem = _too_long(text, MAX_TEXT, "text") or _too_long(text, MAX_TEXT, "text", MAX_WORDS)
             if problem:
                 dropped.append(f"edit {number} dropped: {problem}")
                 if new_id:
@@ -220,6 +236,7 @@ def parse_edits(raw: str, map_json: dict) -> JamEdits:
                 continue
             edits.append(AddBranch(anchor, text, emoji, new_id))
             if new_id:
+                lost_ids.discard(new_id)
                 known.add(new_id)
                 existing.add(new_id)
         elif op == "react":
@@ -250,16 +267,22 @@ def parse_edits(raw: str, map_json: dict) -> JamEdits:
 
 # ---------------------------------------------------------------- brains
 
-_CLAUDE_PLACES = (
+_HOME_PLACES = (
     "~/.local/bin",
     "~/.claude/local",
     "~/.claude/bin",
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "~/.local/share/mise/shims",
-    "~/.mise/shims",
+    "~/.bun/bin",
     "~/.volta/bin",
     "~/.npm-global/bin",
+    "~/.local/share/mise/shims",
+    "~/.mise/shims",
+)
+_SYSTEM_PLACES = ("/opt/homebrew/bin", "/usr/local/bin")
+_HOME_PATTERNS = (  # globs under the home folder, newest-looking name last
+    ".nvm/versions/node/*/bin/claude",
+    ".local/share/mise/installs/claude/*/claude",
+    ".local/share/mise/installs/claude/*/bin/claude",
+    ".local/share/mise/installs/*/*/bin/claude",
 )
 
 
@@ -268,14 +291,14 @@ def find_claude(extra_dirs=()) -> str | None:
     found = shutil.which("claude")
     if found:
         return found
-    for place in (*extra_dirs, *_CLAUDE_PLACES):
+    home = Path("~").expanduser()
+    for place in (*extra_dirs, *_HOME_PLACES, *_SYSTEM_PLACES):
         candidate = Path(place).expanduser() / "claude"
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
-    mise_installs = Path("~/.local/share/mise/installs").expanduser()
-    if mise_installs.is_dir():
-        for candidate in sorted(mise_installs.glob("*/*/bin/claude")):
-            if os.access(candidate, os.X_OK):
+    for pattern in _HOME_PATTERNS:
+        for candidate in sorted(home.glob(pattern), reverse=True):
+            if candidate.is_file() and os.access(candidate, os.X_OK):
                 return str(candidate)
     return None
 
@@ -291,13 +314,15 @@ class ClaudeCodeBrain:
         if not exe:
             raise BrainUnavailable("Claude Code is not installed here. Install it and sign in, or pick another brain in Settings.")
         command = [exe, "-p", "--output-format", "json", "--tools", "", "--no-session-persistence",
-                   "--setting-sources", "", "--system-prompt", system]
+                   "--setting-sources", "", "--strict-mcp-config", "--system-prompt", system]
         if self.model:
             command += ["--model", self.model]
+        # npm installs are `#!/usr/bin/env node`: the folder that holds claude usually holds node too
+        env = {**os.environ, "PATH": str(Path(exe).parent) + os.pathsep + os.environ.get("PATH", "")}
         with tempfile.TemporaryDirectory(prefix="jam-") as empty:  # nothing to read in the working folder
             try:
                 done = subprocess.run(command, input=user, capture_output=True, text=True,
-                                      timeout=self.timeout, cwd=empty)
+                                      timeout=self.timeout, cwd=empty, env=env)
             except subprocess.TimeoutExpired:
                 raise BrainUnavailable(f"Claude Code took longer than {int(self.timeout)} seconds; try again.") from None
             except OSError as exc:
@@ -316,6 +341,17 @@ class ClaudeCodeBrain:
         return result
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """urllib copies Authorization and api-key headers to a redirect target; refuse every redirect instead."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def _opener():
+    return urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=https_context()))
+
+
 class OpenAICompatibleBrain:
     """Any chat-completions endpoint: base_url + model, or Azure OpenAI (endpoint + deployment + api-version).
 
@@ -328,6 +364,10 @@ class OpenAICompatibleBrain:
         self.api_version, self.key_env, self.timeout = api_version, key_env, timeout
         if not (self.azure_endpoint and self.deployment) and not (self.base_url and self.model):
             raise BrainUnavailable("Set a base URL and model, or an Azure endpoint and deployment, for this brain.")
+        for url in (self.base_url, self.azure_endpoint):
+            parts = urlparse(url)
+            if url and not (parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in LOOPBACK_HOSTS)):
+                raise BrainUnavailable("The model address must start with https:// (plain http is only allowed for this computer).")
 
     def request_for(self, system: str, user: str) -> urllib.request.Request:
         key = os.environ.get(self.key_env, "")
@@ -349,7 +389,7 @@ class OpenAICompatibleBrain:
     def complete(self, system: str, user: str) -> str:
         request = self.request_for(system, user)
         try:
-            with open_url(request, timeout=self.timeout) as response:
+            with _opener().open(request, timeout=self.timeout) as response:
                 payload = json.load(response)
         except urllib.error.HTTPError as exc:
             exc.close()
