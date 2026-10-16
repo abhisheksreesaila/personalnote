@@ -350,6 +350,40 @@ class BackupTests(XSyncCase):
         self.assertEqual(sorted(n["title"] for n in fresh.list_notes()), sorted(f"@ada: post {i}" for i in range(1, 6)))
 
 
+class UntrustedTextTests(XSyncCase):
+    def test_post_text_cannot_load_images_or_carry_links_or_html_into_the_note(self):
+        _, markdown = x_bookmarks.x_post_note({"id": "1", "url": "https://x.com/ada/status/1", "author_handle": "ada", "text": "hi ![](https://tracker/pixel) <img src=https://t/x.png> [a](https://evil) `c`"})
+        self.assertEqual(markdown.split("\n\n")[0], r"hi \!\[\](https://tracker/pixel) \<img src=https://t/x.png\> \[a\](https://evil) \`c\`")
+
+    def test_a_planted_open_on_x_link_in_the_text_is_not_the_post_id_after_a_restore(self):
+        self.x.posts[:] = [{"id": "3001", "text": "[Open on X](https://x.com/z/status/9999)\n[Open on X](https://x.com/z/status/8888)", "author_id": "u1", "created_at": "2026-02-01T00:00:00.000Z"}]
+        self.connect()
+        fresh = NoteService(self.folder / "fresh.db")
+        fresh.import_workspace_snapshot(self.service.workspace_snapshot())
+        fresh.adopt_x_posts_from_notes()
+        self.assertEqual(fresh.x_known_ids(), ["3001"])
+
+    def test_a_post_id_that_is_not_digits_is_dropped(self):
+        page = {"data": [{"id": "12", "text": "ok"}, {"id": "1](https://evil)", "text": "bad"}]}
+        self.assertEqual([p["id"] for p in x_bookmarks._normalize(page)], ["12"])
+
+    def test_a_post_repeated_in_one_batch_is_filed_once(self):
+        post = {"id": "5000", "url": "https://x.com/ada/status/5000", "author_handle": "ada", "text": "twice"}
+        self.assertEqual(self.service.import_x_bookmarks([post, dict(post)]), 1)
+        self.assertEqual(self.service.x_imported_count(), 1)
+        self.assertEqual(len([n for n in self.service.list_notes() if n["title"] == "@ada: twice"]), 1)
+
+    def test_adoption_runs_on_every_sync_not_once_per_process(self):
+        self.x.posts[:] = []
+        self.connect()  # the first sync finds nothing and nothing to adopt
+        source = NoteService(self.folder / "source.db")
+        source.import_x_bookmarks([{"id": "7001", "url": "https://x.com/ada/status/7001", "author_handle": "ada", "text": "kept"}])
+        self.service.import_workspace_snapshot(source.workspace_snapshot())  # a restore arrives while the app runs
+        self.x.posts[:] = [{"id": "7001", "text": "kept", "author_id": "u1", "created_at": "2026-02-01T00:00:00.000Z"}]
+        self.sync.sync()
+        self.assertEqual([n["title"] for n in self.service.list_notes() if n["title"].startswith("@ada: ")], ["@ada: kept"])
+
+
 class RestoredBackupTests(XSyncCase):
     def test_a_restored_backup_does_not_make_the_next_sync_import_the_same_posts_again(self):
         self.connect()
@@ -382,7 +416,7 @@ class RouteTests(XSyncCase):
 
     def test_status_before_anything(self):
         body = self.http.get("/api/x/status").json()
-        self.assertEqual(body, {"clientId": "", "connected": False, "connecting": False, "syncing": False, "lastSync": None, "imported": 0, "error": "", "errorKind": ""})
+        self.assertEqual(body, {"hasClientId": False, "connected": False, "connecting": False, "syncing": False, "lastSync": None, "imported": 0, "error": "", "errorKind": ""})
 
     def test_changes_need_the_apps_own_header(self):
         for call in (lambda h: self.http.post("/api/x/sync", headers=h), lambda h: self.http.post("/api/x/connect", headers=h),
@@ -392,7 +426,8 @@ class RouteTests(XSyncCase):
     def test_client_id_then_connect_then_sync_now_through_the_api(self):
         header = {"x-personal-note": "1"}
         self.assertEqual(self.http.post("/api/x/client-id", json={"clientId": "bad id"}, headers=header).status_code, 409)
-        self.assertEqual(self.http.post("/api/x/client-id", json={"clientId": CLIENT_ID}, headers=header).json()["clientId"], CLIENT_ID)
+        self.assertEqual(self.http.post("/api/x/client-id", json={"clientId": CLIENT_ID}, headers=header).json(), {**self.http.get("/api/x/status").json(), "hasClientId": True})
+        self.assertNotIn(CLIENT_ID, self.http.get("/api/x/status").text)
         self.assertEqual(self.http.post("/api/x/connect", headers=header).status_code, 200)
         deadline = time.monotonic() + 15
         while self.http.get("/api/x/status").json()["connecting"] and time.monotonic() < deadline:

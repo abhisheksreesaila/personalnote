@@ -336,6 +336,8 @@ def _normalize(page: dict) -> list[dict]:
     media = {m["media_key"]: m for m in includes.get("media", [])}
     items = []
     for post in page.get("data") or []:
+        if not str(post.get("id", "")).isdecimal():  # an id goes into a link and a record: numbers only
+            continue
         author = users.get(post.get("author_id"), {})
         image = None
         for key in (post.get("attachments") or {}).get("media_keys", []):
@@ -362,6 +364,9 @@ _HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}")
 TITLE_WORDS = 60  # characters of the post in the note's title
 
 
+_MARKDOWN_PUNCTUATION = re.compile(r"([\\!\[\]<>`])")
+
+
 def x_post_note(post: dict) -> tuple[str, str]:
     """(title, Markdown) of the page note for one bookmark: "@handle: first words…", then the text, author, date and links.
 
@@ -377,7 +382,8 @@ def x_post_note(post: dict) -> tuple[str, str]:
     who = f"[@{handle}](https://x.com/{handle})" if handle else ""
     byline = " ".join(part for part in (name, who) if part)
     date = str(post.get("created_at") or "")[:10]
-    lines = [str(post.get("text") or "").strip(), "", " · ".join(part for part in (byline, date) if part), "", f"[Open on X]({post['url']})"]
+    body = _MARKDOWN_PUNCTUATION.sub(r"\\\1", str(post.get("text") or "").strip())  # untrusted: no image, link, HTML or code from it
+    lines = [body, "", " · ".join(part for part in (byline, date) if part), "", f"[Open on X]({post['url']})"]
     image = post.get("image_url") or ""
     if image.startswith("https://"):
         lines += ["", f"[Picture]({image})"]

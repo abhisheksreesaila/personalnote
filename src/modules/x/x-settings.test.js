@@ -2,12 +2,22 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { describeX } from './x-settings.js'
 
-const connected = { clientId: 'abc', connected: true, connecting: false, syncing: false, lastSync: null, imported: 12, error: '', errorKind: '' }
+const connected = { hasClientId: true, connected: true, connecting: false, syncing: false, lastSync: null, imported: 12, error: '', errorKind: '' }
 
 test('not connected asks for the client id and offers Connect X only', () => {
-  const view = describeX({ ...connected, connected: false, imported: 0 })
+  const view = describeX({ ...connected, hasClientId: false, connected: false, imported: 0 })
   assert.equal(view.headline, 'Not connected')
+  assert.equal(view.field, true)
   assert.deepEqual([view.field, view.connect, view.sync, view.disconnect], [true, true, false, false])
+})
+
+test('a saved client id is not shown: the field stays closed until Replace', () => {
+  const status = { ...connected, connected: false, imported: 0 }
+  const view = describeX(status)
+  assert.deepEqual([view.field, view.replace, view.connect, view.detail], [false, true, true, 'Client ID saved. Connect X to sign in.'])
+  const replacing = describeX(status, true)
+  assert.deepEqual([replacing.field, replacing.replace], [true, false])
+  assert.deepEqual([describeX({ ...status, hasClientId: false }).field], [true])
 })
 
 test('waiting for the browser sign-in offers nothing to press', () => {
@@ -27,7 +37,7 @@ test('an error is shown plainly and a signed-out one offers Connect X again', ()
   assert.equal(view.detail, 'X has no API credit left on this account.')
   assert.deepEqual([view.error, view.sync, view.connect], [true, true, false])
   const out = describeX({ ...connected, error: 'X no longer accepts this sign-in. Connect X again.', errorKind: 'signed_out' })
-  assert.deepEqual([out.connect, out.field, out.sync, out.disconnect], [true, true, false, true])
+  assert.deepEqual([out.connect, out.field, out.replace, out.sync, out.disconnect], [true, false, true, false, true])
 })
 
 test('syncing disables the buttons', () => {

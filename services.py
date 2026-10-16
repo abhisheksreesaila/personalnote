@@ -61,7 +61,7 @@ DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")
 DEFAULT_NOTEBOOK_CATEGORY = "projects"
 X_NOTEBOOK_NAME = "X bookmarks"
-X_POST_LINK = re.compile(r"\[Open on X\]\(https://x\.com/[A-Za-z0-9_]+/status/(\d+)\)")
+X_POST_LINK = re.compile(r"^\[Open on X\]\(https://x\.com/[A-Za-z0-9_]+/status/(\d+)\)$", re.MULTILINE)
 INBOX_NAME = "Inbox"  # the built-in home of unfiled notes (notes.notebook_id IS NULL); not a notebook row
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
@@ -1791,9 +1791,9 @@ class NoteService:
         with self.connection() as connection:
             rows = connection.execute("SELECT id, content FROM notes WHERE note_type = 'page' AND secure = 0 AND content LIKE '%Open on X%' ORDER BY id").fetchall()
             for row in rows:
-                match = X_POST_LINK.search(page_text(row["content"]))
-                if match:
-                    connection.execute("INSERT OR IGNORE INTO x_posts (post_id, note_id) VALUES (?, ?)", (match.group(1), row["id"]))
+                found = X_POST_LINK.findall(page_text(row["content"]))  # the generated line is the last one; the post's own text is escaped
+                if found:
+                    connection.execute("INSERT OR IGNORE INTO x_posts (post_id, note_id) VALUES (?, ?)", (found[-1], row["id"]))
             if connection.execute("SELECT COUNT(*) FROM x_posts").fetchone()[0]:
                 notebook = connection.execute("SELECT id FROM notebooks WHERE icon = 'brand:x' ORDER BY id LIMIT 1").fetchone()
                 if notebook:
@@ -1811,7 +1811,8 @@ class NoteService:
         A post already imported is skipped even if its note was moved, archived or deleted. Pictures stay links.
         """
         with self.connection() as connection:
-            fresh = [post for post in posts if connection.execute("SELECT 1 FROM x_posts WHERE post_id = ?", (post["id"],)).fetchone() is None]
+            fresh = list({post["id"]: post for post in reversed(posts)}.values())[::-1]  # a post listed twice is filed once
+            fresh = [post for post in fresh if connection.execute("SELECT 1 FROM x_posts WHERE post_id = ?", (post["id"],)).fetchone() is None]
             if not fresh:
                 return 0
             row = connection.execute(

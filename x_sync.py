@@ -45,7 +45,6 @@ class XSync:
         self.connecting = False
         self._lock = threading.Lock()  # one sign-in or sync at a time
         self._syncing = False
-        self._adopted = False
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -100,7 +99,7 @@ class XSync:
 
     def status(self) -> dict:
         return {
-            "clientId": self._client_id(),
+            "hasClientId": bool(self._client_id()),  # the id itself never goes to the page
             "connected": self._connected(),
             "connecting": self.connecting,
             "syncing": self._syncing,
@@ -151,9 +150,7 @@ class XSync:
     def _sync_locked(self) -> None:
         self._syncing = True
         try:
-            if not self._adopted:  # once: a restored backup has the notes but not the record of their post ids
-                self.service.adopt_x_posts_from_notes()
-                self._adopted = True
+            self.service.adopt_x_posts_from_notes()  # a restored backup has the notes but not the record of their post ids
             posts = self._client().fetch_new(self.service.x_known_ids(KNOWN_IDS), x_bookmarks.MAX_BOOKMARKS)
             self.service.import_x_bookmarks(posts)
             self.error, self.error_kind = "", ""

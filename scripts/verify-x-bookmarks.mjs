@@ -156,7 +156,12 @@ try {
   await page.click('#x-disconnect')
   check('Disconnect returns to Not connected', await waitFor('disconnected', async () => (await headline()) === 'Not connected', 10000))
   check('and keeps every imported note', (await xNotes()).length === 7)
-  check('the client id field is back and still holds the id', (await page.locator('#x-client-id').inputValue()) === CLIENT_ID)
+  check('the client id is saved but never shown: no field, "Client ID saved", a Replace button', await page.locator('#x-client-id').isHidden() && /Client ID saved/.test(await page.locator('#x-detail').textContent()) && await page.locator('#x-replace').isVisible())
+  const inPage = await page.evaluate((id) => document.documentElement.outerHTML.includes(id) || [...document.querySelectorAll('input,textarea')].some((field) => field.value.includes(id)), CLIENT_ID)
+  check('the client id is nowhere in the page (markup, fields) or in the status the page gets', !inPage && !JSON.stringify(await call('GET', '/x/status')).includes(CLIENT_ID))
+  await page.click('#x-replace')
+  const field = await page.locator('#x-client-id').evaluate((node) => ({ value: node.value, height: node.getBoundingClientRect().height, size: getComputedStyle(node).fontSize }))
+  check('Replace opens an empty field, 44px tall with 16px text', field.value === '' && field.height >= 44 && field.size === '16px', JSON.stringify(field))
 
   // Phone width: the section is reachable.
   const phone = await (await browser.newContext({ viewport: { width: 390, height: 780 } })).newPage()
