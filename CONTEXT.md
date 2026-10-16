@@ -11,3 +11,4 @@
 - **Link word**: the word a drawing is linked to; shown in teal when the drawing can fold behind it.
 - **Fold / unfold**: hide a linked drawing behind its link word / slide it back out.
 - **Loose ink**: a mark whose words disappeared in an agent rewrite; kept in a tray, never deleted silently.
+- **Notebook icon**: what a notebook shows in the notes panel, tinted with its colour: a Lucide icon, the X logo, an emoji, or its first letter. Stored as `lucide:<name>`, `brand:x`, `emoji:<grapheme>` or empty (the app guesses from the name; a leading emoji in the name wins over the keyword guess).

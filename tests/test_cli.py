@@ -37,6 +37,12 @@ class CliContractTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             main(["--database", str(self.database_path), "notebooks", "create", "--name", "X", "--category", "nonsense"])
 
+    def test_cli_creates_a_notebook_with_an_icon(self):
+        code, notebook = self.run_cli("notebooks", "create", "--name", "Chores", "--icon", "lucide:house")
+        self.assertEqual((code, notebook["icon"]), (0, "lucide:house"))
+        code, plain = self.run_cli("notebooks", "create", "--name", "Plain")
+        self.assertEqual(plain["icon"], "")
+
     def test_cli_creates_searches_and_reads_a_canvas_note(self):
         code, notebooks = self.run_cli("notebooks", "list")
         self.assertEqual(code, 0)

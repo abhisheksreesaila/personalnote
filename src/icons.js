@@ -20,3 +20,13 @@ Object.assign(icons, { Fingerprint, Lock, LockOpen, Palette, ShieldCheck, Zap })
 
 // Replaces every <i data-lucide> in the page (or in `root`) with its icon.
 export const createIcons = (options = {}) => createLucideIcons({ icons, ...options })
+
+// Notebook icons (F-089): the picker's list (ICON_NAMES in modules/library/notebook-icon.js).
+import {
+  Baby, Bookmark, Book, Briefcase, Brain, Calendar, Camera, Car, Coffee, CookingPot, Code, Film, FlaskConical, Flag, Folder, Gamepad2, GraduationCap, Globe,
+  Heart, House, Leaf, Lightbulb, Link, Map, Moon, Music, PawPrint, Plane, Rocket, ShoppingCart, Star, Sun, Users, Wallet, Dumbbell,
+} from 'lucide'
+Object.assign(icons, {
+  Baby, Bookmark, Book, Briefcase, Brain, Calendar, Camera, Car, Coffee, CookingPot, Code, Film, FlaskConical, Flag, Folder, Gamepad2, GraduationCap, Globe,
+  Heart, House, Leaf, Lightbulb, Link, Map, Moon, Music, PawPrint, Plane, Rocket, ShoppingCart, Star, Sun, Users, Wallet, Dumbbell,
+})
