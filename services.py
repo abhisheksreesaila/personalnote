@@ -19,6 +19,7 @@ from document_model import DocumentError, empty_document, from_fabric, plain_tex
 from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
 from media_store import MediaStore, data_url_of
 from meaning_rank import select_meaning
+from notebook_icon import valid_icon
 from page_note import empty_page_document, find_quote, normalize_page_document, page_document_of, page_text, reanchor_ink, utf16
 
 logger = logging.getLogger(__name__)
@@ -590,7 +591,7 @@ class NoteService:
             rows = connection.execute(
                 """
                                 SELECT notebooks.id, notebooks.resource_id, notebooks.revision,
-                                    notebooks.name, notebooks.color, notebooks.category,
+                                    notebooks.name, notebooks.color, notebooks.category, notebooks.icon,
                   COUNT(notes.id) AS note_count
                 FROM notebooks
                 LEFT JOIN notes ON notes.notebook_id = notebooks.id
@@ -606,6 +607,7 @@ class NoteService:
                 "name": row["name"],
                 "color": row["color"],
                 "category": row["category"],
+                "icon": row["icon"],
                 "noteCount": row["note_count"],
             }
             for row in rows
@@ -617,20 +619,26 @@ class NoteService:
         requested_color = payload.get("color")
         color = requested_color if isinstance(requested_color, str) and NOTEBOOK_COLOR_PATTERN.fullmatch(requested_color) else DEFAULT_NOTEBOOK_COLOR
         category = self.notebook_category(payload.get("category"), DEFAULT_NOTEBOOK_CATEGORY)
+        icon = self.notebook_icon(payload.get("icon"), "")
         resource_id = self.new_resource_id()
         with self.connection() as connection:
             cursor = connection.execute(
-                "INSERT INTO notebooks (resource_id, name, color, category) VALUES (?, ?, ?, ?)",
-                (resource_id, name, color, category),
+                "INSERT INTO notebooks (resource_id, name, color, category, icon) VALUES (?, ?, ?, ?, ?)",
+                (resource_id, name, color, category, icon),
             )
             self.record_change(connection, "notebook", resource_id, 1, "created")
             connection.commit()
             notebook_id = cursor.lastrowid
-        return {"id": notebook_id, "resourceId": resource_id, "revision": 1, "name": name, "color": color, "category": category, "noteCount": 0}
+        return {"id": notebook_id, "resourceId": resource_id, "revision": 1, "name": name, "color": color, "category": category, "icon": icon, "noteCount": 0}
 
     @staticmethod
     def notebook_category(value, fallback: str) -> str:
         return value if isinstance(value, str) and value in NOTEBOOK_CATEGORIES else fallback
+
+    @staticmethod
+    def notebook_icon(value, fallback: str) -> str:
+        """'' clears the icon (the app guesses again); a name or emoji that is not allowed keeps the old one."""
+        return value if value == "" or valid_icon(value) else fallback
 
     def update_notebook(self, notebook_id: int, payload: dict) -> dict:
         with self.connection() as connection:
@@ -644,16 +652,17 @@ class NoteService:
             requested_color = payload.get("color")
             color = requested_color if isinstance(requested_color, str) and NOTEBOOK_COLOR_PATTERN.fullmatch(requested_color) else current["color"]
             category = self.notebook_category(payload.get("category"), current["category"])
+            icon = self.notebook_icon(payload.get("icon"), current["icon"])
             revision = expected_revision + 1
             cursor = connection.execute(
-                "UPDATE notebooks SET name = ?, color = ?, category = ?, revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND revision = ?",
-                (name, color, category, revision, notebook_id, expected_revision),
+                "UPDATE notebooks SET name = ?, color = ?, category = ?, icon = ?, revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND revision = ?",
+                (name, color, category, icon, revision, notebook_id, expected_revision),
             )
             if cursor.rowcount == 0:
                 raise ConflictError("Resource revision does not match")
             self.record_change(connection, "notebook", current["resource_id"], revision, "updated")
             connection.commit()
-        return {"id": notebook_id, "resourceId": current["resource_id"], "revision": revision, "name": name, "color": color, "category": category}
+        return {"id": notebook_id, "resourceId": current["resource_id"], "revision": revision, "name": name, "color": color, "category": category, "icon": icon}
 
     def delete_notebook(self, notebook_id: int) -> dict:
         with self.connection() as connection:
@@ -1460,7 +1469,7 @@ class NoteService:
                 "SELECT workspace_id FROM workspace_state WHERE id = 1"
             ).fetchone()
             notebooks = connection.execute(
-                "SELECT resource_id, name, color, category, created_at, updated_at FROM notebooks ORDER BY id"
+                "SELECT resource_id, name, color, category, icon, created_at, updated_at FROM notebooks ORDER BY id"
             ).fetchall()
             notes = connection.execute(
                 "SELECT resource_id, note_type, title, content, content_format, page_state, notebook_id, created_at, updated_at, secure, secure_key_id, seal_id, sealed FROM notes ORDER BY id"
@@ -1479,6 +1488,7 @@ class NoteService:
                     "name": row["name"],
                     "color": row["color"],
                     "category": row["category"],
+                    "icon": row["icon"],
                     "createdAt": row["created_at"],
                     "updatedAt": row["updated_at"],
                 }
@@ -1597,10 +1607,11 @@ class NoteService:
                 color_value = notebook.get("color")
                 color = color_value if isinstance(color_value, str) and NOTEBOOK_COLOR_PATTERN.fullmatch(color_value) else DEFAULT_NOTEBOOK_COLOR
                 category = self.notebook_category(notebook.get("category"), DEFAULT_NOTEBOOK_CATEGORY)
+                icon = self.notebook_icon(notebook.get("icon"), "")  # a backup from before icons has none
                 resource_id = self.new_resource_id()
                 cursor = connection.execute(
-                    "INSERT INTO notebooks (resource_id, name, color, category) VALUES (?, ?, ?, ?)",
-                    (resource_id, name or "Imported notebook", color, category),
+                    "INSERT INTO notebooks (resource_id, name, color, category, icon) VALUES (?, ?, ?, ?, ?)",
+                    (resource_id, name or "Imported notebook", color, category, icon),
                 )
                 imported_notebooks[notebook["resourceId"]] = cursor.lastrowid
                 self.record_change(connection, "notebook", resource_id, 1, "created")
