@@ -310,6 +310,23 @@ try {
   check('the menu stays inside a narrow window', !(await menuHidden()) && narrowMenu.x >= 0 && narrowMenu.r <= 390, JSON.stringify(narrowMenu))
   await page.keyboard.press('Escape')
 
+  // --- the same chip on the Mac host (traffic lights push everything at the top left to the right)
+  await page.goto(`${url}?host=desktop&chrome=mac`)
+  await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  agents = [{ agent: 'A remarkably verbose local agent called Claude Code Deluxe', action: 'writing', noteId: 1, noteTitle: 'x' }]
+  for (const [w, h] of [[1101, 800], [1280, 800], [1440, 900]]) {
+    await page.setViewportSize({ width: w, height: h })
+    await page.click('#note-title', { clickCount: 3 })
+    await page.keyboard.type(longTitle)
+    await page.keyboard.press('Tab')
+    await page.waitForFunction(() => !document.querySelector('#agent-chip')?.hidden, null, { timeout: 8000 })
+    await page.waitForTimeout(300)
+    const m = await islands()
+    check(`mac host ${w}: the chip clears the notes button and the title pill`, m.chip.x >= m.notes.r && m.chip.r <= m.title.x - 8, JSON.stringify(m))
+    check(`mac host ${w}: the chip's full text is its accessible name`, await page.evaluate(() => document.querySelector('#agent-chip').getAttribute('aria-label') === document.querySelector('#agent-chip').textContent))
+    check(`mac host ${w}: no two islands overlap`, !Object.keys(m).some((a) => Object.keys(m).some((b) => a < b && overlap(m[a], m[b]))), JSON.stringify(m))
+  }
+
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
   await browser.close()

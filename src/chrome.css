@@ -260,8 +260,9 @@
   }
   /* Top left, its own small island just right of the notes button; never under the centred title pill (which starts at 30vw or later). */
   @media (min-width: 801px) {
-    .app-shell .agent-chip { margin-left: 52px; max-width: calc(30vw - 76px); }
-    :root.chrome-mac .app-shell .agent-chip { margin-left: calc(var(--mac-lights) + var(--mac-bar) - 8px); }
+    .app-shell { --chip-left: 52px; }
+    :root.chrome-mac .app-shell { --chip-left: calc(var(--mac-lights) + var(--mac-bar) - 8px); }
+    .app-shell .agent-chip { margin-left: var(--chip-left); max-width: calc(30vw - var(--chip-left) - 24px); }
   }
   .app-shell .agent-chip::before { width: 7px; height: 7px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--sk-c2) 22%, transparent); }
 
@@ -421,7 +422,7 @@
     .app-shell { --omni-w: 40px; }
     .app-shell .search-button { padding: 0; justify-content: center; cursor: pointer; }
     .app-shell .search-button span, .app-shell .search-button kbd { display: none; }
-    .app-shell .agent-chip { font-size: 0; gap: 0; padding: 0 13px; }
+    .app-shell .agent-chip { font-size: 0; gap: 0; padding: 0 13px; } /* just the pulsing dot on smaller windows, on purpose: presence stays visible and the bar calm; the full text is its aria-label and tooltip */
     .app-shell .page-minimap .mini-grid { display: none; }
   }
   @media (min-width: 801px) and (max-width: 1340px) {
