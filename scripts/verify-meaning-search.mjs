@@ -51,6 +51,7 @@ try {
     kitchen: { delay: 0, hits: [[tide.id, 'Tide tables', 'Travel']] },
   }
   const wire = async (context, log) => {
+    await context.route('**/api/search-meaning/status', (route) => route.fulfill({ json: { state: 'ready', supported: true } }))
     await context.route('**/api/search/meaning*', async (route) => {
       const query = new URL(route.request().url()).searchParams.get('q')
       log.push(query)
@@ -120,6 +121,7 @@ try {
   await page.waitForSelector('#search-backdrop.open')
   await page.keyboard.type('slow')
   await page.waitForTimeout(500) // past the pause: the first request is out, and takes 900 ms
+  check('while the answer is on its way a query with no other match shows no "Nothing matches" and no spinner', (await page.locator('.omni-none').count()) === 0 && (await page.locator('.omni-row').count()) === 0)
   await page.keyboard.press('Control+a')
   await page.keyboard.type('kitchen')
   await page.waitForSelector('.omni-group[aria-label="By meaning"]', { timeout: 5000 })
@@ -163,7 +165,8 @@ try {
   check('without it the groups are today\'s and nothing about meaning shows', (await barePage.locator('.omni-group h4').allTextContents()).join() === 'In your words' && !/meaning|Searching/i.test(resultsText), resultsText)
   await barePage.keyboard.press('Control+a')
   await barePage.keyboard.type('zzzzzz')
-  await barePage.waitForTimeout(900)
+  const noneShown = await barePage.waitForSelector('.omni-none', { timeout: 700 }).then(() => true, () => false)
+  check('without it "Nothing matches" appears at once, as before (no waiting for a meaning answer)', noneShown)
   check('a query with no matches still says "Nothing matches" and offers a new note', (await barePage.locator('.omni-none strong').textContent()) === 'Nothing matches “zzzzzz”' && (await barePage.locator('.omni-row').count()) === 1)
   check('the page asked the server quietly and got nothing', bareRequests.length >= 1)
   check('no page errors without the download', bareErrors.length === 0, bareErrors.join(' | '))

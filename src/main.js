@@ -2807,7 +2807,7 @@ function setupVoiceInput() {
 
 // ---- The omnibar (F-072): a slim bar at the top centre that grows into grouped results ----
 const IME_KEY = 229 // a key pressed while an input method is composing reports keyCode 229
-const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], meaningHits: [], wordsFailed: false }
+const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], meaningHits: [], meaningReady: false, meaningPending: false, wordsFailed: false }
 
 function omniActions() {
   const note = state.notes.find((item) => item.id === state.activeNoteId)
@@ -2855,7 +2855,7 @@ function renderOmni() {
   omni.items = flatten(omni.groups)
   const kept = omni.items.findIndex((item) => omniKey(item) === keep)
   if (kept >= 0) omni.sel = kept
-  const waiting = omni.pending && (omni.filter === 'All' || omni.filter === 'Notes') // the word search is still out: no "nothing" yet
+  const waiting = (omni.pending || omni.meaningPending) && (omni.filter === 'All' || omni.filter === 'Notes') // a search is still out: no "nothing" yet
   document.querySelector('#omni-chips').innerHTML = FILTERS.map((name) => `<button type="button" class="omni-chip" data-omni-chip="${name}" aria-pressed="${name === omni.filter}">${name}</button>`).join('')
   let html = ''
   if (!omni.items.length && waiting) html = ''
@@ -2891,7 +2891,8 @@ function openSearch() {
   const panel = elements.searchBackdrop.firstElementChild
   // The panel opens large, centred on the window, from the bar's top edge (a phone fills the screen instead, see chrome.css).
   panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top) - 2)}px`)
-  Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], meaningHits: [], wordsFailed: false })
+  Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], meaningHits: [], meaningPending: false, wordsFailed: false })
+  api('/search-meaning/status').then((status) => { omni.meaningReady = status.state === 'ready' }, () => { omni.meaningReady = false })
   elements.searchInput.value = ''
   elements.searchBackdrop.hidden = false
   elements.searchButton.setAttribute('aria-expanded', 'true')
@@ -2905,8 +2906,7 @@ function closeSearch() {
   omni.pending = false
   searchSequence += 1
   clearTimeout(searchTimer)
-  clearTimeout(meaningTimer)
-  meaningRequest.cancel()
+  cancelMeaningSearch()
   elements.searchBackdrop.classList.remove('open')
   elements.searchButton.setAttribute('aria-expanded', 'false')
   setTimeout(() => { if (!elements.searchBackdrop.classList.contains('open')) elements.searchBackdrop.hidden = true }, 160)
@@ -2949,19 +2949,33 @@ function queueSearch() {
 }
 
 // "By meaning" (F-080) fills in below everything else, never blocking it: a quiet request after a pause in typing, aborted when the query
-// changes, its answer dropped if it is not the newest. Without the download the server answers [] at once and nothing shows.
-function queueMeaningSearch(query) {
+// changes, its answer dropped if it is not the newest. Without the download the server answers [] at once and nothing shows. When it is
+// installed, a query with no other match shows nothing (not "Nothing matches") while the answer is on its way, for 6 s at most.
+const MEANING_WAIT_MS = 6000
+let meaningGiveUp
+function cancelMeaningSearch() {
   clearTimeout(meaningTimer)
+  clearTimeout(meaningGiveUp)
   meaningRequest.cancel()
+  omni.meaningPending = false
+}
+
+function queueMeaningSearch(query) {
+  cancelMeaningSearch()
   if (query.length < MEANING_MIN_CHARS) return
+  omni.meaningPending = omni.meaningReady
+  meaningGiveUp = setTimeout(() => { if (omni.meaningPending) { omni.meaningPending = false; renderOmni() } }, MEANING_WAIT_MS)
   meaningTimer = setTimeout(async () => {
     const request = meaningRequest.start()
     try {
       const hits = await api(`/search/meaning?q=${encodeURIComponent(query)}&limit=10`, { signal: request.signal })
-      if (!request.current() || !omni.open || !hits.length) return
+      if (!request.current() || !omni.open) return
       omni.meaningHits = hits
-      renderOmni()
-    } catch {} // an aborted request, or no answer: the omnibar stays as it is
+    } catch {
+      if (!request.current()) return // aborted by a newer query; no answer: the omnibar stays as it is
+    }
+    omni.meaningPending = false
+    renderOmni()
   }, MEANING_DEBOUNCE_MS)
 }
 
