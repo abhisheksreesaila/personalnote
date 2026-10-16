@@ -547,11 +547,12 @@ Cause (confirmed): in focus mode on a canvas note every press outside `.leafer-t
 - [x] reproduce: enter focus, make the text edit close (window blur / full-screen resize), then a click on the words or typing must write again
 - [x] in focus a press on the words (or anywhere on the page) reopens the focus text with the caret there; returning to the window resumes writing; page notes too
 - [x] verify-focus covers it with a real mouse; nothing else about focus changes
-## F-086 Jam brain spike: Claude Code and OpenAI-compatible, timed [todo]
+## F-086 Jam brain spike: Claude Code and OpenAI-compatible, timed [done]
 Brief: docs/briefs/jam-sessions.md · Needs: none
-- [ ] `jam_brain.py`: one call turns (map JSON + new transcript) into validated map edits (add branch, emoji, 👍/👎 with reason, ghost branches), never removes/renames; two adapters: Claude Code (`claude -p`, found on a bare Mac PATH) and OpenAI-compatible (base URL + model + key, incl. Azure endpoint + deployment + api-version); the key comes from the environment or keychain, never the database
-- [ ] `scripts/jam_spike.py` feeds three real-style transcripts through a brain and prints the edits and seconds per turn; run against Claude Code here; Azure left for the captain (env vars named)
-- [ ] unit tests with fake brains: schema validation rejects removals/renames/unknown ids; bad output is a visible error, the map untouched
+Reviewed: PASS after one round (no connector tools via --strict-mcp-config, bad types retried, https-only key without redirects, Mac PATH). Real Claude Code turns: opus mean 8.2 s, sonnet (default) ~9 s, haiku ~7 s. Azure not yet run (captain). Keychain → F-093; invariant 8 + ADR → F-092.
+- [x] `jam_brain.py`: one call turns (map JSON + new transcript) into validated map edits (add branch, emoji, 👍/👎 with reason, ghost branches), never removes/renames; two adapters: Claude Code (`claude -p`, found on a bare Mac PATH) and OpenAI-compatible (base URL + model + key, incl. Azure endpoint + deployment + api-version); the key comes from the environment or keychain, never the database
+- [x] `scripts/jam_spike.py` feeds three real-style transcripts through a brain and prints the edits and seconds per turn; run against Claude Code here; Azure left for the captain (env vars named)
+- [x] unit tests with fake brains: schema validation rejects removals/renames/unknown ids; bad output is a visible error, the map untouched
 ## F-087 X bookmarks: connect and fetch [done]
 Brief: docs/briefs/x-bookmarks.md · Needs: none
 Reviewed: PASS after one round (idle/forged callbacks, known-id set, 1→10→100 pages, secret_store.py shared with AI settings). Not yet run against real X or a real Mac keychain: the captain's x-setup.sh run is the proof. F-088 owes the invariant 8 line and must never run two syncs at once (X rotates the refresh token).
