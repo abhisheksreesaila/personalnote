@@ -516,8 +516,9 @@ Reviewed: PASS after two rounds (New note never lost, relative rule from real-en
 - [x] the omnibar shows a "By meaning" group under the word matches with the closest notes not already listed; without the download it is unchanged
 - [x] `personal-note search --meaning "…"` returns the same ranking for agents
 - [x] on a seeded notebook, meaning queries with no shared words find the right note
-## F-081 Mac app downloads trust the web's certificates [review]
+## F-081 Mac app downloads trust the web's certificates [done]
 Brief: none (bug: the captain could not download voice on the Mac, preview 8) · Needs: none
+Reviewed: PASS (real fetches of the voice model, llama.cpp release and EmbeddingGemma fail without it and pass with it; bad hosts and self-signed still rejected). Last check waits on the captain.
 Cause: the Mac app bundles python.org's OpenSSL, which looks for certificates in /Library/Frameworks/Python.framework/…, absent on the captain's Mac, so every HTTPS download (voice and search by meaning) failed its certificate check and showed "Could not reach the download server".
 - [x] voice and search downloads verify against certifi's bundle on top of the system's (download_tls.py); certifi is pinned and bundled in both builds
 - [x] a test reproduces a machine with no system certificates; a real GitHub fetch fails without the fix and succeeds with it
