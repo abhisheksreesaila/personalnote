@@ -6,7 +6,8 @@ the Stitch screens labelled "APPROVED 1" and "APPROVED 2 - FOCUS MODE", and said
 are marked (assumed); the captain can overturn any of them.
 2026-10-16, after using preview 8: the notes panel sits beside the note on a wide window (it covered the page and looked
 lopsided), the eraser joins the island's main tools, and the title pill is to become contextual like a dynamic island
-(prototype first). -->
+(prototype first). Later that day the captain chose prototype Option A (docs/design/dynamic-island.md), moved Focus
+into the island and made search a top-right circle that expands, so the four corners mirror each other. -->
 
 ## Why (the mission)
 - Why this exists, in one sentence: the note should own the screen; today a sidebar that's always open, a top bar of buttons and a 17-control dock surround it.

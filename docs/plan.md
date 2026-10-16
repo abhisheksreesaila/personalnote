@@ -532,3 +532,15 @@ Brief: docs/briefs/chrome-islands.md (captain's feedback 2026-10-16: the panel c
 - [ ] on a wide window, opening the notes panel moves the note area right so the panel and note sit side by side; the title pill and top islands centre on the note area; closing moves it back
 - [ ] the note keeps its place on screen relative to its area (no jump of the content under the pointer beyond the shift); typing and drawing work with the panel open
 - [ ] on a narrow window (< 760px) the panel still slides over with its scrim
+## F-084 The dynamic island [todo]
+Brief: docs/briefs/chrome-islands.md · Design: docs/design/dynamic-island.md (Option A) · Needs: F-083
+- [ ] the title pill becomes the island: title only at rest; click opens the card (title, saved state, Focus first, then every ⋯ action); Esc/click away closes
+- [ ] it grows for the moments in the design table (slow save, save error, recording, agent edit replacing the agent chip, downloads, focus) and shrinks back; routine saves never change its size
+- [ ] the Focus pill is gone; search is a top-right circle that grows into the search field in place and shrinks back; ⌘K, ⌘., ⌘P unchanged
+- [ ] no timers or frames at rest; speed test unchanged; bundle budget held; Crayon, Paper, Night and a narrow window checked
+## F-085 Focus mode can always be written in [todo]
+Brief: none (bug: on the Mac the captain entered focus and could not edit; it was read-only) · Needs: none
+Likely cause: in focus mode on a canvas note every press outside `.leafer-text-editor` is turned away (main.js, "Only the words take the pointer"); if the text edit closes (e.g. the window blurs during the Mac full-screen switch), nothing can reopen it.
+- [ ] reproduce: enter focus, make the text edit close (window blur / full-screen resize), then a click on the words or typing must write again
+- [ ] in focus a press on the words (or anywhere on the page) reopens the focus text with the caret there; returning to the window resumes writing; page notes too
+- [ ] verify-focus covers it with a real mouse; nothing else about focus changes
