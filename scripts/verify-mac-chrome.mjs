@@ -71,7 +71,7 @@ const MAC = '?host=desktop&chrome=mac'
   check('top bar sits inside the drag row', bar.y >= 0 && bar.b <= strip.b + 1, `bar=${bar.y}-${bar.b} strip=${strip.b}`)
   const hit = await page.evaluate(() => {
     const at = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) }
-    return { empty: document.elementFromPoint(document.querySelector('#search-button').getBoundingClientRect().right + 24, 10)?.className ?? '' /* empty bar area just right of the centred search bar */, search: Boolean(at('#search-button')?.closest('#search-button')), share: Boolean(at('#share-button')?.closest('#share-button')), title: at('#note-title')?.id }
+    return { empty: (() => { const t = document.querySelector('.topbar-title').getBoundingClientRect(); const f = document.querySelector('#focus-button').getBoundingClientRect(); return document.elementFromPoint((t.right + f.left) / 2, t.top + t.height / 2)?.className ?? '' })() /* empty bar area between the title pill and the Focus pill */, search: Boolean(at('#search-button')?.closest('#search-button')), share: Boolean(at('#share-button')?.closest('#share-button')), title: at('#note-title')?.id }
   })
   check('empty bar area hits the drag strip', String(hit.empty).includes('pywebview-drag-region'), hit.empty)
   check('search, share and title stay clickable', hit.search && hit.share && hit.title === 'note-title', JSON.stringify(hit))

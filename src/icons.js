@@ -4,14 +4,14 @@ import {
   AlignLeft, Archive, ArrowLeft, ArrowUpDown, AudioLines, BookOpen, Braces, Check, ChevronDown, ChevronRight, Compass, CornerDownLeft, Download,
   Eraser, FileDown, FilePen, FileText, Focus, FoldVertical, FolderDown, FolderInput, FolderOpen, Gauge, GitBranch, GitFork, Hand, HardDrive, ImageDown,
   ImagePlus, Inbox, LayoutGrid, Maximize2, Mic, Minus, MoreHorizontal, MousePointer2, NotebookTabs, PanelLeft, Pencil, Plus,
-  Printer, Redo2, Scan, Search, SearchX, Share, SlidersHorizontal, Square, StickyNote, Target, Trash2, Undo2, UnfoldVertical, WandSparkles, X, createIcons as createLucideIcons,
+  Printer, Redo2, Scan, Search, SearchX, SlidersHorizontal, Square, StickyNote, Target, Trash2, Undo2, UnfoldVertical, WandSparkles, X, createIcons as createLucideIcons,
 } from 'lucide'
 
 export const icons = {
   AlignLeft, Archive, ArrowLeft, ArrowUpDown, AudioLines, BookOpen, Braces, Check, ChevronDown, ChevronRight, Compass, CornerDownLeft, Download,
   Eraser, FileDown, FilePen, FileText, Focus, FoldVertical, FolderDown, FolderInput, FolderOpen, Gauge, GitBranch, GitFork, Hand, HardDrive, ImageDown,
   ImagePlus, Inbox, LayoutGrid, Maximize2, Mic, Minus, MoreHorizontal, MousePointer2, NotebookTabs, PanelLeft, Pencil, Plus,
-  Printer, Redo2, Scan, Search, SearchX, Share, SlidersHorizontal, Square, StickyNote, Target, Trash2, Undo2, UnfoldVertical, WandSparkles, X,
+  Printer, Redo2, Scan, Search, SearchX, SlidersHorizontal, Square, StickyNote, Target, Trash2, Undo2, UnfoldVertical, WandSparkles, X,
 }
 
 // Secure notes (F-058). Added here, not in the lists above, so a change to those never clashes with this.

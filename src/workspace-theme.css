@@ -10,7 +10,7 @@
 
   /* Scope geometry to controls, not color swatches, ink previews or canvas objects. */
   .icon-button, .tool-button,
-  .tool-dock, .properties-trigger,
+  .tool-dock,
   .voice-button, .notebook-tab, .note-list-item,
   .notebook-picker-menu,
   .notebook-dialog, .voice-caption, .ink-options-popover, .note-create-menu,
@@ -21,7 +21,7 @@
   }
 
   .sidebar, .topbar, .tool-dock, .properties-panel,
-  .voice-button, .properties-trigger,
+  .voice-button,
   .ink-options-popover, .voice-caption, .print-preview-bar, .mindmap-hint,
   .note-title:hover, .note-title:focus {
     backdrop-filter: none;
@@ -43,7 +43,7 @@
   .properties-heading h2 { font-size: 15px; }
   .dialog-heading-row h2 { font-size: 20px; }
 
-  .properties-trigger, .voice-button { transform: none; will-change: auto; }
+  .voice-button { transform: none; will-change: auto; }
 
   .notebook-picker,
   .property-note-info strong, .setting-row, .setting-field-heading,
@@ -72,7 +72,7 @@
   .delete-note-action, .delete-notebook, .print-error { color: var(--terracotta); }
 
   .note-create-menu, .notebook-picker-menu, .tool-dock, .ink-options-popover,
-  .voice-button, .properties-trigger, .voice-caption, .page-count,
+  .voice-button, .voice-caption, .page-count,
   .properties-panel, .notebook-dialog,
   .mindmap-branch-chooser, .mindmap-zoom, .mindmap-minimap, .mindmap-hint,
   .print-preview-bar, .print-summary {

@@ -38,7 +38,7 @@
   .app-shell .workspace, .app-shell.mindmap-active .workspace { position: absolute; inset: 0; background: transparent; }
 
   /* Shared glass surface. */
-  .app-shell .search-button, .app-shell .glass-button, .app-shell .agent-chip,
+  .app-shell .glass-button,
   .app-shell .tool-dock, .app-shell .page-minimap, .app-shell .zoom-control, .app-shell .share-menu,
   .app-shell .note-create-menu, .app-shell .ink-options-popover, .app-shell .voice-caption {
     background: var(--glass);
@@ -87,7 +87,7 @@
   .app-shell .quick-note:active, .app-shell .quick-note.is-holding { transform: scale(.975); filter: brightness(.96); }
   .app-shell .quick-note:focus-visible { outline: none; box-shadow: var(--ring); }
   .app-shell .quick-note svg { width: 16px; height: 16px; stroke-width: 2; flex: none; }
-  .app-shell .quick-note kbd, .app-shell .search-button kbd, .app-shell .share-menu kbd {
+  .app-shell .quick-note kbd, .app-shell .search-button kbd, .app-shell .focus-pill kbd, .app-shell .share-menu kbd {
     margin-left: auto; padding: 2px 6px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 6px;
     font: 400 11px/1.3 var(--sk-mono); color: inherit; opacity: .8; background: transparent;
   }
@@ -203,70 +203,75 @@
   .app-shell .skin-swatch:focus-visible { outline: none; box-shadow: var(--ring); }
   .app-shell .sidebar-scrim { display: none; }
 
-  /* ---------- Top bar ---------- */
-  .app-shell .topbar {
-    position: absolute; inset: 14px 16px auto 4px; height: 48px; display: flex; align-items: center; gap: 12px; padding: 0;
-    background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none;
-  }
+  /* ---------- Top bar: floating islands (F-075). Round pills over the desk, 16px in; the bar itself has no background. ---------- */
+  .app-shell .topbar { --h: 44px; position: absolute; inset: 16px 16px auto; height: var(--h); display: flex; align-items: center; gap: 8px; pointer-events: none; }
   /* The top bar is not a stacking context of its own, so the notes button can sit above a locked note's cover; its other items keep z 10. */
   .app-shell .topbar > * { z-index: 10; }
   .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }
-  @media (min-width: 801px) { .app-shell { --topbar-left: 72px; } .app-shell .topbar { left: var(--topbar-left); } } /* clear of the notes button */
-  .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0; pointer-events: auto; }
-  .app-shell .crumb { flex: none; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font-size: 12.5px; white-space: nowrap; }
-  .app-shell .crumb b { font-weight: 500; color: var(--ink-soft); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+  .app-shell :is(.topbar-title, .search-button, .focus-pill, .agent-chip) { background: var(--sk-panel); border: 1px solid var(--sk-edge); box-shadow: var(--sk-shadow); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: var(--h); display: flex; align-items: center; gap: 8px; padding: 0 6px 0 18px; border-radius: 999px; }
+  @media (min-width: 801px) { .app-shell .topbar-title { position: absolute; left: 50%; translate: -50% 0; max-width: min(40vw, calc(100vw - 2 * (var(--omni-w) + 188px))); } } /* (clear of the Focus and search pills on the right) */
   .app-shell .note-title {
-    min-width: 7ch; width: 22ch; max-width: 34ch; height: 32px; margin: 0 0 0 6px; padding: 0 4px; border: 0; border-radius: 9px; outline: none;
-    background: transparent; color: var(--sk-ink); text-shadow: none; text-overflow: ellipsis; field-sizing: content;
-    font-family: var(--sk-display); font-weight: var(--sk-display-weight); font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track); font-size: 22px; line-height: 1;
+    min-width: 7ch; width: 22ch; flex: 0 1 auto; height: 28px; padding: 0 6px; border: 0; border-radius: 8px; outline: none;
+    background: transparent; color: var(--sk-ink); text-shadow: none; text-overflow: ellipsis; field-sizing: content; letter-spacing: 0; font: 600 13.5px/1 var(--ui-font);
     transition: background-color 140ms ease, box-shadow 140ms ease;
   }
   @supports (field-sizing: content) { .app-shell .note-title { width: auto; } }
   .app-shell .note-title:hover { background: var(--hover); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .app-shell .note-title:focus { background: var(--sk-panel); box-shadow: 0 0 0 2px var(--sk-accent); backdrop-filter: none; }
-  .app-shell .save-state { flex: none; margin: 0 0 0 2px; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font: 400 11.5px/1 var(--ui-font); white-space: nowrap; }
+  .app-shell .save-state { flex: none; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font: 400 12px/1 var(--ui-font); white-space: nowrap; }
   .app-shell .save-state > span:not(.saving-spinner) { width: 6px; height: 6px; border-radius: 50%; background: var(--sk-c2); }
-  .app-shell .save-state.error { color: var(--accent-text); font-weight: 500; }
-  .app-shell .save-state.error > span { background: var(--sk-accent); }
-  .app-shell .topbar-actions { margin-left: auto; flex: none; display: flex; align-items: center; gap: 10px; pointer-events: none; }
-
-  /* The omnibar's slim bar (F-072): top centre of the window, centred on the window rather than on whatever sits beside it. */
-  .app-shell { --omni-w: clamp(200px, 22vw, 320px); }
-  .app-shell .omni-slot { position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
-  @media (min-width: 801px) { .app-shell .omni-slot { left: calc(50% - (var(--topbar-left) - 16px) / 2); } } /* (still centred on the window, though the top bar now starts after the notes button) */
-  .app-shell .search-button {
-    width: var(--omni-w); height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border-radius: 999px; color: var(--ui-muted);
-    overflow: hidden; white-space: nowrap; cursor: text; transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+  .app-shell .save-state.error { color: var(--sk-danger); font-weight: 500; }
+  .app-shell .save-state.error > span { background: var(--sk-danger); }
+  .app-shell .pill-more {
+    width: 30px; height: 30px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ink-soft); cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
   }
-  .app-shell .search-button span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: left; font: 400 13.5px/1 var(--ui-font); }
-  .app-shell .search-button svg { width: 16px; height: 16px; flex: none; }
-  .app-shell .search-button:hover { border-color: color-mix(in srgb, var(--sk-accent) 45%, var(--glass-border)); }
-  .app-shell .search-button:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
-  .app-shell .search-button kbd { color: var(--ui-muted); }
-  @media (min-width: 801px) { .app-shell .topbar-title { max-width: calc(50% - var(--omni-w) / 2 - 14px); } }
+  .app-shell .pill-more:hover, .app-shell .pill-more[aria-expanded="true"] { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .pill-more:focus-visible { outline: none; box-shadow: var(--ring); }
+  .app-shell .pill-more svg { width: 18px; height: 18px; }
+  .app-shell .topbar-actions { margin-left: auto; flex: none; display: flex; align-items: center; gap: 8px; pointer-events: none; }
 
-  .app-shell .glass-button, .app-shell .properties-trigger {
+  /* Top right: Focus beside the search pill (the omnibar's bar, F-072). */
+  .app-shell { --omni-w: clamp(160px, 12vw, 190px); }
+  .app-shell :is(.search-button, .focus-pill) {
+    height: 36px; display: flex; align-items: center; gap: 8px; border-radius: 999px; color: var(--ui-muted); white-space: nowrap;
+    transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+  }
+  .app-shell .search-button { width: var(--omni-w); padding: 0 8px 0 12px; overflow: hidden; cursor: text; }
+  .app-shell .focus-pill { padding: 0 10px 0 12px; color: var(--ink-soft); font: 500 13px/1 var(--ui-font); cursor: pointer; }
+  .app-shell .search-button span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: left; font: 400 13.5px/1 var(--ui-font); }
+  .app-shell :is(.search-button, .focus-pill) svg { width: 16px; height: 16px; flex: none; }
+  .app-shell :is(.search-button, .focus-pill):hover { border-color: color-mix(in srgb, var(--sk-accent) 45%, var(--sk-edge)); }
+  .app-shell :is(.search-button, .focus-pill):focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
+
+  .app-shell .glass-button {
     width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; padding: 0; border-radius: 11px; color: var(--ink-soft); cursor: pointer;
     transform: none; will-change: auto; transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out), border-color 140ms ease;
   }
-  .app-shell .glass-button:hover, .app-shell .properties-trigger:hover { background: var(--glass); color: var(--sk-ink); border-color: color-mix(in srgb, var(--sk-ink) 22%, var(--glass-border)); box-shadow: var(--sk-shadow); }
-  .app-shell .glass-button:active, .app-shell .properties-trigger:active { transform: scale(.94); }
-  .app-shell .glass-button:focus-visible, .app-shell .properties-trigger:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
-  .app-shell .properties-trigger.active, .app-shell .share-button[aria-expanded="true"] { color: var(--accent-text); background: var(--sk-accent-soft); border-color: var(--sk-accent); }
+  .app-shell .glass-button:hover { background: var(--glass); color: var(--sk-ink); border-color: color-mix(in srgb, var(--sk-ink) 22%, var(--glass-border)); box-shadow: var(--sk-shadow); }
+  .app-shell .glass-button:active { transform: scale(.94); }
+  .app-shell .glass-button:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
   .app-shell .glass-button svg { width: 18px; height: 18px; }
 
   .app-shell .agent-chip {
-    order: -1; height: 36px; margin: 0; padding: 0 14px 0 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px;
+    height: 36px; margin: 0; padding: 0 14px 0 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px;
     font-size: 12.5px; color: var(--ink-soft); max-width: 260px;
+  }
+  /* Top left, its own small island just right of the notes button; never under the centred title pill (which starts at 30vw or later). */
+  @media (min-width: 801px) {
+    .app-shell { --chip-left: 52px; }
+    :root.chrome-mac .app-shell { --chip-left: calc(var(--mac-lights) + var(--mac-bar) - 8px); }
+    .app-shell .agent-chip { margin-left: var(--chip-left); max-width: calc(30vw - var(--chip-left) - 24px); }
   }
   .app-shell .agent-chip::before { width: 7px; height: 7px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--sk-c2) 22%, transparent); }
 
   .app-shell .share-wrap { position: relative; }
   .app-shell .share-menu {
     position: absolute; right: 0; top: calc(100% + 8px); width: 232px; padding: 6px; border-radius: 14px; z-index: 40; background: var(--glass-solid);
-    transform-origin: top right; animation: menu-in 160ms var(--ease-out);
+    animation: menu-in 120ms ease;
   }
-  @keyframes menu-in { from { opacity: 0; transform: scale(.96) translateY(-4px); } }
+  @keyframes menu-in { from { opacity: 0; } }
   .app-shell .share-menu[hidden] { display: none; }
   .app-shell .share-menu button {
     width: 100%; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 9px; background: transparent;
@@ -408,13 +413,16 @@
   /* ---------- Medium windows ---------- */
   @media (max-width: 1100px) {
     .app-shell .ink-swatch, .app-shell .dock-history .prettify-button { display: none; }
-    .app-shell .crumb { display: none; }
+  }
+  @media (max-width: 1100px) {
+    .app-shell .focus-pill { width: 36px; padding: 0; justify-content: center; }
+    .app-shell .focus-pill span, .app-shell .focus-pill kbd { display: none; }
   }
   @media (max-width: 960px) {
     .app-shell { --omni-w: 40px; }
     .app-shell .search-button { padding: 0; justify-content: center; cursor: pointer; }
     .app-shell .search-button span, .app-shell .search-button kbd { display: none; }
-    .app-shell .agent-chip { font-size: 0; gap: 0; padding: 0 13px; }
+    .app-shell .agent-chip { font-size: 0; gap: 0; padding: 0 13px; } /* just the pulsing dot on smaller windows, on purpose: presence stays visible and the bar calm; the full text is its aria-label and tooltip */
     .app-shell .page-minimap .mini-grid { display: none; }
   }
   @media (min-width: 801px) and (max-width: 1340px) {
@@ -441,22 +449,19 @@
     .app-shell .nav-new-note { right: 58px; }
     .app-shell .nav-row .notebook-count { margin-right: 62px; }
 
-    .app-shell .topbar { inset: 8px 8px auto 8px; height: 40px; gap: 8px; }
+    .app-shell .topbar { --h: 40px; inset: 8px 8px auto 8px; }
     .app-shell .glass-button.sidebar-toggle { display: grid; flex: 0 0 40px; }
-    .app-shell .topbar-title {
-      flex: 1 1 auto; height: 40px; padding: 0 6px 0 4px; border-radius: 13px; background: var(--glass); border: 1px solid var(--glass-border);
-      box-shadow: var(--sk-shadow); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
-    }
-    .app-shell .crumb { display: none; }
-    .app-shell .note-title { min-width: 0; flex: 1 1 auto; width: auto; max-width: none; font-size: 17px; field-sizing: fixed; }
-    .app-shell .save-state { font-size: 0; gap: 0; margin-right: 6px; }
+    .app-shell .topbar-title { flex: 1 1 auto; padding-left: 12px; }
+    .app-shell .note-title { min-width: 0; flex: 1 1 auto; width: auto; field-sizing: fixed; }
+    .app-shell .save-state { font-size: 0; gap: 0; }
     .app-shell .save-state.error { font-size: 11px; gap: 6px; }
     .app-shell .topbar-actions { gap: 6px; }
     .app-shell .agent-chip { height: 40px; padding: 0 13px; margin: 0; max-width: none; }
-    .app-shell .omni-slot { position: static; translate: none; }
-    .app-shell .search-button { height: 40px; }
-    .app-shell .glass-button, .app-shell .properties-trigger { width: 40px; height: 40px; flex-basis: 40px; margin-left: 0; }
-    .app-shell .share-menu { right: -48px; }
+    .app-shell :is(.search-button, .focus-pill) { height: 40px; }
+    .app-shell .focus-pill { width: 40px; }
+    .app-shell .pill-more { width: 40px; height: 40px; }
+    .app-shell .glass-button { width: 40px; height: 40px; flex-basis: 40px; margin-left: 0; }
+    .app-shell .share-menu { right: -96px; }
 
     .app-shell .tool-dock {
       left: 50%; max-width: calc(100vw - 24px); height: 58px; bottom: max(14px, env(safe-area-inset-bottom)); padding: 0 8px; overflow-x: auto; overflow-y: hidden;
@@ -494,9 +499,6 @@
     .app-shell .mobile-speak-button { background: var(--accent-fill); color: var(--sk-accent-ink); border-color: var(--accent-fill) !important; white-space: nowrap; }
     .app-shell .mobile-capture-controls { bottom: max(14px, env(safe-area-inset-bottom)); }
   }
-  @media (max-width: 380px) {
-    .app-shell .share-wrap { display: none; }
-  }
   @media (max-width: 360px) {
     .app-shell .mobile-connect-button { display: none; }
   }
@@ -510,7 +512,7 @@
   /* ---------- Omnibar panel (F-072): the bar itself unrolls downward, no dim. It sits outside .app-shell. ---------- */
   .search-backdrop { position: fixed; inset: 0; z-index: 100; }
   .spotlight {
-    position: absolute; top: var(--omni-top, 14px); left: var(--omni-x, 50%); translate: -50% 0; width: min(560px, calc(100vw - 32px)); max-height: min(440px, calc(100dvh - 24px));
+    position: absolute; top: var(--omni-top, 14px); left: 50%; translate: -50% 0; width: min(560px, calc(100vw - 32px)); max-height: min(440px, calc(100dvh - 24px));
     display: flex; flex-direction: column; overflow: hidden; border-radius: 20px; border: 1px solid var(--glass-border); background: var(--sk-panel); color: var(--sk-ink);
     box-shadow: 0 2px 4px color-mix(in srgb, var(--sk-ink) 8%, transparent), 0 24px 60px -16px color-mix(in srgb, var(--sk-ink) 38%, transparent);
     transform-origin: 50% 18px; opacity: 0; scale: .96; transition: opacity 120ms ease, scale 180ms var(--ease-spring);
@@ -566,7 +568,7 @@
     .app-shell .quick-note:active, .app-shell .tool-button:active, .app-shell .glass-button:active, .app-shell .voice-button:active { transform: none; }
   }
   @media (prefers-reduced-transparency: reduce) {
-    .app-shell .topbar-title, .app-shell .search-button, .app-shell .glass-button, .app-shell .agent-chip, .app-shell .tool-dock, .app-shell .page-minimap,
+    .app-shell .glass-button, .app-shell .tool-dock, .app-shell .page-minimap,
     .app-shell .zoom-control, .app-shell .sidebar { background: var(--glass-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
   }
   @media (prefers-contrast: more) {
@@ -599,17 +601,14 @@
   .app-shell .mac-drag-strip { display: none; }
   :root.chrome-mac { --mac-lights: 78px; --mac-bar: 36px; }
   :root.chrome-mac .app-shell .mac-drag-strip { display: block; position: absolute; left: 0; right: 0; top: 0; height: calc(var(--mac-bar) + 4px); z-index: 9; }
-  :root.chrome-mac .app-shell .topbar { top: 4px; height: var(--mac-bar); }
-  :root.chrome-mac .app-shell .topbar-title { height: var(--mac-bar); }
+  :root.chrome-mac .app-shell .topbar { --h: var(--mac-bar); top: 4px; }
   @media (min-width: 801px) {
     :root.chrome-mac .app-shell .glass-button.sidebar-toggle { top: 4px; left: var(--mac-lights); width: var(--mac-bar); height: var(--mac-bar); }
-    :root.chrome-mac .app-shell { --topbar-left: calc(var(--mac-lights) + var(--mac-bar) + 8px); }
   }
   :root.chrome-mac-fullscreen .app-shell .mac-drag-strip { display: none; }
   @media (max-width: 800px) {
-    :root.chrome-mac .app-shell .topbar { top: 4px; left: calc(var(--mac-lights) - 4px); height: var(--mac-bar); }
+    :root.chrome-mac .app-shell .topbar { --h: var(--mac-bar); top: 4px; left: calc(var(--mac-lights) - 4px); }
     :root.chrome-mac .app-shell .glass-button.sidebar-toggle { flex-basis: 36px; width: 36px; height: 36px; }
-    :root.chrome-mac .app-shell .topbar-title { height: var(--mac-bar); }
     :root.chrome-mac-fullscreen .app-shell .topbar { left: 8px; }
   }
 }

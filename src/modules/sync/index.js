@@ -20,6 +20,7 @@ export function mountAgentSync(host) {
   chip.hidden = true
   chip.setAttribute('role', 'status')
   chip.setAttribute('aria-live', 'polite')
+  const chipLabel = chip.appendChild(document.createElement('span')) // its own box, so a long name ends in an ellipsis
   ;(host.chipAnchor || host.saveStateElement).before(chip)
 
   // The flag is a DOM overlay, never a canvas object, so it is not saved or printed.
@@ -37,7 +38,7 @@ export function mountAgentSync(host) {
   function renderChip() {
     const text = notice || presence?.label || ''
     chip.hidden = !text
-    chip.textContent = text
+    chipLabel.textContent = text
     chip.title = text
     chip.setAttribute('aria-label', text)
     chip.classList.toggle('is-notice', Boolean(notice))
