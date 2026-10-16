@@ -522,29 +522,7 @@ class VoiceRuntime:
         return self.root / "engine.pid"
 
     def _reap_stale_engine(self) -> None:
-        """Kill an engine an earlier run left behind (the pid file says which); never any other process."""
-        try:
-            record = json.loads(self.pid_path.read_text(encoding="utf-8"))
-            pid, binary = int(record["pid"]), str(record["binary"])
-        except (OSError, ValueError, KeyError, TypeError):
-            self.pid_path.unlink(missing_ok=True)
-            return
-        try:
-            command = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "args="], capture_output=True, text=True, timeout=5).stdout
-        except (OSError, subprocess.SubprocessError):
-            command = ""
-        if binary in command:  # the same pid could now belong to something else
-            for sig in (signal.SIGTERM, signal.SIGKILL):
-                try:
-                    os.kill(pid, sig)
-                except OSError:
-                    break
-                deadline = time.monotonic() + 3
-                while time.monotonic() < deadline and _alive(pid):
-                    time.sleep(0.05)
-                if not _alive(pid):
-                    break
-        self.pid_path.unlink(missing_ok=True)
+        reap_stale_process(self.pid_path)
 
     def _popen(self, port: int) -> subprocess.Popen:
         with self._lock:
@@ -721,6 +699,32 @@ def _sha256(path: Path) -> str:
         while block := handle.read(1024 * 1024):
             digest.update(block)
     return digest.hexdigest()
+
+
+def reap_stale_process(pid_path: Path) -> None:
+    """Kill an engine an earlier run left behind (the pid file says which); never any other process."""
+    try:
+        record = json.loads(pid_path.read_text(encoding="utf-8"))
+        pid, binary = int(record["pid"]), str(record["binary"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pid_path.unlink(missing_ok=True)
+        return
+    try:
+        command = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "args="], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        command = ""
+    if binary in command:  # the same pid could now belong to something else
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                break
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline and _alive(pid):
+                time.sleep(0.05)
+            if not _alive(pid):
+                break
+    pid_path.unlink(missing_ok=True)
 
 
 def _alive(pid: int) -> bool:

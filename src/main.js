@@ -13,6 +13,7 @@ import { api, downloadWorkspaceFile } from './core/api.js'
 import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
 import { nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
+import { createMeaningClient, describeMeaning } from './modules/search/meaning-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { mountPageModule } from './modules/page.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
@@ -304,12 +305,22 @@ document.querySelector('#app').innerHTML = `
       <section class="settings-section" id="settings-voice-section" aria-labelledby="settings-voice-label">
         <p class="settings-section-label" id="settings-voice-label">Voice</p>
         <div class="setting-row"><span><i data-lucide="mic"></i>Dictation</span><small id="voice-setup-headline">Checking…</small></div>
-        <progress id="voice-setup-progress" max="100" value="0" aria-label="Voice download progress" hidden></progress>
+        <progress class="setup-progress" id="voice-setup-progress" max="100" value="0" aria-label="Voice download progress" hidden></progress>
         <p class="portability-help" id="voice-setup-detail" role="status" aria-live="polite"></p>
         <div class="portability-actions">
           <button id="voice-download" hidden><i data-lucide="download"></i><span></span></button>
           <button id="voice-cancel" hidden><i data-lucide="x"></i><span></span></button>
           <button id="voice-remove" hidden><i data-lucide="trash-2"></i><span></span></button>
+        </div>
+      </section>
+      <section class="settings-section" id="settings-meaning-section" aria-labelledby="settings-meaning-label">
+        <p class="settings-section-label" id="settings-meaning-label">Search by meaning</p>
+        <div class="setting-row"><span><i data-lucide="search"></i>Find by meaning</span><small id="meaning-setup-headline">Checking…</small></div>
+        <progress class="setup-progress" id="meaning-setup-progress" max="100" value="0" aria-label="Search by meaning download progress" hidden></progress>
+        <p class="portability-help" id="meaning-setup-detail" role="status" aria-live="polite"></p>
+        <div class="portability-actions">
+          <button id="meaning-download" hidden><i data-lucide="download"></i><span></span></button>
+          <button id="meaning-cancel" hidden><i data-lucide="x"></i><span></span></button>
         </div>
       </section>
       <section class="settings-section">
@@ -2287,19 +2298,22 @@ async function loadCapabilitySettings() {
 const voiceClient = createVoiceClient(api)
 let voicePoll = null
 
-function renderVoiceSetup(status) {
-  const view = describeVoice(status)
-  document.querySelector('#voice-setup-headline').textContent = view.headline
-  document.querySelector('#voice-setup-detail').textContent = view.detail
-  const progress = document.querySelector('#voice-setup-progress')
+// One Settings row for an optional download: its headline, bar, sentence and buttons are `#<name>-setup-*` and `#<name>-download|cancel|remove`.
+function renderSetupRow(name, view) {
+  document.querySelector(`#${name}-setup-headline`).textContent = view.headline
+  document.querySelector(`#${name}-setup-detail`).textContent = view.detail
+  const progress = document.querySelector(`#${name}-setup-progress`)
   progress.hidden = view.percent === null
   if (view.percent !== null) progress.value = view.percent
-  for (const [id, label] of [['#voice-download', view.download], ['#voice-cancel', view.cancel], ['#voice-remove', view.remove]]) {
-    const button = document.querySelector(id)
+  for (const [action, label] of [['download', view.download], ['cancel', view.cancel], ['remove', view.remove]]) {
+    const button = document.querySelector(`#${name}-${action}`)
+    if (!button) continue
     button.hidden = !label
     button.querySelector('span').textContent = label || ''
   }
 }
+
+const renderVoiceSetup = (status) => renderSetupRow('voice', describeVoice(status))
 
 async function refreshVoiceSetup() {
   clearTimeout(voicePoll)
@@ -2324,6 +2338,34 @@ async function voiceSetupAction(action) {
     return
   }
   void refreshVoiceSetup()
+}
+
+const meaningClient = createMeaningClient(api)
+let meaningPoll = null
+
+const renderMeaningSetup = (status) => renderSetupRow('meaning', describeMeaning(status))
+
+async function refreshMeaningSetup() {
+  clearTimeout(meaningPoll)
+  let status
+  try {
+    status = await meaningClient.status()
+  } catch {
+    renderMeaningSetup({ state: 'error', error: 'The local server did not answer.' })
+    return
+  }
+  renderMeaningSetup(status)
+  if (status.state === 'downloading') meaningPoll = setTimeout(refreshMeaningSetup, 1000)
+}
+
+async function meaningSetupAction(action) {
+  try {
+    renderMeaningSetup(await action(meaningClient))
+  } catch (error) {
+    renderMeaningSetup({ state: 'error', error: error.message })
+    return
+  }
+  void refreshMeaningSetup()
 }
 
 function openVoiceSettings() {
@@ -3493,8 +3535,10 @@ document.querySelector('#top-properties').addEventListener('click', () => {
 })
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#top-properties').addEventListener('click', () => {
-  if (elements.properties.classList.contains('open')) void refreshVoiceSetup()
+  if (elements.properties.classList.contains('open')) { void refreshVoiceSetup(); void refreshMeaningSetup() }
 })
+document.querySelector('#meaning-download').addEventListener('click', () => void meaningSetupAction((client) => client.install()))
+document.querySelector('#meaning-cancel').addEventListener('click', () => void meaningSetupAction((client) => client.cancel()))
 document.querySelector('#voice-download').addEventListener('click', () => void voiceSetupAction((client) => client.install()))
 document.querySelector('#voice-cancel').addEventListener('click', () => void voiceSetupAction((client) => client.cancel()))
 document.querySelector('#voice-remove').addEventListener('click', () => void voiceSetupAction((client) => client.remove()))

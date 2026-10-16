@@ -19,6 +19,7 @@ Design language: web=Personal Note skins (Crayon, Paper, Night in `src/skins.css
 - `services.py::NoteService` is the only owner of canonical SQLite reads and writes.
 - `portability.py` projects storage into backup and readable export formats.
 - `src/modules/mindmap.js` lazy-loads `src/mindmap/` only when a mind-map note opens.
+- `search_runtime.py` owns the optional search-by-meaning download and its loopback embedding engine; it never blocks startup or saves (F-079 indexes, F-080 searches).
 - `src/modules/voice/` owns voice transcript and capture adapters. It must never persist audio.
 
 These are internal contracts, not a public plugin SDK.
@@ -32,7 +33,7 @@ These are internal contracts, not a public plugin SDK.
 5. Local transcription failure must be visible and must leave the note intact.
 6. Backup JSON is lossless and versioned (version 3 adds Inbox notes, which have no notebook, so an older build refuses it rather than misfiling them; version 2 carries JSON Canvas with pictures inline; versions 1 and 2 still import). Import, including an Obsidian vault import, is validated, transactional, and merge-only; it never deletes or overwrites existing notes.
 7. Markdown export (the reading-order projection) is explicitly lossy and never fetches remote assets. Pictures and ink/shape SVGs are content-addressed files `media/<sha256>.<ext>` beside the database, never inside a note row.
-8. Local agents (Claude Code and similar) are first-class clients through `bin/personal-note` (`personal_note_cli.py`), which goes through `NoteService` with revision checks. There is still no model worker, automatic suggestions, chat, sync, authentication, or remote agent endpoint; agents act only when they run the CLI.
+8. Local agents (Claude Code and similar) are first-class clients through `bin/personal-note` (`personal_note_cli.py`), which goes through `NoteService` with revision checks. There is one optional local embedding worker, for search by meaning (`search_runtime.py`: the llama.cpp server and EmbeddingGemma 2, downloaded on request, started on first use, loopback only, nothing sent off the machine). There is still no generative model worker, automatic suggestions, chat, sync, authentication, or remote agent endpoint; agents act only when they run the CLI.
 9. `src/workspace-theme.css` is screen-only. Do not change saved canvas appearance or print output when changing app chrome.
 
 ## Commands
@@ -43,7 +44,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run dev
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox -v
+python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime -v
 npm run benchmark:bundle
 ```
 
