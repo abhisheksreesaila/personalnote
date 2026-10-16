@@ -2858,10 +2858,8 @@ function renderOmni() {
   const searchesNotes = omni.filter === 'All' || omni.filter === 'Notes'
   omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: state.notebooks, actions: omniActions(), wordHits, meaningHits: omni.meaningHits, wordsPending: omni.pending })
   omni.items = flatten(omni.groups)
-  const hasMeaning = omni.groups.some((group) => group.key === 'meaning')
   const kept = omni.items.findIndex((item) => omniKey(item) === keep)
   if (kept >= 0) omni.sel = kept
-  if (hasMeaning && keep.startsWith('create:')) omni.sel = 0 // the meaning matches landed under a selected New note: the selection goes to the best of them
   const onlyCreate = omni.items.length === 1 && omni.items[0].kind === 'create'
   const waiting = (omni.pending || omni.meaningPending) && searchesNotes // a search is still out: no "nothing" yet
   document.querySelector('#omni-chips').innerHTML = FILTERS.map((name) => `<button type="button" class="omni-chip" data-omni-chip="${name}" aria-pressed="${name === omni.filter}">${name}</button>`).join('')

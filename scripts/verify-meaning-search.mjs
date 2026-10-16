@@ -93,6 +93,7 @@ try {
   await page.waitForSelector('#search-backdrop.open')
   await page.keyboard.type('lighthouse', { delay: 40 })
   await page.waitForSelector('.omni-group[aria-label="In your words"]', { timeout: 5000 })
+  await page.waitForFunction(() => document.querySelector('.omni-row')?.getBoundingClientRect().top > 10) // laid out
   const yBefore = await page.locator('.omni-row').first().evaluate((row) => row.getBoundingClientRect().top)
   await page.waitForSelector('.omni-group[aria-label="By meaning"]', { timeout: 5000 })
   const yAfter = await page.locator('.omni-row').first().evaluate((row) => row.getBoundingClientRect().top)
@@ -152,11 +153,26 @@ try {
   await page.keyboard.type('nomatch')
   await page.waitForSelector('.omni-group[aria-label="By meaning"]', { timeout: 5000 })
   check('with only meaning matches, they are listed first and New note last', (await titles()).join() === 'Tide tables,Kitchen shelves,New note \u201cnomatch\u201d', (await titles()).join())
-  check('and the first meaning match is selected, not New note', (await selected()) === 'Tide tables', await selected())
+  check('New note was already selected when the meaning matches arrived, and it stays selected', (await selected()) === 'New note \u201cnomatch\u201d', await selected())
   await page.keyboard.press('ArrowUp')
-  check('ArrowUp from the top wraps to New note', (await selected()) === 'New note \u201cnomatch\u201d', await selected())
+  check('ArrowUp from New note reaches the meaning matches, last one first', (await selected()) === 'Kitchen shelves', await selected())
+  await page.keyboard.press('ArrowUp')
+  check('and on up to the best one', (await selected()) === 'Tide tables', await selected())
   await page.keyboard.press('Escape')
   await closed()
+
+  // ---- Enter with New note selected, after the meaning matches arrived, creates the note (it does not open a meaning match) ----
+  const before = await page.evaluate(() => window.__personalNote.state.activeNoteId)
+  await page.keyboard.press('Control+k')
+  await page.waitForSelector('#search-backdrop.open')
+  await page.keyboard.type('nomatch')
+  await page.waitForSelector('.omni-group[aria-label="By meaning"]', { timeout: 5000 })
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => { const st = window.__personalNote.state; return st.notes.find((n) => n.id === st.activeNoteId)?.title === 'nomatch' }, null, { timeout: 8000 }).catch(() => {})
+  const opened = await page.evaluate(() => { const st = window.__personalNote.state; return { made: st.notes.filter((n) => n.title === 'nomatch').length, active: st.notes.find((n) => n.id === st.activeNoteId)?.title } })
+  check('Enter creates a note titled with the query and opens it; it does not open a meaning match', opened.made === 1 && opened.active === 'nomatch' && (await page.evaluate(() => window.__personalNote.state.activeNoteId)) !== before, JSON.stringify(opened))
+  await closed()
+  await page.waitForTimeout(1500)
 
   // ---- an answer after the 6 s wait is dropped: it never swaps the list under the cursor ----
   requests.length = 0
