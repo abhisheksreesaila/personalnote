@@ -32,6 +32,7 @@ from services import (
     WorkspaceImportError,
 )
 from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
+from meaning_index import MeaningIndexer
 from search_runtime import SearchError, SearchRuntime
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
@@ -73,6 +74,12 @@ def default_voice_runtime() -> VoiceRuntime:
     """Voice lives in the app-data folder (PERSONAL_NOTE_VOICE_DIR overrides it), never beside the notes."""
     folder = os.environ.get("PERSONAL_NOTE_VOICE_DIR")
     return VoiceRuntime(root=Path(folder) if folder else app_data_dir() / "voice", version=app_version(ROOT))
+
+
+def close_search(app) -> None:
+    """The app is closing: stop the engine first, so a batch waiting on it fails at once, then the thread that was waiting."""
+    app.state.search.shutdown()
+    app.state.indexer.stop()
 
 
 def default_search_runtime(database_path: Path) -> SearchRuntime:
@@ -171,13 +178,17 @@ def create_app(
     """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
     data_path = Path(database_path or default_database_path())
     speedtest_process: dict = {}  # the speed test this app started: one at a time
-    service = NoteService(data_path, secure_platform=secure_platform)
+    search = search or default_search_runtime(data_path)
+    service = NoteService(data_path, secure_platform=secure_platform, embedder=search)
     service.keyring.set_idle_timeout(secure_idle_seconds())
     # FastHTML writes a session key file; keep it beside the database, not in the (possibly read-only) cwd.
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service
     app.state.voice = voice or default_voice_runtime()
-    app.state.search = search or default_search_runtime(data_path)
+    app.state.search = search
+    app.state.indexer = MeaningIndexer(service, search)
+    if not speedtest_instance:
+        app.state.indexer.start()  # a quiet thread: it embeds only when the download is installed, never on a request
     if bound_host is not None and host_name(bound_host) in LOOPBACK_NAMES:
         app.add_middleware(LoopbackHostMiddleware)
 
@@ -262,7 +273,7 @@ def create_app(
 
     @app.get("/api/search-meaning/status")
     def search_meaning_status():
-        return JSONResponse(app.state.search.status())
+        return JSONResponse(app.state.search.status() | {"index": app.state.indexer.status()})
 
     @app.post("/api/search-meaning/install")
     def search_meaning_install(request):

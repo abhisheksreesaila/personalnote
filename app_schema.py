@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS secure_keys (
     is_primary INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Derived (F-079): one meaning vector per non-secure note. Never in backup or export; rebuilt when missing or when the model changes.
+CREATE TABLE IF NOT EXISTS note_embeddings (
+    note_id INTEGER PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+    revision INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    dims INTEGER NOT NULL,
+    vector BLOB NOT NULL,
+    text_hash TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE INDEX IF NOT EXISTS idx_workspace_changes_resource
 ON workspace_changes(resource_kind, resource_id, sequence);
 """

@@ -647,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
             check_profile_free(chromium_profile)
         if not args.no_build and not getattr(sys, "frozen", False):
             ensure_frontend_built()
-        from routes import create_app
+        from routes import close_search, create_app
 
         app = create_app(database, bound_host=HOST, speedtest_instance=bool(speedtest_dir), desktop_host=engine != "serve")
         server = LocalServer(app, preferred_port=(args.port or 0) if args.serve else 0 if speedtest_dir else PREFERRED_PORT)
@@ -697,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
         clear_instance(database)
         if not speedtest_dir:
             app.state.voice.shutdown()  # (the speed test never started the voice engine)
-        app.state.search.shutdown()  # the search-by-meaning engine, if something started it
+        close_search(app)  # the search-by-meaning engine, if something started it, and the thread that feeds it
         server.stop()
         if speedtest_dir is not None:
             finish_speedtest(speedtest_dir, started)

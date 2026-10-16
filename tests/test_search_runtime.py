@@ -66,7 +66,25 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.allowed():
             return
-        asked = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["input"]
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path == "/tokenize" and os.environ.get("FAKE_TOKENIZE") == "fail":
+            self.send_error(500)
+            return
+        if self.path != "/tokenize" and os.environ.get("FAKE_ENGINE_MODE") == "hang":  # an engine that never answers an embedding
+            import time
+            time.sleep(120)
+        if self.path == "/tokenize":  # one token per character, or one in all when FAKE_TOKENS=few (a tokenizer that undercounts)
+            self.send({{"tokens": [0] if os.environ.get("FAKE_TOKENS") == "few" else [0] * len(body["content"])}})
+            return
+        asked = body["input"]
+        too_long = [item for item in asked if len(item) > 2048]  # the real engine answers 500 for an input over its 2048 tokens
+        if too_long:
+            data = json.dumps({{"error": {{"code": 500, "message": "input (%d tokens) is too large to process. increase the physical batch size" % len(too_long[0]), "type": "server_error"}}}}).encode()
+            self.send_response(500)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if log:
             with open(log, "a") as handle:
                 handle.write(json.dumps(asked) + "\\n")
@@ -455,7 +473,7 @@ class EngineTests(SearchTestCase):
     def test_the_engine_is_started_again_on_the_next_use_after_a_stop(self):
         runtime = self.ready()
         runtime.embed(["x"], "query")
-        runtime.shutdown()
+        runtime.stop_engine()
         self.assertEqual(len(runtime.embed(["y"], "query")), 1)
 
     def test_an_engine_that_will_not_start_is_reported_and_not_retried_at_once(self):
@@ -511,7 +529,7 @@ class EngineTests(SearchTestCase):
         runtime = self.ready()
         runtime.embed(["x"], "query")
         first = runtime._api_key
-        runtime.shutdown()
+        runtime.stop_engine()
         runtime.embed(["x"], "query")
         self.assertNotEqual(runtime._api_key, first)
 
@@ -522,6 +540,159 @@ class EngineTests(SearchTestCase):
         self.assertTrue(endpoint.startswith("http://127.0.0.1:"))
         with urllib.request.urlopen(f"{endpoint}/health", timeout=3) as response:
             self.assertEqual(json.load(response), {"status": "ok"})
+
+    def test_an_over_long_document_is_cut_to_fit_the_engine_context_and_the_rest_still_embeds(self):
+        runtime = self.ready()
+
+        vectors = runtime.embed([("Long", "a" * 6000), ("Short", "tea")], "document")
+
+        sent = self.asked()[0]
+        self.assertEqual(len(vectors), 2)
+        self.assertTrue(sent[0].startswith("title: Long | text: aaaa"))
+        self.assertTrue(1900 <= len(sent[0]) <= 2000, len(sent[0]))  # the engine reads 2048 tokens: cut to just under, not to a fifth
+        self.assertEqual(sent[1], "title: Short | text: tea")
+
+    def test_an_over_long_query_is_cut_too(self):
+        runtime = self.ready()
+        runtime.embed(["q" * 5000], "query")
+        self.assertLessEqual(len(self.asked()[0][0]), 2000)
+
+    def test_dense_text_that_the_engine_counts_one_token_per_character_never_reaches_it_over_budget(self):
+        runtime = self.ready()
+        runtime.embed([("CJK", "漢" * 6000), ("Emoji", "😀" * 6000)], "document")
+        self.assertTrue(all(len(prompt) <= 2000 for prompt in self.asked()[0]))
+
+    def test_an_engine_that_refuses_an_input_is_told_apart_from_one_that_is_down(self):
+        runtime = self.ready()
+        with mock.patch.dict(os.environ, {"FAKE_TOKENS": "few"}):  # a tokenizer that undercounts lets an over-long input through
+            runtime.stop_engine()
+            with self.assertRaises(search_runtime.SearchInputError) as raised:
+                runtime.embed([("Long", "a" * 6000)], "document")
+        self.assertIn("too long", str(raised.exception))
+        runtime.stop_engine()
+        with mock.patch.object(runtime, "_ensure_started", return_value=1):  # nothing listens on port 1
+            with self.assertRaises(SearchError) as down:
+                runtime.embed(["x"], "query")
+        self.assertNotIsInstance(down.exception, search_runtime.SearchInputError)
+
+    def test_the_engine_gets_a_limited_number_of_threads_so_typing_keeps_the_machine(self):
+        for cores, expected in ((16, 4), (8, 4), (4, 2), (2, 1), (1, 1), (None, 1)):
+            with mock.patch("os.cpu_count", return_value=cores):
+                command = SearchRuntime(root=self.root, key=KEY)._command(1234)
+            self.assertEqual(command[command.index("-t") + 1], str(expected), f"{cores} cores")
+        self.assertEqual(SearchRuntime(root=self.root, key=KEY, threads=3)._command(1)[SearchRuntime(root=self.root, key=KEY, threads=3)._command(1).index("-t") + 1], "3")
+
+    def test_shutdown_is_final_and_a_start_racing_it_never_leaves_an_engine(self):
+        runtime = self.ready()
+        real_choose = runtime._choose_port
+
+        def shut_down_while_starting():
+            runtime.shutdown()  # the app is closing while a background embed is just starting the engine
+            return real_choose()
+
+        with mock.patch.object(runtime, "_choose_port", shut_down_while_starting):
+            with self.assertRaisesRegex(SearchError, "closing"):
+                runtime.embed(["x"], "query")
+        self.assertFalse(runtime.status()["running"])
+        self.assertFalse((self.root / "engine.pid").exists())
+        with self.assertRaisesRegex(SearchError, "closing"):
+            runtime.embed(["y"], "query")
+        self.assertFalse(runtime.status()["running"])
+
+    def test_a_racing_start_that_gets_past_the_check_is_stopped_as_soon_as_it_registers(self):
+        runtime = self.ready()
+        real_ready = runtime._await_ready
+
+        def shut_down_before_ready(process, port):
+            runtime.shutdown()
+            real_ready(process, port)
+
+        with mock.patch.object(runtime, "_await_ready", shut_down_before_ready):
+            with self.assertRaises(SearchError):
+                runtime.embed(["x"], "query")
+        self.assertFalse(runtime.status()["running"])
+
+    def test_an_engine_nobody_has_used_for_the_idle_time_is_stopped_and_starts_again_on_the_next_use(self):
+        now = [1000.0]
+        runtime = self.ready(clock=lambda: now[0])
+        runtime.embed(["x"], "query")
+        pid = json.loads((self.root / "engine.pid").read_text())["pid"]
+
+        now[0] += 299
+        self.assertFalse(runtime.stop_if_idle(300))
+        self.assertTrue(runtime.status()["running"])
+        now[0] += 2
+        self.assertTrue(runtime.stop_if_idle(300))
+
+        self.assertFalse(runtime.status()["running"])
+        deadline = time.monotonic() + 5
+        while search_runtime.voice_runtime._alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(search_runtime.voice_runtime._alive(pid))
+        self.assertFalse(runtime.stop_if_idle(300), "nothing running: nothing to stop")
+        self.assertEqual(len(runtime.embed(["y"], "query")), 1)
+        self.assertTrue(runtime.status()["running"])
+
+    def test_using_the_engine_keeps_it_from_idling(self):
+        now = [1000.0]
+        runtime = self.ready(clock=lambda: now[0])
+        runtime.embed(["x"], "query")
+        now[0] += 250
+        runtime.embed(["y"], "query")
+        now[0] += 250
+        self.assertFalse(runtime.stop_if_idle(300))
+        self.assertTrue(runtime.status()["running"])
+
+    def test_when_the_engine_cannot_count_tokens_a_prompt_is_cut_by_bytes_and_keeps_its_prefix(self):
+        runtime = self.ready()
+        with mock.patch.dict(os.environ, {"FAKE_TOKENIZE": "fail"}):
+            runtime.stop_engine()
+            for filler in ("a", "漢", "😀"):
+                Path(self.log).write_text("")
+                runtime.embed([("Long", filler * 6000)], "document")
+                runtime.embed([filler * 6000], "query")
+                documents, queries = (self.asked()[0][0], self.asked()[1][0])
+                self.assertTrue(documents.startswith("title: Long | text: "), filler)
+                self.assertTrue(queries.startswith("task: search result | query: "), filler)
+                self.assertLessEqual(len(documents.encode()), 1800, filler)
+                self.assertLessEqual(len(queries.encode()), 1800, filler)
+                self.assertGreater(len(documents.encode()), 1700, "cut to the budget, not to nothing")
+
+    def test_the_engine_runs_at_low_priority_so_typing_keeps_the_machine(self):
+        runtime = self.ready()
+        runtime.embed(["x"], "query")
+        pid = json.loads((self.root / "engine.pid").read_text())["pid"]
+        self.assertGreaterEqual(os.getpriority(os.PRIO_PROCESS, pid), 10)
+
+    def test_on_a_mac_the_engine_is_started_as_a_background_task_when_taskpolicy_exists(self):
+        runtime = SearchRuntime(root=self.root, key="macos-arm64")
+        with mock.patch("shutil.which", return_value="/usr/sbin/taskpolicy"):
+            self.assertEqual(runtime._launch_prefix()[:2], ["/usr/sbin/taskpolicy", "-b"])
+        with mock.patch("shutil.which", return_value=None):
+            self.assertEqual(runtime._launch_prefix(), [])
+        self.assertEqual(SearchRuntime(root=self.root, key=KEY)._launch_prefix(), [])
+
+    def test_closing_the_app_is_quick_even_when_the_engine_never_answers(self):
+        from routes import close_search
+        from meaning_index import MeaningIndexer
+        from services import NoteService
+        runtime = self.ready()
+        service = NoteService(Path(self.temporary.name) / "n.db", embedder=runtime)
+        note = service.create_note({"title": "Trip", "noteType": "page"})
+        service.update_note(note["id"], {"title": "Trip", "content": {"markdown": "flights", "ink": {}}, "revision": 1})
+        indexer = MeaningIndexer(service, runtime, idle=0, poll=0.05)
+        with mock.patch.dict(os.environ, {"FAKE_ENGINE_MODE": "hang"}):
+            indexer.start()
+            deadline = time.monotonic() + 15
+            while not runtime.status()["running"] and time.monotonic() < deadline:
+                time.sleep(0.05)
+            time.sleep(0.5)  # the batch is now waiting on the engine
+            started = time.monotonic()
+            close_search(type("App", (), {"state": type("State", (), {"search": runtime, "indexer": indexer})()})())
+            took = time.monotonic() - started
+        self.assertLess(took, 3.0)
+        self.assertFalse(indexer._thread.is_alive())
+        self.assertFalse(runtime.status()["running"])
 
 
 class StopsWithTheAppTests(SearchTestCase):

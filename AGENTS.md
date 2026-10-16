@@ -19,7 +19,7 @@ Design language: web=Personal Note skins (Crayon, Paper, Night in `src/skins.css
 - `services.py::NoteService` is the only owner of canonical SQLite reads and writes.
 - `portability.py` projects storage into backup and readable export formats.
 - `src/modules/mindmap.js` lazy-loads `src/mindmap/` only when a mind-map note opens.
-- `search_runtime.py` owns the optional search-by-meaning download and its loopback embedding engine; it never blocks startup or saves (F-079 indexes, F-080 searches).
+- `search_runtime.py` owns the optional search-by-meaning download and its loopback embedding engine; it never blocks startup or saves (F-080 searches). `meaning_index.py` is the background thread that fills `note_embeddings` (derived, never in backup or export; owned by `NoteService`).
 - `src/modules/voice/` owns voice transcript and capture adapters. It must never persist audio.
 
 These are internal contracts, not a public plugin SDK.
@@ -44,7 +44,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run dev
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime -v
+python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_meaning_index -v
 npm run benchmark:bundle
 ```
 
