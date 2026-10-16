@@ -66,7 +66,7 @@ const MAC = '?host=desktop&chrome=mac'
   const brand = await rect(page, '.brand-row')
   check('sidebar contents start below the traffic lights (>= 40px)', brand.y >= 40, `brandTop=${brand.y}`)
   const strips = await page.evaluate(() => [...document.querySelectorAll('.mac-drag-strip')].map((e) => e.className))
-  check('two drag strips with the pywebview class', strips.length === 2 && strips.every((c) => c.includes('pywebview-drag-region')), JSON.stringify(strips))
+  check('one drag strip with the pywebview class (the notes panel starts below the title bar, so it needs none)', strips.length === 1 && strips.every((c) => c.includes('pywebview-drag-region')), JSON.stringify(strips))
   const bar = await rect(page, '.topbar'); const strip = await rect(page, '.mac-drag-main')
   check('top bar sits inside the drag row', bar.y >= 0 && bar.b <= strip.b + 1, `bar=${bar.y}-${bar.b} strip=${strip.b}`)
   const hit = await page.evaluate(() => {
