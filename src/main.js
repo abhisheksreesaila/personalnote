@@ -13,6 +13,7 @@ import { api, downloadWorkspaceFile } from './core/api.js'
 import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
 import { nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
+import { mountAISettings } from './modules/ai/ai-settings.js'
 import { createMeaningClient, describeMeaning, indexIsCatchingUp } from './modules/search/meaning-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { mountPageModule } from './modules/page.js'
@@ -331,6 +332,7 @@ document.querySelector('#app').innerHTML = `
           <button id="meaning-cancel" hidden><i data-lucide="x"></i><span></span></button>
         </div>
       </section>
+      <section class="settings-section" id="ai-settings" aria-labelledby="ai-label"></section>
       <section class="settings-section">
         <p class="settings-section-label">Workspace data</p>
         <div class="setting-row"><span><i data-lucide="hard-drive"></i>Storage</span><small id="settings-storage">SQLite · This device</small></div>
@@ -2373,6 +2375,7 @@ async function voiceSetupAction(action) {
   void refreshVoiceSetup()
 }
 
+const aiSettings = mountAISettings(document.querySelector('#ai-settings'), api)
 const meaningClient = createMeaningClient(api)
 let meaningPoll = null
 
@@ -3615,7 +3618,7 @@ document.querySelector('#top-properties').addEventListener('click', () => {
 })
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#top-properties').addEventListener('click', () => {
-  if (elements.properties.classList.contains('open')) { void refreshVoiceSetup(); void refreshMeaningSetup() }
+  if (elements.properties.classList.contains('open')) { void refreshVoiceSetup(); void refreshMeaningSetup(); void aiSettings.refresh() }
 })
 document.querySelector('#meaning-download').addEventListener('click', () => void meaningSetupAction((client) => client.install()))
 document.querySelector('#meaning-cancel').addEventListener('click', () => void meaningSetupAction((client) => client.cancel()))
