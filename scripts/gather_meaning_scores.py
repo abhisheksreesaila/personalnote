@@ -3,7 +3,7 @@
 The fixture is what `tests/test_meaning_rank.py` checks the ranking rule (`meaning_rank.py`) against, so the rule stays tied to real
 scores without a network. Run it again after the model or the embedding size changes:
 
-    PERSONAL_NOTE_SEARCH_DIR=<folder with the search download> .venv/bin/python scripts/gather_meaning_scores.py
+    PERSONAL_NOTE_SEARCH_DIR=<folder with the search download> .venv/bin/python scripts/gather_meaning_scores.py [heldout]
 
 It never touches a notebook: it embeds the notes below the way the index does (title + text, as documents) and each query as a query,
 and records the cosine of every pair. `expect` lists the notes a person would call the right answer ([] = nothing should show).
@@ -94,34 +94,110 @@ QUERIES = [
 ]
 
 
+# The held-out set (F-080): written after the rule was chosen, on other notes and other queries, and never used to tune it.
+# `python scripts/gather_meaning_scores.py heldout` writes tests/fixtures/meaning-scores-heldout.json.
+HELDOUT_NOTES = [
+    ("Pension pot", "Employer matches up to 5 percent, the index fund is the default, check the old workplace plan, aim for half my salary by sixty-seven."),
+    ("Piano lessons", "Thursday evenings, Mrs Okafor, practise the Clementi sonatina, scales hands together, buy a metronome for the keyboard."),
+    ("Maths homework help", "Fractions and long division tonight, Leo gets stuck on word problems, use the number line, ask his teacher about the spelling test too."),
+    ("GPU build", "Six cards on an open frame, 1600W supply, hashrate per watt, electricity is the whole margin, ethereum is gone so pick another coin."),
+    ("Garden fence", "Replace three rotten panels, concrete posts, treat the timber, neighbour agreed to split the cost."),
+    ("Roof leak", "Water stain above the bathroom, call the roofer, check the flashing around the chimney, photo for the insurer."),
+    ("Anniversary dinner", "Book the little place by the canal for the 12th, ask for the corner table, buy flowers on the way."),
+    ("Thesis outline", "Chapter two needs the literature review rewritten, supervisor wants more on method, deadline for the draft is the end of March."),
+    ("Bread machine", "Basic white setting, 400g flour, a spoon of sugar, remove the paddle before the last rise."),
+    ("Dog training", "Sit and stay before the walk, treats in the left pocket, do not let him pull, puppy class is on Saturdays."),
+    ("Airport transfer", "Train from the central station at 6:10, then the shuttle, check the baggage allowance, passport in the front pocket."),
+    ("Spreadsheet formulas", "XLOOKUP instead of VLOOKUP, SUMIFS for the monthly totals, freeze the header row, name the ranges."),
+    ("Allergy tablets", "Take one each morning from March, eyes itch worst when the birch is out, check with the pharmacist about drowsiness."),
+    ("Sprint retro", "Deploys were too slow, flaky tests blocked two merges, praise for the onboarding doc, action: split the test suite."),
+    ("Charity run", "Ten kilometres in June, sponsorship page is live, thank everyone who donated, wear the orange shirt."),
+    ("Wi-fi router", "Move it out of the cupboard, change the channel, update the firmware, guest network for visitors."),
+    ("Rental agreement", "Notice period is two months, deposit protected in a scheme, no pets without written consent, rent review each January."),
+    ("Watercolour class", "Wet on wet for the sky, keep the paper taped, burnt sienna and ultramarine make a good grey, bring a big brush."),
+    ("Grandad's stories", "The ship to Canada in 1957, the winter he worked at the mill, how he met Nan at a dance in Leeds."),
+    ("Language exchange", "Meet Marta on Tuesdays, half an hour in German then half in English, bring photos to talk about."),
+    ("Cold brew", "Coarse grind, one to eight with water, steep for sixteen hours in the fridge, dilute when serving."),
+    ("Vaccination record", "Tetanus booster due next year, keep the yellow card, travel clinic needs it six weeks before flying."),
+    ("Standing desk", "Set the height so the elbows are at ninety degrees, anti-fatigue mat, alarm every hour to move."),
+    ("Board game night", "Bring Catan and the expansion, Sam is bringing snacks, teach the new rules before starting."),
+    ("Solar panels", "Quote is 6400 for four kilowatts, payback in nine years, south roof is shaded after three, ask about the battery."),
+    ("Student loan", "Repayments start when earnings pass the threshold, interest is added from the first day, no point overpaying yet."),
+    ("Sourcing coffee beans", "Roaster in town does Ethiopian and Colombian, buy whole beans, use within a month of the roast date."),
+    ("Yoga routine", "Sun salutations to start, hold pigeon pose for a minute each side, finish with five minutes lying still."),
+    ("Moth problem", "Wardrobe smells of cedar again, hang the lavender bags, wash the wool jumpers at forty, check the loft boxes."),
+    ("Choir rehearsal", "Altos on Wednesdays at seven, new piece in Latin, the concert is in December, bring a pencil for the markings."),
+    ("Boiler service", "Annual check due in October, pressure drops weekly so bleed the radiators, engineer is called Dev."),
+    ("Kids' birthday party", "Twelve children, a magician at three, pass the parcel, cake with dinosaurs, allergies: Ruby cannot have nuts."),
+    ("Podcast notes: sleep science", "Dr Walker says consistent wake times matter more than the hours, caffeine lasts eight hours in the body."),
+    ("Neighbour's noise", "Music past midnight twice last week, note the dates, talk to him first before contacting the council."),
+    ("Hiking trip", "Three days along the coast path, booking huts early, waterproof socks, a paper map in case the phone dies."),
+    ("Resume updates", "Add the migration project, trim the first job to two lines, put numbers on everything, a single page."),
+    ("Weekly shop", "Oats, eggs, spinach, tinned tomatoes, olive oil, washing powder, the good cheddar, bin bags."),
+    ("Car MOT", "Booked for the 20th, tyres borderline at the front, check the wiper blades, bring the logbook."),
+    ("Mindful walking", "Leave the headphones at home, notice five sounds, slow down at the bridge, notebook in the pocket."),
+    ("Learning to swim", "Lessons on Sunday mornings, practise breathing out underwater, float on the back first, goggles that fit."),
+]
+
+HELDOUT_QUERIES = [
+    ("saving for retirement", "meaning", ["Pension pot"]),
+    ("learning an instrument", "meaning", ["Piano lessons"]),
+    ("my son's homework", "meaning", ["Maths homework help"]),
+    ("cryptocurrency mining rigs", "meaning", ["GPU build"]),
+    ("fixing a hole above the bathroom", "meaning", ["Roof leak"]),
+    ("a romantic meal out", "meaning", ["Anniversary dinner"]),
+    ("writing my dissertation", "meaning", ["Thesis outline"]),
+    ("puppy obedience", "meaning", ["Dog training"]),
+    ("getting to the airport", "meaning", ["Airport transfer"]),
+    ("hay fever", "meaning", ["Allergy tablets"]),
+    ("paying back my university debt", "meaning", ["Student loan"]),
+    ("generating my own electricity", "meaning", ["Solar panels"]),
+    ("practising German with a friend", "meaning", ["Language exchange"]),
+    ("things to remember about the lease", "meaning", ["Rental agreement"]),
+    ("clothes eaten by insects", "meaning", ["Moth problem"]),
+    ("how to sleep better according to experts", "meaning", ["Podcast notes: sleep science"]),
+    ("where to buy groceries", "word", []),
+    ("asdfgh jklzxc", "gibberish", []),
+    ("and", "stopwords", []),
+    ("what is the", "stopwords", []),
+    ("test", "stopwords", []),
+    ("ancient egyptian pyramids", "off-topic", []),
+    ("molecular biology of yeast", "off-topic", []),
+    ("championship football results", "off-topic", []),
+    ("tax on foreign property", "off-topic", []),
+]
+
+
 def cosine(a, b):
     return sum(x * y for x, y in zip(a, b))
 
 
 def main():
+    heldout = "heldout" in sys.argv[1:]
+    notes_in, queries_in = (HELDOUT_NOTES, HELDOUT_QUERIES) if heldout else (NOTES, QUERIES)
     folder = os.environ.get("PERSONAL_NOTE_SEARCH_DIR")
     if not folder:
         sys.exit("Set PERSONAL_NOTE_SEARCH_DIR to a folder holding the search download.")
     runtime = default_search_runtime(Path(folder) / "x.db", pid_name="engine-gather.pid")
     try:
-        documents = runtime.embed(NOTES, kind="document")
-        queries = [runtime.embed([query], kind="query")[0] for query, _, _ in QUERIES]
+        documents = runtime.embed(notes_in, kind="document")
+        queries = [runtime.embed([query], kind="query")[0] for query, _, _ in queries_in]
         model = runtime.model_id
     finally:
         runtime.shutdown()
     fixture = {
-        "about": "Real-engine scores for the ranking rule in meaning_rank.py (F-080). Regenerate with scripts/gather_meaning_scores.py.",
+        "about": ("Held-out " if heldout else "") + "real-engine scores for the ranking rule in meaning_rank.py (F-080). Regenerate with scripts/gather_meaning_scores.py" + (" heldout." if heldout else "."),
         "model": model,
         "gathered": date.today().isoformat(),
-        "notes": [{"title": title, "text": text} for title, text in NOTES],
+        "notes": [{"title": title, "text": text} for title, text in notes_in],
         "queries": [
-            {"query": query, "kind": kind, "expect": expect, "scores": {title: round(cosine(vector, doc), 4) for (title, _), doc in zip(NOTES, documents)}}
-            for (query, kind, expect), vector in zip(QUERIES, queries)
+            {"query": query, "kind": kind, "expect": expect, "scores": {title: round(cosine(vector, doc), 4) for (title, _), doc in zip(notes_in, documents)}}
+            for (query, kind, expect), vector in zip(queries_in, queries)
         ],
     }
-    target = ROOT / "tests" / "fixtures" / "meaning-scores.json"
+    target = ROOT / "tests" / "fixtures" / ("meaning-scores-heldout.json" if heldout else "meaning-scores.json")
     target.write_text(json.dumps(fixture, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"{len(NOTES)} notes, {len(QUERIES)} queries -> {target}")
+    print(f"{len(notes_in)} notes, {len(queries_in)} queries -> {target}")
 
 
 if __name__ == "__main__":
