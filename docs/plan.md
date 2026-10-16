@@ -504,11 +504,12 @@ Reviewed: PASS (fixes: download stops at the pinned size, per-launch engine key 
 - [x] Settings offers "Search by meaning: Download (≈315 MB)"; it fetches the pinned llama.cpp server build for this OS (macOS arm64, Linux x86_64) and the pinned EmbeddingGemma 2 Q8 GGUF, checks sizes and sha256, installs beside the database, and shows progress, success and failure in place
 - [x] the engine starts on loopback on first use, embeds text, and stops with the app; a missing or broken install leaves search exactly as today
 - [x] a real-app check installs from local fixture files (no network in tests) and embeds a sentence end to end
-## F-079 Index notes by meaning [todo]
+## F-079 Index notes by meaning [done]
 Brief: docs/briefs/search-by-meaning.md · Needs: F-078
-- [ ] with the engine installed, every non-secure note's title and searchable text is embedded in the background and stored in SQLite with the note's revision; a changed note is re-embedded, a deleted one loses its vector
-- [ ] secure notes are never embedded; vectors are not in backup or export and are rebuilt when missing
-- [ ] saving and typing never wait on indexing; the speed test is unchanged
+Reviewed: PASS after three rounds (token-safe cutting, per-note refusals, low-priority engine with 30 s idle, final shutdown, idle stop after 5 min). Quiet-machine typing p50 9.2–9.9 ms and p99 17.5–19.9 ms with indexing on or off.
+- [x] with the engine installed, every non-secure note's title and searchable text is embedded in the background and stored in SQLite with the note's revision; a changed note is re-embedded, a deleted one loses its vector
+- [x] secure notes are never embedded; vectors are not in backup or export and are rebuilt when missing
+- [x] saving and typing never wait on indexing; the speed test is unchanged
 ## F-080 Search finds by meaning [todo]
 Brief: docs/briefs/search-by-meaning.md · Needs: F-079
 - [ ] the omnibar shows a "By meaning" group under the word matches with the closest notes not already listed; without the download it is unchanged
