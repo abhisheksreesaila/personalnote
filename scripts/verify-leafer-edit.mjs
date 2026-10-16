@@ -213,6 +213,7 @@ try {
   await page.keyboard.press('Control+Shift+L')
   await page.waitForTimeout(900)
   check('typing in a field moves, deletes and locks nothing', JSON.stringify((await live()).objects) === JSON.stringify(before.objects), 'the document changed')
+  await page.keyboard.press('Escape') // (closes the island card)
   await page.evaluate(() => document.activeElement?.blur())
 
   // ---- z-order
