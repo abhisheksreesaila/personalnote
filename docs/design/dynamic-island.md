@@ -34,3 +34,5 @@ picking a result or a click away shrinks it back to the circle. Same keyboard, g
 - Measure once per change of face (one hidden measure, no per-frame layout). No timers or animation frames while at rest;
   the level bars run only while recording. Nothing reacts per keystroke.
 - Speed test (typing p50/p99) unchanged; bundle budget held.
+
+Agent face: message only for now. Show and Undo are deferred to a follow-up ticket (the app has no such actions yet).

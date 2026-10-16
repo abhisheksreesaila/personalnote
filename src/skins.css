@@ -97,7 +97,7 @@
     font-family: var(--sk-display); font-weight: var(--sk-display-weight);
     font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track);
   }
-  .search-button kbd, .focus-pill kbd, .save-state, .sidebar-footer, .notebook-count, .print-sheet-number {
+  .save-state, .sidebar-footer, .notebook-count, .print-sheet-number {
     font-family: "Geist Mono", ui-monospace, monospace;
   }
 

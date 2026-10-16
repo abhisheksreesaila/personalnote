@@ -18,6 +18,10 @@ export const icons = {
 import { Fingerprint, Lock, LockOpen, Palette, ShieldCheck, Zap } from 'lucide'
 Object.assign(icons, { Fingerprint, Lock, LockOpen, Palette, ShieldCheck, Zap })
 
+// The dynamic island (F-084).
+import { Sparkles, TriangleAlert } from 'lucide'
+Object.assign(icons, { Sparkles, TriangleAlert })
+
 // Replaces every <i data-lucide> in the page (or in `root`) with its icon.
 export const createIcons = (options = {}) => createLucideIcons({ icons, ...options })
 
