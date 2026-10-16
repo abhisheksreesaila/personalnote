@@ -4211,14 +4211,18 @@ for (const type of ['pointerdown', 'mousedown']) {
 // a press on the words or the paper opens it again with the caret at the press, and coming back to the window resumes where the caret was.
 let focusLastCaret = null
 function resumeFocusWriting(press) {
-  if (!focusActive || isPageNote() || !leaferCanvas || leaferCanvas.isEditingText() || !focusTextId) return
-  if (press) {
-    const rect = leaferHost.getBoundingClientRect()
-    const view = leaferCanvas.view()
-    leaferCanvas.editText(focusTextId, { select: false, point: { x: (press.clientX - rect.left - view.x) / view.scale, y: (press.clientY - rect.top - view.y) / view.scale } })
-  } else if (!(focusLastCaret?.id === focusTextId && leaferCanvas.resumeText(focusLastCaret))) leaferCanvas.editText(focusTextId, { select: false })
+  if (!focusActive || isPageNote() || !leaferCanvas || leaferCanvas.isEditingText()) return
+  const at = press ? leaferCanvas.pageAt(press.clientX, press.clientY) : null
+  const textId = focusTextId // (null while focus began on a note with no text and nothing was typed yet: then a new one is made)
+  if (textId && leaferCanvas.editText(textId, { select: false, point: at ?? undefined })) {
+    if (!at && focusLastCaret?.id === textId) leaferCanvas.resumeText(focusLastCaret)
+  } else leaferCanvas.createText(at ?? { x: 80, y: 80 }, { select: false })
 }
-document.addEventListener('selectionchange', () => { if (focusActive && leaferCanvas?.isEditingText()) focusLastCaret = leaferCanvas.textCaret() ?? focusLastCaret })
+document.addEventListener('selectionchange', () => {
+  if (!focusActive || !leaferCanvas?.isEditingText()) return
+  focusLastCaret = leaferCanvas.textCaret() ?? focusLastCaret
+  if (!focusTextId && focusLastCaret) focusTextId = focusLastCaret.id // (focus made this text: it is the focus text from now on)
+})
 window.addEventListener('focus', () => resumeFocusWriting())
 
 const doubleTap = createDoubleTap({ key: tapKeyFor(navigator.platform) })
