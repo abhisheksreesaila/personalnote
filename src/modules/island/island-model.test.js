@@ -146,3 +146,17 @@ test('focus mode owns the face while it lasts', () => {
   model.focus(false)
   assert.equal(model.face().kind, 'error')
 })
+
+test('a save that ends without a result (locked) clears Saving at once and announces nothing', () => {
+  const { model, advance, timers } = harness()
+  model.saveSending()
+  advance(3000)
+  assert.equal(model.face().kind, 'saving')
+  model.saveEnded()
+  assert.equal(model.face().kind, 'rest')
+  model.saveSending()
+  model.saveEnded()
+  advance(10000)
+  assert.equal(model.face().kind, 'rest')
+  assert.equal(timers(), 0)
+})

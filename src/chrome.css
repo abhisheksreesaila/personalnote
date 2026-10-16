@@ -244,11 +244,12 @@
   .isl-bad { color: var(--sk-danger); font-weight: 600; }
   .isl-label { max-width: min(260px, calc(100vw - 150px)); overflow: hidden; text-overflow: ellipsis; }
   .isl-moment svg { width: 16px; height: 16px; flex: none; }
+  .isl-chip::after { content: ""; position: absolute; inset: -12px -8px; } /* (a 44px tap target; the island clips it to its own height) */
   .isl-chip { position: relative; margin-left: 4px; padding: 5px 10px; border: 0; border-radius: 12px; background: var(--sk-accent-soft); color: inherit; font: 600 12.5px/1 var(--ui-font); cursor: pointer; }
   .island[data-face="recording"] .isl-chip { background: color-mix(in srgb, currentColor 16%, transparent); }
   .isl-rec { width: 9px; height: 9px; border-radius: 50%; background: var(--sk-danger); }
   .isl-wave { display: flex; gap: 2px; align-items: center; height: 18px; }
-  .isl-wave i { width: 3px; height: calc(4px + 14px * var(--l, 0)); border-radius: 2px; background: currentColor; opacity: .8; transition: height 120ms ease-out; }
+  .isl-wave i { width: 3px; height: 18px; transform: scaleY(calc(.22 + .78 * var(--l, 0))); border-radius: 2px; background: currentColor; opacity: .8; transition: transform 120ms ease-out; }
   .isl-bar { width: 120px; height: 4px; border-radius: 2px; background: var(--sk-accent-soft); overflow: hidden; }
   .isl-bar i { display: block; height: 100%; background: var(--sk-accent); transform-origin: left; transform: scaleX(0); transition: transform 300ms linear; }
 
@@ -427,6 +428,7 @@
     .app-shell :is(.topbar, .island-slot) { --h: 40px; inset: 8px 8px auto 8px; }
     .app-shell .island { transition-duration: 420ms; transition-timing-function: cubic-bezier(.28, 1.32, .5, 1); }
     .isl-wide-only { display: none; }
+    .isl-moment { height: 44px; } /* (room for 44px taps on Stop and Try again) */
     .app-shell .glass-button.sidebar-toggle { display: grid; flex: 0 0 40px; }
     .app-shell .topbar-actions { gap: 6px; }
     .app-shell .glass-button { width: 40px; height: 40px; flex-basis: 40px; margin-left: 0; }

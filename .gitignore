@@ -13,7 +13,7 @@ dist-app
 build
 dist-ssr
 *.local
-.venv/
+.venv
 __pycache__/
 *.py[cod]
 .env

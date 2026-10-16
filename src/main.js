@@ -1001,6 +1001,8 @@ const island = mountIsland(document.querySelector('#island'), {
 })
 document.fonts.ready.then(() => island.remeasure())
 document.fonts.addEventListener('loadingdone', () => island.remeasure()) // (a font that arrives late changes the title's width)
+// Focus goes back to the island's visible button: the title at rest, or the whole face while a moment shows.
+function focusIsland() { document.querySelector('#island .isl-face:not([hidden]) :is(#share-button, .isl-hit)')?.focus() }
 function setNoteTitle(text = '') {
   elements.title.value = text
   island.setTitle(elements.title.value.trim() || 'Untitled note')
@@ -1017,6 +1019,7 @@ function setSaveState(status, isError = false, detail = '') {
     : `<span></span>${status === 'Saved' ? SAVED_LABEL : status}`
   if (isError) island.model.saveFailed(status === 'Could not save' ? 'Couldn’t save' : status, status === 'Could not save' ? detail : '', status === 'Could not save')
   else if (status === 'Saved') island.model.saveDone()
+  else if (status !== 'Saving') island.model.saveEnded() // (Locked and the rest: the save is over, whatever the island was waiting on)
 }
 
 let viewportOffsetX = 0
@@ -2311,7 +2314,7 @@ function setPropertiesOpen(open) {
   elements.properties.inert = !open
   if (!open && settingsFromMenu) {
     settingsFromMenu = false
-    if (!document.activeElement || document.activeElement === document.body) elements.shareButton.focus()
+    if (!document.activeElement || document.activeElement === document.body) focusIsland()
   }
   const trigger = document.querySelector('#top-properties')
   trigger.classList.toggle('active', open)
@@ -2597,7 +2600,7 @@ function closePrintPreview() {
   printSheetUrls = []
   elements.shell.inert = false
   document.body.classList.remove('print-preview-open')
-  elements.shareButton.focus()
+  focusIsland()
 }
 
 function printNote() {
@@ -3664,7 +3667,7 @@ elements.shareMenu.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && event.target === elements.title) { // (the title is done: close the card)
     event.preventDefault()
     setShareMenuOpen(false)
-    elements.shareButton.focus()
+    focusIsland()
     return
   }
   const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key]
@@ -4396,7 +4399,7 @@ document.addEventListener('keydown', (event) => {
     if (state.activeNoteType === 'canvas') openPrintPreview()
   } else if (event.key === 'Escape' && !elements.shareMenu.hidden) {
     setShareMenuOpen(false)
-    elements.shareButton.focus()
+    focusIsland()
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault()
     if (omni.open) closeSearch()

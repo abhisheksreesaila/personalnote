@@ -95,6 +95,7 @@ try {
   const waitFace = (name, ms = 8000) => page.waitForFunction((n) => document.querySelector('#island').dataset.face === n, name, { timeout: ms })
   const widthNow = async () => { await settle(); return (await rect('#island')).w }
   const pn = (fn, arg) => page.evaluate(fn, arg)
+  const tapSpots = (action) => pn((a) => { const c = document.querySelector(`[data-island-action="${a}"]`).getBoundingClientRect(); const at = (x, y) => document.elementFromPoint(x, y)?.closest('[data-island-action]')?.dataset.islandAction; const cx = c.x + c.width / 2; const cy = c.y + c.height / 2; return [at(cx - 22, cy), at(cx + 22, cy), at(cx, cy - 20), at(cx, cy + 20)] }, action)
   const searchSettled = () => page.waitForFunction(() => document.querySelector('#search-backdrop').classList.contains('open') && document.querySelector('.spotlight').getAnimations().length === 0)
   let first = null
   const type = async (words) => { // (the first time a click on the page starts a text; after that the same text is written on, from the keyboard)
@@ -168,6 +169,12 @@ try {
   await shot('error')
   await wait(2500)
   check('it stays until the save works', (await face()) === 'error')
+  check('Try again can be hit 22px either side and 20px above and below its centre (a 44px target)', JSON.stringify(await tapSpots('retry')) === JSON.stringify(['retry', 'retry', 'retry', 'retry']), JSON.stringify(await tapSpots('retry')))
+  await page.click('#island', { position: { x: 12, y: 22 } })
+  await settle()
+  await page.keyboard.press('Escape')
+  await settle()
+  check('Esc on the card over an error face puts the focus on the island (a visible button)', await pn(() => { const a = document.activeElement; return a?.classList.contains('isl-hit') && a.getBoundingClientRect().width > 0 }))
   failSave = false
   await page.click('[data-island-action="retry"]')
   await waitFace('saved', 8000)
@@ -184,6 +191,8 @@ try {
   check('recording: a dark face with a dot, bars, Listening, a clock and Stop', dark.bg === dark.ink && /Listening/.test(dark.text) && /0:0\d/.test(dark.text) && dark.bars >= 7 && dark.stop, JSON.stringify(dark))
   check('the island grew for it', (await widthNow()) > W0)
   await shot('recording')
+  check('Stop can be hit 22px either side and 20px above and below its centre (a 44px target)', JSON.stringify(await tapSpots('stop')) === JSON.stringify(['stop', 'stop', 'stop', 'stop']), JSON.stringify(await tapSpots('stop')))
+  check('the bars are scaled, not resized (no layout per level)', await pn(() => { const b = document.querySelector('#island .isl-wave i'); const c = getComputedStyle(b); return c.transitionProperty === 'transform' && c.height === '18px' }))
   const levels = await until(async () => pn(() => { const v = [...document.querySelectorAll('#island .isl-wave i')].map((b) => b.style.getPropertyValue('--l')).filter(Boolean); return v.length && v.some((x) => Number(x) > 0) ? v : false }), 5000)
   check('the bars move to the sound (levels from the microphone reach them)', Boolean(levels), JSON.stringify(levels))
   await wait(1300)

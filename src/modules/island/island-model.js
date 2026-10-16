@@ -61,6 +61,13 @@ export function createIslandModel({ schedule = setTimeout, cancel = clearTimeout
       if (announce) flash({ kind: 'saved' }, SAVED_MS)
       else emit()
     },
+    // A save that ended without a result to announce (the server locked secure notes, say): stop waiting on it.
+    saveEnded() {
+      cancel(timers.slow)
+      timers.slow = 0
+      Object.assign(s, { sending: false, slow: false })
+      emit()
+    },
     saveFailed(title, message = '', retry = false) {
       cancel(timers.slow)
       timers.slow = 0
