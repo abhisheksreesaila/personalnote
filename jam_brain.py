@@ -355,10 +355,11 @@ def _opener():
 class OpenAICompatibleBrain:
     """Any chat-completions endpoint: base_url + model, or Azure OpenAI (endpoint + deployment + api-version).
 
-    The key is read from the environment on every call and sent only as a header."""
+    The key (the environment variable, else the saved one) is sent only as a header and never shown."""
 
     def __init__(self, base_url: str = "", model: str = "", *, azure_endpoint: str = "", deployment: str = "",
-                 api_version: str = "2024-10-21", key_env: str = JAM_KEY_ENV, timeout: float = 90):
+                 api_version: str = "2024-10-21", key_env: str = JAM_KEY_ENV, timeout: float = 90, key: str = ""):
+        self._key = key  # a saved key (Settings → AI); the environment variable still wins, for scripts
         self.base_url, self.model = base_url.rstrip("/"), model
         self.azure_endpoint, self.deployment = azure_endpoint.rstrip("/"), deployment
         self.api_version, self.key_env, self.timeout = api_version, key_env, timeout
@@ -370,9 +371,9 @@ class OpenAICompatibleBrain:
                 raise BrainUnavailable("The model address must start with https:// (plain http is only allowed for this computer).")
 
     def request_for(self, system: str, user: str) -> urllib.request.Request:
-        key = os.environ.get(self.key_env, "")
+        key = os.environ.get(self.key_env, "") or self._key
         if not key:
-            raise BrainUnavailable(f"No API key: set the {self.key_env} environment variable.")
+            raise BrainUnavailable(f"No API key: add one in Settings → AI, or set the {self.key_env} environment variable.")
         body = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 "response_format": {"type": "json_object"}}
         headers = {"Content-Type": "application/json"}

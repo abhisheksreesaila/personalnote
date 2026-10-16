@@ -12,6 +12,7 @@ from fasthtml.common import FastHTML
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
+from ai_settings import AISettings, AISettingsError
 from app_paths import app_data_dir, default_database_path, resource_root
 from portability import (
     PortabilityError,
@@ -169,6 +170,7 @@ def create_app(
     speedtest_launcher=None,
     desktop_host: bool = False,
     secure_platform=None,
+    ai: AISettings | None = None,
 ) -> FastHTML:
     """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
     data_path = Path(database_path or default_database_path())
@@ -181,6 +183,7 @@ def create_app(
     app.state.note_service = service
     app.state.voice = voice or default_voice_runtime()
     app.state.search = search
+    app.state.ai = ai or AISettings()
     app.state.indexer = MeaningIndexer(service, search)
     if not speedtest_instance:
         app.state.indexer.start()  # a quiet thread: it embeds only when the download is installed, never on a request
@@ -283,6 +286,31 @@ def create_app(
         if not from_this_app(request):
             return forbidden()
         return search_response(lambda: app.state.search.cancel_install())
+
+    @app.get("/api/ai/settings")
+    def ai_settings_view():
+        return JSONResponse(app.state.ai.view())
+
+    async def ai_response(request, call) -> JSONResponse:
+        if not from_this_app(request):
+            return forbidden()
+        try:
+            return JSONResponse(await asyncio.to_thread(call, await payload(request)))
+        except AISettingsError as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
+
+    @app.post("/api/ai/settings")
+    async def ai_settings_save(request):
+        return await ai_response(request, app.state.ai.save)
+
+    @app.delete("/api/ai/key")
+    async def ai_key_remove(request):
+        return await ai_response(request, lambda _: app.state.ai.remove_key())
+
+    @app.post("/api/ai/test")
+    async def ai_test(request):
+        # one real model call (off the event loop, see ai_response); it tests the saved settings
+        return await ai_response(request, lambda _: app.state.ai.test())
 
     @app.get("/api/speedtest/status")
     def speedtest_status():

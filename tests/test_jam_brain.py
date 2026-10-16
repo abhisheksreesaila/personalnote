@@ -364,7 +364,7 @@ class OpenAICompatibleTests(unittest.TestCase):
         self.assertEqual(str(caught.exception), "The model service refused the request (HTTP 401).")
         with mock.patch.dict(os.environ, {}, clear=True), self.assertRaises(JamError) as caught:
             brain.complete("s", "u")
-        self.assertEqual(str(caught.exception), "No API key: set the PERSONAL_NOTE_JAM_API_KEY environment variable.")
+        self.assertEqual(str(caught.exception), "No API key: add one in Settings → AI, or set the PERSONAL_NOTE_JAM_API_KEY environment variable.")
         with self.assertRaises(JamError):
             OpenAICompatibleBrain()
 
