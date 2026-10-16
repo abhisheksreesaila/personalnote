@@ -19,6 +19,7 @@ logging.basicConfig(
 
 app = create_app(bound_host=os.getenv("HOST", "127.0.0.1"))
 atexit.register(app.state.voice.shutdown)  # a voice engine started on demand never outlives the server
+atexit.register(app.state.search.shutdown)  # nor does the search-by-meaning engine
 
 
 if __name__ == "__main__":

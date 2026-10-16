@@ -32,6 +32,7 @@ from services import (
     WorkspaceImportError,
 )
 from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
+from search_runtime import SearchError, SearchRuntime
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
 
@@ -72,6 +73,12 @@ def default_voice_runtime() -> VoiceRuntime:
     """Voice lives in the app-data folder (PERSONAL_NOTE_VOICE_DIR overrides it), never beside the notes."""
     folder = os.environ.get("PERSONAL_NOTE_VOICE_DIR")
     return VoiceRuntime(root=Path(folder) if folder else app_data_dir() / "voice", version=app_version(ROOT))
+
+
+def default_search_runtime(database_path: Path) -> SearchRuntime:
+    """Search by meaning lives beside the database (PERSONAL_NOTE_SEARCH_DIR overrides it), so a scratch database gets a scratch folder."""
+    folder = os.environ.get("PERSONAL_NOTE_SEARCH_DIR")
+    return SearchRuntime(root=Path(folder) if folder else database_path.parent / "search-by-meaning")
 
 
 def speedtest_folder() -> Path:
@@ -154,6 +161,7 @@ def secure_idle_seconds() -> float:
 def create_app(
     database_path: Path | str | None = None,
     voice: VoiceRuntime | None = None,
+    search: SearchRuntime | None = None,
     bound_host: str | None = None,
     speedtest_instance: bool = False,
     speedtest_launcher=None,
@@ -169,6 +177,7 @@ def create_app(
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service
     app.state.voice = voice or default_voice_runtime()
+    app.state.search = search or default_search_runtime(data_path)
     if bound_host is not None and host_name(bound_host) in LOOPBACK_NAMES:
         app.add_middleware(LoopbackHostMiddleware)
 
@@ -244,6 +253,28 @@ def create_app(
         if not from_this_app(request):
             return forbidden()
         return voice_response(lambda: app.state.voice.remove())
+
+    def search_response(call, status_code: int = 200) -> JSONResponse:
+        try:
+            return JSONResponse(call(), status_code=status_code)
+        except SearchError as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
+
+    @app.get("/api/search-meaning/status")
+    def search_meaning_status():
+        return JSONResponse(app.state.search.status())
+
+    @app.post("/api/search-meaning/install")
+    def search_meaning_install(request):
+        if not from_this_app(request):
+            return forbidden()
+        return search_response(lambda: app.state.search.start_install(), 202)
+
+    @app.post("/api/search-meaning/cancel")
+    def search_meaning_cancel(request):
+        if not from_this_app(request):
+            return forbidden()
+        return search_response(lambda: app.state.search.cancel_install())
 
     @app.get("/api/speedtest/status")
     def speedtest_status():
