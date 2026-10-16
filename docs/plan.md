@@ -492,3 +492,8 @@ Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md ·
 - [ ] + opens hand, highlighter, connect, image, eraser and prettify; the colour dot opens the colour and width options; every shortcut and hold-for-options still works
 - [ ] undo/redo sit in a bottom-left island, zoom (−, %, +, fit) in a bottom-right island; the minimap leaves the resting view
 - [ ] mind-map notes show their actions in the same island; every verify-* script and the speed test pass
+## F-077 Make the flaky canvas checks honest [todo]
+Brief: none (test reliability) · Needs: none
+Found during F-074 to F-076 review: on a clean main, verify-leafer-hybrid fails 4 of 5 runs (bitmap blur, "only the touched page", sometimes "typing grows the grid") and verify-leafer-lod fails "vectors are back after zoom" 1 of 2.
+- [ ] find why each check flakes (timing vs a real rendering bug) and fix the cause, never the threshold
+- [ ] each script passes 5 runs in a row on main
