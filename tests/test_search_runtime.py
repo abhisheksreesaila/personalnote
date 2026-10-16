@@ -500,6 +500,18 @@ class EngineTests(SearchTestCase):
 
         self.assertEqual(len(runtime.embed(["y"], "query")), 1)
 
+    def test_a_second_runtime_with_its_own_pid_file_starts_without_stopping_the_first_ones_engine(self):
+        app = self.ready()
+        app.embed(["x"], "query")
+        app_pid = json.loads((self.root / "engine.pid").read_text())["pid"]
+        command_line = self.runtime(pid_name="engine-cli.pid")  # the personal-note command line shares the folder with the running app
+
+        self.assertEqual(len(command_line.embed(["y"], "query")), 1)
+
+        self.assertTrue(search_runtime.voice_runtime._alive(app_pid))
+        self.assertEqual(len(app.embed(["z"], "query")), 1)
+        self.assertNotEqual(json.loads((self.root / "engine-cli.pid").read_text())["pid"], app_pid)
+
     def test_the_engine_needs_a_key_for_everything_but_health_and_the_key_is_not_on_the_command_line(self):
         runtime = self.ready()
         runtime.embed(["x"], "query")

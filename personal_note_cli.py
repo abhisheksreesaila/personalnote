@@ -19,6 +19,7 @@ from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
+from search_runtime import SearchError, SearchRuntime, default_search_runtime
 from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, SecureError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
 from vault import PortabilityVaultError, export_vault_directory, import_vault_archive, import_vault_directory
 
@@ -157,6 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     search = subcommands.add_parser("search", help="Search note titles and content", parents=[agent_option])
     search.add_argument("query")
+    search.add_argument("--meaning", action="store_true", help="Find notes by what they mean, not their words (needs search by meaning, downloaded in the app's Settings); each match has a score")
     search.add_argument("--text", dest="as_text", action="store_true", help="Print one readable line per match instead of JSON")
     search.set_defaults(handler=command_search)
 
@@ -296,12 +298,33 @@ def command_notes_delete(service: NoteService, args: argparse.Namespace) -> dict
     return {"ok": True, "id": args.note_id}
 
 
+def search_engine(database: Path) -> SearchRuntime:
+    """This command's own handle on the search-by-meaning engine (its own pid file, so it never stops the running app's engine)."""
+    return default_search_runtime(database, pid_name="engine-cli.pid")
+
+
+def meaning_matches(service: NoteService, query: str) -> list[dict]:
+    engine = search_engine(service.database_path)
+    try:
+        if not engine.installed():
+            raise CliError("Search by meaning is not installed. Download it in the app's Settings.")
+        service.embedder = engine
+        return service.meaning_matches(query)
+    except SearchError as error:
+        raise CliError(str(error)) from error
+    finally:
+        engine.shutdown()
+
+
 def command_search(service: NoteService, args: argparse.Namespace) -> list[dict] | None:
-    matches = service.search(args.query)
+    matches = meaning_matches(service, args.query) if args.meaning else service.search(args.query)
     service.record_agent_activity(args.agent, None, "reading")
     if not args.as_text:
         return matches
     for match in matches:
+        if args.meaning:
+            print_text(f"#{match['id']} {match['title']} [{match['notebook']}] - {match['score']:.2f}")
+            continue
         excerpt = " ".join(match["excerpt"].split())
         print_text(f"#{match['id']} {match['title']} [{match['notebookName']}]" + (f" - {excerpt}" if excerpt else ""))
     return None

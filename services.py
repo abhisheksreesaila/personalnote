@@ -53,6 +53,11 @@ DEFAULT_MINDMAP_CONTENT = {
     ],
 }
 MEANING_TEXT_CHARS = 6000  # the engine reads 2048 tokens; about 6000 characters of a note (its start) is safely inside
+# Which meaning matches are worth showing (F-080). On the real engine at 256 dimensions the right note scored 0.65-0.75 and unrelated
+# notes 0.50-0.60: nothing under the floor is shown, and of the rest only notes within the band of the best one (a weaker match
+# next to a strong one is the noise the strong one already beat).
+MEANING_FLOOR = 0.62
+MEANING_BAND = 0.08
 NOTE_TYPES = {"canvas", "mindmap", "page"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")
@@ -1861,6 +1866,30 @@ class NoteService:
             scored.append((row["note_id"], sum(map(float.__mul__, asked, vector))))
         scored.sort(key=lambda pair: -pair[1])
         return scored[:limit]
+
+    def meaning_matches(self, query: str, limit: int = 5) -> list[dict]:
+        """[{id, title, notebook, score}] best first: `meaning_search` kept to the floor and the band above. [] when there is no engine or
+        it is not installed (nothing is started), so a caller needs no special case. Raises the engine's SearchError when it is down."""
+        if self.embedder is None or not self.embedder.installed():
+            return []
+        best = None
+        kept = []
+        for note_id, score in self.meaning_search(query, limit):
+            best = score if best is None else best
+            if score >= MEANING_FLOOR and score >= best - MEANING_BAND:
+                kept.append((note_id, score))
+        if not kept:
+            return []
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"SELECT n.id, n.title, b.name FROM notes n LEFT JOIN notebooks b ON b.id = n.notebook_id WHERE n.secure = 0 AND n.id IN ({', '.join('?' * len(kept))})",
+                [note_id for note_id, _ in kept],
+            ).fetchall()
+        found = {row[0]: row for row in rows}
+        return [
+            {"id": note_id, "title": found[note_id][1], "notebook": found[note_id][2] or INBOX_NAME, "score": round(score, 4)}
+            for note_id, score in kept if note_id in found
+        ]
 
     def search(self, query: str) -> list[dict]:
         terms = WORD_PATTERN.findall(query.strip())
