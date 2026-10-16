@@ -94,7 +94,7 @@ try {
   await shot('focus')
   check('Ctrl+. enters focus mode', await inFocus())
   const during = await snap()
-  check('the sidebar, dock, page map, zoom and top bar are gone', during.dock === 'none' && during.sidebar === 'none' && during.topbar === 'none' && (await hidden('#page-minimap')) && (await hidden('#zoom-control')))
+  check('the sidebar, tool island, undo island, zoom and top bar are gone', during.dock === 'none' && during.sidebar === 'none' && during.topbar === 'none' && (await hidden('#history-island')) && (await hidden('#zoom-control')))
   const paper = await paperRgb()
   const spots = await pixels([[30, 300], [200, 500], [1330, 400], [1100, 700], [680, 880], [900, 620], [40, 40], [300, 880]])
   check('the window is plain paper colour: no page edges, shadows, fold lines or dotted desk, and the drawing is not shown', spots.every((rgb) => near(rgb, paper)), JSON.stringify([paper, spots]))

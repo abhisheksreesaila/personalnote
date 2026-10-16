@@ -64,28 +64,6 @@ export function chooseOpeningView(candidates, viewW, viewH, boxes, limit, conten
   return candidates.find((view) => load(view) <= limit) ?? candidates.at(-1)
 }
 
-// Indexes (row-major) of the pages that intersect the window.
-export function visiblePages({ view, viewW, viewH, columns, rows, pageW, pageH }) {
-  const visible = new Set()
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      const left = view.x + column * pageW * view.scale
-      const top = view.y + row * pageH * view.scale
-      const right = left + pageW * view.scale
-      const bottom = top + pageH * view.scale
-      if (right > 0 && left < viewW && bottom > 0 && top < viewH) visible.add(row * columns + column)
-    }
-  }
-  return visible
-}
-
-export function viewForPage({ column, row, scale, viewW, viewH, pageW, pageH }) {
-  return {
-    x: viewW / 2 - (column + 0.5) * pageW * scale,
-    y: viewH / 2 - (row + 0.5) * pageH * scale,
-  }
-}
-
 function thumb(offset, viewSize, contentSize, before, after) {
   const total = contentSize + before + after
   if (total <= viewSize) return null

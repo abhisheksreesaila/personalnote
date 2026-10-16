@@ -116,7 +116,8 @@ const select = async (page, id) => {
   await page.mouse.click(c.x, c.y)
   await page.waitForTimeout(80)
 }
-const tool = (page, name) => page.click(`[data-tool="${name}"]`)
+// the hand, highlighter, connect and eraser live in the + flyout since F-076
+const tool = async (page, name) => { if (['hand', 'highlight', 'connect', 'eraser'].includes(name)) await page.click('#dock-more'); await page.click(`[data-tool="${name}"]`) }
 const dragState = (page) => scene(page, 'dragState')
 const shot = async (page, name) => { if (process.env.PAGES_DEBUG) await page.screenshot({ path: `${process.env.PAGES_DEBUG}/${name}.png` }) }
 // the on-screen position of an object's top-left corner (to see that nothing seems to move when pages are added)

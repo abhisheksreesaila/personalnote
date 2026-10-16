@@ -106,7 +106,8 @@ async function stroke(page, cdp, points, { type = 'pen', frames = true } = {}) {
   await nextFrame(page)
 }
 const wave = (x, y, length = 260, count = 40, amp = 30) => Array.from({ length: count + 1 }, (_, i) => ({ x: x + (length * i) / count, y: y + Math.sin((i / count) * Math.PI * 2) * amp }))
-const tool = (page, name) => page.click(`[data-tool="${name}"]`)
+// the hand, highlighter, connect and eraser live in the + flyout since F-076
+const tool = async (page, name) => { if (['hand', 'highlight', 'connect', 'eraser'].includes(name)) await page.click('#dock-more'); await page.click(`[data-tool="${name}"]`) }
 
 // the pixels of one sheet region, and how many differ between two shots
 async function shot(page, clip) { return page.screenshot({ clip }) }

@@ -72,7 +72,7 @@
   .delete-note-action, .delete-notebook, .print-error { color: var(--terracotta); }
 
   .note-create-menu, .notebook-picker-menu, .tool-dock, .ink-options-popover,
-  .voice-button, .voice-caption, .page-count,
+  .voice-button, .voice-caption,
   .properties-panel, .notebook-dialog,
   .mindmap-branch-chooser, .mindmap-zoom, .mindmap-minimap, .mindmap-hint,
   .print-preview-bar, .print-summary {

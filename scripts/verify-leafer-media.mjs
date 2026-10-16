@@ -446,7 +446,8 @@ try {
   await page.waitForTimeout(300)
   const dock = await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const d = document.querySelector('.tool-dock'); return { onDock: Boolean(el?.closest('.tool-dock')), faint: d.classList.contains('is-clear-of-handles'), opacity: getComputedStyle(d).opacity } }, [dockBox.x, dockBox.y])
   check("narrow width (dock shown, 561-800 px): with the selection's bottom handle under the dock, the dock is still on top and clickable", dock.onDock && !dock.faint && Number(dock.opacity) > 0.9, JSON.stringify(dock))
-  await page.click('[data-tool="hand"]')
+  await page.click('#dock-more')
+  await page.click('[data-tool="hand"]') // (the hand is in the + flyout since F-076)
   check('narrow width (dock shown, 561-800 px): and a tool can be switched there', await pn(page, () => window.__personalNote.state.tool === 'hand'))
   await page.setViewportSize({ width: 1280, height: 800 })
 

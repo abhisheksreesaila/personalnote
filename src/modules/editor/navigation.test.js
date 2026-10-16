@@ -8,8 +8,6 @@ import {
   pageLabel,
   scrollThumbs,
   stepZoom,
-  viewForPage,
-  visiblePages,
   writingView,
   pageView,
   isDrawingTool,
@@ -53,23 +51,6 @@ test('fit never zooms in past the maximum', () => {
     margins: { left: 0, right: 0, top: 0, bottom: 0 }, min: 0.25, max: 1,
   })
   assert.equal(view.scale, 1)
-})
-
-test('visiblePages lists the pages that intersect the window, row by row', () => {
-  const visible = visiblePages({
-    view: { x: 0, y: 0, scale: 1 }, viewW: 900, viewH: 700, columns: 3, rows: 2, ...page,
-  })
-  assert.deepEqual([...visible].sort(), [0, 1])
-  const scrolled = visiblePages({
-    view: { x: -860, y: -1000, scale: 1 }, viewW: 900, viewH: 700, columns: 3, rows: 2, ...page,
-  })
-  assert.deepEqual([...scrolled].sort(), [1, 2, 4, 5])
-})
-
-test('viewForPage centres a page in the window at the current scale', () => {
-  const view = viewForPage({ column: 1, row: 0, scale: 0.5, viewW: 1000, viewH: 800, ...page })
-  assert.equal(view.x, 500 - 860 * 1.5 * 0.5)
-  assert.equal(view.y, 400 - 1080 * 0.5 * 0.5)
 })
 
 test('scroll thumbs describe the visible share of the pannable range', () => {

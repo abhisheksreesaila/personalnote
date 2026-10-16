@@ -38,7 +38,7 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 30000 })
   await page.waitForTimeout(500)
   check('New note opens a canvas with the toolbar, pages and zoom', await pn(() => window.__personalNote.state.activeNoteType === 'canvas'
-    && !document.querySelector('#dock-canvas').hidden && !document.querySelector('#page-minimap').hidden && !document.querySelector('#zoom-control').hidden))
+    && !document.querySelector('#dock-canvas').hidden && !document.querySelector('#history-island').hidden && !document.querySelector('#zoom-control').hidden))
   const noteId = await pn(() => window.__personalNote.state.activeNoteId)
 
   // Text tool, a click near the top-left of the first page, Markdown typed, then Escape ends the edit.

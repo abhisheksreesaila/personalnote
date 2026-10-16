@@ -46,7 +46,7 @@ import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/edi
 import { loadPanelOpen, savePanelOpen } from './modules/library/panel-pref.js'
 import { writingBox } from './modules/canvas-leafer/text-ops.js'
 import { countWords, createFocusMode, focusShortcut, focusView } from './modules/editor/focus-mode.js'
-import { chooseOpeningView, fitView, isDrawingTool, openingView, pageLabel, pageView, scrollThumbs, stepZoom, viewForPage, visiblePages, writingView, zoomPercent } from './modules/editor/navigation.js'
+import { chooseOpeningView, fitView, isDrawingTool, openingView, pageLabel, pageView, scrollThumbs, stepZoom, writingView, zoomPercent } from './modules/editor/navigation.js'
 import {
   clampView,
   pageExtents,
@@ -77,13 +77,6 @@ const INK_COLORS = [
   ['Cyan', '#2d91a8'],
   ['Violet', '#76669a'],
   ['Magenta', '#b45f8c'],
-]
-const QUICK_INK_COLORS = [
-  ['Charcoal', '#20201e'],
-  ['Red', '#d14b3f'],
-  ['Orange', '#df8437'],
-  ['Green', '#3a7d5a'],
-  ['Blue', '#1c70a8'],
 ]
 const STROKE_WIDTHS = {
   pen: [1, 3, 6, 10],
@@ -163,32 +156,30 @@ document.querySelector('#app').innerHTML = `
           <button type="button" data-selection-action="link" title="Link to words: then click a word of a text; the word opens and folds it">Link to words</button>
           <button type="button" data-selection-action="delete" title="Delete (Delete key)">Delete</button>
         </div>
-        <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
+        <div class="tool-dock" role="toolbar" aria-label="Canvas tools" aria-orientation="vertical">
           <div class="dock-canvas" id="dock-canvas">
             <div class="tool-group dock-tools">
               <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select">${dockIcon('select')}</button>
-              <button class="tool-button" data-tool="hand" title="Hand (H) - drag to move the canvas; or hold Space" aria-label="Hand"><i data-lucide="hand"></i></button>
               <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text">${dockIcon('text')}</button>
               <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen">${dockIcon('pen')}</button>
-              <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (M) - hold for color and width" aria-label="Highlighter">${dockIcon('marker')}</button>
               <button class="tool-button" data-tool="shape" data-tool-options title="Shape (R) - click the page to place, hold for color" aria-label="Shape">${dockIcon('shape')}</button>
               <button class="tool-button" data-tool="sticky" data-tool-options title="Sticky note (N) - click the page to place, hold for color" aria-label="Sticky note">${dockIcon('sticky')}</button>
-              <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect">${dockIcon('connect')}</button>
-              <button class="tool-button" id="add-image" title="Image (I) - choose a file, or drop one on the page" aria-label="Add image">${dockIcon('image')}</button>
-              <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser">${dockIcon('eraser')}</button>
+            </div>
+            <div class="dock-divider"></div>
+            <button class="tool-button ink-options-trigger" id="ink-options-trigger" title="Colors and widths" aria-label="Open ink options" aria-haspopup="dialog" aria-expanded="false"><span class="ink-options-dot" id="ink-options-dot"></span></button>
+            <div class="dock-more-wrap">
+              <button class="tool-button dock-more" id="dock-more" data-keeps-text-editing title="More tools" aria-label="More tools" aria-haspopup="true" aria-expanded="false"><i data-lucide="plus" class="more-plus"></i><span class="more-tool" id="dock-more-tool"></span></button>
+              <div class="dock-flyout" id="dock-flyout" role="group" aria-label="More tools" hidden>
+                <button class="tool-button" data-tool="hand" title="Hand (H) - drag to move the canvas; or hold Space" aria-label="Hand"><i data-lucide="hand"></i></button>
+                <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (M) - hold for color and width" aria-label="Highlighter">${dockIcon('marker')}</button>
+                <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect">${dockIcon('connect')}</button>
+                <button class="tool-button" id="add-image" title="Image (I) - choose a file, or drop one on the page" aria-label="Add image">${dockIcon('image')}</button>
+                <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser">${dockIcon('eraser')}</button>
+                <button class="tool-button prettify-button" id="prettify" data-keeps-text-editing title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
+              </div>
             </div>
             <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
             <div class="dock-divider"></div>
-            <div class="ink-swatches" role="group" aria-label="Ink color">
-              ${QUICK_INK_COLORS.map(([name, color]) => `<button class="ink-swatch ${color === '#20201e' ? 'active' : ''}" data-color="${color}" style="--swatch:${color}" title="${name}" aria-label="${name}"></button>`).join('')}
-              <button class="tool-button ink-options-trigger" id="ink-options-trigger" title="More colors and widths" aria-label="Open ink options" aria-haspopup="dialog" aria-expanded="false"><span class="ink-options-dot" id="ink-options-dot"></span></button>
-            </div>
-            <div class="dock-divider"></div>
-            <div class="tool-group dock-history">
-              <button class="tool-button prettify-button" id="prettify" data-keeps-text-editing title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
-              <button class="tool-button" id="undo" title="Undo" aria-label="Undo">${dockIcon("undo")}</button>
-              <button class="tool-button" id="redo" title="Redo" aria-label="Redo">${dockIcon("redo")}</button>
-            </div>
             <button class="voice-button" id="voice-button" data-keeps-text-editing title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon">${dockIcon("mic", 2)}</span></button>
           </div>
           <div class="mindmap-dock-actions mindmap-rail-actions" id="mindmap-rail-actions" aria-label="Mind map tools" hidden>
@@ -236,9 +227,9 @@ document.querySelector('#app').innerHTML = `
         <div class="page-host" id="page-host" hidden></div>
         <div class="scroll-indicator scroll-indicator-y" id="scroll-y" aria-hidden="true"><span></span></div>
         <div class="scroll-indicator scroll-indicator-x" id="scroll-x" aria-hidden="true"><span></span></div>
-        <div class="page-minimap" id="page-minimap" role="group" aria-label="Pages">
-          <div class="mini-grid" id="mini-grid"></div>
-          <span class="page-count" id="page-count">1 page · 1 × 1</span>
+        <div class="history-island" id="history-island" role="group" aria-label="History">
+          <button class="icon-button" id="undo" title="Undo" aria-label="Undo">${dockIcon("undo")}</button>
+          <button class="icon-button" id="redo" title="Redo" aria-label="Redo">${dockIcon("redo")}</button>
         </div>
         <div class="zoom-control" id="zoom-control" role="group" aria-label="Zoom">
           <button class="icon-button" id="zoom-out" title="Zoom out" aria-label="Zoom out"><i data-lucide="minus"></i></button>
@@ -449,9 +440,11 @@ const elements = {
   list: document.querySelector('#notebook-navigator'),
   notebookList: document.querySelector('#notebook-list'),
   saveState: document.querySelector('#save-state'),
-  pageCount: document.querySelector('#page-count'),
-  pageMinimap: document.querySelector('#page-minimap'),
-  miniGrid: document.querySelector('#mini-grid'),
+  historyIsland: document.querySelector('#history-island'),
+  zoomFit: document.querySelector('#zoom-fit'),
+  dockMore: document.querySelector('#dock-more'),
+  dockMoreTool: document.querySelector('#dock-more-tool'),
+  dockFlyout: document.querySelector('#dock-flyout'),
   zoomControl: document.querySelector('#zoom-control'),
   zoomValue: document.querySelector('#zoom-value'),
   scrollX: document.querySelector('#scroll-x'),
@@ -557,9 +550,10 @@ function setActiveNoteType(noteType) {
   elements.paper.hidden = notCanvas
   elements.mindmapHost.hidden = !isMindMap
   elements.pageHost.hidden = !isPage
-  elements.pageMinimap.hidden = notCanvas
+  elements.historyIsland.hidden = notCanvas
   elements.zoomControl.hidden = notCanvas
   elements.dockCanvas.hidden = notCanvas
+  setFlyoutOpen(false)
   if (notCanvas) hideScrollIndicators()
   elements.canvasTypographyProperties.hidden = notCanvas
   elements.mindmapProperties.hidden = !isMindMap
@@ -699,6 +693,11 @@ function currentObjectPalette() {
   return objectPalette((name) => styles.getPropertyValue(name))
 }
 
+function setFlyoutOpen(open) {
+  elements.dockFlyout.hidden = !open
+  elements.dockMore.setAttribute('aria-expanded', String(open))
+}
+
 function closeInkOptions() {
   clearTimeout(inkOptionsCloseTimer)
   elements.inkOptionsPopover.hidden = true
@@ -712,8 +711,8 @@ function scheduleInkOptionsClose(delay = 750) {
 }
 
 function updateInkOptions() {
-  elements.inkOptionsDot.style.setProperty('--active-ink', state.color)
   const placing = state.tool === 'sticky' || state.tool === 'shape'
+  elements.inkOptionsDot.style.setProperty('--active-ink', placing ? currentObjectPalette()[state.objectColor].fill : state.color) // the dot shows the colour the active tool will use
   elements.inkPalette.hidden = placing
   elements.objectPalette.hidden = !placing
   if (placing) {
@@ -724,7 +723,7 @@ function updateInkOptions() {
   } else {
     elements.inkColorLabel.textContent = state.tool === 'text' ? 'Text color' : 'Ink color'
   }
-  document.querySelectorAll('.palette-swatch:not(.object-swatch), .ink-swatch').forEach((swatch) => {
+  document.querySelectorAll('.palette-swatch:not(.object-swatch)').forEach((swatch) => {
     swatch.classList.toggle('active', swatch.dataset.color === state.color)
   })
 
@@ -740,18 +739,20 @@ function updateInkOptions() {
   `).join('')
 }
 
+// Beside the tool island, level with the control that opened it (the dot when that control sat in the flyout, which has just closed).
 function positionInkOptions(anchor) {
-  const anchorRect = anchor.getBoundingClientRect()
-  const popoverWidth = elements.inkOptionsPopover.offsetWidth
-  const minimum = 8 + popoverWidth / 2
-  const maximum = window.innerWidth - 8 - popoverWidth / 2
-  const center = anchorRect.left + anchorRect.width / 2
-  elements.inkOptionsPopover.style.left = `${Math.max(minimum, Math.min(maximum, center))}px`
+  const popover = elements.inkOptionsPopover
+  const source = elements.dockFlyout.contains(anchor) ? elements.inkOptionsTrigger : anchor
+  const rect = source.getBoundingClientRect()
+  const island = elements.inkOptionsTrigger.closest('.tool-dock').getBoundingClientRect()
+  popover.style.right = `${window.innerWidth - island.left + 12}px`
+  popover.style.top = `${Math.max(8, Math.min(window.innerHeight - 8 - popover.offsetHeight, rect.top + rect.height / 2 - popover.offsetHeight / 2))}px`
 }
 
 function openInkOptions(anchor = elements.inkOptionsTrigger) {
   clearTimeout(inkOptionsCloseTimer)
   updateInkOptions()
+  setFlyoutOpen(false)
   elements.inkOptionsPopover.hidden = false
   elements.inkOptionsTrigger.setAttribute('aria-expanded', String(anchor === elements.inkOptionsTrigger))
   document.querySelectorAll('[data-tool-options]').forEach((button) => {
@@ -1076,23 +1077,7 @@ function setCanvasViewportOffset(offsetX = viewportOffsetX, offsetY = viewportOf
 }
 
 // ---- Page minimap, zoom control and scroll indicator. They only read the view; the canvas owns it.
-let miniGridKey = ''
 let scrollFadeTimer
-
-function updateMiniGrid() {
-  const { columns, rows } = state.pages
-  const visible = visiblePages({
-    view: { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() },
-    viewW: viewSize.width, viewH: viewSize.height, columns, rows, pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT,
-  })
-  const key = `${columns}x${rows}:${[...visible].join(',')}`
-  if (key === miniGridKey) return
-  miniGridKey = key
-  elements.miniGrid.style.setProperty('--mini-columns', Math.min(columns, 8))
-  elements.miniGrid.innerHTML = Array.from({ length: columns * rows }, (_, index) => `
-    <button class="mini-page ${visible.has(index) ? 'on' : ''}" data-page-index="${index}" aria-label="Go to page ${index + 1}" title="Page ${index + 1}"></button>
-  `).join('')
-}
 
 function hideScrollIndicators() {
   elements.scrollX.classList.remove('visible')
@@ -1126,7 +1111,6 @@ function updateScrollIndicators(reveal) {
 function updateNavigationUi(reveal = false) {
   elements.zoomValue.textContent = `${zoomPercent(getCanvasScale())}%`
   updateWritingQuiet()
-  updateMiniGrid()
   updateScrollIndicators(reveal)
 }
 
@@ -1171,15 +1155,6 @@ function fitAllPages() {
 
 function resetZoom() {
   setViewTo(zoomTarget(1))
-}
-
-function goToPage(index) {
-  const column = index % state.pages.columns
-  const row = Math.floor(index / state.pages.columns)
-  const scale = getCanvasScale()
-  const view = viewForPage({ column, row, scale, viewW: viewSize.width, viewH: viewSize.height, pageW: PAGE_WIDTH, pageH: PAGE_HEIGHT })
-  const clamped = clampedViewOffset(view.x, view.y, false, scale)
-  setViewTo({ x: clamped.x, y: clamped.y, scale })
 }
 
 const OPEN_ZOOM_MIN = 0.4
@@ -1328,8 +1303,9 @@ function resizePaper(shiftX = 0, shiftY = 0, settle = false) {
   }
   setCanvasViewportOffset(viewportOffsetX, viewportOffsetY, !settle && Boolean(shiftX || shiftY || changed))
   leaferCanvas?.setPages(state.pages)
-  elements.pageCount.textContent = pageLabel(state.pages.columns, state.pages.rows)
-  updateMiniGrid()
+  const fitLabel = `Zoom to fit all pages (${pageLabel(state.pages.columns, state.pages.rows)})`
+  elements.zoomFit.title = fitLabel
+  elements.zoomFit.setAttribute('aria-label', fitLabel)
   updateScrollIndicators(false)
 }
 
@@ -1368,6 +1344,10 @@ function setTool(tool) {
   }
   elements.mobileConnect.classList.toggle('active', tool === 'connect')
   elements.mobileConnect.setAttribute('aria-pressed', String(tool === 'connect'))
+  const flyoutTool = elements.dockFlyout.querySelector(`[data-tool="${tool}"]`) // the + wears the icon of a tool picked from its flyout
+  elements.dockMore.classList.toggle('active', Boolean(flyoutTool))
+  elements.dockMore.classList.toggle('has-tool', Boolean(flyoutTool))
+  elements.dockMoreTool.innerHTML = flyoutTool?.innerHTML ?? ''
   updateInkOptions()
   if (tool !== 'eraser') elements.eraserCursor.hidden = true
   updateWritingQuiet()
@@ -1797,7 +1777,7 @@ function scheduleHandleClearance() {
   if (clearanceFrame) return
   clearanceFrame = requestAnimationFrame(() => {
     clearanceFrame = 0
-    const controls = [...document.querySelectorAll('.zoom-control, .page-minimap')]
+    const controls = [...document.querySelectorAll('.zoom-control, .history-island')]
     const ids = leaferCanvas?.selection() ?? []
     const host = leaferHost?.getBoundingClientRect()
     let handles = []
@@ -3167,7 +3147,7 @@ onCanvasInput('pointercancel', (event) => {
 }, { capture: true })
 
 elements.workspace.addEventListener('wheel', (event) => {
-  if (state.activeNoteType !== 'canvas' || event.target.closest?.('.tool-dock, .page-minimap, .zoom-control, .properties-panel, .sidebar')) return
+  if (state.activeNoteType !== 'canvas' || event.target.closest?.('.tool-dock, .history-island, .zoom-control, .properties-panel, .sidebar')) return
   event.preventDefault()
   if (event.ctrlKey || event.metaKey) {
     const rect = elements.workspace.getBoundingClientRect()
@@ -3335,6 +3315,11 @@ document.addEventListener('paste', (event) => {
   void placeImageFiles(files)
 })
 elements.inkOptionsTrigger.addEventListener('click', toggleInkOptions)
+elements.dockMore.addEventListener('click', () => {
+  closeInkOptions()
+  setFlyoutOpen(elements.dockFlyout.hidden)
+})
+elements.dockFlyout.addEventListener('click', (event) => { if (event.target.closest('button')) setFlyoutOpen(false) })
 document.querySelector('#close-ink-options').addEventListener('click', closeInkOptions)
 elements.strokeWidths.addEventListener('click', (event) => {
   const button = event.target.closest('[data-stroke-width]')
@@ -3713,6 +3698,7 @@ document.addEventListener('click', (event) => {
     elements.notebookPicker.setAttribute('aria-expanded', 'false')
   }
   if (!event.target.closest('.ink-options-popover, #ink-options-trigger, [data-tool-options]')) closeInkOptions()
+  if (!event.target.closest('.dock-flyout, #dock-more')) setFlyoutOpen(false)
 })
 document.addEventListener('pointerdown', (event) => {
   const target = event.target
@@ -3867,7 +3853,7 @@ function endTemporaryHand() {
 // A mouse click leaves focus on the dock, zoom and page buttons, and Space would then press that button
 // instead of holding the hand. Let go of focus after a mouse click; keyboard use is unaffected.
 document.addEventListener('click', (event) => {
-  const button = event.target.closest?.('.tool-dock button, .zoom-control button, .page-minimap button')
+  const button = event.target.closest?.('.tool-dock button, .zoom-control button, .history-island button')
   if (button && event.detail > 0) button.blur()
 })
 document.addEventListener('keyup', (event) => { if (event.key === ' ') { spaceHeld = false; endTemporaryHand() } })
@@ -4197,6 +4183,9 @@ document.addEventListener('keydown', (event) => {
     setPropertiesOpen(false)
   } else if (event.key === 'Escape' && !elements.inkOptionsPopover.hidden) {
     closeInkOptions()
+  } else if (event.key === 'Escape' && !elements.dockFlyout.hidden) {
+    setFlyoutOpen(false)
+    elements.dockMore.focus()
   } else if (event.key === 'Escape' && !elements.noteCreateMenu.hidden) {
     setNoteCreateMenuOpen(false)
     document.querySelector('#rail-new-note').focus()
@@ -4273,10 +4262,6 @@ document.querySelector('#zoom-in').addEventListener('click', () => zoomStep(1))
 document.querySelector('#zoom-out').addEventListener('click', () => zoomStep(-1))
 document.querySelector('#zoom-fit').addEventListener('click', fitAllPages)
 elements.zoomValue.addEventListener('click', resetZoom)
-elements.miniGrid.addEventListener('click', (event) => {
-  const tile = event.target.closest('[data-page-index]')
-  if (tile) goToPage(Number(tile.dataset.pageIndex))
-})
 
 async function initialize() {
   await prepareCanvasFonts()
