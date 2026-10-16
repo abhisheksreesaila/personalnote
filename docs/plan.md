@@ -575,3 +575,8 @@ Brief: docs/briefs/plugins.md · Needs: F-090
 ## F-092 Jam sessions in a mind map [todo]
 Brief: docs/briefs/jam-sessions.md · Design: to do (Stitch: ghost branches, 👍/👎, live line) · Needs: F-086, F-090
 - [ ] New jam; hold mic, live line, Jam button → brain edits applied as one undo step; ghosts accepted by click or "yes"; Settings → Jam picks the brain
+## F-093 Settings → AI: pick the model once for every AI feature [todo]
+Brief: docs/briefs/jam-sessions.md ("the brain is your choice"); captain 2026-10-16: "give me … the config menu … so I can put my base URL, API key and deployment name, save it … settings for future AI stuff" · Needs: F-086, F-087 (secret_store.py)
+- [ ] Settings has an AI section: provider (Claude Code on this machine / Azure OpenAI / OpenAI-compatible), endpoint or base URL, deployment or model, API version (Azure), API key; Save; "Test" runs one tiny real call and shows the answer time or the plain error
+- [ ] the key is kept in the system keychain (0600 file on Linux), never in SQLite, backup, export, logs or the page; the page only learns "a key is saved" and can replace or remove it
+- [ ] jam_brain builds its brain from these settings (env vars still override for scripts)
