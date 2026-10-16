@@ -54,7 +54,7 @@ async function open(flags, data = note) {
 
 const gesture = (page) => page.evaluate(() => window.__personalNote.leaferCanvas().gestureState())
 const sleep = (page, ms) => page.waitForTimeout(ms)
-const shot = (page, clip = { x: 228, y: 0, width: 1052, height: 800 }) => page.screenshot({ clip })
+const shot = (page, clip = { x: 0, y: 0, width: 1280, height: 800 }) => page.screenshot({ clip })
 // The gesture has settled (the note is drawn for the exact view and nothing is moving), and a frame has gone by.
 const whenSettled = async (page) => { await page.waitForFunction(() => !window.__personalNote.leaferCanvas().gestureState().pending, null, { timeout: 15000 }); await page.waitForTimeout(60) }
 
@@ -87,7 +87,7 @@ try {
   const main = await open(process.env.GEST_FLAGS ? JSON.parse(process.env.GEST_FLAGS) : SLIDE)
   let { page } = main
   const first = await gesture(page)
-  check('the canvas is drawn a margin past the window (the transform is on in this mode)', first.margin > 0 && first.canvas[0] === 1052 + 2 * first.margin, JSON.stringify(first))
+  check('the canvas is drawn a margin past the window (the transform is on in this mode)', first.margin > 0 && first.canvas[0] === 1280 + 2 * first.margin, JSON.stringify(first))
   await page.mouse.move(600, 400)
   const before = await page.evaluate(() => performance.getEntriesByType('measure').length)
   for (let i = 0; i < 8; i += 1) { await page.mouse.wheel(0, 30); await sleep(page, 16) }

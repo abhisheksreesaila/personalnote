@@ -35,7 +35,7 @@ test('mac chrome marks the page and adds drag strips that zoom on double click',
   assert.equal(applyHostChrome({ root, doc, search: '?host=desktop&chrome=mac', zoomWindow: () => { zoomed += 1 } }), true)
   assert.ok(root.has('chrome-mac'))
   assert.equal(doc.parts['.main-view'].children.length, 1)
-  assert.equal(doc.parts['.sidebar'].children.length, 1)
+  assert.equal(doc.parts['.sidebar'].children.length, 0) // (the floating notes panel starts below the title bar: nothing to drag there)
   const strip = doc.parts['.main-view'].children[0]
   assert.match(strip.className, /pywebview-drag-region/)
   assert.equal(strip.attrs['aria-hidden'], 'true')

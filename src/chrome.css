@@ -18,13 +18,12 @@
     --ring: 0 0 0 2px var(--sk-panel), 0 0 0 4px var(--sk-accent);
     --ease-spring: cubic-bezier(.2, .9, .25, 1.08);
     --ease-out: cubic-bezier(.22, .75, .25, 1);
-    --sidebar-width: 204px;
+    --sidebar-width: 280px;
   }
 
   :root[data-skin="night"] { --accent-fill: var(--sk-accent); --accent-text: var(--sk-accent); }
 
   .app-shell {
-    --rail-width: 228px;
     position: relative;
     display: block;
     background-color: var(--sk-desk);
@@ -35,7 +34,7 @@
   }
   .app-shell button { font: inherit; }
   .app-shell .voice-button-icon { display: grid; place-items: center; }
-  .app-shell .main-view { position: absolute; inset: 0 0 0 var(--rail-width); display: block; min-width: 0; }
+  .app-shell .main-view { position: absolute; inset: 0; display: block; min-width: 0; }
   .app-shell .workspace, .app-shell.mindmap-active .workspace { position: absolute; inset: 0; background: transparent; }
 
   /* Shared glass surface. */
@@ -52,11 +51,22 @@
 
   /* ---------- Sidebar ---------- */
   .app-shell .sidebar {
-    position: fixed; inset: 12px auto 12px 12px; width: var(--sidebar-width);
+    position: fixed; inset: 72px auto 16px 16px; width: var(--sidebar-width);
     display: flex; flex-direction: column; gap: 2px; padding: 14px 10px;
-    background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--sk-radius);
-    box-shadow: var(--sk-shadow); transform: none; z-index: 23;
-    -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+    background: var(--sk-panel); border: 1px solid var(--sk-edge); border-radius: var(--sk-radius);
+    box-shadow: var(--sk-shadow); transform: none; z-index: 45; /* above a locked note's cover (z 40) so the notes stay reachable */
+  }
+  /* Closed, the panel is gone (and inert); opened it fades in, nothing slides or zooms. */
+  @media (min-width: 801px) {
+    .app-shell .sidebar { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 150ms ease, visibility 0s linear 150ms; }
+    .app-shell .sidebar.open { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity 150ms ease; }
+    .app-shell .glass-button.sidebar-toggle {
+      position: fixed; top: 16px; left: 16px; z-index: 46; width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid;
+      background: var(--sk-panel); border-color: var(--sk-edge); box-shadow: var(--sk-shadow); -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: auto;
+    }
+    .app-shell .glass-button.sidebar-toggle svg { width: 20px; height: 20px; }
+    .app-shell .glass-button.sidebar-toggle[aria-expanded="true"] { background: color-mix(in srgb, var(--sk-panel) 87%, var(--sk-ink)); }
+    @media (prefers-reduced-motion: reduce) { .app-shell .sidebar, .app-shell .sidebar.open { transition: none; } }
   }
   .app-shell .brand-row { height: auto; flex: none; display: flex; align-items: center; gap: 9px; padding: 2px 6px 12px; border: 0; }
   .app-shell .brand-mark {
@@ -196,9 +206,12 @@
   /* ---------- Top bar ---------- */
   .app-shell .topbar {
     position: absolute; inset: 14px 16px auto 4px; height: 48px; display: flex; align-items: center; gap: 12px; padding: 0;
-    background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; z-index: 10;
+    background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none;
   }
+  /* The top bar is not a stacking context of its own, so the notes button can sit above a locked note's cover; its other items keep z 10. */
+  .app-shell .topbar > * { z-index: 10; }
   .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }
+  @media (min-width: 801px) { .app-shell { --topbar-left: 72px; } .app-shell .topbar { left: var(--topbar-left); } } /* clear of the notes button */
   .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0; pointer-events: auto; }
   .app-shell .crumb { flex: none; display: flex; align-items: center; gap: 6px; color: var(--ui-muted); font-size: 12.5px; white-space: nowrap; }
   .app-shell .crumb b { font-weight: 500; color: var(--ink-soft); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
@@ -220,6 +233,7 @@
   /* The omnibar's slim bar (F-072): top centre of the window, centred on the window rather than on whatever sits beside it. */
   .app-shell { --omni-w: clamp(200px, 22vw, 320px); }
   .app-shell .omni-slot { position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
+  @media (min-width: 801px) { .app-shell .omni-slot { left: calc(50% - (var(--topbar-left) - 16px) / 2); } } /* (still centred on the window, though the top bar now starts after the notes button) */
   .app-shell .search-button {
     width: var(--omni-w); height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border-radius: 999px; color: var(--ui-muted);
     overflow: hidden; white-space: nowrap; cursor: text; transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
@@ -240,7 +254,6 @@
   .app-shell .glass-button:focus-visible, .app-shell .properties-trigger:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
   .app-shell .properties-trigger.active, .app-shell .share-button[aria-expanded="true"] { color: var(--accent-text); background: var(--sk-accent-soft); border-color: var(--sk-accent); }
   .app-shell .glass-button svg { width: 18px; height: 18px; }
-  .app-shell .glass-button.sidebar-toggle { display: none; }
 
   .app-shell .agent-chip {
     order: -1; height: 36px; margin: 0; padding: 0 14px 0 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px;
@@ -266,8 +279,8 @@
 
   /* ---------- Dock ---------- */
   .app-shell .tool-dock {
-    position: fixed; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); bottom: 22px; transform: translateX(-50%); height: 58px;
-    display: flex; align-items: center; gap: 2px; padding: 0 8px; border-radius: 20px; overflow: visible; max-width: calc(100vw - var(--rail-width) - 32px);
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); height: 58px;
+    display: flex; align-items: center; gap: 2px; padding: 0 8px; border-radius: 20px; overflow: visible; max-width: calc(100vw - 32px);
     transition: opacity 200ms ease, transform 240ms var(--ease-out); z-index: 12;
   }
   .app-shell .dock-canvas, .app-shell .mindmap-dock-actions, .app-shell .tool-group, .app-shell .ink-swatches { display: flex; align-items: center; gap: 2px; min-width: 0; }
@@ -319,7 +332,7 @@
 
   .app-shell .workspace.is-drop-target::after { content: ""; position: absolute; inset: 8px; z-index: 6; pointer-events: none; border: 2px dashed var(--sk-accent); border-radius: var(--sk-radius); background: color-mix(in srgb, var(--sk-accent) 6%, transparent); }
   .app-shell .ink-options-popover { position: fixed; bottom: 92px; border-radius: 16px; background: var(--glass-solid); }
-  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - var(--rail-width) - 24px)); font-size: 11px; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); bottom: 92px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
+  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - 24px)); font-size: 11px; left: 50%; bottom: 92px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
   .app-shell .voice-pulse { background: var(--sk-accent); }
   .app-shell .note-create-menu { position: fixed; z-index: 60; width: 168px; padding: 6px; border-radius: 14px; background: var(--glass-solid); animation: menu-in 160ms var(--ease-out); }
   .app-shell .note-create-menu[hidden] { display: none; }
@@ -410,10 +423,8 @@
 
   /* ---------- Phones and narrow tablets ---------- */
   @media (max-width: 800px) {
-    .app-shell { --rail-width: 0px; }
-    .app-shell .main-view { inset: 0; }
     .app-shell .sidebar {
-      inset: 8px auto 8px 8px; width: min(86vw, 330px); transform: translateX(calc(-100% - 24px)); z-index: 40;
+      inset: 8px auto 8px 8px; width: min(86vw, 330px); transform: translateX(calc(-100% - 24px)); z-index: 45;
       transition: transform 280ms var(--ease-out); background: var(--glass-solid);
     }
     .app-shell .sidebar.open { transform: none; }
@@ -588,12 +599,13 @@
   .app-shell .mac-drag-strip { display: none; }
   :root.chrome-mac { --mac-lights: 78px; --mac-bar: 36px; }
   :root.chrome-mac .app-shell .mac-drag-strip { display: block; position: absolute; left: 0; right: 0; top: 0; height: calc(var(--mac-bar) + 4px); z-index: 9; }
-  :root.chrome-mac .app-shell .mac-drag-sidebar { z-index: 0; }
-  :root.chrome-mac .app-shell .sidebar { padding-top: 34px; }
   :root.chrome-mac .app-shell .topbar { top: 4px; height: var(--mac-bar); }
   :root.chrome-mac .app-shell .topbar-title { height: var(--mac-bar); }
+  @media (min-width: 801px) {
+    :root.chrome-mac .app-shell .glass-button.sidebar-toggle { top: 4px; left: var(--mac-lights); width: var(--mac-bar); height: var(--mac-bar); }
+    :root.chrome-mac .app-shell { --topbar-left: calc(var(--mac-lights) + var(--mac-bar) + 8px); }
+  }
   :root.chrome-mac-fullscreen .app-shell .mac-drag-strip { display: none; }
-  :root.chrome-mac-fullscreen .app-shell .sidebar { padding-top: 14px; }
   @media (max-width: 800px) {
     :root.chrome-mac .app-shell .topbar { top: 4px; left: calc(var(--mac-lights) - 4px); height: var(--mac-bar); }
     :root.chrome-mac .app-shell .glass-button.sidebar-toggle { flex-basis: 36px; width: 36px; height: 36px; }
@@ -638,7 +650,7 @@
 /* F-073 focus mode: only the words, on paper. The strip shows on hover; the hint fades by itself. */
 @media screen {
   .focus-strip, .focus-hint { display: none; position: fixed; z-index: 40; color: var(--ui-muted); font: 500 12.5px var(--ui-font); }
-  .app-shell.focus-mode { --rail-width: 0px; background: var(--paper); }
+  .app-shell.focus-mode { background: var(--paper); }
   .focus-mode :is(.sidebar, .topbar, .tool-dock, .page-minimap, .zoom-control, .scroll-indicator, .selection-bar, .properties-panel, .sidebar-scrim, .mobile-capture-controls, .ink-options-popover, .md-edge, .text-edge) { display: none !important; }
   .focus-mode .focus-strip { display: flex; inset: 0 0 auto; height: 52px; align-items: center; gap: 16px; padding: 0 20px; background: var(--paper); opacity: 0; transition: opacity .16s; }
   .focus-strip:hover, .focus-strip:focus-within { opacity: 1; }

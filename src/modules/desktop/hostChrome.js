@@ -27,7 +27,6 @@ export function applyHostChrome({ root, doc = root?.ownerDocument, search = '', 
   if (chrome !== 'mac' || !root || !doc) return false
   root.classList.add(MAC_CHROME_CLASS)
   doc.querySelector('.main-view')?.prepend(createDragStrip(doc, 'mac-drag-main', zoomWindow))
-  doc.querySelector('.sidebar')?.prepend(createDragStrip(doc, 'mac-drag-sidebar', zoomWindow))
   return true
 }
 

@@ -43,6 +43,7 @@ import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.
 import { createDoubleTap, tapKeyFor } from './modules/editor/double-tap.js'
 import { createMiddleClick } from './modules/editor/middle-click.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
+import { loadPanelOpen, savePanelOpen } from './modules/library/panel-pref.js'
 import { writingBox } from './modules/canvas-leafer/text-ops.js'
 import { countWords, createFocusMode, focusShortcut, focusView } from './modules/editor/focus-mode.js'
 import { chooseOpeningView, fitView, isDrawingTool, openingView, pageLabel, pageView, scrollThumbs, stepZoom, viewForPage, visiblePages, writingView, zoomPercent } from './modules/editor/navigation.js'
@@ -747,8 +748,7 @@ function updateInkOptions() {
 function positionInkOptions(anchor) {
   const anchorRect = anchor.getBoundingClientRect()
   const popoverWidth = elements.inkOptionsPopover.offsetWidth
-  const railWidth = Number.parseFloat(getComputedStyle(elements.shell).getPropertyValue('--rail-width')) || 0
-  const minimum = railWidth + 8 + popoverWidth / 2
+  const minimum = 8 + popoverWidth / 2
   const maximum = window.innerWidth - 8 - popoverWidth / 2
   const center = anchorRect.left + anchorRect.width / 2
   elements.inkOptionsPopover.style.left = `${Math.max(minimum, Math.min(maximum, center))}px`
@@ -2118,7 +2118,7 @@ async function createNote(notebookId, noteType = 'canvas', title) {
     state.selectedNotebookId = note.notebookId
     state.activeNoteId = null
     await selectNote(note.id)
-    setSidebarOpen(false)
+    if (mobileLayout.matches) setSidebarOpen(false)
   } finally {
     state.creatingNote = false
   }
@@ -2930,7 +2930,7 @@ function runOmniItem(item) {
     revealNotebook(item.id)
     state.selectedNotebookId = item.id
     renderNoteList()
-    if (mobileLayout.matches) setSidebarOpen(true)
+    setSidebarOpen(true)
     requestAnimationFrame(() => elements.list.querySelector(`[data-nbk="${item.id}"]`)?.scrollIntoView({ block: 'nearest' }))
   } else if (item.kind === 'create') void createNote(state.selectedNotebookId ?? undefined, 'canvas', item.title)
   else if (item.kind === 'action') Promise.resolve(item.run()).catch((error) => { console.error(error); showToast(error.message || 'Something went wrong') })
@@ -3359,24 +3359,27 @@ document.querySelector('#undo').addEventListener('click', () => stepHistory(-1))
 document.querySelector('#redo').addEventListener('click', () => stepHistory(1))
 const mobileLayout = window.matchMedia('(max-width: 800px)')
 
-function setSidebarOpen(open) {
-  const isOpen = mobileLayout.matches && open
+// The notes panel floats over the desk at every width. `remember` is for the person's own choice (button, Esc, a click on the desk); it is kept for wide windows only.
+function setSidebarOpen(open, remember = false) {
+  const isOpen = open
+  if (remember && !mobileLayout.matches) savePanelOpen(safeStorage(), isOpen)
   const wasOpen = elements.sidebar.classList.contains('open')
   // Move focus before the drawer becomes inert so it never gets stranded inside it.
   if (!isOpen && wasOpen && elements.sidebar.contains(document.activeElement)) elements.sidebarToggle.focus()
   elements.shell.classList.toggle('sidebar-open', isOpen)
   elements.sidebar.classList.toggle('open', isOpen)
-  elements.sidebar.inert = mobileLayout.matches && !isOpen
+  elements.sidebar.inert = !isOpen
   elements.sidebarToggle.setAttribute('aria-expanded', String(isOpen))
   elements.sidebarToggle.setAttribute('aria-label', isOpen ? 'Close notebooks' : 'Open notebooks')
   if (isOpen && !wasOpen) requestAnimationFrame(() => document.querySelector('#rail-new-note').focus())
 }
 
-elements.sidebarToggle.addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open')))
-document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false))
-elements.sidebarScrim.addEventListener('click', () => setSidebarOpen(false))
-mobileLayout.addEventListener('change', () => setSidebarOpen(false))
-setSidebarOpen(false)
+const restoredSidebar = () => !mobileLayout.matches && loadPanelOpen(safeStorage())
+elements.sidebarToggle.addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open'), true))
+document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false, true))
+elements.sidebarScrim.addEventListener('click', () => setSidebarOpen(false, true))
+mobileLayout.addEventListener('change', () => setSidebarOpen(restoredSidebar()))
+setSidebarOpen(restoredSidebar())
 
 const desktopNewNoteButtons = [document.querySelector('#rail-new-note')]
 const suppressedNewNoteClicks = new WeakSet()
@@ -3715,8 +3718,9 @@ document.addEventListener('pointerdown', (event) => {
   const target = event.target
   if (
     elements.sidebar.classList.contains('open')
-    && !target.closest('.sidebar, #toggle-sidebar')
-  ) setSidebarOpen(false)
+    && target.closest('.main-view')
+    && !target.closest('#toggle-sidebar')
+  ) setSidebarOpen(false, true)
 
   if (
     elements.properties.classList.contains('open')
@@ -3731,7 +3735,7 @@ elements.list.addEventListener('click', (event) => {
   const item = event.target.closest('[data-note-id]')
   if (item) {
     selectNote(Number(item.dataset.noteId))
-    setSidebarOpen(false)
+    if (mobileLayout.matches) setSidebarOpen(false)
     return
   }
   const newNote = event.target.closest('[data-new-note-in]')
@@ -4193,8 +4197,11 @@ document.addEventListener('keydown', (event) => {
     setPropertiesOpen(false)
   } else if (event.key === 'Escape' && !elements.inkOptionsPopover.hidden) {
     closeInkOptions()
-  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open')) {
-    setSidebarOpen(false)
+  } else if (event.key === 'Escape' && !elements.noteCreateMenu.hidden) {
+    setNoteCreateMenuOpen(false)
+    document.querySelector('#rail-new-note').focus()
+  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open') && !event.isComposing && event.keyCode !== IME_KEY && !document.querySelector('dialog[open]') && !event.target.matches?.('.namer, .namer *')) { // (Esc in a dialog or the naming row closes only that)
+    setSidebarOpen(false, true)
   } else if (pendingClearUndo && !isTyping && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
     event.preventDefault()
     undoClear()

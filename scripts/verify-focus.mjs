@@ -273,6 +273,7 @@ try {
   await wait(1500)
   check('entering and leaving a page note with no typing saves nothing', (await savedContent()) === inkBefore && (await noteRevision(pageNote.id)) === pageRevision)
 
+  const pgHostBefore = await pn(() => { const r = document.querySelector('#page-host').getBoundingClientRect(); return { left: Math.round(r.left), width: Math.round(r.width) } })
   await page.click('#focus-button')
   await wait(900)
   check('a page note enters focus mode too', await inFocus())
@@ -284,7 +285,7 @@ try {
   await page.keyboard.press('Escape')
   await wait(1200)
   const pgAfter = await pn(() => ({ toolbar: getComputedStyle(document.querySelector('.page-toolbar')).display, sidebar: getComputedStyle(document.querySelector('.sidebar')).display, host: document.querySelector('#page-host').getBoundingClientRect() }))
-  check('Esc brings the page note back as it was', !(await inFocus()) && pgAfter.toolbar !== 'none' && pgAfter.sidebar !== 'none' && pgAfter.host.left > 100, JSON.stringify(pgAfter))
+  check('Esc brings the page note back as it was', !(await inFocus()) && pgAfter.toolbar !== 'none' && pgAfter.sidebar !== 'none' && Math.round(pgAfter.host.left) === pgHostBefore.left && Math.round(pgAfter.host.width) === pgHostBefore.width, JSON.stringify(pgAfter))
   await pn(() => document.querySelector('[data-page-mode="draw"]').click())
   await page.keyboard.press('Control+.')
   await wait(700)

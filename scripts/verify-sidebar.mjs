@@ -32,6 +32,7 @@ try {
   await server.listen()
   browser = await engine.launch({ headless: true, ...(engine === chromium ? { args: ['--disable-dev-shm-usage'] } : {}) })
   const page = await (await browser.newContext({ viewport: { width: 1360, height: 1400 } })).newPage()
+  await page.addInitScript(() => localStorage.setItem('pn.notesPanelOpen', '1')) // (F-074: the notes panel is closed by default; this check works inside it)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   const shot = async (name) => { if (process.env.PN_SHOT) await page.screenshot({ path: process.env.PN_SHOT.replace('.png', `-${name}.png`) }) }
@@ -346,6 +347,8 @@ try {
   await blocked.addInitScript(() => { Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked') } }) })
   await blocked.goto(`http://127.0.0.1:${UI_PORT}/notes`)
   await blocked.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+  await blocked.click('#toggle-sidebar') // (the panel is closed by default)
+  await blocked.waitForTimeout(300)
   await blocked.click('[data-fold="inbox"]')
   await blocked.waitForTimeout(300)
   check('with browser storage blocked the sidebar still loads and folds', blockedErrors.length === 0 && (await blocked.evaluate(() => !document.querySelector('[data-sec="inbox"]').classList.contains('open'))), blockedErrors.join(' | '))
