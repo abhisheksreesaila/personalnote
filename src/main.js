@@ -589,7 +589,7 @@ function setActiveNoteType(noteType) {
   elements.noteSurfaceLabel.textContent = isMindMap ? 'Mind map' : isPage ? 'Page' : 'Canvas'
   elements.noteSurfaceDetail.textContent = isMindMap ? 'Infinite SVG workspace' : isPage ? 'Markdown you can draw on' : 'Expands automatically'
   elements.printButton.disabled = notCanvas
-  elements.printButton.title = notCanvas ? 'Print preview is available for canvas notes' : 'Print preview'
+  elements.printButton.title = notCanvas ? 'Print preview is available for canvas notes' : elements.printButton.dataset.hint || 'Print preview'
   if (!isMindMap) {
     mindmapEditor?.destroy()
     mindmapEditor = null
@@ -1000,9 +1000,9 @@ const island = mountIsland(document.querySelector('#island'), {
   onStop: () => void toggleVoiceDictation(),
 })
 document.fonts.ready.then(() => island.remeasure())
-function setNoteTitle(text) {
+function setNoteTitle(text = '') {
   elements.title.value = text
-  island.setTitle(text.trim() || 'Untitled note')
+  island.setTitle(elements.title.value.trim() || 'Untitled note')
 }
 
 const SAVED_LABEL = `Saved on this ${/mac|iphone|ipad/i.test(navigator.platform) ? 'Mac' : 'device'}`
@@ -4540,7 +4540,8 @@ async function initialize() {
   const glue = modifier === '⌘' ? '' : ' '
   document.querySelector('#quick-note-kbd').textContent = quickNoteKeycap(navigator.platform)
   document.querySelector('#focus-top-kbd').textContent = `${modifier}${glue}.`
-  elements.printButton.title = `Print preview (${modifier}${glue}P)`
+  elements.printButton.dataset.hint = `Print preview (${modifier}${glue}P)`
+  elements.printButton.title = elements.printButton.dataset.hint
   elements.searchButton.title = `Search or jump to (${modifier}${glue}K)`
 }
 

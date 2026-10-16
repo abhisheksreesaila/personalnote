@@ -75,7 +75,7 @@ export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onO
     onChange(face, patch) {
       island.dataset.face = face.kind
       clearInterval(clockTimer)
-      if (patch) { patchFace(face); return }
+      if (patch && face.kind === 'download') { patchFace(face); return } // (a bar moving: no new measure)
       let box = boxes[face.kind]
       if (!box) {
         box = boxes.moment
@@ -96,12 +96,14 @@ export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onO
     },
   })
   function patchFace(face) {
-    if (face.kind !== 'download') return
     boxes.moment.querySelector('.isl-bar i').style.transform = `scaleX(${face.percent / 100})`
     boxes.moment.querySelector('.isl-pct').textContent = `${face.percent}%`
   }
 
   measure(current)
+  // The window changed size: the title's room and the card's width changed with it (measured again once, when the frame comes).
+  let resizing = 0
+  addEventListener('resize', () => { cancelAnimationFrame(resizing); resizing = requestAnimationFrame(() => measure(current)) })
   island.addEventListener('click', (event) => {
     const action = event.target.closest('[data-island-action]')?.dataset.islandAction
     if (action === 'retry') onRetry()

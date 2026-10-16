@@ -67,14 +67,15 @@ const MAC = '?host=desktop&chrome=mac'
   check('sidebar contents start below the traffic lights (>= 40px)', brand.y >= 40, `brandTop=${brand.y}`)
   const strips = await page.evaluate(() => [...document.querySelectorAll('.mac-drag-strip')].map((e) => e.className))
   check('one drag strip with the pywebview class (the notes panel starts below the title bar, so it needs none)', strips.length === 1 && strips.every((c) => c.includes('pywebview-drag-region')), JSON.stringify(strips))
-  const bar = await rect(page, '.topbar'); const strip = await rect(page, '.mac-drag-main')
+  const bar = await rect(page, '.topbar'); const strip = await rect(page, '.mac-drag-main'); const isl = await rect(page, '#island')
   check('top bar sits inside the drag row', bar.y >= 0 && bar.b <= strip.b + 1, `bar=${bar.y}-${bar.b} strip=${strip.b}`)
+  check('the island sits inside the drag row too, as high as the bar', isl.y >= 0 && isl.b <= strip.b + 1 && Math.abs(isl.y - bar.y) <= 1, `island=${isl.y}-${isl.b} strip=${strip.b} bar=${bar.y}`)
   const hit = await page.evaluate(() => {
     const at = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) }
-    return { empty: (() => { const t = document.querySelector('.topbar-title').getBoundingClientRect(); const f = document.querySelector('#focus-button').getBoundingClientRect(); return document.elementFromPoint((t.right + f.left) / 2, t.top + t.height / 2)?.className ?? '' })() /* empty bar area between the title pill and the Focus pill */, search: Boolean(at('#search-button')?.closest('#search-button')), share: Boolean(at('#share-button')?.closest('#share-button')), title: at('#note-title')?.id }
+    return { empty: (() => { const t = document.querySelector('#island').getBoundingClientRect(); const f = document.querySelector('#search-button').getBoundingClientRect(); return document.elementFromPoint((t.right + f.left) / 2, t.top + t.height / 2)?.className ?? '' })() /* empty bar area between the island and the search circle */, search: Boolean(at('#search-button')?.closest('#search-button')), share: Boolean(at('#share-button')?.closest('#share-button')), title: Boolean(at('#island-title')?.closest('#share-button')) }
   })
   check('empty bar area hits the drag strip', String(hit.empty).includes('pywebview-drag-region'), hit.empty)
-  check('search, share and title stay clickable', hit.search && hit.share && hit.title === 'note-title', JSON.stringify(hit))
+  check('search, share and the island title stay clickable', hit.search && hit.share && hit.title, JSON.stringify(hit))
   await page.screenshot({ path: path.join(shots, 'mac-wide.png') })
   await page.evaluate(() => window.personalNote.setFullscreen(true))
   await page.waitForTimeout(100)
