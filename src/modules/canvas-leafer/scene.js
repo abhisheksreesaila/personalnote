@@ -1290,7 +1290,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       const object = byPoint ? objectAt(doc, new Map([...entries].map(([id, entry]) => [id, entry.built.hugs ? { ...entry.size, width: entry.object.geometry.width } : entry.size])), target) : doc.objects.find((candidate) => candidate?.id === target)
       const entry = object && entries.get(object.id)
       if (!entry || !isTextual(entry.object) || isLocked(entry.object)) return false
-      return startTextEdit(entry.object, { entry, select: options.select ?? true, point: byPoint ? target : null })
+      return startTextEdit(entry.object, { entry, select: options.select ?? true, point: byPoint ? target : options.point ?? null })
     },
     // A new text at a page point (typed in the overlay; nothing is made until there are words).
     createText(point, options = {}) {
