@@ -538,9 +538,10 @@ Brief: docs/briefs/chrome-islands.md · Design: docs/design/dynamic-island.md (O
 - [ ] it grows for the moments in the design table (slow save, save error, recording, agent edit replacing the agent chip, downloads, focus) and shrinks back; routine saves never change its size
 - [ ] the Focus pill is gone; search is a top-right circle that grows into the search field in place and shrinks back; ⌘K, ⌘., ⌘P unchanged
 - [ ] no timers or frames at rest; speed test unchanged; bundle budget held; Crayon, Paper, Night and a narrow window checked
-## F-085 Focus mode can always be written in [todo]
+## F-085 Focus mode can always be written in [done]
 Brief: none (bug: on the Mac the captain entered focus and could not edit; it was read-only) · Needs: none
-Likely cause: in focus mode on a canvas note every press outside `.leafer-text-editor` is turned away (main.js, "Only the words take the pointer"); if the text edit closes (e.g. the window blurs during the Mac full-screen switch), nothing can reopen it.
-- [ ] reproduce: enter focus, make the text edit close (window blur / full-screen resize), then a click on the words or typing must write again
-- [ ] in focus a press on the words (or anywhere on the page) reopens the focus text with the caret there; returning to the window resumes writing; page notes too
-- [ ] verify-focus covers it with a real mouse; nothing else about focus changes
+Reviewed: PASS after one round (empty and drawings-only notes covered). The Mac's real full-screen switch is the captain's check on the next preview.
+Cause (confirmed): in focus mode on a canvas note every press outside `.leafer-text-editor` is turned away (main.js, "Only the words take the pointer"); if the text edit closes (e.g. the window blurs during the Mac full-screen switch), nothing can reopen it.
+- [x] reproduce: enter focus, make the text edit close (window blur / full-screen resize), then a click on the words or typing must write again
+- [x] in focus a press on the words (or anywhere on the page) reopens the focus text with the caret there; returning to the window resumes writing; page notes too
+- [x] verify-focus covers it with a real mouse; nothing else about focus changes
