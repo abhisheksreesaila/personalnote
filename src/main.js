@@ -1000,6 +1000,7 @@ const island = mountIsland(document.querySelector('#island'), {
   onStop: () => void toggleVoiceDictation(),
 })
 document.fonts.ready.then(() => island.remeasure())
+document.fonts.addEventListener('loadingdone', () => island.remeasure()) // (a font that arrives late changes the title's width)
 function setNoteTitle(text = '') {
   elements.title.value = text
   island.setTitle(elements.title.value.trim() || 'Untitled note')
@@ -2966,6 +2967,7 @@ function setOmniSelection(index, { scroll = true } = {}) {
   if (scroll) document.querySelector(`#omni-row-${index}`)?.scrollIntoView({ block: 'nearest' })
 }
 
+let openFrame = 0
 function openSearch() {
   const bar = elements.searchButton.getBoundingClientRect()
   const panel = elements.searchBackdrop.firstElementChild
@@ -2979,10 +2981,11 @@ function openSearch() {
   elements.searchButton.setAttribute('aria-expanded', 'true')
   renderOmni()
   elements.searchInput.focus()
-  requestAnimationFrame(() => elements.searchBackdrop.classList.add('open'))
+  openFrame = requestAnimationFrame(() => elements.searchBackdrop.classList.add('open'))
 }
 
 function closeSearch() {
+  cancelAnimationFrame(openFrame) // (closed before it had finished opening: it stays closed)
   omni.open = false
   omni.pending = false
   searchSequence += 1
@@ -3635,6 +3638,7 @@ function setShareMenuOpen(open, byKeyboard = true) {
   if (open && focusActive) return
   if (open) {
     island.model.card(true)
+    elements.title.scrollLeft = 0 // (a long title shows from its start)
     const notebook = state.notebooks.find((item) => item.id === state.notes.find((note) => note.id === state.activeNoteId)?.notebookId)
     elements.islandNotebook.textContent = notebook ? notebook.name : 'Inbox'
     if (byKeyboard) elements.shareMenu.querySelector('button:not(:disabled):not([hidden])')?.focus()
@@ -4600,5 +4604,5 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResi
 setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by the scripts/ checks; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { voiceBoxPoint: () => pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH }), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, setViewTo, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { island: island.model, voiceBoxPoint: () => pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH }), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, setViewTo, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize().then(async () => { await speedTestStatus; if (speedTestInstance && new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way

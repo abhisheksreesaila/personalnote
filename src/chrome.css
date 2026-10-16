@@ -274,8 +274,9 @@
 
   /* Focus mode: the island wears the focus strip's face, out of sight until the pointer goes to the top (as the strip did). */
   .isl-focus { display: flex; gap: 14px; padding: 0 8px 0 18px; color: var(--ui-muted); font-size: 12.5px; }
+  .isl-focus svg { width: 14px; height: 14px; }
   .isl-focus b { max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--sk-ink); font-weight: 500; }
-  .isl-focus button { padding: 6px 10px; border: 1px solid var(--sk-line); border-radius: 999px; background: none; color: inherit; cursor: pointer; }
+  .isl-focus button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--sk-line); border-radius: 999px; background: none; color: inherit; cursor: pointer; }
   .app-shell.focus-mode .island { transition: opacity 160ms ease; }
   .app-shell.focus-mode .island:not(:hover):not(:focus-within) { opacity: 0; }
   .app-shell.focus-mode .island::before { content: ""; position: fixed; inset: 0 0 auto; height: 52px; }
