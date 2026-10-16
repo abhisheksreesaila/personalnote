@@ -2831,7 +2831,7 @@ function omniRowHtml(item, index, tokens) {
   if (item.kind === 'note' || item.kind === 'words' || item.kind === 'meaning') {
     const view = searchResultView(item)
     const sub = item.secure ? `Secure note · ${modifierLabel(navigator.platform) === '⌘' ? 'opens with Touch ID' : 'unlock to open'}` : item.kind === 'words' ? highlight(item.excerpt, tokens) : escapeHtml(item.notebookName)
-    return `<button class="omni-row search-result ${view.className}${sel ? ' sel' : ''}" ${base} data-search-note-id="${item.id}">
+    return `<button class="omni-row search-result ${view.className}${item.kind === 'meaning' ? ' is-meaning' : ''}${sel ? ' sel' : ''}" ${base} data-search-note-id="${item.id}">
       <span class="omni-ic"><i data-lucide="${view.icon}"></i></span>
       <span class="omni-copy"><span class="omni-title">${highlight(item.title, tokens)}</span><span class="omni-sub">${sub}</span></span>
       ${item.kind === 'words' || item.secure ? `<span class="omni-meta">${escapeHtml(item.notebookName)}</span>` : ''}${ret}</button>`
@@ -2845,33 +2845,39 @@ function omniRowHtml(item, index, tokens) {
 }
 
 const omniKey = (item) => (item ? `${item.kind === 'words' ? 'note' : item.kind}:${item.id ?? item.title}` : '')
+function omniCreateRowHtml(index, query, sel) {
+  return `<button class="omni-row${sel ? ' sel' : ''}" id="omni-row-${index}" role="option" aria-selected="${sel}" data-omni="${index}" tabindex="-1"><span class="omni-ic"><i data-lucide="plus"></i></span><span class="omni-copy"><span class="omni-title">New note “${escapeHtml(query)}”</span></span><i class="omni-ret" data-lucide="corner-down-left"></i></button>`
+}
+
 function renderOmni() {
   const keep = omniKey(omni.items[omni.sel]) // the selection stays on the same item when more results land
   const query = elements.searchInput.value.trim()
   const tokens = queryTokens(query)
   const notes = state.notes.filter((note) => note.id !== pendingDelete?.note.id)
   const wordHits = omni.wordHits.filter((hit) => hit.id !== pendingDelete?.note.id)
-  omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: state.notebooks, actions: omniActions(), wordHits, meaningHits: omni.meaningHits })
+  const searchesNotes = omni.filter === 'All' || omni.filter === 'Notes'
+  omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: state.notebooks, actions: omniActions(), wordHits, meaningHits: omni.meaningHits, wordsPending: omni.pending })
   omni.items = flatten(omni.groups)
+  const hasMeaning = omni.groups.some((group) => group.key === 'meaning')
   const kept = omni.items.findIndex((item) => omniKey(item) === keep)
   if (kept >= 0) omni.sel = kept
-  const waiting = (omni.pending || omni.meaningPending) && (omni.filter === 'All' || omni.filter === 'Notes') // a search is still out: no "nothing" yet
+  if (hasMeaning && keep.startsWith('create:')) omni.sel = 0 // the meaning matches landed under a selected New note: the selection goes to the best of them
+  const onlyCreate = omni.items.length === 1 && omni.items[0].kind === 'create'
+  const waiting = (omni.pending || omni.meaningPending) && searchesNotes // a search is still out: no "nothing" yet
   document.querySelector('#omni-chips').innerHTML = FILTERS.map((name) => `<button type="button" class="omni-chip" data-omni-chip="${name}" aria-pressed="${name === omni.filter}">${name}</button>`).join('')
   let html = ''
-  if (!omni.items.length && waiting) html = ''
-  else if (!omni.items.length) {
-    html = `<div class="omni-none"><strong>${query ? `Nothing matches “${escapeHtml(query)}”` : 'Nothing here yet'}</strong><span>Secure notes match by title only.</span></div>`
-    if (query && (omni.filter === 'All' || omni.filter === 'Notes')) {
-      omni.items = [{ kind: 'create', title: query }]
-      html += '<div class="omni-group"><button class="omni-row sel" id="omni-row-0" role="option" aria-selected="true" data-omni="0" tabindex="-1"><span class="omni-ic"><i data-lucide="plus"></i></span><span class="omni-copy"><span class="omni-title">New note “' + escapeHtml(query) + '”</span></span><i class="omni-ret" data-lucide="corner-down-left"></i></button></div>'
-    }
+  if (!omni.items.length) {
+    if (!waiting) html = `<div class="omni-none"><strong>${query ? `Nothing matches “${escapeHtml(query)}”` : 'Nothing here yet'}</strong><span>Secure notes match by title only.</span></div>`
   } else {
     let index = 0
-    omni.sel = Math.min(omni.sel, omni.items.length - 1)
-    html = omni.groups.map((group) => `<div class="omni-group" role="group" aria-label="${group.label}"><h4>${group.label}</h4>${group.items.map((item) => omniRowHtml(item, index++, tokens)).join('')}</div>`).join('')
+    omni.sel = onlyCreate ? 0 : Math.min(omni.sel, omni.items.length - 1)
+    // Only a New note row: say nothing matched, once no search is still out (the row itself is there at once, so Enter never waits).
+    if (onlyCreate && !waiting) html = `<div class="omni-none"><strong>Nothing matches “${escapeHtml(query)}”</strong><span>Secure notes match by title only.</span></div>`
+    html += omni.groups.map((group) => group.key === 'create'
+      ? `<div class="omni-group">${omniCreateRowHtml(index++, group.items[0].title, omni.sel === index - 1)}</div>`
+      : `<div class="omni-group" role="group" aria-label="${group.label}"><h4>${group.label}</h4>${group.items.map((item) => omniRowHtml(item, index++, tokens)).join('')}</div>`).join('')
   }
   if (omni.wordsFailed && query) html += '<p class="omni-note">Couldn’t search inside notes.</p>'
-  if (!omni.items.length || omni.items[0].kind === 'create') omni.sel = 0
   elements.searchResults.innerHTML = html
   createIcons({ icons })
   if (omni.items.length) elements.searchInput.setAttribute('aria-activedescendant', `omni-row-${omni.sel}`)
@@ -2964,7 +2970,10 @@ function queueMeaningSearch(query) {
   cancelMeaningSearch()
   if (query.length < MEANING_MIN_CHARS) return
   omni.meaningPending = omni.meaningReady
-  meaningGiveUp = setTimeout(() => { if (omni.meaningPending) { omni.meaningPending = false; renderOmni() } }, MEANING_WAIT_MS)
+  meaningGiveUp = setTimeout(() => {
+    meaningRequest.cancel() // after the wait an answer would only move the list under the cursor: drop it
+    if (omni.meaningPending) { omni.meaningPending = false; renderOmni() }
+  }, MEANING_WAIT_MS)
   meaningTimer = setTimeout(async () => {
     const request = meaningRequest.start()
     try {

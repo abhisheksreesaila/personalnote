@@ -49,6 +49,9 @@ try {
     lighthouse: { delay: 0, hits: [[packing.id, 'Packing list', 'Travel'], [sleep.id, 'Sleep log', 'Home'], [shelves.id, 'Kitchen shelves', 'Home'], [cards.id, 'Card numbers', 'Home']] },
     slow: { delay: 900, hits: [[sleep.id, 'Sleep log', 'Home']] },
     kitchen: { delay: 0, hits: [[tide.id, 'Tide tables', 'Travel']] },
+    hang: { delay: 7000, hits: [] },
+    nomatch: { delay: 0, hits: [[tide.id, 'Tide tables', 'Travel'], [shelves.id, 'Kitchen shelves', 'Home']] },
+    late: { delay: 6800, hits: [[sleep.id, 'Sleep log', 'Home']] },
   }
   const wire = async (context, log) => {
     await context.route('**/api/search-meaning/status', (route) => route.fulfill({ json: { state: 'ready', supported: true } }))
@@ -121,13 +124,49 @@ try {
   await page.waitForSelector('#search-backdrop.open')
   await page.keyboard.type('slow')
   await page.waitForTimeout(500) // past the pause: the first request is out, and takes 900 ms
-  check('while the answer is on its way a query with no other match shows no "Nothing matches" and no spinner', (await page.locator('.omni-none').count()) === 0 && (await page.locator('.omni-row').count()) === 0)
+  check('while the answer is on its way a query with no other match says no "Nothing matches", has no spinner, and offers New note', (await page.locator('.omni-none').count()) === 0 && (await titles()).join() === 'New note \u201cslow\u201d', (await titles()).join())
   await page.keyboard.press('Control+a')
   await page.keyboard.type('kitchen')
   await page.waitForSelector('.omni-group[aria-label="By meaning"]', { timeout: 5000 })
   await page.waitForTimeout(1200) // long after the first answer would have landed
   check('only the second query\'s meaning matches are shown', (await meaningTitles()).join() === 'Tide tables' && (await groups()).join() === 'Notes,By meaning', `${await groups()} ${await meaningTitles()}`)
   check('both queries were asked, once each', requests.join() === 'slow,kitchen', requests.join())
+  await page.keyboard.press('Escape')
+  await closed()
+
+  // ---- Enter on an otherwise-empty list creates the note at once, however long the meaning answer takes ----
+  await page.keyboard.press('Control+k')
+  await page.waitForSelector('#search-backdrop.open')
+  await page.keyboard.type('hang')
+  await page.waitForSelector('.omni-row')
+  const askedAt = Date.now()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => window.__personalNote.state.notes.some((n) => n.title === 'hang'), null, { timeout: 4000 }).catch(() => {})
+  check('Enter creates the note at once while the meaning answer is still out (never waits for it)', (await page.evaluate(() => window.__personalNote.state.notes.filter((n) => n.title === 'hang').length)) === 1 && Date.now() - askedAt < 3000, String(Date.now() - askedAt))
+  await closed()
+  await page.waitForTimeout(1500) // the new note settles (it takes the typing focus)
+
+  // ---- meaning matches and nothing else: they come first, the selection moves to them, New note is last ----
+  await page.keyboard.press('Control+k')
+  await page.waitForSelector('#search-backdrop.open')
+  await page.keyboard.type('nomatch')
+  await page.waitForSelector('.omni-group[aria-label="By meaning"]', { timeout: 5000 })
+  check('with only meaning matches, they are listed first and New note last', (await titles()).join() === 'Tide tables,Kitchen shelves,New note \u201cnomatch\u201d', (await titles()).join())
+  check('and the first meaning match is selected, not New note', (await selected()) === 'Tide tables', await selected())
+  await page.keyboard.press('ArrowUp')
+  check('ArrowUp from the top wraps to New note', (await selected()) === 'New note \u201cnomatch\u201d', await selected())
+  await page.keyboard.press('Escape')
+  await closed()
+
+  // ---- an answer after the 6 s wait is dropped: it never swaps the list under the cursor ----
+  requests.length = 0
+  await page.keyboard.press('Control+k')
+  await page.waitForSelector('#search-backdrop.open')
+  await page.keyboard.type('late')
+  await page.waitForTimeout(6500)
+  check('after the wait the list says nothing matches and offers New note', (await page.locator('.omni-none strong').count()) === 1 && (await titles()).join() === 'New note \u201clate\u201d', (await titles()).join())
+  await page.waitForTimeout(1200) // the answer (6.8 s after the request) lands now
+  check('the late answer changes nothing', (await groups()).join() === '' && (await titles()).join() === 'New note \u201clate\u201d', `${await groups()} ${await titles()}`)
   await page.keyboard.press('Escape')
   await closed()
 
@@ -190,7 +229,7 @@ try {
   const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)
   check('on a phone the same groups show in the full-screen search, without overflow', phoneGroups.join() === 'In your words,By meaning' && overflow <= 0, `${phoneGroups} ${overflow}`)
   const tapHeight = await phone.locator('.omni-group[aria-label="By meaning"] .omni-row').first().evaluate((row) => row.getBoundingClientRect().height)
-  check('its rows are tall enough to tap (44 px or more)', tapHeight >= 44, String(tapHeight))
+  check('its rows are tall enough to tap (48 px or more)', tapHeight >= 48, String(tapHeight))
   await shot('2-phone', phone)
   await phone.tap('.omni-group[aria-label="By meaning"] .omni-row')
   await phone.waitForFunction((id) => window.__personalNote.state.activeNoteId === id, sleep.id, { timeout: 15000 })

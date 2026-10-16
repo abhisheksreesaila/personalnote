@@ -48,9 +48,10 @@ const actionItem = (action) => ({ kind: 'action', ...action })
 /**
  * Groups for the panel. `wordHits` are the results of the word search (title + words, as the server sends them);
  * `meaningHits` are the notes closest in meaning, best first (F-080): they go last, as "By meaning", without repeating a note shown above.
+ * When nothing else matches (and the word search is not still out) the list ends with a "New note" row, so Enter always does something.
  * `filter` is one of FILTERS. Nothing here touches the page.
  */
-export function buildGroups({ query, filter = 'All', notes = [], notebooks = [], actions = [], wordHits = [], meaningHits = [] }) {
+export function buildGroups({ query, filter = 'All', notes = [], notebooks = [], actions = [], wordHits = [], meaningHits = [], wordsPending = false }) {
   const tokens = queryTokens(query)
   const want = (name) => filter === 'All' || filter === name
   const groups = []
@@ -91,6 +92,7 @@ export function buildGroups({ query, filter = 'All', notes = [], notebooks = [],
       if (meaningItems.length === MEANING_LIMIT) break
     }
     add('meaning', 'By meaning', meaningItems)
+    if (!wordsPending && !groups.some((group) => group.key !== 'meaning')) groups.push({ key: 'create', label: '', items: [{ kind: 'create', title: query.trim() }] })
   }
   return groups
 }

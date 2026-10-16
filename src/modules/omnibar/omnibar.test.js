@@ -21,8 +21,8 @@ const actions = [
   { id: 'skin-night', title: 'Skin: Night', icon: 'palette', keywords: 'switch skin theme dark' },
 ]
 const base = { notes, notebooks, actions, wordHits: [], filter: 'All' }
-const labels = (groups) => groups.map((group) => group.label)
-const ids = (groups) => flatten(groups).map((item) => item.id)
+const labels = (groups) => groups.filter((group) => group.label).map((group) => group.label) // the New note row has no heading
+const ids = (groups) => flatten(groups).filter((item) => item.kind !== 'create').map((item) => item.id)
 
 test('an empty query offers the 4 most recent notes and the top actions', () => {
   const groups = buildGroups({ ...base, query: '' })
@@ -84,8 +84,8 @@ test('chips narrow the groups', () => {
   assert.deepEqual(labels(buildGroups({ ...base, query: 'note', filter: 'Actions' })), ['Actions'])
 })
 
-test('no match gives no groups', () => {
-  assert.deepEqual(buildGroups({ ...base, query: 'zzzz' }), [])
+test('no match gives no groups under the Notebooks and Actions chips', () => {
+  assert.deepEqual(buildGroups({ ...base, query: 'zzzz', filter: 'Notebooks' }), [])
 })
 
 test('rows carry the notebook name; an unfiled note says Inbox', () => {
@@ -108,7 +108,7 @@ test('the selection wraps around and stays put on an empty list', () => {
 })
 
 // ---- By meaning (F-080) ----
-const meaning = (...hits) => hits.map(([id, title, notebook = 'Home']) => ({ id, title, notebook, score: 0.7 }))
+const meaning = (...hits) => hits.map(([id, title, notebookName = 'Home']) => ({ id, title, notebookName, score: 0.7 }))
 
 test('"By meaning" comes last under the word matches and lists notes not already shown', () => {
   const wordHits = [{ id: 11, title: 'Packing list', excerpt: 'bring the tide chart', notebookId: 1 }]
@@ -169,4 +169,37 @@ test('a new request cancels the one before it, and only the newest is current', 
   latest.cancel()
   assert.equal(second.signal.aborted, true)
   assert.equal(second.current(), false)
+})
+
+// ---- the "New note" row is offered whenever nothing else matches (F-080) ----
+const created = (groups) => flatten(groups).filter((item) => item.kind === 'create').map((item) => item.title)
+
+test('nothing matching offers New note "query", and Enter on that list creates it', () => {
+  const groups = buildGroups({ ...base, query: 'zzzz' })
+  assert.deepEqual(flatten(groups).map((item) => [item.kind, item.title]), [['create', 'zzzz']])
+})
+
+test('while the meaning answer is still out the list is just New note, so Enter never waits', () => {
+  const groups = buildGroups({ ...base, query: 'zzzz', meaningHits: [] })
+  assert.equal(flatten(groups)[0].kind, 'create')
+})
+
+test('with meaning matches and nothing else, the create row sits last', () => {
+  const groups = buildGroups({ ...base, query: 'zzzz', meaningHits: meaning([13, 'Loose thought'], [14, 'Kitchen shelves']) })
+  assert.deepEqual(labels(groups).slice(0, 1), ['By meaning'])
+  assert.deepEqual(flatten(groups).map((item) => item.kind), ['meaning', 'meaning', 'create'])
+})
+
+test('no create row when a title, word, notebook or action matches', () => {
+  assert.deepEqual(created(buildGroups({ ...base, query: 'tide' })), [])
+  assert.deepEqual(created(buildGroups({ ...base, query: 'home' })), [])
+  assert.deepEqual(created(buildGroups({ ...base, query: 'dark' })), [])
+  assert.deepEqual(created(buildGroups({ ...base, query: 'zzzz', wordHits: [{ id: 10, title: 'Tide tables', excerpt: 'zzzz', notebookId: 1 }] })), [])
+})
+
+test('no create row while the word search is out, for an empty query, or under the Notebooks and Actions chips', () => {
+  assert.deepEqual(created(buildGroups({ ...base, query: 'zzzz', wordsPending: true })), [])
+  assert.deepEqual(created(buildGroups({ ...base, query: '' })), [])
+  assert.deepEqual(created(buildGroups({ ...base, query: 'zzzz', filter: 'Notebooks' })), [])
+  assert.deepEqual(created(buildGroups({ ...base, query: 'zzzz', filter: 'Actions' })), [])
 })
