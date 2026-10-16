@@ -495,7 +495,7 @@ Reviewed: PASS (fixes: island fits short windows, dead dot rule removed). Quick 
 - [x] mind-map notes show their actions in the same island; every verify-* script and the speed test pass
 ## F-077 Make the flaky canvas checks honest [todo]
 Brief: none (test reliability) · Needs: none
-Found during F-074 to F-076 review: on a clean main, verify-leafer-hybrid fails 4 of 5 runs (bitmap blur, "only the touched page", sometimes "typing grows the grid") and verify-leafer-lod fails "vectors are back after zoom" 1 of 2; verify-leafer-voice fails "no page errors" (null sampleRate in microphone-pcm-capture.js:48) about 1 in 5; verify-omnibar "Enter on it creates a note with that title" fails now and then under load, on main too.
+Found during F-074 to F-076 review: on a clean main, verify-leafer-hybrid fails 4 of 5 runs (bitmap blur, "only the touched page", sometimes "typing grows the grid") and verify-leafer-lod fails "vectors are back after zoom" 1 of 2; verify-leafer-voice fails "no page errors" (null sampleRate in microphone-pcm-capture.js:48) about 1 in 5; verify-omnibar "Enter on it creates a note with that title" fails now and then under load, on main too. verify-dynamic-island "it grows out of the circle" failed 1 of 3 runs at load 11 (first sampled frame already 224px wide).
 - [ ] find why each check flakes (timing vs a real rendering bug) and fix the cause, never the threshold
 - [ ] each script passes 5 runs in a row on main
 ## F-078 Download search by meaning [done]
