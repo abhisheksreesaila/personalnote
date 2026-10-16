@@ -85,6 +85,7 @@ const rafOver = async (page, ms) => { const a = await page.evaluate(() => window
   await page.waitForFunction(() => window.__personalNote?.leaferCanvas(), null, { timeout: 30000 })
   await page.waitForTimeout(600)
   check('choice is remembered across reload', await pill(page).isVisible())
+  await page.click('#share-button') // (Settings now sits in the ... menu)
   await page.click('#top-properties')
   await page.waitForTimeout(450)
   check('settings toggle reflects state', await page.locator('#settings-speed-meter').isChecked())
@@ -96,6 +97,7 @@ const rafOver = async (page, ms) => { const a = await page.evaluate(() => window
   check('zero frame loop after hiding', off <= idle + 5, `off ${off}, idle ${idle}`)
   await page.locator('#settings-speed-meter').check()
   await page.keyboard.press('Escape')
+  await page.click('#share-button').catch(() => {}) // (Settings now sits in the ... menu)
   await page.click('#top-properties').catch(() => {})
   // typing guard: focus the search field, shortcut must not toggle
   await page.keyboard.press('Control+K')

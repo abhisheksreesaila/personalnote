@@ -66,6 +66,7 @@ try {
   // ---- make a note secure: choose a passphrase, then the one-time recovery key ----
   await select(cards.id)
   check('an ordinary note starts without the cover or the pill', (await cover().count()) === 0 && (await pill().count()) === 0)
+  await page.click('#share-button') // (Settings now sits in the ... menu)
   await page.click('#top-properties')
   await page.waitForTimeout(300)
   check('the note menu offers "Make secure"', (await page.locator('#secure-note span').textContent()) === 'Make secure')
@@ -238,6 +239,7 @@ try {
 
   // ---- back to ordinary ----
   await page.waitForSelector('.secure-pill')
+  await page.click('#share-button') // (Settings now sits in the ... menu)
   await page.click('#top-properties')
   await page.waitForTimeout(300)
   check('Make ordinary is offered while it is open', (await page.locator('#secure-note span').textContent()) === 'Make ordinary')

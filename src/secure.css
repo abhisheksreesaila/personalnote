@@ -28,6 +28,7 @@
   .secure-edge { position: absolute; left: 0; right: 0; top: 0; height: 3px; z-index: 30; background: var(--sk-secure); pointer-events: none; }
   .secure-pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 5px 4px 11px; border-radius: 999px; font: 12.5px var(--ui-font); color: var(--sk-secure); background: var(--sk-secure-soft); border: 1px solid var(--sk-secure-line); pointer-events: auto; white-space: nowrap; }
   .secure-pill svg { width: 14px; height: 14px; }
+  @media (min-width: 801px) { .topbar-actions { position: relative; } .topbar-actions .secure-pill { position: absolute; top: calc(100% + 12px); right: 0; } } /* under the Focus and search pills, clear of the title pill (F-075) */
   .secure-time { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--sk-ink-soft); }
   .secure-lock { border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer; font: 500 12px var(--ui-font); background: var(--sk-secure); color: var(--sk-panel); }
 
