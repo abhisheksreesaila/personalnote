@@ -1,7 +1,8 @@
 # Jam sessions: talk, and Claude grows the mind map
 
-Status: draft
-<!-- 2026-10-16, captain by voice after preview 8: "the brainstorming session is a wall of text … I want to talk and
+Status: approved
+<!-- Approved 2026-10-16: the captain said "run this in autopilot and just ship it however you see fit" after reading the drafts.
+2026-10-16, captain by voice after preview 8: "the brainstorming session is a wall of text … I want to talk and
 brainstorm … see different branches following Tony Buzan principles … a ghost branch saying hey what about this idea and
 I say yes … thumbs up, emojis … I need that very badly". Two clarify rounds; (assumed) marks calls the captain left open. -->
 

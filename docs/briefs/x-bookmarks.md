@@ -1,7 +1,8 @@
 # X bookmarks land in Personal Note
 
-Status: draft
-<!-- 2026-10-16, captain by voice: "I bookmark a lot … but it's forgotten … hooks up to Twitter, downloads all the bookmarks
+Status: approved
+<!-- Approved 2026-10-16: the captain said "run this in autopilot and just ship it however you see fit" after reading the drafts.
+2026-10-16, captain by voice: "I bookmark a lot … but it's forgotten … hooks up to Twitter, downloads all the bookmarks
 … lines them up in the inbox … with a Twitter symbol … I can just move around and drop it into a note". Clarify round 1
 chose the official API with auto-sync; (assumed) marks calls the captain left open. -->
 

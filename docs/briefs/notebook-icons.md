@@ -1,7 +1,8 @@
 # Notebooks with a personality
 
-Status: draft
-<!-- 2026-10-16, captain: "the notebooks should have a personality … Twitter things … a Twitter symbol … a bunch of links …
+Status: approved
+<!-- Approved 2026-10-16: the captain said "run this in autopilot and just ship it however you see fit" after reading the drafts.
+2026-10-16, captain: "the notebooks should have a personality … Twitter things … a Twitter symbol … a bunch of links …
 a web icon … household chores … a house … more personal and more colorful". Clarify chose "guessed, you can change it". -->
 
 ## Why (the mission)
