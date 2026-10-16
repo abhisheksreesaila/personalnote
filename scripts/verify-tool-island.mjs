@@ -49,6 +49,9 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(String(error)))
+  // Playwright only intercepts file choosers while some listener is attached, and attaches that asynchronously: a waitForEvent added in the same
+  // breath as a key press can lose the race and the real dialog opens instead. A standing listener keeps interception on for the whole run.
+  page.on('filechooser', () => {})
   await context.route('**/api/**', async (route) => {
     const req = route.request()
     const p = new URL(req.url()).pathname.replace(/^\/api/, '')
