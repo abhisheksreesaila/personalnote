@@ -4200,7 +4200,7 @@ document.addEventListener('keydown', (event) => {
   } else if (event.key === 'Escape' && !elements.noteCreateMenu.hidden) {
     setNoteCreateMenuOpen(false)
     document.querySelector('#rail-new-note').focus()
-  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open') && !document.querySelector('dialog[open]') && !event.target.matches?.('.namer, .namer *')) { // (Esc in a dialog or the naming row closes only that)
+  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open') && !event.isComposing && event.keyCode !== IME_KEY && !document.querySelector('dialog[open]') && !event.target.matches?.('.namer, .namer *')) { // (Esc in a dialog or the naming row closes only that)
     setSidebarOpen(false, true)
   } else if (pendingClearUndo && !isTyping && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
     event.preventDefault()
