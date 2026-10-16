@@ -55,12 +55,15 @@ import {
   shiftExtents,
   viewMargins,
   wheelPanDelta,
+  giveWayToIsland,
   moveWithCentre,
   zoomAtPoint,
 } from './modules/editor/viewport.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
+const PAGE_ISLAND_CLEARANCE = { right: PAGE_WIDTH, clear: 80 } // the tool island (56px) and its 16px inset, plus a gap: the page's right edge stays left of this strip
+let panelGaveWay = 0 // how far the page gave way to the tool island when the notes panel narrowed the area (F-083); closing the panel returns it
 const CANVAS_ZOOM_MIN = 0.25
 const CANVAS_ZOOM_MAX = 4
 // desktop.py opens the Chromium app window with engine=chromium (see createSaveTiming).
@@ -1251,12 +1254,14 @@ function updateWritingQuiet() {
 }
 
 function openCanvasView() {
+  panelGaveWay = 0
   if (window.innerWidth <= 800) return resetCanvasView()
   const writing = writingTarget()
   if (writing) {
     const view = writingViewFor(writing.text)
     state.canvasZoom = view.scale / state.displayScale
-    setCanvasViewportOffset(view.x, view.y)
+    panelGaveWay = giveWayToIsland(view.x, view.scale, viewSize.width, PAGE_ISLAND_CLEARANCE) // (the notes panel narrows the area: the page keeps clear of the tool island)
+    setCanvasViewportOffset(view.x - panelGaveWay, view.y)
     return
   }
   const target = pageExtentsTarget()
@@ -4458,7 +4463,11 @@ function handleWorkspaceResize() {
   if (focusActive) return layoutFocus() // F-073: the words stay in the middle of the window
   if (focusRestore) return settleFocusRestore() // F-073: coming back, the view is the one that was left
   const center = { x: viewSize.width / 2, y: viewSize.height / 2 }
-  const next = areaMoved ? moveWithCentre(previous, oldSize, viewSize) : zoomAtPoint(previous, getCanvasScale(), center)
+  let next
+  if (areaMoved) {
+    next = moveWithCentre(previous, oldSize, viewSize, PAGE_ISLAND_CLEARANCE, panelGaveWay)
+    panelGaveWay = next.owed
+  } else next = zoomAtPoint(previous, getCanvasScale(), center)
   setCanvasViewportOffset(next.x, next.y)
 }
 // Page colors and shadow come from skin tokens, so repaint when the skin changes.

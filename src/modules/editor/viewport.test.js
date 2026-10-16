@@ -96,11 +96,25 @@ test('an unblurred shadow is one solid band', () => {
 test('when the note area opens a 296px panel on its left, the page stays centred in what is left of it', () => {
   // a 1280px area with the page at x=210 (860 wide, centred); the area becomes 984px wide
   const next = moveWithCentre({ x: 210, y: 40, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 })
-  assert.deepEqual(next, { x: 62, y: 40, scale: 1 })
+  assert.deepEqual(next, { x: 62, y: 40, scale: 1, owed: 0 })
   assert.equal(62 + 860 + 62, 984)
 })
 
 test('closing the panel puts the view back exactly where it was', () => {
   const open = moveWithCentre({ x: 210, y: 40, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 })
-  assert.deepEqual(moveWithCentre(open, { width: 984, height: 800 }, { width: 1280, height: 800 }), { x: 210, y: 40, scale: 1 })
+  assert.deepEqual(moveWithCentre(open, { width: 984, height: 800 }, { width: 1280, height: 800 }, undefined, open.owed), { x: 210, y: 40, scale: 1, owed: 0 })
+})
+
+test('with the panel open the page gives way to the tool island rather than slide under it, and closing gives it back', () => {
+  // centred it would end at 922px; the island strip starts at 984 - 80 = 904
+  const page = { right: 860, clear: 80 }
+  const open = moveWithCentre({ x: 210, y: 40, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 }, page)
+  assert.deepEqual(open, { x: 44, y: 40, scale: 1, owed: 18 })
+  assert.deepEqual(moveWithCentre(open, { width: 984, height: 800 }, { width: 1280, height: 800 }, page, open.owed), { x: 210, y: 40, scale: 1, owed: 0 })
+})
+
+test('a page already clear of the island, or scrolled off to the left, is not moved by it', () => {
+  const page = { right: 860, clear: 80 }
+  assert.equal(moveWithCentre({ x: 100, y: 0, scale: 1 }, { width: 1440, height: 800 }, { width: 1144, height: 800 }, page).x, -48)
+  assert.equal(moveWithCentre({ x: 40, y: 0, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 }, page).x, -108)
 })
