@@ -22,6 +22,7 @@ import { createMobileHoldController } from './modules/voice/mobile-hold-controll
 import { pageBoundedTextLayout, voiceInsertPoint } from './modules/voice/text-layout.js'
 import { contentBounds } from './modules/canvas-leafer/bounds.js'
 import { mountAgentSync } from './modules/sync/index.js'
+import { mountIsland } from './modules/island/island.js'
 import { pickFlagBlock } from './modules/sync/changes.js'
 import { dockIcon } from './modules/editor/dock-icons.js'
 import { imageFiles, objectPalette, stickyDefaults } from './modules/editor/objects.js'
@@ -133,29 +134,32 @@ document.querySelector('#app').innerHTML = `
     <main class="main-view">
       <header class="topbar">
         <button class="icon-button glass-button sidebar-toggle" id="toggle-sidebar" title="Notebooks" aria-label="Open notebooks" aria-expanded="false" aria-controls="sidebar"><i data-lucide="panel-left"></i></button>
-        <div class="topbar-title">
-          <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
-          <div class="save-state" id="save-state"><span></span>Saved on this device</div>
-          <div class="share-wrap">
-            <button class="pill-more share-button" id="share-button" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
-            <div class="share-menu" id="share-menu" role="menu" aria-label="More actions" hidden>
-              <button role="menuitem" id="share-print"><i data-lucide="printer"></i><span>Print preview</span><kbd id="print-kbd">Ctrl P</kbd></button>
-              <button role="menuitem" id="share-png"><i data-lucide="image-down"></i><span>Note as picture (PNG)</span></button>
-              <button role="menuitem" id="share-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
-              <button role="menuitem" id="share-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
-              <button role="menuitem" id="share-vault"><i data-lucide="folder-down"></i><span>Obsidian vault</span></button>
-              <button role="menuitem" id="fold-all" title="Fold all linked objects into their words" hidden><i data-lucide="fold-vertical"></i><span>Fold all</span></button>
-              <button role="menuitem" id="clear-note" title="Clear all"><i data-lucide="eraser"></i><span>Clear all</span></button>
-              <button role="menuitem" id="top-properties" title="Settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i><span>Settings and properties</span></button>
-            </div>
-          </div>
-        </div>
         <div class="topbar-actions">
-          <button class="focus-pill" id="focus-button" data-keeps-text-editing title="Focus mode (Ctrl+.)" aria-label="Focus mode"><i data-lucide="focus"></i><span>Focus</span><kbd id="focus-top-kbd">Ctrl .</kbd></button>
-          <button class="search-button" id="search-button" title="Search or jump to (Ctrl+K)" aria-label="Search or jump to" aria-haspopup="dialog"><i data-lucide="search"></i><span>Search</span><kbd id="search-kbd">Ctrl K</kbd></button>
+          <button class="search-button" id="search-button" title="Search or jump to (Ctrl+K)" aria-label="Search or jump to" aria-haspopup="dialog"><i data-lucide="search"></i></button>
         </div>
       </header>
-      <div class="focus-strip" id="focus-strip"><b id="focus-title"></b><span id="focus-count"></span><button type="button" id="focus-leave" data-keeps-text-editing><i data-lucide="x"></i>Leave focus <kbd>Esc</kbd></button></div>
+      <div class="island-slot">
+        <div class="island" id="island" data-face="rest">
+          <div class="isl-face" data-face="rest"><button class="isl-open" id="share-button" title="Note actions" aria-haspopup="dialog" aria-expanded="false" aria-controls="share-menu"><span id="island-title">Untitled note</span></button></div>
+          <div class="isl-face isl-card" data-face="card" id="share-menu" role="dialog" aria-label="Note actions" hidden>
+            <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
+            <div class="isl-meta"><div class="save-state" id="save-state"><span></span>Saved on this device</div><span id="island-notebook"></span></div>
+            <div class="isl-grid">
+              <button id="share-focus" class="isl-wide" data-keeps-text-editing title="Focus mode"><i data-lucide="focus"></i><span>Focus</span><kbd id="focus-top-kbd">Ctrl .</kbd></button>
+              <button id="share-print" title="Print preview"><i data-lucide="printer"></i><span>Print</span></button>
+              <button id="share-png" title="Note as picture (PNG)"><i data-lucide="image-down"></i><span>Picture</span></button>
+              <button id="share-backup" title="Download backup"><i data-lucide="archive"></i><span>Backup</span></button>
+              <button id="share-markdown" title="Markdown + assets"><i data-lucide="file-down"></i><span>Markdown</span></button>
+              <button id="share-vault" title="Obsidian vault"><i data-lucide="folder-down"></i><span>Obsidian</span></button>
+              <button id="fold-all" title="Fold all linked objects into their words" hidden><i data-lucide="fold-vertical"></i><span>Fold all</span></button>
+              <button id="top-properties" title="Settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i><span>Settings</span></button>
+              <button id="clear-note" class="danger" title="Clear all"><i data-lucide="eraser"></i><span>Clear all</span></button>
+            </div>
+          </div>
+          <div class="isl-face isl-moment" data-face="moment" role="status" aria-live="polite" hidden></div>
+          <div class="isl-face isl-focus" data-face="focus" id="focus-strip" hidden><b id="focus-title"></b><span id="focus-count"></span><button type="button" id="focus-leave" data-keeps-text-editing><i data-lucide="x"></i>Leave focus <kbd>Esc</kbd></button></div>
+        </div>
+      </div>
       <div class="focus-hint" id="focus-hint" aria-hidden="true">Esc or <span id="focus-kbd">Ctrl .</span> to leave</div>
 
       <section class="workspace" id="workspace">
@@ -473,6 +477,7 @@ const elements = {
   dockCanvas: document.querySelector('#dock-canvas'),
   shareButton: document.querySelector('#share-button'),
   shareMenu: document.querySelector('#share-menu'),
+  islandNotebook: document.querySelector('#island-notebook'),
   sidebarScrim: document.querySelector('#sidebar-scrim'),
   sidebar: document.querySelector('#sidebar'),
   notebookPicker: document.querySelector('#notebook-picker'),
@@ -988,15 +993,29 @@ function renderNotebookPicker() {
   `).join('')
 }
 
+// The dynamic island (F-084): the title at rest, a card of actions on a click, and a short face for the moments (a slow or failed save, recording, an agent, a download, focus).
+const island = mountIsland(document.querySelector('#island'), {
+  onOpen: () => setShareMenuOpen(true),
+  onRetry: () => void saveActiveNote(),
+  onStop: () => void toggleVoiceDictation(),
+})
+document.fonts.ready.then(() => island.remeasure())
+function setNoteTitle(text) {
+  elements.title.value = text
+  island.setTitle(text.trim() || 'Untitled note')
+}
+
 const SAVED_LABEL = `Saved on this ${/mac|iphone|ipad/i.test(navigator.platform) ? 'Mac' : 'device'}`
 
-function setSaveState(status, isError = false) {
+function setSaveState(status, isError = false, detail = '') {
   if (status === 'Saving' && !isError && elements.saveState.dataset.state === 'Saving') return // already showing it: leave the spinner running
   elements.saveState.dataset.state = status
   elements.saveState.classList.toggle('error', isError)
   elements.saveState.innerHTML = status === 'Saving'
     ? '<span class="saving-spinner"></span>Saving'
     : `<span></span>${status === 'Saved' ? SAVED_LABEL : status}`
+  if (isError) island.model.saveFailed(status === 'Could not save' ? 'Couldn’t save' : status, status === 'Could not save' ? detail : '', status === 'Could not save')
+  else if (status === 'Saved') island.model.saveDone()
 }
 
 let viewportOffsetX = 0
@@ -1466,6 +1485,7 @@ async function saveActiveNote({ unloading = false } = {}) {
   else { saveInFlight = true; saveSettled = new Promise((resolve) => { saveDone = resolve }) }
   unsavedEdits = false
   setSaveState('Saving')
+  island.model.saveSending() // (an edit only says Saving on the card; the island speaks up if the save is still out after 3 s)
   const noteId = state.activeNoteId
   const note = state.notes.find((item) => item.id === noteId)
   let sentBody = ''
@@ -1520,8 +1540,8 @@ async function saveActiveNote({ unloading = false } = {}) {
       // An agent wrote first: this is not a failure. Merge its changes into the edits and save again on its revision.
       setSaveState('Saving')
       const mark = mergeCount
-      agentSync?.syncActiveNote().catch(console.error).finally(() => { if (mergeCount === mark) setSaveState('Could not save', true) })
-    } else setSaveState('Could not save', true)
+      agentSync?.syncActiveNote().catch(console.error).finally(() => { if (mergeCount === mark) setSaveState('Could not save', true, error.message) })
+    } else setSaveState('Could not save', true, error.message)
   } finally {
     if (!parallelUnload) { saveInFlight = false; saveFrame = null; saveDone() }
     if (saveQueued && !parallelUnload) {
@@ -1939,7 +1959,7 @@ async function selectNoteNow(id, { reload = false } = {}) {
     })
     state.selectedNotebookId = note.notebookId
     revealNotebook(note.notebookId)
-    elements.title.value = note.title
+    setNoteTitle(note.title)
     state.noteLocked = Boolean(note.locked)
     elements.title.readOnly = state.noteLocked
     if (state.noteLocked) { // a locked secure note: an empty page and the cover, never its words
@@ -1996,7 +2016,7 @@ async function refreshWorkspaceLists() {
 async function applyRemoteNote(note) {
   if (note.id === state.activeNoteId && state.activeNoteType === 'page' && pageEditor) {
     // An agent changed the open page and nothing here is unsaved: show its version (ink placed by the server).
-    elements.title.value = note.title
+    setNoteTitle(note.title)
     pageEditor.setDocument(note.content)
     mindmapSnapshot = JSON.stringify({ content: pageEditor.getDocument() })
     const summary = state.notes.find((item) => item.id === note.id)
@@ -2006,7 +2026,7 @@ async function applyRemoteNote(note) {
     return
   }
   if (note.id !== state.activeNoteId || state.activeNoteType !== 'canvas') return
-  elements.title.value = note.title
+  setNoteTitle(note.title)
   if (!(await showLeaferNote(note, { openView: false }))) return
   if (leaferShowFixed) queueSave() // the stored arrows follow what the agent moved
   const summary = state.notes.find((item) => item.id === note.id)
@@ -2348,7 +2368,13 @@ function renderSetupRow(name, view) {
   }
 }
 
-const renderVoiceSetup = (status) => renderSetupRow('voice', describeVoice(status))
+// A download that runs shows on the island too, fed by the same status the Settings row polls (no polling of its own).
+const downloading = {}
+function islandDownload(key, name, status) {
+  if (status?.state === 'downloading') { downloading[key] = true; island.model.download(key, name, status.percent ?? 0) }
+  else if (downloading[key]) { downloading[key] = false; island.model.downloadEnd(key, status?.state === 'ready') }
+}
+const renderVoiceSetup = (status) => { renderSetupRow('voice', describeVoice(status)); islandDownload('voice', 'Voice model', status) }
 
 async function refreshVoiceSetup() {
   clearTimeout(voicePoll)
@@ -2379,7 +2405,7 @@ const aiSettings = mountAISettings(document.querySelector('#ai-settings'), api)
 const meaningClient = createMeaningClient(api)
 let meaningPoll = null
 
-const renderMeaningSetup = (status) => renderSetupRow('meaning', describeMeaning(status))
+const renderMeaningSetup = (status) => { renderSetupRow('meaning', describeMeaning(status)); islandDownload('meaning', 'Search by meaning', status) }
 
 async function refreshMeaningSetup() {
   clearTimeout(meaningPoll)
@@ -2585,8 +2611,13 @@ function printNote() {
   window.print()
 }
 
+let recordingMoment = false
+let voiceWords = 0
 function setVoiceListening(listening, message = 'Listening') {
   state.listening = listening
+  const live = listening && (state.voiceMode === 'local' || state.voiceMode === 'browser') // (connecting is not recording yet)
+  if (live && !recordingMoment) { recordingMoment = true; voiceWords = 0; island.model.recording(true, Date.now()) }
+  else if (!live && recordingMoment) { recordingMoment = false; island.model.recording(false, voiceWords) }
   elements.voiceButton.classList.toggle('active', listening)
   elements.voiceButton.setAttribute('aria-pressed', String(listening))
   elements.voiceButton.setAttribute('aria-label', listening ? 'Stop voice dictation' : 'Start voice dictation')
@@ -2636,6 +2667,7 @@ function previewVoiceTranscript(transcript, options) {
 
 function insertVoiceTranscript(transcript) {
   if (!transcript) return
+  voiceWords += countWords(transcript)
   updateVoiceTextBox(dictationSession.commit(transcript), { record: true })
 }
 
@@ -2708,7 +2740,7 @@ async function startLocalDictation(attempt, endpoint) {
 
   const capture = new MicrophonePcmCapture()
   state.microphoneCapture = capture
-  await capture.start((audio) => provider.sendAudio(audio))
+  await capture.start((audio) => { provider.sendAudio(audio); island.level(pcmLevel(audio)) })
   if (attempt !== state.voiceAttempt) {
     await capture.stop()
     provider.cancel()
@@ -2720,6 +2752,14 @@ async function startLocalDictation(attempt, endpoint) {
 }
 
 let toggleVoiceDictation = async () => {}
+// How loud a chunk of 16-bit audio is, 0 to 1 (every 16th sample is enough for a row of bars).
+function pcmLevel(buffer) {
+  const samples = new Int16Array(buffer)
+  let sum = 0
+  let count = 0
+  for (let i = 0; i < samples.length; i += 16, count += 1) sum += samples[i] * samples[i]
+  return count ? Math.sqrt(sum / count) / 32768 : 0
+}
 
 function setupVoiceInput() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -2929,8 +2969,9 @@ function setOmniSelection(index, { scroll = true } = {}) {
 function openSearch() {
   const bar = elements.searchButton.getBoundingClientRect()
   const panel = elements.searchBackdrop.firstElementChild
-  // The panel opens large, centred on the window, from the bar's top edge (a phone fills the screen instead, see chrome.css).
-  panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top) - 2)}px`)
+  // The field grows leftward out of the circle, from its top right corner (a phone fills the screen instead, see chrome.css).
+  panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top))}px`)
+  panel.style.setProperty('--omni-right', `${Math.max(0, Math.round(innerWidth - bar.right))}px`)
   Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], meaningHits: [], meaningPending: false, wordsFailed: false })
   api('/search-meaning/status').then((status) => { omni.meaningReady = status.state === 'ready' }, () => { omni.meaningReady = false })
   elements.searchInput.value = ''
@@ -2949,7 +2990,7 @@ function closeSearch() {
   cancelMeaningSearch()
   elements.searchBackdrop.classList.remove('open')
   elements.searchButton.setAttribute('aria-expanded', 'false')
-  setTimeout(() => { if (!elements.searchBackdrop.classList.contains('open')) elements.searchBackdrop.hidden = true }, 160)
+  setTimeout(() => { if (!elements.searchBackdrop.classList.contains('open')) elements.searchBackdrop.hidden = true }, 200)
 }
 
 let searchTimer
@@ -3587,30 +3628,49 @@ document.querySelector('#mobile-sticky').addEventListener('click', () => setTool
 elements.mobileConnect.addEventListener('click', () => setTool(state.tool === 'connect' ? 'text' : 'connect'))
 const searchButton = elements.searchButton
 searchButton.addEventListener('click', openSearch)
+// The card of actions is the island opened (F-084): Focus first, then what the ... menu held. Esc, a click away or tabbing out closes it.
 function setShareMenuOpen(open) {
-  elements.shareMenu.hidden = !open
+  if (open === !elements.shareMenu.hidden) return
+  if (open && focusActive) return
+  if (open) {
+    island.model.card(true)
+    const notebook = state.notebooks.find((item) => item.id === state.notes.find((note) => note.id === state.activeNoteId)?.notebookId)
+    elements.islandNotebook.textContent = notebook ? notebook.name : 'Inbox'
+    elements.shareMenu.querySelector('button:not(:disabled):not([hidden])')?.focus()
+  } else {
+    island.setTitle(elements.title.value.trim() || 'Untitled note')
+    island.model.card(false)
+  }
   elements.shareButton.setAttribute('aria-expanded', String(open))
-  if (open) requestAnimationFrame(() => elements.shareMenu.querySelector('button:not(:disabled):not([hidden])')?.focus())
 }
-elements.shareButton.addEventListener('click', () => setShareMenuOpen(elements.shareMenu.hidden))
+elements.shareButton.addEventListener('click', () => setShareMenuOpen(true))
 elements.shareMenu.addEventListener('click', (event) => {
   const item = event.target.closest('button')
   if (!item || item.disabled) return
   setShareMenuOpen(false)
-  if (item.id === 'share-print') openPrintPreview()
+  if (item.id === 'share-focus') tryFocus()
+  else if (item.id === 'share-print') openPrintPreview()
   else if (item.id === 'share-png') void downloadNotePicture()
   else if (item.id === 'share-backup') void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
   else if (item.id === 'share-markdown') void downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip')
   else if (item.id === 'share-vault') void downloadWorkspaceExport('/export/vault', 'personal-note-obsidian-vault.zip')
 })
 elements.shareMenu.addEventListener('keydown', (event) => {
-  if (event.key === 'Tab') return setShareMenuOpen(false) // tabbing out of the menu closes it
-  if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
+  if (event.key === 'Enter' && event.target === elements.title) { // (the title is done: close the card)
+    event.preventDefault()
+    setShareMenuOpen(false)
+    elements.shareButton.focus()
+    return
+  }
+  const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key]
+  if (!step || (event.target === elements.title && event.key.endsWith('t'))) return // (Left and Right move the caret in the title)
   event.preventDefault()
-  const items = [...elements.shareMenu.querySelectorAll('button:not(:disabled):not([hidden])')]
+  const items = [elements.title, ...elements.shareMenu.querySelectorAll('button:not(:disabled):not([hidden])')]
   const index = items.indexOf(document.activeElement)
-  items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+  items[(index + step + items.length) % items.length]?.focus()
 })
+// Tabbing out of the card closes it, as leaving the menu did.
+elements.shareMenu.addEventListener('focusout', (event) => { if (event.relatedTarget && !event.relatedTarget.closest('#island')) setShareMenuOpen(false) })
 document.querySelector('#top-properties').addEventListener('click', () => {
   const open = !elements.properties.classList.contains('open')
   setPropertiesOpen(open)
@@ -3819,7 +3879,7 @@ elements.notebookPickerMenu.addEventListener('click', async (event) => {
   await moveNote(state.activeNoteId, target === 'inbox' ? null : Number(target))
 })
 document.addEventListener('click', (event) => {
-  if (!elements.shareMenu.hidden && !event.target.closest('.share-wrap')) setShareMenuOpen(false)
+  if (!elements.shareMenu.hidden && !event.target.closest('#island')) setShareMenuOpen(false)
   if (!event.target.closest('.notebook-picker-wrap')) {
     elements.notebookPickerMenu.hidden = true
     elements.notebookPicker.setAttribute('aria-expanded', 'false')
@@ -4056,11 +4116,9 @@ function toggleLeaferLock() {
 // Canvas notes: the text being written, else the one text selected, else the topmost text (a new, empty one for an empty note). The other
 // objects and the page furniture are only not drawn while focus is on, so saved content is never moved or reflowed. Page notes are all
 // words already: the toolbar and sheet marks go, the paper becomes the column, and drawing is switched off.
-const focusStrip = document.querySelector('#focus-strip')
 let focusTextId = null
 let focusStartedEditing = false
 let focusEnteredFullscreen = false
-let focusCountTimer = 0
 let focusScroll = 0 // how far the words have been scrolled to keep the caret in sight (canvas pixels of view)
 let focusKeepFrame = 0
 const isPageNote = () => state.activeNoteType === 'page'
@@ -4185,12 +4243,11 @@ const focus = createFocusMode({
     focusEnteredFullscreen = !saved.fullscreen
     if (focusEnteredFullscreen) void setWindowFullscreen(true)
     refreshFocusCount()
-    clearInterval(focusCountTimer)
-    focusCountTimer = setInterval(() => { if (focusStrip.matches(':hover')) refreshFocusCount() }, 400)
+    island.model.focus(true)
   },
   leave(saved) {
     focusActive = false
-    clearInterval(focusCountTimer)
+    island.model.focus(false)
     cancelAnimationFrame(focusKeepFrame)
     elements.shell.classList.remove('focus-mode')
     if (saved.page) {
@@ -4227,11 +4284,11 @@ function settleFocusRestore() {
   focusRestore.timer = setTimeout(() => { put(); focusRestore = null }, 450)
 }
 const tryFocus = () => { if (!focus.enter() && !['canvas', 'page'].includes(state.activeNoteType)) showToast('Focus mode is for notes you write on the page') }
-function toggleFocus() { if (focusActive) focus.leave(); else tryFocus() } // (the shortcut, the top-bar button and the omnibar's action)
-document.querySelector('#focus-button').addEventListener('click', tryFocus)
+function toggleFocus() { if (focusActive) focus.leave(); else tryFocus() } // (the shortcut, the card's Focus and the omnibar's action)
+// The focus face shows its word count when the pointer or the keyboard reaches it (nothing counts while it is out of sight).
+for (const type of ['pointerenter', 'focusin']) document.querySelector('#island').addEventListener(type, () => { if (focusActive) refreshFocusCount() })
 document.querySelector('#focus-leave').addEventListener('click', () => focus.leave())
 document.querySelector('#focus-kbd').textContent = /mac|iphone|ipad/i.test(navigator.platform) ? '⌘ .' : 'Ctrl .'
-document.querySelector('#focus-button').title = `Focus mode (${/mac|iphone|ipad/i.test(navigator.platform) ? '⌘.' : 'Ctrl+.'})`
 document.addEventListener('fullscreenchange', () => { if (focusActive && focusEnteredFullscreen && !document.fullscreenElement) focus.leave() }) // (the browser's own Esc left full screen)
 window.addEventListener('keydown', (event) => {
   if (focusShortcut(event, navigator.platform)) {
@@ -4250,10 +4307,10 @@ for (const type of ['wheel', 'pointerdown']) window.addEventListener(type, () =>
 for (const type of ['pointerdown', 'mousedown']) {
   window.addEventListener(type, (event) => {
     if (!focusActive) return
-    const turnAway = isPageNote() ? (event.pointerType === 'pen' || event.altKey) && event.target.closest?.('.page-host') : !event.target.closest?.('.leafer-text-editor, .cm-editor, .focus-strip')
+    const turnAway = isPageNote() ? (event.pointerType === 'pen' || event.altKey) && event.target.closest?.('.page-host') : !event.target.closest?.('.leafer-text-editor, .cm-editor, .island')
     if (turnAway) {
       event.preventDefault(); event.stopImmediatePropagation()
-      if (!event.target.closest?.('.focus-strip')) resumeFocusWriting(event) // (the edit closed, e.g. the window blurred: the press opens it again at the press)
+      if (!event.target.closest?.('.island')) resumeFocusWriting(event) // (the edit closed, e.g. the window blurred: the press opens it again at the press)
     }
   }, true)
 }
@@ -4444,8 +4501,7 @@ async function initialize() {
     else await selectNote(state.notes[0].id)
     agentSync = mountAgentSync({
       api,
-      saveStateElement: elements.saveState,
-      chipAnchor: document.querySelector('.topbar-title'),
+      island: island.model,
       getActive: () => {
         const note = state.notes.find((item) => item.id === state.activeNoteId)
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
@@ -4482,9 +4538,8 @@ async function initialize() {
   const modifier = modifierLabel(navigator.platform)
   const glue = modifier === '⌘' ? '' : ' '
   document.querySelector('#quick-note-kbd').textContent = quickNoteKeycap(navigator.platform)
-  document.querySelector('#search-kbd').textContent = `${modifier}${glue}K`
   document.querySelector('#focus-top-kbd').textContent = `${modifier}${glue}.`
-  document.querySelector('#print-kbd').textContent = `${modifier}${glue}P`
+  elements.printButton.title = `Print preview (${modifier}${glue}P)`
   elements.searchButton.title = `Search or jump to (${modifier}${glue}K)`
 }
 

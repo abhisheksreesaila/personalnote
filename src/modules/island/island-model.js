@@ -20,7 +20,7 @@ export function createIslandModel({ schedule = setTimeout, cancel = clearTimeout
   function face() {
     if (s.focus) return { kind: 'focus' }
     if (s.card) return { kind: 'card' }
-    if (s.error) return { kind: 'error', message: s.error.message, retry: s.error.retry }
+    if (s.error) return { kind: 'error', ...s.error }
     if (s.recording) return { kind: 'recording', startedAt: s.recording.startedAt }
     if (s.flash) return s.flash
     if (s.download) return { kind: 'download', name: s.download.name, percent: s.download.percent }
@@ -61,10 +61,10 @@ export function createIslandModel({ schedule = setTimeout, cancel = clearTimeout
       if (announce) flash({ kind: 'saved' }, SAVED_MS)
       else emit()
     },
-    saveFailed(message, retry = false) {
+    saveFailed(title, message = '', retry = false) {
       cancel(timers.slow)
       timers.slow = 0
-      Object.assign(s, { sending: false, slow: false, error: { message, retry } })
+      Object.assign(s, { sending: false, slow: false, error: { title, message, retry } })
       emit()
     },
     recording(on, arg) {

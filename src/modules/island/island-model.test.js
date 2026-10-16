@@ -60,9 +60,9 @@ test('a save still pending after 3 seconds says Saving, then Saved for 1.2 secon
 
 test('a failed save stays, with its reason and a retry, until a save works', () => {
   const { model, advance } = harness()
-  model.saveFailed('Disk is full', true)
+  model.saveFailed('Couldn’t save', 'Disk is full', true)
   advance(60000)
-  assert.deepEqual(model.face(), { kind: 'error', message: 'Disk is full', retry: true })
+  assert.deepEqual(model.face(), { kind: 'error', title: 'Couldn’t save', message: 'Disk is full', retry: true })
   model.saveSending()
   assert.equal(model.face().kind, 'error') // (still failed while it tries again)
   model.saveDone()
@@ -128,7 +128,7 @@ test('a cancelled or failed download just leaves', () => {
 test('the card wins over moments and the moment comes back when it closes; an error outranks a recording', () => {
   const { model } = harness()
   model.recording(true, 5)
-  model.saveFailed('Disk is full', true)
+  model.saveFailed('Couldn’t save', 'Disk is full', true)
   assert.equal(model.face().kind, 'error')
   model.card(true)
   assert.equal(model.face().kind, 'card')
@@ -140,7 +140,7 @@ test('the card wins over moments and the moment comes back when it closes; an er
 
 test('focus mode owns the face while it lasts', () => {
   const { model } = harness()
-  model.saveFailed('x', true)
+  model.saveFailed('Database offline')
   model.focus(true)
   assert.equal(model.face().kind, 'focus')
   model.focus(false)
