@@ -4159,6 +4159,7 @@ const focus = createFocusMode({
     if (focusEnteredFullscreen) void setWindowFullscreen(false)
     focusEnteredFullscreen = false
     focusTextId = null
+    focusLastCaret = null
     clearTimeout(focusRestore?.timer)
     focusRestore = { view: saved.view, scroll: saved.scroll, timer: 0 }
     if (saved.page) settleFocusRestore()
@@ -4200,9 +4201,29 @@ for (const type of ['pointerdown', 'mousedown']) {
   window.addEventListener(type, (event) => {
     if (!focusActive) return
     const turnAway = isPageNote() ? (event.pointerType === 'pen' || event.altKey) && event.target.closest?.('.page-host') : !event.target.closest?.('.leafer-text-editor, .cm-editor, .focus-strip')
-    if (turnAway) { event.preventDefault(); event.stopImmediatePropagation() }
+    if (turnAway) {
+      event.preventDefault(); event.stopImmediatePropagation()
+      if (!event.target.closest?.('.focus-strip')) resumeFocusWriting(event) // (the edit closed, e.g. the window blurred: the press opens it again at the press)
+    }
   }, true)
 }
+// F-085: the focus text always takes the writing. If its edit has closed (the Mac's full-screen switch blurs the window, and a blur ends a text edit),
+// a press on the words or the paper opens it again with the caret at the press, and coming back to the window resumes where the caret was.
+let focusLastCaret = null
+function resumeFocusWriting(press) {
+  if (!focusActive || isPageNote() || !leaferCanvas || leaferCanvas.isEditingText()) return
+  const at = press ? leaferCanvas.pageAt(press.clientX, press.clientY) : null
+  const textId = focusTextId // (null while focus began on a note with no text and nothing was typed yet: then a new one is made)
+  if (textId && leaferCanvas.editText(textId, { select: false, point: at ?? undefined })) {
+    if (!at && focusLastCaret?.id === textId) leaferCanvas.resumeText(focusLastCaret)
+  } else leaferCanvas.createText(at ?? { x: 80, y: 80 }, { select: false })
+}
+document.addEventListener('selectionchange', () => {
+  if (!focusActive || !leaferCanvas?.isEditingText()) return
+  focusLastCaret = leaferCanvas.textCaret() ?? focusLastCaret
+  if (!focusTextId && focusLastCaret) focusTextId = focusLastCaret.id // (focus made this text: it is the focus text from now on)
+})
+window.addEventListener('focus', () => resumeFocusWriting())
 
 const doubleTap = createDoubleTap({ key: tapKeyFor(navigator.platform) })
 let toolPillTimer = 0
