@@ -115,6 +115,20 @@ try {
     check(`[${label}] a wrong key shows the plain error in place`, (await status.textContent()) === 'The model service refused the request (HTTP 401).' && await status.evaluate((e) => e.classList.contains('error')), await status.textContent())
     await shot('error')
 
+    // a new address does not inherit the saved key
+    await page.click('#ai-replace-key')
+    await page.fill('#ai-key', GOOD_KEY)
+    await page.click('#ai-save')
+    await status.filter({ hasText: 'Saved.' }).waitFor({ timeout: 10000 })
+    asked.length = 0
+    await page.fill('#ai-endpoint', `http://localhost:${MODEL_PORT}`)
+    await page.click('#ai-test')
+    await status.filter({ hasText: /Key removed because the address changed/ }).waitFor({ timeout: 10000 })
+    check(`[${label}] changing the address drops the saved key, says so, shows the key field again and sends nothing`, await page.locator('#ai-key').isVisible() && await page.locator('#ai-key-saved').isHidden() && asked.length === 0 && !fs.existsSync(path.join(aiDir, 'api-key.secret')))
+    await page.fill('#ai-key', GOOD_KEY)
+    await page.click('#ai-save')
+    await status.filter({ hasText: 'Saved.' }).waitFor({ timeout: 10000 })
+
     // remove the key
     await page.click('#ai-remove-key')
     await status.filter({ hasText: 'Key removed.' }).waitFor({ timeout: 10000 })

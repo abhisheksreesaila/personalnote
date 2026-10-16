@@ -76,6 +76,21 @@ class SettingsTests(Base):
         view = self.client.post("/api/ai/settings", json={**AZURE, "deployment": "other"}, headers=H).json()
         self.assertEqual((view["keySaved"], view["deployment"]), (True, "other"))
 
+    def test_org_slash_model_is_fine(self):
+        view = self.client.post("/api/ai/settings", json={"provider": "openai", "baseUrl": "https://example.com/v1", "model": "org/model-1"}, headers=H).json()
+        self.assertEqual(view["model"], "org/model-1")
+
+    def test_changing_provider_or_host_drops_the_saved_key_but_a_new_key_or_the_same_host_keeps_it(self):
+        self.client.post("/api/ai/settings", json={**AZURE, "apiKey": SECRET}, headers=H)
+        same = self.client.post("/api/ai/settings", json={**AZURE, "deployment": "d2"}, headers=H).json()
+        self.assertEqual((same["keySaved"], same["keyDropped"]), (True, False))
+        moved = self.client.post("/api/ai/settings", json={**AZURE, "endpoint": "https://other.openai.azure.com"}, headers=H).json()
+        self.assertEqual((moved["keySaved"], moved["keyDropped"]), (False, True))
+        self.client.post("/api/ai/settings", json={**AZURE, "apiKey": SECRET}, headers=H)
+        renewed = self.client.post("/api/ai/settings", json={"provider": "openai", "baseUrl": "https://example.com/v1", "model": "m", "apiKey": "new-key-1"}, headers=H).json()
+        self.assertEqual((renewed["keySaved"], renewed["keyDropped"]), (True, False))
+        self.assertEqual(self.ai.secret.load(), "new-key-1")
+
     def test_remove_key(self):
         self.client.post("/api/ai/settings", json={**AZURE, "apiKey": SECRET}, headers=H)
         removed = self.client.delete("/api/ai/key", headers=H)
@@ -96,6 +111,10 @@ class SettingsTests(Base):
             ({"provider": "azure", "endpoint": "http://example.com"}, "must start with https://"),
             ({"provider": "openai", "baseUrl": "https://user:pw@example.com"}, "without a login"),
             ({"provider": "azure", "deployment": "a b/../c?"}, "deployment name has characters"),
+            ({"provider": "azure", "deployment": "../../x"}, "deployment name has characters"),
+            ({"provider": "azure", "deployment": "org/dep"}, "deployment name has characters"),
+            ({"provider": "openai", "model": "../../x"}, "model name has characters"),
+            ({"provider": "openai", "model": "/etc/x"}, "model name has characters"),
             ({"provider": "openai", "model": "m" * 101}, "model name has characters"),
             ({"provider": "azure", "apiVersion": "x y"}, "API version has characters"),
             ({"provider": "claude-code", "claudeModel": "gpt"}, "sonnet, haiku or opus"),
@@ -149,6 +168,31 @@ class BrainTests(Base):
 
 
 class TestEndpointTests(Base):
+    def test_switching_to_another_service_never_sends_the_old_key(self):
+        seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_POST(self):
+                seen.append(dict(self.headers))
+                self.send_response(401)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            self.client.post("/api/ai/settings", json={**AZURE, "apiKey": SECRET}, headers=H)
+            self.client.post("/api/ai/settings", json={"provider": "openai", "baseUrl": f"http://127.0.0.1:{server.server_port}/v1", "model": "m"}, headers=H)
+            body = self.client.post("/api/ai/test", headers=H).json()
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(body, {"ok": False, "error": "No API key: add one in Settings → AI, or set the PERSONAL_NOTE_JAM_API_KEY environment variable."})
+        self.assertEqual(seen, [])
+
     def test_ok_returns_the_seconds_and_sends_one_tiny_prompt(self):
         fake = FakeBrain()
         with mock.patch.object(self.ai, "brain", lambda timeout=90: fake):

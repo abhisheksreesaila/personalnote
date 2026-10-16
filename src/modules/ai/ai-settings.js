@@ -3,6 +3,7 @@
 // the page only learns `keySaved`.
 
 const PROVIDERS = { 'claude-code': 'Claude Code on this computer', azure: 'Azure OpenAI', openai: 'OpenAI-compatible service' }
+const KEY_DROPPED = 'Saved. Key removed because the address changed: paste the key for the new one.'
 const TEST_TIMEOUT_MS = 45000 // the server gives the model 30 seconds
 
 export function describeAI(view) {
@@ -75,7 +76,7 @@ export function mountAISettings(root, request) {
     try { await work() } catch (error) { status(error.message, true) } finally { button.disabled = false }
   }
 
-  async function save() {
+  async function save() { // resolves to the saved view
     const view = await request('/ai/settings', { method: 'POST', body: JSON.stringify(body()) })
     $('key').value = ''
     replacing = false
@@ -86,10 +87,10 @@ export function mountAISettings(root, request) {
   $('provider').addEventListener('change', () => { status(''); layout() })
   $('replace-key').addEventListener('click', () => { replacing = true; layout(); $('key').focus() })
   $('remove-key').addEventListener('click', () => run($('remove-key'), async () => { show(await request('/ai/key', { method: 'DELETE' })); status('Key removed.') }))
-  $('save').addEventListener('click', () => run($('save'), async () => { await save(); status('Saved.') }))
+  $('save').addEventListener('click', () => run($('save'), async () => { const view = await save(); status(view.keyDropped ? KEY_DROPPED : 'Saved.') }))
   $('test').addEventListener('click', () => run($('test'), async () => {
     status('Testing…')
-    await save() // what is on screen is what gets tested
+    if ((await save()).keyDropped) return status(KEY_DROPPED) // what is on screen is what gets tested; the old key is not sent to a new address
     const result = await request('/ai/test', { method: 'POST', timeout: TEST_TIMEOUT_MS })
     status(describeTest(result), !result.ok)
   }))

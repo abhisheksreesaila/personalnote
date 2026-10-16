@@ -32,7 +32,8 @@ MAX_NAME = 100
 MAX_KEY = 600
 TEST_TIMEOUT = 30
 TEST_SYSTEM = 'You are a connection check. Answer with JSON only: {"ok": true}'
-_NAME = re.compile(r"^[A-Za-z0-9._:/-]+$")  # a model or deployment name goes into a URL path or a request body
+_MODEL = re.compile(r"^[A-Za-z0-9._:/-]+$")  # org/model is fine: it goes in a request body
+_DEPLOYMENT = re.compile(r"^[A-Za-z0-9._-]+$")  # it goes into a URL path, so no slash
 _VERSION = re.compile(r"^[A-Za-z0-9._-]+$")
 
 DEFAULTS = {"provider": "claude-code", "claudeModel": "sonnet", "endpoint": "", "deployment": "",
@@ -56,9 +57,9 @@ def _url(value: str, label: str) -> str:
     return value
 
 
-def _name(value: str, label: str, pattern=_NAME) -> str:
+def _name(value: str, label: str, pattern) -> str:
     value = value.strip()
-    if len(value) > MAX_NAME or (value and not pattern.match(value)):
+    if len(value) > MAX_NAME or (value and (not pattern.match(value) or ".." in value or value.startswith("/"))):
         raise AISettingsError(f"The {label} has characters it cannot have, or is too long.")
     return value
 
@@ -77,8 +78,8 @@ def validate(data: dict) -> dict:
         raise AISettingsError("The Claude model must be sonnet, haiku or opus.")
     out["endpoint"] = _url(out["endpoint"], "Azure endpoint")
     out["baseUrl"] = _url(out["baseUrl"], "base URL")
-    out["deployment"] = _name(out["deployment"], "deployment name")
-    out["model"] = _name(out["model"], "model name")
+    out["deployment"] = _name(out["deployment"], "deployment name", _DEPLOYMENT)
+    out["model"] = _name(out["model"], "model name", _MODEL)
     out["apiVersion"] = _name(out["apiVersion"], "API version", _VERSION) or DEFAULT_API_VERSION
     return out
 
@@ -90,6 +91,12 @@ def check_key(key) -> str:
     if not key or len(key) > MAX_KEY or not key.isprintable() or re.search(r"\s", key):
         raise AISettingsError("That does not look like an API key (no spaces or line breaks, up to 600 characters).")
     return key
+
+
+def _destination(settings: dict) -> tuple:
+    """Where a key would be sent: the provider and the host of its address."""
+    address = {"azure": settings["endpoint"], "openai": settings["baseUrl"]}.get(settings["provider"], "")
+    return settings["provider"], urlparse(address).netloc.lower()
 
 
 class AISettings:
@@ -121,16 +128,20 @@ class AISettings:
     def save(self, data: dict) -> dict:
         settings = validate(data)
         key = check_key(data["apiKey"]) if data.get("apiKey") not in (None, "") else None
+        dropped = False
         try:
             if key:
                 self.secret.save(key)
+            elif _destination(settings) != _destination(self.load()) and self.has_key():
+                self.secret.delete()  # a key belongs to the service it was given for, never to a new address
+                dropped = True
         except SecretStoreError as error:
             raise AISettingsError(f"The key could not be saved: {error}") from None
         self.folder.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_name(self.path.name + ".tmp")
         tmp.write_text(json.dumps(settings, indent=2), "utf-8")
         os.replace(tmp, self.path)
-        return self.view()
+        return {**self.view(), "keyDropped": dropped}
 
     def remove_key(self) -> dict:
         try:
