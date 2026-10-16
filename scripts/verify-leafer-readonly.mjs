@@ -59,6 +59,7 @@ try {
   const active = await page.evaluate(() => window.__personalNote.state.activeNoteId)
 
   // 1. rename: the note's own content comes back untouched, to its own id
+  await page.click('#share-button') // (the title is on the island's card)
   await page.fill('#note-title', 'Renamed')
   await page.waitForTimeout(1500)
   const rename = puts.filter((put) => put.id === active)

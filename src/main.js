@@ -361,7 +361,7 @@ document.querySelector('#app').innerHTML = `
     <section class="spotlight" role="dialog" aria-modal="true" aria-label="Search or jump to">
       <div class="spotlight-input-row">
         <i data-lucide="search"></i>
-        <input id="search-input" type="text" role="combobox" aria-expanded="true" aria-controls="search-results" aria-autocomplete="list" placeholder="Search notes, words, notebooks, actions" autocomplete="off" spellcheck="false" aria-label="Search notes, words, notebooks and actions" />
+        <input id="search-input" type="text" role="combobox" aria-expanded="true" aria-controls="search-results" aria-autocomplete="list" placeholder="Search notes, words, actions" autocomplete="off" spellcheck="false" aria-label="Search notes, words, notebooks and actions" />
         <button class="search-close" id="search-close" aria-label="Close search"><span class="k-esc">Esc</span><span class="k-cancel">Cancel</span></button>
       </div>
       <div class="omni-chips" id="omni-chips" role="group" aria-label="Show"></div>

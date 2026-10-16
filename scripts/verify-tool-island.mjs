@@ -103,7 +103,7 @@ try {
     await page.mouse.up()
     await page.waitForTimeout(300)
   }
-  const away = async () => { await click('#save-state'); await page.waitForTimeout(200) } // a harmless place that is not the canvas
+  const away = async () => { const r = await rect('#history-island'); await page.mouse.click(r.x + 2, r.y + r.h / 2); await page.waitForTimeout(200) } // a harmless place that is not the canvas (the edge of the undo island)
   const clickPage = async (point) => { await page.waitForTimeout(500); const c = await toClient(point); await page.mouse.click(c.x, c.y); await page.waitForTimeout(250) }
   const openFlyout = async () => { if (!(await flyoutOpen())) await click('#dock-more'); await page.waitForTimeout(200) }
   const fromFlyout = async (selector) => { await openFlyout(); await click(selector); await page.waitForTimeout(200) }
@@ -118,7 +118,7 @@ try {
   const layout = async (label, width, height) => {
     const d = await rect('.tool-dock')
     check(`${label}: the tool island is on the right edge, inset 16px, 56px wide, vertically centred`, Math.abs(d.r - (width - 16)) <= 1 && Math.abs(d.w - 56) <= 1 && Math.abs((d.y + d.b) / 2 - height / 2) <= 2, JSON.stringify(d))
-    const i = { notes: await rect('#toggle-sidebar'), title: await rect('.topbar-title'), focus: await rect('#focus-button'), search: await rect('#search-button'), dock: d, history: await rect('#history-island'), zoom: await rect('#zoom-control') }
+    const i = { notes: await rect('#toggle-sidebar'), island: await rect('#island'), search: await rect('#search-button'), dock: d, history: await rect('#history-island'), zoom: await rect('#zoom-control') }
     const names = Object.keys(i)
     let clash = null
     for (const a of names) for (const b of names) if (a < b && overlap(i[a], i[b])) clash = `${a}/${b}`
@@ -521,7 +521,7 @@ try {
     await page.setViewportSize({ width: w, height: h })
     await load()
     const d = await rect('.tool-dock')
-    const others = { search: await rect('#search-button'), focus: await rect('#focus-button'), zoom: await rect('#zoom-control'), history: await rect('#history-island'), notes: await rect('#toggle-sidebar') }
+    const others = { search: await rect('#search-button'), island: await rect('#island'), zoom: await rect('#zoom-control'), history: await rect('#history-island'), notes: await rect('#toggle-sidebar') }
     const clash = Object.keys(others).filter((k) => overlap(d, others[k]))
     check(`${w}x${h}: the tool island overlaps no other island and is inside the window`, clash.length === 0 && d.y >= 0 && d.b <= h, JSON.stringify({ d, clash }))
     const fit = await center('#zoom-fit')

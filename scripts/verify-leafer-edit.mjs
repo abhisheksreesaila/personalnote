@@ -205,6 +205,7 @@ try {
 
   // ---- typing: no key fires into the canvas
   before = await live()
+  await page.click('#share-button') // (the title is on the island's card)
   await page.focus('#note-title')
   await page.keyboard.press('ArrowRight')
   await page.keyboard.press('Shift+ArrowDown')

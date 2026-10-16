@@ -114,6 +114,7 @@ try {
   await page.waitForTimeout(300)
 
   // typing in the title must keep its own undo
+  await page.click('#share-button') // (the title is on the island's card)
   await page.click('#note-title')
   await page.keyboard.type('x')
   await page.keyboard.press('Control+KeyZ')

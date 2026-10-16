@@ -73,11 +73,11 @@ try {
   const openArea = await area()
   check('opening the panel moves the note area right of the panel: no overlap, the area ends where it did', openArea.left >= panelRight && openArea.left - panelRight <= 2 && openArea.right === 1280, JSON.stringify({ panelRight, openArea }))
   const mid = (r) => (r.x + r.r) / 2
-  const geom = () => page.evaluate(() => { const g = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, r: r.right, b: r.bottom, w: r.width } }; return { title: g('.topbar-title'), search: g('#search-button'), history: g('#history-island'), zoom: g('#zoom-control'), dock: g('.tool-dock') } })
+  const geom = () => page.evaluate(() => { const g = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, r: r.right, b: r.bottom, w: r.width } }; return { title: g('#island'), search: g('#search-button'), history: g('#history-island'), zoom: g('#zoom-control'), dock: g('.tool-dock') } })
   const g = await geom()
-  check('the title pill is centred on the note area', Math.abs(mid(g.title) - (openArea.left + openArea.right) / 2) <= 1, JSON.stringify({ title: g.title, openArea }))
+  check('the island is centred on the note area', Math.abs(mid(g.title) - (openArea.left + openArea.right) / 2) <= 1, JSON.stringify({ title: g.title, openArea }))
   check('undo and redo sit 16px inside the area edge; zoom and the tool island stay 16px from the right edge; the top-right islands stay put', Math.abs(g.history.x - (openArea.left + 16)) <= 1 && Math.abs(g.zoom.r - 1264) <= 1 && Math.abs(g.dock.r - 1264) <= 1 && Math.abs(g.search.r - 1264) <= 1, JSON.stringify(g))
-  check('the pill is clear of the panel and of the Focus pill', g.title.x > panelRight && g.title.r < (await page.evaluate(() => document.querySelector('#focus-button').getBoundingClientRect().x)))
+  check('the island is clear of the panel and of the search circle', g.title.x > panelRight && g.title.r < g.search.x, JSON.stringify(g))
   const centredPaper = await page.evaluate(() => { const v = window.__personalNote.leaferCanvas().view(); const r = document.querySelector('#leafer-host').getBoundingClientRect(); return { left: r.left + v.x, right: r.left + v.x + 860 * v.scale } })
   check('the page stays in the middle of the area, whole, and clear of the tool island (it gives way up to 20px to the island)', Math.abs((centredPaper.left - openArea.left) - (openArea.right - centredPaper.right)) <= 40 && centredPaper.left >= openArea.left + 16 && centredPaper.right <= g.dock.x - 8, JSON.stringify({ centredPaper, openArea, dock: g.dock }))
   await page.mouse.move(700, 400)
@@ -102,7 +102,7 @@ try {
   check('Esc closes the panel', !(await isOpen()) && !(await visible()))
   check('closing puts the paper and the area back exactly where they were', (await paper()) === closedPaper && (await area()).left === 0, `${closedPaper} -> ${await paper()}`)
   const closedGeom = await geom()
-  check('and the title pill is centred on the whole window again', Math.abs(mid(closedGeom.title) - 640) <= 1 && closedGeom.history.x === 16, JSON.stringify(closedGeom))
+  check('and the island is centred on the whole window again', Math.abs(mid(closedGeom.title) - 640) <= 1 && closedGeom.history.x === 16, JSON.stringify(closedGeom))
 
   await clickToggle()
   await settleFade()
