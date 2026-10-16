@@ -232,9 +232,9 @@ try {
   check('an object made while focus is on is not drawn', shapeSpots.every((rgb) => near(rgb, paper)), JSON.stringify(shapeSpots))
   await page.keyboard.press('Escape')
   await wait(1200)
-  const shapeBox = await pn(() => { const c = window.__personalNote.leaferCanvas(); const o = window.__personalNote.leaferEdits.doc.objects.find((x) => x.type === 'shape'); const b = c.screenBox(o.id); const h = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: Math.round(h.left + b.x), y: Math.round(h.top + b.y + b.height / 2) } })
-  const shapeEdge = await pixels([-3, -2, -1, 0, 1, 2, 3].map((dx) => [shapeBox.x + dx, shapeBox.y])) // (the shape's own outline: its fill is paper-coloured)
-  check('the shape made in focus is drawn again after Esc (not paper colour)', shapeEdge.some((rgb) => !near(rgb, paper, 30)), JSON.stringify([shapeBox, shapeEdge, paper]))
+  const shapeBox = await pn(() => { const c = window.__personalNote.leaferCanvas(); const o = window.__personalNote.leaferEdits.doc.objects.find((x) => x.type === 'shape'); const b = c.screenBox(o.id); const h = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: Math.round(h.left + b.x + b.width / 2), y: Math.round(h.top + b.y + b.height / 2) } })
+  const shapeNow = (await pixels([[shapeBox.x, shapeBox.y]]))[0]
+  check('the shape made in focus is drawn again after Esc (not paper colour)', !near(shapeNow, paper, 30), JSON.stringify([shapeBox, shapeNow, paper]))
   check('and only the objects that are really there are shown again afterwards', (await pn(() => window.__personalNote.leaferEdits.doc.objects.some((o) => o.type === 'shape'))) && (await pn(() => window.__personalNote.leaferEdits.doc.objects.length)) >= 3)
 
   // --- a page note
@@ -273,6 +273,7 @@ try {
   await wait(1500)
   check('entering and leaving a page note with no typing saves nothing', (await savedContent()) === inkBefore && (await noteRevision(pageNote.id)) === pageRevision)
 
+  const pgHostBefore = await pn(() => { const r = document.querySelector('#page-host').getBoundingClientRect(); return { left: Math.round(r.left), width: Math.round(r.width) } })
   await page.click('#focus-button')
   await wait(900)
   check('a page note enters focus mode too', await inFocus())
@@ -284,7 +285,7 @@ try {
   await page.keyboard.press('Escape')
   await wait(1200)
   const pgAfter = await pn(() => ({ toolbar: getComputedStyle(document.querySelector('.page-toolbar')).display, sidebar: getComputedStyle(document.querySelector('.sidebar')).display, host: document.querySelector('#page-host').getBoundingClientRect() }))
-  check('Esc brings the page note back as it was', !(await inFocus()) && pgAfter.toolbar !== 'none' && pgAfter.sidebar !== 'none' && pgAfter.host.left >= 0, JSON.stringify(pgAfter))
+  check('Esc brings the page note back as it was', !(await inFocus()) && pgAfter.toolbar !== 'none' && pgAfter.sidebar !== 'none' && Math.round(pgAfter.host.left) === pgHostBefore.left && Math.round(pgAfter.host.width) === pgHostBefore.width, JSON.stringify(pgAfter))
   await pn(() => document.querySelector('[data-page-mode="draw"]').click())
   await page.keyboard.press('Control+.')
   await wait(700)

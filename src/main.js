@@ -748,8 +748,7 @@ function updateInkOptions() {
 function positionInkOptions(anchor) {
   const anchorRect = anchor.getBoundingClientRect()
   const popoverWidth = elements.inkOptionsPopover.offsetWidth
-  const railWidth = Number.parseFloat(getComputedStyle(elements.shell).getPropertyValue('--rail-width')) || 0
-  const minimum = railWidth + 8 + popoverWidth / 2
+  const minimum = 8 + popoverWidth / 2
   const maximum = window.innerWidth - 8 - popoverWidth / 2
   const center = anchorRect.left + anchorRect.width / 2
   elements.inkOptionsPopover.style.left = `${Math.max(minimum, Math.min(maximum, center))}px`
@@ -4198,7 +4197,10 @@ document.addEventListener('keydown', (event) => {
     setPropertiesOpen(false)
   } else if (event.key === 'Escape' && !elements.inkOptionsPopover.hidden) {
     closeInkOptions()
-  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open') && !document.querySelector('dialog[open]') && !event.target.matches?.('input, textarea, .namer, .namer *')) { // (Esc in a dialog or a text field, such as the naming row, closes only that)
+  } else if (event.key === 'Escape' && !elements.noteCreateMenu.hidden) {
+    setNoteCreateMenuOpen(false)
+    document.querySelector('#rail-new-note').focus()
+  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open') && !document.querySelector('dialog[open]') && !event.target.matches?.('.namer, .namer *')) { // (Esc in a dialog or the naming row closes only that)
     setSidebarOpen(false, true)
   } else if (pendingClearUndo && !isTyping && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
     event.preventDefault()

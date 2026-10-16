@@ -236,7 +236,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .ink-options-trigger { position: relative; }
 .ink-options-popover {
   position: fixed;
-  left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2);
+  left: 50%;
   bottom: 84px;
   width: 266px;
   padding: 12px;

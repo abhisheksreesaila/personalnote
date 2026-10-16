@@ -27,7 +27,7 @@ const server = await createServer({ server: { port: PORT, strictPort: true, host
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 
-async function open(perf, viewport = { width: 1668, height: 900 }) {
+async function open(perf, viewport = { width: 1440, height: 900 }) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 2 })
   const page = await context.newPage()
   const errors = []
@@ -64,7 +64,8 @@ const idle = async (page) => {
   await page.waitForTimeout(200)
 }
 const wheel = async (page, count, dy, x = 700, y = 450) => { await page.mouse.move(x, y); for (let i = 0; i < count; i += 1) { await page.mouse.wheel(0, dy); await rafs(page, 1) } }
-const shot = (page) => page.screenshot({ clip: { x: 230, y: 100, width: 1000, height: 640 } })
+// (the clip is desk-relative: the desk starts at the window's left edge now that the notes panel floats over it, as it started at 228 beside the sidebar)
+const shot = (page) => page.screenshot({ clip: { x: 2, y: 100, width: 1000, height: 640 } })
 const compare = (page, a, b) => page.evaluate(async ([one, two]) => {
   const read = async (data) => { const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob()); const c = new OffscreenCanvas(image.width, image.height); const x = c.getContext('2d'); x.drawImage(image, 0, 0); return x.getImageData(0, 0, image.width, image.height) }
   const [first, second] = [await read(one), await read(two)]

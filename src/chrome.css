@@ -24,7 +24,6 @@
   :root[data-skin="night"] { --accent-fill: var(--sk-accent); --accent-text: var(--sk-accent); }
 
   .app-shell {
-    --rail-width: 0px; /* nothing sits beside the desk any more: the notes panel floats over it */
     position: relative;
     display: block;
     background-color: var(--sk-desk);
@@ -35,7 +34,7 @@
   }
   .app-shell button { font: inherit; }
   .app-shell .voice-button-icon { display: grid; place-items: center; }
-  .app-shell .main-view { position: absolute; inset: 0 0 0 var(--rail-width); display: block; min-width: 0; }
+  .app-shell .main-view { position: absolute; inset: 0; display: block; min-width: 0; }
   .app-shell .workspace, .app-shell.mindmap-active .workspace { position: absolute; inset: 0; background: transparent; }
 
   /* Shared glass surface. */
@@ -207,8 +206,10 @@
   /* ---------- Top bar ---------- */
   .app-shell .topbar {
     position: absolute; inset: 14px 16px auto 4px; height: 48px; display: flex; align-items: center; gap: 12px; padding: 0;
-    background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; z-index: 10;
+    background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none;
   }
+  /* The top bar is not a stacking context of its own, so the notes button can sit above a locked note's cover; its other items keep z 10. */
+  .app-shell .topbar > * { z-index: 10; }
   .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }
   @media (min-width: 801px) { .app-shell { --topbar-left: 72px; } .app-shell .topbar { left: var(--topbar-left); } } /* clear of the notes button */
   .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0; pointer-events: auto; }
@@ -278,8 +279,8 @@
 
   /* ---------- Dock ---------- */
   .app-shell .tool-dock {
-    position: fixed; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); bottom: 22px; transform: translateX(-50%); height: 58px;
-    display: flex; align-items: center; gap: 2px; padding: 0 8px; border-radius: 20px; overflow: visible; max-width: calc(100vw - var(--rail-width) - 32px);
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); height: 58px;
+    display: flex; align-items: center; gap: 2px; padding: 0 8px; border-radius: 20px; overflow: visible; max-width: calc(100vw - 32px);
     transition: opacity 200ms ease, transform 240ms var(--ease-out); z-index: 12;
   }
   .app-shell .dock-canvas, .app-shell .mindmap-dock-actions, .app-shell .tool-group, .app-shell .ink-swatches { display: flex; align-items: center; gap: 2px; min-width: 0; }
@@ -331,7 +332,7 @@
 
   .app-shell .workspace.is-drop-target::after { content: ""; position: absolute; inset: 8px; z-index: 6; pointer-events: none; border: 2px dashed var(--sk-accent); border-radius: var(--sk-radius); background: color-mix(in srgb, var(--sk-accent) 6%, transparent); }
   .app-shell .ink-options-popover { position: fixed; bottom: 92px; border-radius: 16px; background: var(--glass-solid); }
-  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - var(--rail-width) - 24px)); font-size: 11px; left: calc(var(--rail-width) + (100vw - var(--rail-width)) / 2); bottom: 92px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
+  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - 24px)); font-size: 11px; left: 50%; bottom: 92px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
   .app-shell .voice-pulse { background: var(--sk-accent); }
   .app-shell .note-create-menu { position: fixed; z-index: 60; width: 168px; padding: 6px; border-radius: 14px; background: var(--glass-solid); animation: menu-in 160ms var(--ease-out); }
   .app-shell .note-create-menu[hidden] { display: none; }
@@ -598,7 +599,6 @@
   .app-shell .mac-drag-strip { display: none; }
   :root.chrome-mac { --mac-lights: 78px; --mac-bar: 36px; }
   :root.chrome-mac .app-shell .mac-drag-strip { display: block; position: absolute; left: 0; right: 0; top: 0; height: calc(var(--mac-bar) + 4px); z-index: 9; }
-  :root.chrome-mac .app-shell .mac-drag-sidebar { z-index: 0; }
   :root.chrome-mac .app-shell .topbar { top: 4px; height: var(--mac-bar); }
   :root.chrome-mac .app-shell .topbar-title { height: var(--mac-bar); }
   @media (min-width: 801px) {

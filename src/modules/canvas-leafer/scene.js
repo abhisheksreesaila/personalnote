@@ -1984,6 +1984,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     // the nodes that are still here and that it hid, as they were.
     setFocusLook(on, keepId = null) {
       lod.exit()
+      lod.invalidate() // the page bitmaps were made with other objects showing
       chrome.visible = !on
       focusLook = on ? { keep: keepId } : null
       for (const entry of entries.values()) {
