@@ -473,12 +473,13 @@ Reviewed: PASS after fixes (typing never stranded, caret kept in view, page note
 - [x] the Mac app goes full screen with it and leaves full screen after
 - [x] the omnibar offers a Focus mode action
 - [x] typing speed (speed test row) unchanged
-## F-074 One notes button [todo]
+## F-074 One notes button [done]
 Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md · Needs: none
-- [ ] at any width the sidebar is closed by default and a round notes button at the top left opens it as a floating panel over the desk (the desk does not shift)
-- [ ] the button, Esc or a click on the desk closes it; open or closed is remembered on this machine (storage guarded)
-- [ ] opening a note keeps the panel open on a wide window and closes it on a narrow one
-- [ ] Quick note, Inbox, PARA shelves, drag to file and the skin dots work inside the panel exactly as before
+Reviewed: PASS after fixes (button above a locked note, focus exit repaints, Esc order, verify scripts restored). verify-leafer-hybrid stale-bitmap and touched-page checks are flaky on main too.
+- [x] at any width the sidebar is closed by default and a round notes button at the top left opens it as a floating panel over the desk (the desk does not shift)
+- [x] the button, Esc or a click on the desk closes it; open or closed is remembered on this machine (storage guarded)
+- [x] opening a note keeps the panel open on a wide window and closes it on a narrow one
+- [x] Quick note, Inbox, PARA shelves, drag to file and the skin dots work inside the panel exactly as before
 ## F-075 Title pill, Focus and search on top [todo]
 Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md · Needs: F-074
 - [ ] the top bar becomes islands: a centred title pill (editable title + save state, errors shown there) and, top right, a Focus button beside the search pill
