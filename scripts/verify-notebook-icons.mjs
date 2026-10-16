@@ -56,7 +56,8 @@ try {
   const xGlyph = await glyph('X bookmarks')
   check('"X bookmarks" shows the X logo', xGlyph.svg && !xGlyph.lucide.includes('lucide'), JSON.stringify(xGlyph))
   check('"Recipes" shows a pot', (await glyph('Recipes')).lucide.includes('cooking-pot'))
-  check('a leading emoji in the name shows as the icon', (await glyph('🚀 Launch')).emoji === '🚀')
+  check('a leading emoji in the name shows as the icon', (await glyph('Launch')).emoji === '🚀')
+  check('and the row does not repeat it', (await page.locator('.nav-row', { hasText: 'Launch' }).locator('.notebook-name').textContent()) === 'Launch')
   check('no word matches: the first letter shows', (await glyph('Zebra')).letter === 'Z')
   check('nothing was stored by guessing', (await stored('Links')).icon === '')
 
