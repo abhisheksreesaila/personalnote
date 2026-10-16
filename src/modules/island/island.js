@@ -82,6 +82,8 @@ export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onO
         box.replaceChildren(h('button', 'isl-hit'), ...MOMENTS[face.kind](face))
         box.firstChild.setAttribute('aria-label', 'Note actions')
         box.firstChild.dataset.islandAction = 'open'
+        box.firstChild.dataset.keepsTextEditing = ''
+        for (const chip of box.querySelectorAll('.isl-chip')) chip.dataset.keepsTextEditing = '' // (Stop and Try again act on the words being written: they leave the editor open)
         createIcons({ icons, root: box })
         if (face.kind === 'download') box.querySelector('.isl-bar i').style.transform = `scaleX(${face.percent / 100})`
         if (face.kind === 'recording') {
@@ -104,7 +106,7 @@ export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onO
     const action = event.target.closest('[data-island-action]')?.dataset.islandAction
     if (action === 'retry') onRetry()
     else if (action === 'stop') onStop()
-    else if (action === 'open') onOpen()
+    else if (action === 'open') onOpen(event.detail === 0)
   })
 
   return {

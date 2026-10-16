@@ -209,7 +209,7 @@
 
   /* ---------- Top bar (F-075, F-084): the notes button and the search circle in the corners, the dynamic island between them. The bar itself has no background. ---------- */
   .app-shell :is(.topbar, .island-slot) { --h: 44px; position: absolute; inset: 16px 16px auto; height: var(--h); display: flex; align-items: center; gap: 8px; pointer-events: none; }
-  .app-shell .island-slot { justify-content: center; z-index: 10; }
+  .app-shell .island-slot { align-items: flex-start; justify-content: center; z-index: 10; }
   /* The top bar is not a stacking context of its own, so the notes button can sit above a locked note's cover; its other items keep z 10. */
   .app-shell .topbar > * { z-index: 10; }
   .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }

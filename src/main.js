@@ -140,7 +140,7 @@ document.querySelector('#app').innerHTML = `
       </header>
       <div class="island-slot">
         <div class="island" id="island" data-face="rest">
-          <div class="isl-face" data-face="rest"><button class="isl-open" id="share-button" title="Note actions" aria-haspopup="dialog" aria-expanded="false" aria-controls="share-menu"><span id="island-title">Untitled note</span></button></div>
+          <div class="isl-face" data-face="rest"><button class="isl-open" id="share-button" data-keeps-text-editing title="Note actions" aria-haspopup="dialog" aria-expanded="false" aria-controls="share-menu"><span id="island-title">Untitled note</span></button></div>
           <div class="isl-face isl-card" data-face="card" id="share-menu" role="dialog" aria-label="Note actions" hidden>
             <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
             <div class="isl-meta"><div class="save-state" id="save-state"><span></span>Saved on this device</div><span id="island-notebook"></span></div>
@@ -995,7 +995,7 @@ function renderNotebookPicker() {
 
 // The dynamic island (F-084): the title at rest, a card of actions on a click, and a short face for the moments (a slow or failed save, recording, an agent, a download, focus).
 const island = mountIsland(document.querySelector('#island'), {
-  onOpen: () => setShareMenuOpen(true),
+  onOpen: (byKeyboard) => setShareMenuOpen(true, byKeyboard),
   onRetry: () => void saveActiveNote(),
   onStop: () => void toggleVoiceDictation(),
 })
@@ -3629,21 +3629,22 @@ elements.mobileConnect.addEventListener('click', () => setTool(state.tool === 'c
 const searchButton = elements.searchButton
 searchButton.addEventListener('click', openSearch)
 // The card of actions is the island opened (F-084): Focus first, then what the ... menu held. Esc, a click away or tabbing out closes it.
-function setShareMenuOpen(open) {
+// (A press with the mouse leaves the words being written open, so Focus and the like act on them; the keyboard moves into the card.)
+function setShareMenuOpen(open, byKeyboard = true) {
   if (open === !elements.shareMenu.hidden) return
   if (open && focusActive) return
   if (open) {
     island.model.card(true)
     const notebook = state.notebooks.find((item) => item.id === state.notes.find((note) => note.id === state.activeNoteId)?.notebookId)
     elements.islandNotebook.textContent = notebook ? notebook.name : 'Inbox'
-    elements.shareMenu.querySelector('button:not(:disabled):not([hidden])')?.focus()
+    if (byKeyboard) elements.shareMenu.querySelector('button:not(:disabled):not([hidden])')?.focus()
   } else {
     island.setTitle(elements.title.value.trim() || 'Untitled note')
     island.model.card(false)
   }
   elements.shareButton.setAttribute('aria-expanded', String(open))
 }
-elements.shareButton.addEventListener('click', () => setShareMenuOpen(true))
+elements.shareButton.addEventListener('click', (event) => setShareMenuOpen(true, event.detail === 0))
 elements.shareMenu.addEventListener('click', (event) => {
   const item = event.target.closest('button')
   if (!item || item.disabled) return
