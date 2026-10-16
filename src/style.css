@@ -323,6 +323,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .setting-row span { display: flex; align-items: center; gap: 8px; }
 .setting-row svg { width: 14px; color: #81786D; }
 .setting-row small { color: #9A9185; font-size: 9px; text-align: right; }
+.setting-row :is(input:not([type="checkbox"]), select) { flex: 1 1 58%; min-width: 0; min-height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-row); color: var(--ink); background: var(--surface-cool); font-size: 11px; }
 .settings-font-control { margin-top: 2px; }
 .settings-font-size-row { margin-top: 14px; }
 .portability-actions { display: grid; gap: 7px; margin-top: 10px; }
@@ -446,7 +447,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .dialog-danger:hover { background: #ad544a; }
 
 @media (max-width: 800px) {
-  .portability-actions button[id$="-download"], .portability-actions button[id$="-cancel"], .portability-actions button[id$="-remove"] { min-height: 44px; }
+  .portability-actions button[id$="-download"], .portability-actions button[id$="-cancel"], .portability-actions button[id$="-remove"], #ai-settings :is(button, input, select) { min-height: 44px; }
   .note-create-menu { display: none; }
   .mindmap-active .workspace { padding: 0; }
   .mindmap-minimap { display: none; }
