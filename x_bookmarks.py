@@ -21,10 +21,10 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
-import app_paths
 import download_tls
+from secret_store import SecretStore, SecretStoreError
 
 logger = logging.getLogger("personal-note.x")
 
@@ -37,10 +37,10 @@ AUTHORIZE_URL = "https://x.com/i/oauth2/authorize"
 API_BASE = "https://api.x.com/2"
 MAX_BOOKMARKS = 800  # X returns at most the latest 800
 PAGE_SIZE = 100
+PAGE_SIZES = (1, 10, PAGE_SIZE)
 EXPIRY_SKEW = 60
 KEYCHAIN_SERVICE = "Personal Note X bookmarks"
 KEYCHAIN_ACCOUNT = "x-tokens"
-ERR_SEC_ITEM_NOT_FOUND = -25300
 
 
 class XError(Exception):
@@ -55,85 +55,31 @@ class XError(Exception):
 # ---- Token storage ----------------------------------------------------------------------------
 
 
-class FileTokenStore:
-    """A JSON file readable only by the owner (0600), for computers without a keychain."""
+class TokenStore:
+    """The token dict as JSON in a SecretStore (keychain on a Mac, a 0600 file elsewhere)."""
 
-    def __init__(self, path: Path):
-        self.path = Path(path)
+    def __init__(self, secret: SecretStore):
+        self.secret = secret
 
     def load(self) -> dict | None:
         try:
-            return json.loads(self.path.read_text("utf-8"))
-        except FileNotFoundError:
-            return None
+            raw = self.secret.load()
+            return None if raw is None else json.loads(raw)
+        except (SecretStoreError, ValueError):
+            raise XError("The saved X sign-in could not be read. Connect X again.", "signed_out") from None
 
     def save(self, tokens: dict) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_name(self.path.name + ".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(tokens, handle)
-        os.replace(tmp, self.path)
+        try:
+            self.secret.save(json.dumps(tokens))
+        except SecretStoreError:
+            raise XError("The X sign-in could not be saved on this computer.") from None
 
     def clear(self) -> None:
-        self.path.unlink(missing_ok=True)
+        self.secret.delete()
 
 
-class KeychainTokenStore:
-    """One generic-password item in the login keychain holding the token JSON (pyobjc's Security, as secure_platform)."""
-
-    def __init__(self, security: Any = None):
-        self._security = security
-
-    @property
-    def security(self) -> Any:
-        if self._security is None:
-            import Security  # noqa: N813
-
-            self._security = Security
-        return self._security
-
-    def _query(self) -> dict:
-        s = self.security
-        return {s.kSecClass: s.kSecClassGenericPassword, s.kSecAttrService: KEYCHAIN_SERVICE, s.kSecAttrAccount: KEYCHAIN_ACCOUNT}
-
-    def load(self) -> dict | None:
-        s = self.security
-        query = self._query()
-        query[s.kSecReturnData] = True
-        query[s.kSecMatchLimit] = s.kSecMatchLimitOne
-        status, data = s.SecItemCopyMatching(query, None)
-        if status == ERR_SEC_ITEM_NOT_FOUND:
-            return None
-        if status != 0:
-            raise OSError(f"keychain read failed ({status})")
-        return json.loads(bytes(data).decode("utf-8"))
-
-    def save(self, tokens: dict) -> None:
-        from Foundation import NSData
-
-        s = self.security
-        blob = json.dumps(tokens).encode("utf-8")
-        data = NSData.dataWithBytes_length_(blob, len(blob))
-        status = s.SecItemUpdate(self._query(), {s.kSecValueData: data})
-        if status == ERR_SEC_ITEM_NOT_FOUND:
-            item = self._query()
-            item[s.kSecValueData] = data
-            status, _ = s.SecItemAdd(item, None)
-        if status != 0:
-            raise OSError(f"keychain write failed ({status})")
-
-    def clear(self) -> None:
-        status = self.security.SecItemDelete(self._query())
-        if status not in (0, ERR_SEC_ITEM_NOT_FOUND):
-            raise OSError(f"keychain delete failed ({status})")
-
-
-def default_token_store(platform: str | None = None):
-    platform = sys.platform if platform is None else platform
-    if platform == "darwin":
-        return KeychainTokenStore()
-    return FileTokenStore(app_paths.app_data_dir(platform) / "x-tokens.json")
+def default_token_store(platform: str | None = None, folder: Path | None = None) -> TokenStore:
+    return TokenStore(SecretStore(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, platform=platform, folder=folder))
 
 
 # ---- PKCE -------------------------------------------------------------------------------------
@@ -174,7 +120,10 @@ class XClient:
         clock: Callable[[], float] = time.time,
     ):
         self.store = store if store is not None else default_token_store()
-        stored = self.store.load() or {}
+        try:
+            stored = self.store.load() or {}
+        except XError:
+            stored = {}
         self.client_id = client_id or stored.get("client_id")
         self.authorize_url = authorize_url
         self.api_base = api_base.rstrip("/")
@@ -187,7 +136,10 @@ class XClient:
         return f"http://127.0.0.1:{self.callback_port}{CALLBACK_PATH}"
 
     def signed_in(self) -> bool:
-        return bool((self.store.load() or {}).get("refresh_token"))
+        try:
+            return bool((self.store.load() or {}).get("refresh_token"))
+        except XError:
+            return False
 
     def sign_out(self) -> None:
         self.store.clear()
@@ -249,12 +201,18 @@ class XClient:
         result: dict[str, str] = {}
 
         class Handler(BaseHTTPRequestHandler):
+            timeout = 2  # an idle connection must not hold the wait past the deadline
+
             def do_GET(self):  # noqa: N802
                 parts = urllib.parse.urlsplit(self.path)
                 if parts.path != CALLBACK_PATH:
                     self.send_error(404)
                     return
-                result.update({k: v[0] for k, v in urllib.parse.parse_qs(parts.query).items()})
+                query = {k: v[0] for k, v in urllib.parse.parse_qs(parts.query).items()}
+                if not secrets.compare_digest(query.get("state", "").encode(), state.encode()):
+                    self.send_error(400)  # not from our sign-in: ignore it and keep waiting
+                    return
+                result.update(query)
                 result["_done"] = "1"
                 page = b"<!doctype html><title>Personal Note</title><p>You can close this tab and go back to Personal Note.</p>"
                 self.send_response(200)
@@ -272,6 +230,7 @@ class XClient:
             raise XError(f"Port {self.callback_port} on this computer is busy, so X cannot sign in. Close what uses it and retry.") from None
         try:
             server.timeout = 0.5
+            server.handle_error = lambda *args: None  # a stalled or dropped connection is not an error to show
             open_browser(self.authorization_url(verifier, state))
             deadline = time.monotonic() + timeout
             while "_done" not in result:
@@ -280,8 +239,6 @@ class XClient:
                 server.handle_request()
         finally:
             server.server_close()
-        if result.get("state") != state:
-            raise XError("The X sign-in did not match this request, so it was refused. Try Connect X again.")
         if "code" not in result:
             raise XError("X did not allow the sign-in. Try Connect X again.", "signed_out")
         tokens = self._token_call(
@@ -331,21 +288,26 @@ class XClient:
                 raise
         return self._request(url, token=self._fresh_tokens(force=True)["access_token"])
 
-    def fetch_new(self, since_id: str | None = None, limit: int = MAX_BOOKMARKS) -> list[dict]:
-        """Bookmarks newer than `since_id` (the newest id seen last time), newest first, at most `limit`.
+    def fetch_new(self, since_ids: str | Iterable[str] | None = None, limit: int = MAX_BOOKMARKS) -> list[dict]:
+        """Bookmarks newer than the ones already held, newest first, at most `limit`.
 
-        X lists in bookmarked order. X bills per post returned, so with a since_id the first page is one post:
-        when it is the one already seen, that single read is the whole hourly run.
+        `since_ids` is the newest few ids stored (one id or several): X lists in bookmarked order and the fetch stops
+        at the first id it knows, so a newest bookmark that was un-bookmarked on X does not make it read everything.
+        X bills per post returned, so with since_ids the pages grow 1, 10, 100: when the newest stored post is still
+        first, that single read is the whole hourly run. (Changing max_results between pages that carry a
+        pagination_token is unverified against real X.)
         """
+        known = {since_ids} if isinstance(since_ids, str) else set(since_ids or ())
         user_id = (self.store.load() or {}).get("user_id")
         if not user_id:
             raise XError("X is not connected. Connect X in Settings.", "signed_out")
+        sizes = iter(PAGE_SIZES if known else (PAGE_SIZE,))
+        size = next(sizes)
         found: list[dict] = []
         token = None
-        size = 1 if since_id else PAGE_SIZE
         while len(found) < limit:
             params = {
-                "max_results": size,
+                "max_results": min(size, limit - len(found)),
                 "expansions": "author_id,attachments.media_keys",
                 "tweet.fields": "created_at",
                 "user.fields": "username,name",
@@ -355,7 +317,7 @@ class XClient:
                 params["pagination_token"] = token
             page = self._get(f"/users/{user_id}/bookmarks", params)
             for item in _normalize(page):
-                if item["id"] == since_id:
+                if item["id"] in known:
                     return found
                 found.append(item)
                 if len(found) >= limit:
@@ -363,7 +325,7 @@ class XClient:
             token = (page.get("meta") or {}).get("next_token")
             if not token:
                 break
-            size = PAGE_SIZE
+            size = next(sizes, PAGE_SIZE)
         return found
 
 
@@ -401,6 +363,8 @@ def _live_check() -> int:
 
     client = XClient(os.environ.get("PN_X_CLIENT_ID"))
     try:
+        if not client.client_id:
+            raise XError("No X client id yet. Run scripts/x-setup.sh.")
         if not client.signed_in():
             print("Opening X in your browser to sign in...")
             client.sign_in(webbrowser.open)

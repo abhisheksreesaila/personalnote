@@ -10,6 +10,7 @@ import os
 import socket
 import stat
 import tempfile
+import time
 import threading
 import unittest
 import urllib.error
@@ -19,7 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import x_bookmarks
-from x_bookmarks import FileTokenStore, XClient, XError, challenge_for
+from secret_store import SecretStore
+from x_bookmarks import TokenStore, XClient, XError, challenge_for
 
 CLIENT_ID = "client-abc"
 USER_ID = "4242"
@@ -166,7 +168,7 @@ class XTestCase(unittest.TestCase):
         self.x = FakeX(make_posts(self.posts))
         self.addCleanup(self.x.stop)
         self.clock = Clock()
-        self.store = FileTokenStore(Path(self.tmp.name) / "x-tokens.json")
+        self.store = x_bookmarks.default_token_store("linux", Path(self.tmp.name))
         self.port = free_port()
         self.client = self.make_client()
 
@@ -182,7 +184,13 @@ class XTestCase(unittest.TestCase):
 
     def browser(self, url):
         """Stands in for the captain's browser: follows the authorize redirect back to the loopback callback."""
-        threading.Thread(target=lambda: urllib.request.urlopen(url, timeout=10).read(), daemon=True).start()
+        def follow():
+            try:
+                urllib.request.urlopen(url, timeout=10).close()
+            except (urllib.error.URLError, OSError):
+                pass  # the callback may be refused or never answered: tests assert what sign_in does
+
+        threading.Thread(target=follow, daemon=True).start()
 
     def sign_in(self):
         return self.client.sign_in(self.browser, timeout=10)
@@ -207,12 +215,39 @@ class SignInTests(XTestCase):
     def test_fixed_redirect_is_the_loopback_ip(self):
         self.assertEqual(x_bookmarks.REDIRECT_URI, "http://127.0.0.1:38457/x/callback")
 
-    def test_state_mismatch_is_refused_and_nothing_is_stored(self):
+    def test_state_mismatch_is_ignored_and_nothing_is_stored(self):
         self.x.tamper_state = True
-        with self.assertRaisesRegex(XError, "did not match"):
-            self.sign_in()
+        with self.assertRaisesRegex(XError, "timed out"):
+            self.client.sign_in(self.browser, timeout=1)
         self.assertEqual(self.x.token_calls, [])
         self.assertIsNone(self.store.load())
+
+    def test_a_forged_callback_does_not_end_the_wait(self):
+        def browser(url):
+            def run():
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{self.port}/x/callback?code=evil&state=wrong", timeout=5)
+                except urllib.error.HTTPError as error:
+                    self.assertEqual(error.code, 400)
+                urllib.request.urlopen(url, timeout=10).read()
+
+            threading.Thread(target=run, daemon=True).start()
+
+        self.assertEqual(self.client.sign_in(browser, timeout=10), {"user_id": USER_ID})
+        self.assertEqual(len(self.x.token_calls), 1)
+        self.assertNotEqual(self.x.token_calls[0]["form"]["code"], "evil")
+
+    def test_an_idle_connection_cannot_hold_sign_in_past_its_deadline(self):
+        started = time.monotonic()
+        idle = []
+
+        def browser(url):
+            idle.append(socket.create_connection(("127.0.0.1", self.port), timeout=10))  # connects, sends nothing
+
+        with self.assertRaisesRegex(XError, "timed out"):
+            self.client.sign_in(browser, timeout=2)
+        idle[0].close()
+        self.assertLess(time.monotonic() - started, 6)
 
     def test_callback_server_stops_after_one_callback(self):
         self.sign_in()
@@ -221,11 +256,13 @@ class SignInTests(XTestCase):
 
     def test_user_who_denies_gets_a_plain_message(self):
         def browser(url):
-            redirect = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["redirect_uri"][0]
-            threading.Thread(target=lambda: urllib.request.urlopen(redirect + "?error=access_denied&state=x", timeout=5).read(), daemon=True).start()
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            denied = query["redirect_uri"][0] + "?" + urllib.parse.urlencode({"error": "access_denied", "state": query["state"][0]})
+            threading.Thread(target=lambda: urllib.request.urlopen(denied, timeout=5).read(), daemon=True).start()
 
-        with self.assertRaises(XError):
+        with self.assertRaisesRegex(XError, "X did not allow the sign-in"):
             self.client.sign_in(browser, timeout=10)
+        self.assertEqual(self.x.token_calls, [])
 
     def test_busy_port_is_explained(self):
         with socket.socket() as s:
@@ -241,7 +278,7 @@ class SignInTests(XTestCase):
 
     def test_token_file_is_owner_only(self):
         self.sign_in()
-        self.assertEqual(stat.S_IMODE(os.stat(self.store.path).st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(os.stat(self.store.secret.path).st_mode), 0o600)
 
     def test_sign_out_forgets_the_tokens(self):
         self.sign_in()
@@ -282,19 +319,27 @@ class FetchTests(XTestCase):
         self.assertEqual(q["max_results"], "100")
 
     def test_since_id_returns_only_newer_with_no_duplicates(self):
-        got = self.client.fetch_new(since_id="1003")
+        got = self.client.fetch_new("1003")
         self.assertEqual([b["id"] for b in got], ["1005", "1004"])
 
+    def test_newest_stored_id_unbookmarked_still_stops_at_the_next_known_one(self):
+        # 1005 was stored, then un-bookmarked on X; 1004 is still there and stored
+        self.x.posts.pop(0)
+        self.x.posts.insert(0, {"id": "1006", "text": "new", "author_id": "u1"})
+        got = self.client.fetch_new({"1005", "1004", "1003"})
+        self.assertEqual([b["id"] for b in got], ["1006"])
+        self.assertEqual([c["max_results"] for c in self.x.bookmark_calls], ["1", "10"])
+
     def test_nothing_new_costs_one_post_and_one_call(self):
-        self.assertEqual(self.client.fetch_new(since_id="1005"), [])
+        self.assertEqual(self.client.fetch_new("1005"), [])
         self.assertEqual(len(self.x.bookmark_calls), 1)
         self.assertEqual(self.x.bookmark_calls[0]["max_results"], "1")
 
-    def test_one_new_then_pages_on_at_full_size(self):
+    def test_one_new_then_pages_on_ten_at_a_time(self):
         self.x.posts.insert(0, {"id": "1006", "text": "newest", "author_id": "u1"})
-        got = self.client.fetch_new(since_id="1005")
+        got = self.client.fetch_new("1005")
         self.assertEqual([b["id"] for b in got], ["1006"])
-        self.assertEqual([c["max_results"] for c in self.x.bookmark_calls], ["1", "100"])
+        self.assertEqual([c["max_results"] for c in self.x.bookmark_calls], ["1", "10"])
         self.assertEqual(self.x.bookmark_calls[1]["pagination_token"], "1")
 
     def test_not_connected_says_so(self):
@@ -321,7 +366,12 @@ class PaginationTests(XTestCase):
 
     def test_all_pages_are_followed_when_under_the_cap(self):
         self.assertEqual(len(self.client.fetch_new(limit=250)), 250)
-        self.assertEqual(len(self.x.bookmark_calls), 3)
+        self.assertEqual([c["max_results"] for c in self.x.bookmark_calls], ["100", "100", "50"])
+
+    def test_pages_grow_one_ten_hundred_while_new_posts_keep_coming(self):
+        self.assertEqual(len(self.client.fetch_new("no-such-id")), 800)
+        sizes = [c["max_results"] for c in self.x.bookmark_calls]
+        self.assertEqual(sizes[:4], ["1", "10", "100", "100"])
 
 
 class RefreshTests(XTestCase):
@@ -409,13 +459,23 @@ class SecretsStayOutOfLogsTests(XTestCase):
 
 class DefaultStoreTests(unittest.TestCase):
     def test_linux_uses_a_file_under_the_app_data_folder(self):
-        store = x_bookmarks.default_token_store("linux")
-        self.assertIsInstance(store, FileTokenStore)
-        self.assertEqual(store.path.name, "x-tokens.json")
-        self.assertEqual(store.path.parent.name, "personal-note")
+        secret = x_bookmarks.default_token_store("linux").secret
+        self.assertEqual((secret.path.name, secret.path.parent.name), ("x-tokens.secret", "personal-note"))
 
     def test_mac_uses_the_keychain(self):
-        self.assertIsInstance(x_bookmarks.default_token_store("darwin"), x_bookmarks.KeychainTokenStore)
+        self.assertTrue(x_bookmarks.default_token_store("darwin").secret.uses_keychain)
+
+    def test_a_corrupt_token_file_says_connect_again(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = x_bookmarks.default_token_store("linux", Path(folder))
+            store.secret.path.write_text("{not json")
+            with self.assertRaisesRegex(XError, "Connect X again") as caught:
+                store.load()
+            self.assertEqual(caught.exception.kind, "signed_out")
+            client = XClient("id", store)
+            self.assertFalse(client.signed_in())
+            with self.assertRaisesRegex(XError, "Connect X again"):
+                client.fetch_new()
 
 
 if __name__ == "__main__":
