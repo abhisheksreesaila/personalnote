@@ -3,7 +3,10 @@
 Status: approved
 <!-- 2026-10-15: the captain asked for Stitch-style chrome (one button for the notes, a side dock with fewer controls), picked
 the Stitch screens labelled "APPROVED 1" and "APPROVED 2 - FOCUS MODE", and said "go ahead". Calls the screens leave open
-are marked (assumed); the captain can overturn any of them. -->
+are marked (assumed); the captain can overturn any of them.
+2026-10-16, after using preview 8: the notes panel sits beside the note on a wide window (it covered the page and looked
+lopsided), the eraser joins the island's main tools, and the title pill is to become contextual like a dynamic island
+(prototype first). -->
 
 ## Why (the mission)
 - Why this exists, in one sentence: the note should own the screen; today a sidebar that's always open, a top bar of buttons and a 17-control dock surround it.
