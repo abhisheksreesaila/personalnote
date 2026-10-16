@@ -44,7 +44,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run dev
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_download_tls tests.test_meaning_index tests.test_meaning_search tests.test_meaning_rank -v
+python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_secret_store tests.test_x_bookmarks tests.test_download_tls tests.test_meaning_index tests.test_meaning_search tests.test_meaning_rank -v
 npm run benchmark:bundle
 ```
 
