@@ -486,12 +486,13 @@ Reviewed: PASS after fixes (agent chip moved top left and checked on the Mac hos
 - [x] the top bar becomes islands: a centred title pill (editable title + save state, errors shown there) and, top right, a Focus button beside the search pill
 - [x] a ⋯ in the title pill holds print, PNG, backup, Markdown, Obsidian vault, Clear all, Fold all and Settings; nothing that was on the top bar is lost
 - [x] ⌘K, ⌘. and ⌘P still work; focus mode still hides all chrome and restores it
-## F-076 Side tool island [todo]
+## F-076 Side tool island [done]
 Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md · Needs: F-075
-- [ ] the bottom dock becomes a vertical island on the right: select, text, pen, shape, sticky, a colour dot, +, mic
-- [ ] + opens hand, highlighter, connect, image, eraser and prettify; the colour dot opens the colour and width options; every shortcut and hold-for-options still works
-- [ ] undo/redo sit in a bottom-left island, zoom (−, %, +, fit) in a bottom-right island; the minimap leaves the resting view
-- [ ] mind-map notes show their actions in the same island; every verify-* script and the speed test pass
+Reviewed: PASS (fixes: island fits short windows, dead dot rule removed). Quick swatches and the minimap are gone; page count is in the fit tooltip; zoom still fades while writing (F-059). verify-leafer-hybrid/-lod flaky on main too (F-077).
+- [x] the bottom dock becomes a vertical island on the right: select, text, pen, shape, sticky, a colour dot, +, mic
+- [x] + opens hand, highlighter, connect, image, eraser and prettify; the colour dot opens the colour and width options; every shortcut and hold-for-options still works
+- [x] undo/redo sit in a bottom-left island, zoom (−, %, +, fit) in a bottom-right island; the minimap leaves the resting view
+- [x] mind-map notes show their actions in the same island; every verify-* script and the speed test pass
 ## F-077 Make the flaky canvas checks honest [todo]
 Brief: none (test reliability) · Needs: none
 Found during F-074 to F-076 review: on a clean main, verify-leafer-hybrid fails 4 of 5 runs (bitmap blur, "only the touched page", sometimes "typing grows the grid") and verify-leafer-lod fails "vectors are back after zoom" 1 of 2.
