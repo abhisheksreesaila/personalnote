@@ -41,10 +41,12 @@ class MeaningIndexer:
         self.idle, self.poll, self.batch, self.pause, self.clock = idle, poll, batch, pause, clock
         self.error = ""
         self.failed: dict[int, int] = {}  # note id -> the revision the engine refused; left out until the note changes
+        self._failed_lock = threading.Lock()  # the thread changes `failed`; status() is read from request threads
         self._retry_at = 0.0
         self._backoff = FIRST_BACKOFF
         self._settled: tuple | None = None  # (change counter, model) when the last pass found nothing left to do
         self._last_pass = 0.0
+        self._found_work = False  # the last pass had notes to do (stored or refused), so more may be waiting
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -78,21 +80,24 @@ class MeaningIndexer:
         if self._settled == (sequence, model) and self.clock() - self._last_pass < SAFETY_POLL_SECONDS:
             self.runtime.stop_if_idle(ENGINE_IDLE_SECONDS)
             return 0
+        self._forget_stale_refusals()
         stored = self.run_once()
         self._last_pass = self.clock()
-        if stored == 0 and not self.error and self.service.meaning_waiting(model, self.idle) == 0:
+        if not self._found_work and not self.error and self.service.meaning_waiting(model, self.idle) == 0:
             self._settled = (sequence, model)
             self.runtime.stop_if_idle(ENGINE_IDLE_SECONDS)
         else:
             self._settled = None
-        return stored
+        return stored or int(self._found_work and not self.error)
 
     def run_once(self) -> int:
         """Embed one batch of notes that need it; returns how many were stored (0 when idle, not installed, or backing off)."""
+        self._found_work = False
         if not self.runtime.installed() or self.clock() < self._retry_at:
             return 0
         model = self.runtime.model_id
-        work = self.service.meaning_work(model, self.idle, self.batch, skip=self.failed)
+        work = self.service.meaning_work(model, self.idle, self.batch, skip=self._refusals())
+        self._found_work = bool(work)
         if not work:
             self.error = ""
             return 0
@@ -113,7 +118,8 @@ class MeaningIndexer:
             try:
                 (vector,) = self.runtime.embed([(item["title"], item["text"])], kind="document")
             except SearchInputError:
-                self.failed[item["id"]] = item["revision"]
+                with self._failed_lock:
+                    self.failed[item["id"]] = item["revision"]
                 logger.warning("event=search.index outcome=note_refused note_id=%s revision=%s", item["id"], item["revision"])
                 continue
             except SearchError as error:  # the engine itself went down: not this note's fault
@@ -128,7 +134,8 @@ class MeaningIndexer:
     def _keep(self, work: list[dict], vectors: list, model: str) -> None:
         self.service.store_meaning(model, list(zip(work, vectors)))
         for item in work:
-            self.failed.pop(item["id"], None)
+            with self._failed_lock:
+                self.failed.pop(item["id"], None)
 
     def _engine_failed(self, error: SearchError) -> None:
         self.error = str(error)
@@ -136,12 +143,22 @@ class MeaningIndexer:
         logger.warning("event=search.index outcome=engine_failed retry_in=%ds error=%s", self._backoff, error)
         self._backoff = min(self._backoff * 2, MAX_BACKOFF)
 
+    def _refusals(self) -> dict:
+        with self._failed_lock:
+            return dict(self.failed)
+
+    def _live_refusals(self) -> list[int]:
+        """The refusals that still hold: the note exists and has not changed since."""
+        snapshot = self._refusals()
+        current = self.service.note_revisions(snapshot)
+        return [note_id for note_id, revision in snapshot.items() if current.get(note_id) == revision]
+
     def _forget_stale_refusals(self) -> None:
-        """A refusal holds only for that revision of a note that still exists."""
-        current = self.service.note_revisions(self.failed)
-        for note_id in [note_id for note_id, revision in self.failed.items() if current.get(note_id) != revision]:
-            del self.failed[note_id]
+        """Only the indexer thread forgets (in `tick`); `status` just counts."""
+        live = set(self._live_refusals())
+        with self._failed_lock:
+            for note_id in [note_id for note_id in self.failed if note_id not in live]:
+                del self.failed[note_id]
 
     def status(self) -> dict:
-        self._forget_stale_refusals()
-        return {**self.service.meaning_counts(self.runtime.model_id), "error": self.error, "failed": len(self.failed)}
+        return {**self.service.meaning_counts(self.runtime.model_id), "error": self.error, "failed": len(self._live_refusals())}

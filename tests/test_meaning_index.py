@@ -9,6 +9,7 @@ import json
 import math
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
 import zlib
@@ -375,6 +376,46 @@ class OneBadNoteTests(MeaningCase):
         self.assertEqual(self.indexer.status()["failed"], 0, "the old refusal no longer applies until it is tried again")
         self.drain()
         self.assertEqual(self.indexer.status()["failed"], 1)
+
+    def test_status_can_be_read_all_the_time_while_the_thread_adds_and_forgets_refusals(self):
+        self.engine.refuse = "TOOLONG"
+        for index in range(40):
+            self.page(f"Bad {index}", "TOOLONG " * 5)
+        indexer = MeaningIndexer(self.service, self.engine, idle=0, poll=0.01, batch=4, pause=0.05)
+        errors, counts = [], []
+        reading = threading.Event()
+
+        def hammer():
+            while not reading.is_set():
+                try:
+                    counts.append(indexer.status()["failed"])
+                except Exception as error:  # a dictionary changed size, a locked database: anything
+                    errors.append(repr(error))
+
+        reader = threading.Thread(target=hammer)
+        reader.start()
+        indexer.start()
+        try:
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and indexer.status()["failed"] < 40:
+                time.sleep(0.02)
+        finally:
+            indexer.stop()
+            reading.set()
+            reader.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(indexer.status()["failed"], 40)
+        self.assertGreaterEqual(len(counts), 10)
+        self.assertGreater(max(counts), 0, "the reader saw refusals arrive")
+
+    def test_asking_for_the_status_does_not_change_what_the_thread_remembers(self):
+        self.engine.refuse = "TOOLONG"
+        gone = self.page("Gone", "TOOLONG " * 10)
+        self.drain()
+        self.service.delete_note(gone["id"])
+
+        self.assertEqual(self.indexer.status()["failed"], 0)
+        self.assertEqual(self.indexer.failed, {gone["id"]: gone["revision"]})
 
 
 class QuietTests(MeaningCase):

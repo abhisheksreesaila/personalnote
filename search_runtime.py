@@ -521,7 +521,7 @@ class SearchRuntime:
                 try:
                     process = subprocess.Popen(
                         self._launch_prefix() + self._command(port), cwd=self.engine_dir, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                        preexec_fn=lambda parent=os.getpid(): self._child_setup(parent),
+                        preexec_fn=(lambda parent=os.getpid(): self._child_setup(parent)) if (self.key or "").startswith("linux") else None,  # a Mac relies on `taskpolicy -b`: preexec_fn is unsafe with threads
                     )
                 except OSError as error:
                     outcome["error"] = SearchError("The search engine could not be started. Download search by meaning again.")
