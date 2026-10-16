@@ -11,14 +11,18 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import urlopen
 from typing import Any
 
 from app_paths import DATABASE_FILENAME, LEGACY_DATABASE, app_data_dir, default_database_path
-from startup import probe_host
+from startup import check_existing_server, probe_host
 from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
+from search_runtime import SearchError, SearchRuntime, default_search_runtime, reap_dead_cli_engines
 from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, SecureError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
 from vault import PortabilityVaultError, export_vault_directory, import_vault_archive, import_vault_directory
 
@@ -157,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     search = subcommands.add_parser("search", help="Search note titles and content", parents=[agent_option])
     search.add_argument("query")
+    search.add_argument("--meaning", action="store_true", help="Find notes by what they mean, not their words (needs search by meaning, downloaded in the app's Settings); each match has a score")
     search.add_argument("--text", dest="as_text", action="store_true", help="Print one readable line per match instead of JSON")
     search.set_defaults(handler=command_search)
 
@@ -296,12 +301,76 @@ def command_notes_delete(service: NoteService, args: argparse.Namespace) -> dict
     return {"ok": True, "id": args.note_id}
 
 
+def search_engine(database: Path) -> SearchRuntime:
+    """This command's own handle on the search-by-meaning engine. It has its own pid file (named for this process), so starting its engine
+    never stops the running app's or another command's; engines left by commands that died are cleaned up first."""
+    root = default_search_runtime(database).root
+    reap_dead_cli_engines(root)
+    return default_search_runtime(database, pid_name=f"engine-cli-{os.getpid()}.pid")
+
+
+def running_app(database: Path) -> str | None:
+    """The address of the app when it is running on this very database (its /health names the file), else None."""
+    try:
+        base = check_existing_server(env_setting("HOST", "127.0.0.1"), int(env_setting("PORT", "3137")))
+        if base is None:
+            return None
+        with urlopen(f"{base}/health", timeout=1) as response:
+            health = json.load(response)
+    except (RuntimeError, OSError, ValueError):
+        return None
+    return base if health.get("database") == str(Path(database).resolve()) else None
+
+
+NOT_INSTALLED = "Search by meaning is not installed. Download it in the app's Settings."
+
+
+def meaning_from_app(base: str, query: str) -> list[dict] | None:
+    """What the running app says (it already has the engine and the index); None when it cannot be asked."""
+    try:
+        with urlopen(f"{base}/api/search/meaning?{urlencode({'q': query, 'limit': 5, 'strict': 1})}", timeout=120) as response:
+            matches = json.load(response)
+        if not matches:  # the app answers [] both for "nothing matches" and "not installed"
+            with urlopen(f"{base}/api/search-meaning/status", timeout=5) as response:
+                if json.load(response).get("state") != "ready":
+                    raise CliError(NOT_INSTALLED)
+        return matches
+    except HTTPError as error:
+        if error.code == 503:  # the app's engine is down: say so, as the command's own engine would
+            try:
+                raise CliError(json.load(error)["error"]) from error
+            except (ValueError, KeyError):
+                raise CliError("The search engine did not answer. Try again.") from error
+        return None
+    except (OSError, ValueError):
+        return None
+
+
+def meaning_matches(service: NoteService, query: str) -> list[dict]:
+    asked = running_app(service.database_path)
+    if asked and (matches := meaning_from_app(asked, query)) is not None:
+        return matches
+    engine = search_engine(service.database_path)
+    try:
+        if not engine.installed():
+            raise CliError(NOT_INSTALLED)
+        service.embedder = engine
+        return service.meaning_matches(query)
+    except SearchError as error:
+        raise CliError(str(error)) from error
+    finally:
+        engine.shutdown()
+
+
 def command_search(service: NoteService, args: argparse.Namespace) -> list[dict] | None:
-    matches = service.search(args.query)
+    matches = meaning_matches(service, args.query) if args.meaning else service.search(args.query)
     service.record_agent_activity(args.agent, None, "reading")
     if not args.as_text:
         return matches
     for match in matches:
+        if args.meaning:
+            print_text(f"#{match['id']} {match['title']} [{match['notebookName']}] - {match['score']:.2f}")
+            continue
         excerpt = " ".join(match["excerpt"].split())
         print_text(f"#{match['id']} {match['title']} [{match['notebookName']}]" + (f" - {excerpt}" if excerpt else ""))
     return None

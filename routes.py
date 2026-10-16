@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import subprocess
 import sys
 from datetime import datetime
@@ -33,7 +34,7 @@ from services import (
 )
 from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
 from meaning_index import MeaningIndexer
-from search_runtime import SearchError, SearchRuntime
+from search_runtime import SearchError, SearchRuntime, default_search_runtime, reap_dead_cli_engines
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
 
@@ -80,12 +81,6 @@ def close_search(app) -> None:
     """The app is closing: stop the engine first, so a batch waiting on it fails at once, then the thread that was waiting."""
     app.state.search.shutdown()
     app.state.indexer.stop()
-
-
-def default_search_runtime(database_path: Path) -> SearchRuntime:
-    """Search by meaning lives beside the database (PERSONAL_NOTE_SEARCH_DIR overrides it), so a scratch database gets a scratch folder."""
-    folder = os.environ.get("PERSONAL_NOTE_SEARCH_DIR")
-    return SearchRuntime(root=Path(folder) if folder else database_path.parent / "search-by-meaning")
 
 
 def speedtest_folder() -> Path:
@@ -189,6 +184,8 @@ def create_app(
     app.state.indexer = MeaningIndexer(service, search)
     if not speedtest_instance:
         app.state.indexer.start()  # a quiet thread: it embeds only when the download is installed, never on a request
+        if getattr(search, 'root', None):  # an engine a command that died left behind (a Mac has no way to stop it with its parent): stopped off the main thread
+            threading.Thread(target=reap_dead_cli_engines, args=(search.root,), name='reap-cli-engines', daemon=True).start()
     if bound_host is not None and host_name(bound_host) in LOOPBACK_NAMES:
         app.add_middleware(LoopbackHostMiddleware)
 
@@ -217,7 +214,7 @@ def create_app(
 
     @app.get("/health")
     def health():
-        return JSONResponse({"status": "ok", "app": "personal-note", "backend": "fasthtml"})
+        return JSONResponse({"status": "ok", "app": "personal-note", "backend": "fasthtml", "database": str(data_path.resolve())})  # the command line checks this is its own notebook
 
     @app.get("/api/settings/capabilities")
     def settings_capabilities():
@@ -376,6 +373,20 @@ def create_app(
             return JSONResponse(service.delete_notebook(notebook_id))
         except Exception as error:
             return json_error(error)
+
+    @app.get("/api/search/meaning")
+    def search_meaning(request):
+        """The omnibar's "By meaning" group. Never an error and never a download: without the install, or with the engine down, it is []."""
+        try:
+            limit = max(1, min(int(request.query_params.get("limit", 5)), 20))
+        except ValueError:
+            limit = 5
+        try:
+            return JSONResponse(service.meaning_matches(request.query_params.get("q", ""), limit))
+        except SearchError as error:
+            if request.query_params.get("strict"):  # the command line wants to know "engine down" from "no match"; the omnibar does not
+                return JSONResponse({"error": str(error)}, status_code=503)
+            return JSONResponse([])
 
     @app.get("/api/search")
     def search(request):

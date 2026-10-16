@@ -500,6 +500,56 @@ class EngineTests(SearchTestCase):
 
         self.assertEqual(len(runtime.embed(["y"], "query")), 1)
 
+    def test_a_second_runtime_with_its_own_pid_file_starts_without_stopping_the_first_ones_engine(self):
+        app = self.ready()
+        app.embed(["x"], "query")
+        app_pid = json.loads((self.root / "engine.pid").read_text())["pid"]
+        command_line = self.runtime(pid_name="engine-cli.pid")  # the personal-note command line shares the folder with the running app
+
+        self.assertEqual(len(command_line.embed(["y"], "query")), 1)
+
+        self.assertTrue(search_runtime.voice_runtime._alive(app_pid))
+        self.assertEqual(len(app.embed(["z"], "query")), 1)
+        self.assertNotEqual(json.loads((self.root / "engine-cli.pid").read_text())["pid"], app_pid)
+
+    def test_engines_left_by_dead_commands_are_stopped_and_a_running_commands_is_not(self):
+        runtime = self.ready()
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        live_owner = self.runtime(pid_name=f"engine-cli-{os.getpid()}.pid")
+        dead_owner = self.runtime(pid_name=f"engine-cli-{gone.pid}.pid")
+        live_owner.embed(["x"], "query")
+        dead_owner.embed(["x"], "query")
+        live_pid = json.loads((self.root / f"engine-cli-{os.getpid()}.pid").read_text())["pid"]
+        dead_pid = json.loads((self.root / f"engine-cli-{gone.pid}.pid").read_text())["pid"]
+
+        search_runtime.reap_dead_cli_engines(self.root)
+
+        self.assertFalse(search_runtime.voice_runtime._alive(dead_pid))
+        self.assertFalse((self.root / f"engine-cli-{gone.pid}.pid").exists())
+        self.assertTrue(search_runtime.voice_runtime._alive(live_pid))
+        self.assertTrue((self.root / f"engine-cli-{os.getpid()}.pid").exists())
+
+    def test_opening_the_app_stops_an_engine_a_dead_command_left_behind_without_waiting_for_it(self):
+        self.ready()
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        orphan = self.runtime(pid_name=f"engine-cli-{gone.pid}.pid")
+        orphan.embed(["x"], "query")
+        pid = json.loads((self.root / f"engine-cli-{gone.pid}.pid").read_text())["pid"]
+        self.assertTrue(search_runtime.voice_runtime._alive(pid))
+
+        started = time.monotonic()
+        app = create_app(Path(self.temporary.name) / "notes.db", search=self.runtime())
+        self.addCleanup(app.state.indexer.stop)
+        self.assertLess(time.monotonic() - started, 2.0)
+
+        deadline = time.monotonic() + 15
+        while ((self.root / f"engine-cli-{gone.pid}.pid").exists() or search_runtime.voice_runtime._alive(pid)) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(search_runtime.voice_runtime._alive(pid))
+        self.assertFalse((self.root / f"engine-cli-{gone.pid}.pid").exists())
+
     def test_the_engine_needs_a_key_for_everything_but_health_and_the_key_is_not_on_the_command_line(self):
         runtime = self.ready()
         runtime.embed(["x"], "query")

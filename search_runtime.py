@@ -143,6 +143,7 @@ class SearchRuntime:
     ready_timeout: float = 60.0
     threads: int | None = None  # the engine's CPU threads; default leaves most of the machine to the person typing
     clock: Callable = time.monotonic
+    pid_name: str = "engine.pid"  # the command line (F-080) uses its own, so starting its engine never stops the running app's
 
     def __post_init__(self):
         if self.threads is None:
@@ -192,7 +193,7 @@ class SearchRuntime:
 
     @property
     def pid_path(self) -> Path:
-        return self.root / "engine.pid"
+        return self.root / self.pid_name
 
     @property
     def _archive_path(self) -> Path:
@@ -706,6 +707,21 @@ class SearchRuntime:
         if norm == 0:
             raise SearchError("The search engine returned an empty vector.")
         return [value / norm for value in cut]
+
+
+def default_search_runtime(database_path: Path, **options) -> SearchRuntime:
+    """Search by meaning lives beside the database (PERSONAL_NOTE_SEARCH_DIR overrides it), so a scratch database gets a scratch folder."""
+    folder = os.environ.get("PERSONAL_NOTE_SEARCH_DIR")
+    return SearchRuntime(root=Path(folder) if folder else Path(database_path).parent / "search-by-meaning", **options)
+
+
+def reap_dead_cli_engines(root: Path) -> None:
+    """Stop engines that `personal-note search --meaning` commands left behind when they died (`engine-cli-<pid>.pid` names the command);
+    an engine whose command is still running is never touched."""
+    for record in Path(root).glob("engine-cli-*.pid"):
+        owner = record.name[len("engine-cli-"):-len(".pid")]
+        if not owner.isdigit() or not voice_runtime._alive(int(owner)):
+            voice_runtime.reap_stale_process(record)
 
 
 def _sha256(path: Path) -> str:

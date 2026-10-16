@@ -4,7 +4,7 @@ import './skins.css'
 import './chrome.css'
 import './secure.css'
 import { mountSkinSwitcher, SKINS, startSkins } from './skins.js'
-import { buildGroups, FILTERS, flatten, highlight, moveSelection, queryTokens } from './modules/omnibar/omnibar.js'
+import { buildGroups, FILTERS, flatten, highlight, latestRequest, moveSelection, queryTokens } from './modules/omnibar/omnibar.js'
 import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
 import { createIcons, icons } from './icons.js'
 import { createSecureSession } from './modules/secure/session.js'
@@ -2807,7 +2807,7 @@ function setupVoiceInput() {
 
 // ---- The omnibar (F-072): a slim bar at the top centre that grows into grouped results ----
 const IME_KEY = 229 // a key pressed while an input method is composing reports keyCode 229
-const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], wordsFailed: false }
+const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], meaningHits: [], meaningReady: false, meaningPending: false, wordsFailed: false }
 
 function omniActions() {
   const note = state.notes.find((item) => item.id === state.activeNoteId)
@@ -2828,10 +2828,10 @@ function omniRowHtml(item, index, tokens) {
   const sel = index === omni.sel
   const base = `id="omni-row-${index}" role="option" aria-selected="${sel}" data-omni="${index}" tabindex="-1"`
   const ret = '<i class="omni-ret" data-lucide="corner-down-left"></i>'
-  if (item.kind === 'note' || item.kind === 'words') {
+  if (item.kind === 'note' || item.kind === 'words' || item.kind === 'meaning') {
     const view = searchResultView(item)
     const sub = item.secure ? `Secure note · ${modifierLabel(navigator.platform) === '⌘' ? 'opens with Touch ID' : 'unlock to open'}` : item.kind === 'words' ? highlight(item.excerpt, tokens) : escapeHtml(item.notebookName)
-    return `<button class="omni-row search-result ${view.className}${sel ? ' sel' : ''}" ${base} data-search-note-id="${item.id}">
+    return `<button class="omni-row search-result ${view.className}${item.kind === 'meaning' ? ' is-meaning' : ''}${sel ? ' sel' : ''}" ${base} data-search-note-id="${item.id}">
       <span class="omni-ic"><i data-lucide="${view.icon}"></i></span>
       <span class="omni-copy"><span class="omni-title">${highlight(item.title, tokens)}</span><span class="omni-sub">${sub}</span></span>
       ${item.kind === 'words' || item.secure ? `<span class="omni-meta">${escapeHtml(item.notebookName)}</span>` : ''}${ret}</button>`
@@ -2845,33 +2845,37 @@ function omniRowHtml(item, index, tokens) {
 }
 
 const omniKey = (item) => (item ? `${item.kind === 'words' ? 'note' : item.kind}:${item.id ?? item.title}` : '')
+function omniCreateRowHtml(index, query, sel) {
+  return `<button class="omni-row${sel ? ' sel' : ''}" id="omni-row-${index}" role="option" aria-selected="${sel}" data-omni="${index}" tabindex="-1"><span class="omni-ic"><i data-lucide="plus"></i></span><span class="omni-copy"><span class="omni-title">New note “${escapeHtml(query)}”</span></span><i class="omni-ret" data-lucide="corner-down-left"></i></button>`
+}
+
 function renderOmni() {
   const keep = omniKey(omni.items[omni.sel]) // the selection stays on the same item when more results land
   const query = elements.searchInput.value.trim()
   const tokens = queryTokens(query)
   const notes = state.notes.filter((note) => note.id !== pendingDelete?.note.id)
   const wordHits = omni.wordHits.filter((hit) => hit.id !== pendingDelete?.note.id)
-  omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: state.notebooks, actions: omniActions(), wordHits })
+  const searchesNotes = omni.filter === 'All' || omni.filter === 'Notes'
+  omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: state.notebooks, actions: omniActions(), wordHits, meaningHits: omni.meaningHits, wordsPending: omni.pending })
   omni.items = flatten(omni.groups)
   const kept = omni.items.findIndex((item) => omniKey(item) === keep)
   if (kept >= 0) omni.sel = kept
-  const waiting = omni.pending && (omni.filter === 'All' || omni.filter === 'Notes') // the word search is still out: no "nothing" yet
+  const onlyCreate = omni.items.length === 1 && omni.items[0].kind === 'create'
+  const waiting = (omni.pending || omni.meaningPending) && searchesNotes // a search is still out: no "nothing" yet
   document.querySelector('#omni-chips').innerHTML = FILTERS.map((name) => `<button type="button" class="omni-chip" data-omni-chip="${name}" aria-pressed="${name === omni.filter}">${name}</button>`).join('')
   let html = ''
-  if (!omni.items.length && waiting) html = ''
-  else if (!omni.items.length) {
-    html = `<div class="omni-none"><strong>${query ? `Nothing matches “${escapeHtml(query)}”` : 'Nothing here yet'}</strong><span>Secure notes match by title only.</span></div>`
-    if (query && (omni.filter === 'All' || omni.filter === 'Notes')) {
-      omni.items = [{ kind: 'create', title: query }]
-      html += '<div class="omni-group"><button class="omni-row sel" id="omni-row-0" role="option" aria-selected="true" data-omni="0" tabindex="-1"><span class="omni-ic"><i data-lucide="plus"></i></span><span class="omni-copy"><span class="omni-title">New note “' + escapeHtml(query) + '”</span></span><i class="omni-ret" data-lucide="corner-down-left"></i></button></div>'
-    }
+  if (!omni.items.length) {
+    if (!waiting) html = `<div class="omni-none"><strong>${query ? `Nothing matches “${escapeHtml(query)}”` : 'Nothing here yet'}</strong><span>Secure notes match by title only.</span></div>`
   } else {
     let index = 0
-    omni.sel = Math.min(omni.sel, omni.items.length - 1)
-    html = omni.groups.map((group) => `<div class="omni-group" role="group" aria-label="${group.label}"><h4>${group.label}</h4>${group.items.map((item) => omniRowHtml(item, index++, tokens)).join('')}</div>`).join('')
+    omni.sel = onlyCreate ? 0 : Math.min(omni.sel, omni.items.length - 1)
+    // Only a New note row: say nothing matched, once no search is still out (the row itself is there at once, so Enter never waits).
+    if (onlyCreate && !waiting) html = `<div class="omni-none"><strong>Nothing matches “${escapeHtml(query)}”</strong><span>Secure notes match by title only.</span></div>`
+    html += omni.groups.map((group) => group.key === 'create'
+      ? `<div class="omni-group">${omniCreateRowHtml(index++, group.items[0].title, omni.sel === index - 1)}</div>`
+      : `<div class="omni-group" role="group" aria-label="${group.label}"><h4>${group.label}</h4>${group.items.map((item) => omniRowHtml(item, index++, tokens)).join('')}</div>`).join('')
   }
   if (omni.wordsFailed && query) html += '<p class="omni-note">Couldn’t search inside notes.</p>'
-  if (!omni.items.length || omni.items[0].kind === 'create') omni.sel = 0
   elements.searchResults.innerHTML = html
   createIcons({ icons })
   if (omni.items.length) elements.searchInput.setAttribute('aria-activedescendant', `omni-row-${omni.sel}`)
@@ -2891,7 +2895,8 @@ function openSearch() {
   const panel = elements.searchBackdrop.firstElementChild
   // The panel opens large, centred on the window, from the bar's top edge (a phone fills the screen instead, see chrome.css).
   panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top) - 2)}px`)
-  Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], wordsFailed: false })
+  Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], meaningHits: [], meaningPending: false, wordsFailed: false })
+  api('/search-meaning/status').then((status) => { omni.meaningReady = status.state === 'ready' }, () => { omni.meaningReady = false })
   elements.searchInput.value = ''
   elements.searchBackdrop.hidden = false
   elements.searchButton.setAttribute('aria-expanded', 'true')
@@ -2905,6 +2910,7 @@ function closeSearch() {
   omni.pending = false
   searchSequence += 1
   clearTimeout(searchTimer)
+  cancelMeaningSearch()
   elements.searchBackdrop.classList.remove('open')
   elements.searchButton.setAttribute('aria-expanded', 'false')
   setTimeout(() => { if (!elements.searchBackdrop.classList.contains('open')) elements.searchBackdrop.hidden = true }, 160)
@@ -2912,6 +2918,10 @@ function closeSearch() {
 
 let searchTimer
 let searchSequence = 0
+let meaningTimer
+const meaningRequest = latestRequest()
+const MEANING_DEBOUNCE_MS = 250
+const MEANING_MIN_CHARS = 3
 // Typing shows the title, notebook and action matches at once; the word matches (the full-text search) fill in when they arrive.
 function queueSearch() {
   clearTimeout(searchTimer)
@@ -2920,6 +2930,8 @@ function queueSearch() {
   omni.sel = 0
   omni.wordsFailed = false
   omni.wordHits = [] // word matches belong to the query they were found for
+  omni.meaningHits = [] // and so do the meaning matches
+  queueMeaningSearch(query)
   omni.pending = Boolean(query)
   omni.items = []
   if (!query) return renderOmni()
@@ -2940,10 +2952,44 @@ function queueSearch() {
   }, 120)
 }
 
+// "By meaning" (F-080) fills in below everything else, never blocking it: a quiet request after a pause in typing, aborted when the query
+// changes, its answer dropped if it is not the newest. Without the download the server answers [] at once and nothing shows. When it is
+// installed, a query with no other match shows nothing (not "Nothing matches") while the answer is on its way, for 6 s at most.
+const MEANING_WAIT_MS = 6000
+let meaningGiveUp
+function cancelMeaningSearch() {
+  clearTimeout(meaningTimer)
+  clearTimeout(meaningGiveUp)
+  meaningRequest.cancel()
+  omni.meaningPending = false
+}
+
+function queueMeaningSearch(query) {
+  cancelMeaningSearch()
+  if (query.length < MEANING_MIN_CHARS) return
+  omni.meaningPending = omni.meaningReady
+  meaningGiveUp = setTimeout(() => {
+    meaningRequest.cancel() // after the wait an answer would only move the list under the cursor: drop it
+    if (omni.meaningPending) { omni.meaningPending = false; renderOmni() }
+  }, MEANING_WAIT_MS)
+  meaningTimer = setTimeout(async () => {
+    const request = meaningRequest.start()
+    try {
+      const hits = await api(`/search/meaning?q=${encodeURIComponent(query)}&limit=10`, { signal: request.signal })
+      if (!request.current() || !omni.open) return
+      omni.meaningHits = hits
+    } catch {
+      if (!request.current()) return // aborted by a newer query; no answer: the omnibar stays as it is
+    }
+    omni.meaningPending = false
+    renderOmni()
+  }, MEANING_DEBOUNCE_MS)
+}
+
 function runOmniItem(item) {
   if (!item) return
   closeSearch()
-  if (item.kind === 'note' || item.kind === 'words') void selectNote(item.id)
+  if (item.kind === 'note' || item.kind === 'words' || item.kind === 'meaning') void selectNote(item.id)
   else if (item.kind === 'notebook') {
     revealNotebook(item.id)
     state.selectedNotebookId = item.id

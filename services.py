@@ -18,6 +18,7 @@ from app_schema import initialize_schema
 from document_model import DocumentError, empty_document, from_fabric, plain_text
 from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
 from media_store import MediaStore, data_url_of
+from meaning_rank import select_meaning
 from page_note import empty_page_document, find_quote, normalize_page_document, page_document_of, page_text, reanchor_ink, utf16
 
 logger = logging.getLogger(__name__)
@@ -1842,7 +1843,11 @@ class NoteService:
         return {"indexed": indexed, "total": total}
 
     def meaning_search(self, query: str, limit: int = 5) -> list[tuple[int, float]]:
-        """The notes closest in meaning to `query`: [(note_id, cosine)], best first. Secure notes never appear.
+        """The `limit` notes closest in meaning to `query`, whatever their scores: [(note_id, cosine)]. `meaning_matches` says what to show."""
+        return self.meaning_scores(query)[:limit]
+
+    def meaning_scores(self, query: str) -> list[tuple[int, float]]:
+        """The cosine of `query` to every searchable note: [(note_id, cosine)], best first. Secure notes never appear.
 
         Needs `embedder` (raises its SearchError when the engine is down). Stored vectors have length 1, so the dot product is the cosine.
         """
@@ -1860,7 +1865,26 @@ class NoteService:
             vector.frombytes(row["vector"])
             scored.append((row["note_id"], sum(map(float.__mul__, asked, vector))))
         scored.sort(key=lambda pair: -pair[1])
-        return scored[:limit]
+        return scored
+
+    def meaning_matches(self, query: str, limit: int = 5) -> list[dict]:
+        """[{id, title, notebookName, score}] best first: the notes `meaning_rank.select_meaning` says are worth showing. [] when there is
+        no engine or it is not installed (nothing is started), so a caller needs no special case. Raises the engine's SearchError when it is down."""
+        if self.embedder is None or not self.embedder.installed():
+            return []
+        kept = select_meaning(self.meaning_scores(query), limit)
+        if not kept:
+            return []
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"SELECT n.id, n.title, b.name FROM notes n LEFT JOIN notebooks b ON b.id = n.notebook_id WHERE n.secure = 0 AND n.id IN ({', '.join('?' * len(kept))})",
+                [note_id for note_id, _ in kept],
+            ).fetchall()
+        found = {row[0]: row for row in rows}
+        return [
+            {"id": note_id, "title": found[note_id][1], "notebookName": found[note_id][2] or INBOX_NAME, "score": round(score, 4)}
+            for note_id, score in kept if note_id in found
+        ]
 
     def search(self, query: str) -> list[dict]:
         terms = WORD_PATTERN.findall(query.strip())

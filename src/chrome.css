@@ -528,6 +528,7 @@
     .search-close { border: 0; padding: 6px; color: var(--sk-accent); font: 500 15px var(--ui-font); }
     .search-close .k-esc, .search-footer { display: none; }
     .search-close .k-cancel { display: inline; }
+    .omni-row.is-meaning { min-height: 48px; }
   }
   @media (prefers-reduced-motion: reduce) { .spotlight { transition: none; } }
 

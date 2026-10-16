@@ -201,6 +201,7 @@ Canvas and mind-map notes share the same notebook and API lifecycle. `noteType` 
 
 ```bash
 bin/personal-note search "searchable capture"                 # JSON matches; add --text for readable lines
+bin/personal-note search --meaning "why am I tired"           # find by meaning, not words (needs the Settings download); --text for readable lines
 bin/personal-note notes read 12 --text                        # plain text: canvas in reading order, mind maps as an outline
 bin/personal-note notes create --title "Idea" --text "A local searchable capture"
 bin/personal-note notes append 12 --text "One more thought"   # or pipe: echo "..." | bin/personal-note notes append 12
@@ -213,6 +214,8 @@ bin/personal-note export workspace --output backup.json
 bin/personal-note import backup.json
 bin/personal-note plugins inspect plugin-manifest.json
 ```
+
+`search --meaning "…"` finds notes by what they mean (the same ranking as the app's "By meaning" group), so "money for the house loan" finds a note titled "Mortgage options". It prints JSON by default, best first, and only notes that stand out from the rest: `[{"id": 31, "title": "Mortgage options", "notebookName": "Inbox", "score": 0.7378}]` (`score` is the similarity, 0 to 1; `notebookName` is "Inbox" for an unfiled note). `[]` means nothing is close enough; secure notes never appear. It needs the "Search by meaning" download from Settings (otherwise it exits with code 2 and says so). When the app is running on the same database the command asks the app; otherwise it starts the search engine itself for the run (a few seconds) and stops it afterwards.
 
 `npm run personal-note -- <command>` and `npm link` (which installs a `personal-note` command from `package.json`) work too. Pass `--database /path/to/personal-note.db` (or set `PERSONAL_NOTE_DB`) to target a specific workspace; the default is the same database the app uses (see Desktop app, Where the notebook lives); `bin/personal-note migrate-data` moves a checkout's data into the app-data folder.
 

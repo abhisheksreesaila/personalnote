@@ -5,6 +5,7 @@ export const FILTERS = ['All', 'Notes', 'Notebooks', 'Actions']
 const RECENT_WHEN_ALL = 4
 const RECENT_WHEN_NOTES = 8
 const TITLE_LIMIT = 8
+const MEANING_LIMIT = 5 // the server already keeps only the notes close enough in meaning (services.py MEANING_FLOOR); this is how many rows show
 
 export function queryTokens(query) {
   return String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean)
@@ -46,9 +47,11 @@ const actionItem = (action) => ({ kind: 'action', ...action })
 
 /**
  * Groups for the panel. `wordHits` are the results of the word search (title + words, as the server sends them);
+ * `meaningHits` are the notes closest in meaning, best first (F-080): they go last, as "By meaning", without repeating a note shown above.
+ * When nothing else matches (and the word search is not still out) the list ends with a "New note" row, so Enter always does something.
  * `filter` is one of FILTERS. Nothing here touches the page.
  */
-export function buildGroups({ query, filter = 'All', notes = [], notebooks = [], actions = [], wordHits = [] }) {
+export function buildGroups({ query, filter = 'All', notes = [], notebooks = [], actions = [], wordHits = [], meaningHits = [], wordsPending = false }) {
   const tokens = queryTokens(query)
   const want = (name) => filter === 'All' || filter === name
   const groups = []
@@ -80,5 +83,32 @@ export function buildGroups({ query, filter = 'All', notes = [], notebooks = [],
   }
   if (want('Notebooks')) add('notebooks', 'Notebooks', notebooks.filter((notebook) => matchesAll(notebook.name, tokens)).map(notebookItem))
   if (want('Actions')) add('actions', 'Actions', actions.filter((action) => matchesAll(`${action.title} ${action.keywords ?? ''}`, tokens)).map(actionItem))
+  if (filter === 'All' || filter === 'Notes') {
+    const meaningItems = []
+    for (const hit of meaningHits) {
+      const note = known.get(hit.id)
+      if (!note || note.secure || taken.has(hit.id)) continue // a note the page does not know was deleted; a secure one is found by title only
+      meaningItems.push(noteItem(note, notebooks, { kind: 'meaning' }))
+      if (meaningItems.length === MEANING_LIMIT) break
+    }
+    add('meaning', 'By meaning', meaningItems)
+    if (!wordsPending && !groups.some((group) => group.key !== 'meaning')) groups.push({ key: 'create', label: '', items: [{ kind: 'create', title: query.trim() }] })
+  }
   return groups
+}
+
+/** One request at a time: starting a new one aborts the one before, and `current()` says whether this one is still the newest. */
+export function latestRequest() {
+  let controller = null
+  return {
+    start() {
+      controller?.abort()
+      const mine = (controller = new AbortController())
+      return { signal: mine.signal, current: () => controller === mine }
+    },
+    cancel() {
+      controller?.abort()
+      controller = null
+    },
+  }
 }
