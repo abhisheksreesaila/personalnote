@@ -201,6 +201,11 @@ class SearchRuntime:
         except (OSError, ValueError, AttributeError):
             return False
 
+    @property
+    def model_id(self) -> str:
+        """Names the model and its vector length; stored vectors from any other are rebuilt."""
+        return f"{MODEL_REPO}@{MODEL_REVISION[:8]}/{self.dimension}"
+
     def _partial_bytes(self) -> int:
         total = 0
         for part in (self._part(self._archive_path), self._part(self.model_path)):

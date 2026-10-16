@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createMeaningClient, describeMeaning } from './meaning-setup.js'
+import { createMeaningClient, describeMeaning, indexIsCatchingUp } from './meaning-setup.js'
 
 test('each state says what it is and offers only the actions that make sense', () => {
   const idle = describeMeaning({ state: 'not-installed', downloadLabel: 'about 315 MB' })
@@ -24,6 +24,14 @@ test('each state says what it is and offers only the actions that make sense', (
   assert.equal(ready.download, null)
   assert.equal(ready.percent, null)
   assert.match(describeMeaning({ state: 'ready', engineError: 'The search engine did not become ready in time.' }).detail, /did not become ready/)
+
+  const indexing = { state: 'ready', index: { indexed: 123, total: 130, error: '' } }
+  assert.equal(describeMeaning(indexing).headline, 'Indexed 123 of 130 notes')
+  assert.equal(describeMeaning({ state: 'ready', index: { indexed: 1, total: 1, error: '' } }).headline, 'Indexed 1 of 1 note')
+  assert.match(describeMeaning({ state: 'ready', index: { indexed: 3, total: 9, error: 'The search engine did not answer. Try again.' } }).detail, /did not answer/)
+  assert.equal(indexIsCatchingUp(indexing), true)
+  assert.equal(indexIsCatchingUp({ ...indexing, index: { indexed: 130, total: 130, error: '' } }), false)
+  assert.equal(indexIsCatchingUp({ ...indexing, index: { indexed: 3, total: 9, error: 'x' } }), false)
 
   const failed = describeMeaning({ state: 'error', error: 'Could not reach the download server.' })
   assert.equal(failed.headline, 'Error')

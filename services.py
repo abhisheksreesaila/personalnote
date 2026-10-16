@@ -1,3 +1,5 @@
+import array
+import hashlib
 import json
 import logging
 import os
@@ -50,6 +52,7 @@ DEFAULT_MINDMAP_CONTENT = {
         }
     ],
 }
+MEANING_TEXT_CHARS = 6000  # the engine reads 2048 tokens; about 6000 characters of a note (its start) is safely inside
 NOTE_TYPES = {"canvas", "mindmap", "page"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")
@@ -127,7 +130,10 @@ class NoteService:
         secure_platform=None,
         scrypt_cost: int = sc.SCRYPT_N,
         clock=time.monotonic,
+        embedder=None,
     ):
+        # Search by meaning (F-079/F-080): anything with `.embed(texts, kind)`; None means the feature is not wired in.
+        self.embedder = embedder
         # Secure notes (F-057): the platform seam (Touch ID + keychain on a Mac), the key cost for passphrases, and the keys held while unlocked.
         self.secure_platform = secure_platform if secure_platform is not None else default_secure_platform
         self.scrypt_cost = scrypt_cost
@@ -1082,6 +1088,7 @@ class NoteService:
             if note is None:
                 raise NotFoundError("Note not found")
             connection.execute("DELETE FROM note_search WHERE note_id = ?", (note_id,))
+            connection.execute("DELETE FROM note_embeddings WHERE note_id = ?", (note_id,))
             cursor = connection.execute("DELETE FROM notes WHERE id = ?", (note_id,))
             if cursor.rowcount == 0:
                 raise NotFoundError("Note not found")
@@ -1236,6 +1243,7 @@ class NoteService:
             if cursor.rowcount == 0:
                 raise ConflictError("Resource revision does not match")
             self.index_note(connection, note_id, current["title"], "", current["note_type"], current["content_format"], body="")
+            connection.execute("DELETE FROM note_embeddings WHERE note_id = ?", (note_id,))  # a meaning vector leaks content (F-079)
             self.record_change(connection, "note", current["resource_id"], new_revision, "updated")
             connection.commit()
         self.keyring.unlock(key_id, data_key)
@@ -1745,6 +1753,84 @@ class NoteService:
                 for row in rows[:CHANGES_LIMIT]
             ],
         }
+
+    # ---- search by meaning (F-079): derived vectors, never in backup or export ----------------------------------------------
+
+    def meaning_work(self, model: str, idle_seconds: float, limit: int) -> list[dict]:
+        """Notes whose meaning vector is missing or old, saved at least `idle_seconds` ago: [{id, revision, title, text, hash}].
+
+        The text is exactly what search reads (`note_text`), cut to MEANING_TEXT_CHARS. A note whose revision moved but whose
+        title and text did not (a move between notebooks) only gets its stored revision updated; it is not embedded again.
+        Secure notes are never returned.
+        """
+        work: list[dict] = []
+        with self.connection() as connection:
+            while not work:  # a pass of only unchanged notes gets the next ones, so they are not all that is looked at
+                rows = connection.execute(
+                    """
+                    SELECT n.id, n.revision, n.title, n.note_type, n.content, n.content_format, n.page_state, e.text_hash, e.model
+                    FROM notes n LEFT JOIN note_embeddings e ON e.note_id = n.id
+                    WHERE n.secure = 0 AND (e.note_id IS NULL OR e.revision != n.revision OR e.model != ?)
+                      AND n.updated_at <= datetime('now', ?)
+                    ORDER BY n.updated_at, n.id LIMIT ?
+                    """,
+                    (model, f"-{max(idle_seconds, 0):.3f} seconds", limit * 4),
+                ).fetchall()
+                if not rows:
+                    break
+                for row in rows:
+                    text = self.note_text(row["note_type"], row["content"], row["content_format"], row["page_state"])[:MEANING_TEXT_CHARS]
+                    digest = hashlib.sha256(f"{row['title']}\0{text}".encode()).hexdigest()
+                    if row["model"] == model and row["text_hash"] == digest:
+                        connection.execute("UPDATE note_embeddings SET revision = ? WHERE note_id = ?", (row["revision"], row["id"]))
+                    elif len(work) < limit:
+                        work.append({"id": row["id"], "revision": row["revision"], "title": row["title"], "text": text, "hash": digest})
+                connection.commit()
+        return work
+
+    def store_meaning(self, model: str, items: list[tuple[dict, list[float]]]) -> None:
+        """Keep the vectors for `meaning_work` items. A note deleted or made secure meanwhile gets none."""
+        with self.connection() as connection:
+            for item, vector in items:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO note_embeddings (note_id, revision, model, dims, vector, text_hash)
+                    SELECT id, ?, ?, ?, ?, ? FROM notes WHERE id = ? AND secure = 0
+                    """,
+                    (item["revision"], model, len(vector), array.array("f", vector).tobytes(), item["hash"], item["id"]),
+                )
+            connection.commit()
+
+    def meaning_counts(self, model: str) -> dict:
+        """{indexed, total} over the notes that can be indexed (not secure)."""
+        with self.connection() as connection:
+            total = connection.execute("SELECT COUNT(*) FROM notes WHERE secure = 0").fetchone()[0]
+            indexed = connection.execute(
+                "SELECT COUNT(*) FROM notes n JOIN note_embeddings e ON e.note_id = n.id WHERE n.secure = 0 AND e.revision = n.revision AND e.model = ?",
+                (model,),
+            ).fetchone()[0]
+        return {"indexed": indexed, "total": total}
+
+    def meaning_search(self, query: str, limit: int = 5) -> list[tuple[int, float]]:
+        """The notes closest in meaning to `query`: [(note_id, cosine)], best first. Secure notes never appear.
+
+        Needs `embedder` (raises its SearchError when the engine is down). Stored vectors have length 1, so the dot product is the cosine.
+        """
+        if self.embedder is None or not query.strip():
+            return []
+        (asked,) = self.embedder.embed([query.strip()], kind="query")
+        with self.connection() as connection:
+            rows = connection.execute(
+                "SELECT e.note_id, e.vector FROM note_embeddings e JOIN notes n ON n.id = e.note_id WHERE n.secure = 0 AND e.model = ? AND e.dims = ?",
+                (self.embedder.model_id, len(asked)),
+            ).fetchall()
+        scored = []
+        for row in rows:
+            vector = array.array("f")
+            vector.frombytes(row["vector"])
+            scored.append((row["note_id"], sum(map(float.__mul__, asked, vector))))
+        scored.sort(key=lambda pair: -pair[1])
+        return scored[:limit]
 
     def search(self, query: str) -> list[dict]:
         terms = WORD_PATTERN.findall(query.strip())

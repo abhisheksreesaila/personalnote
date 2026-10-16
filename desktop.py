@@ -697,6 +697,7 @@ def main(argv: list[str] | None = None) -> int:
         clear_instance(database)
         if not speedtest_dir:
             app.state.voice.shutdown()  # (the speed test never started the voice engine)
+        app.state.indexer.stop()
         app.state.search.shutdown()  # the search-by-meaning engine, if something started it
         server.stop()
         if speedtest_dir is not None:

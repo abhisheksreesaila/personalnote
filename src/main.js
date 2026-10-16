@@ -13,7 +13,7 @@ import { api, downloadWorkspaceFile } from './core/api.js'
 import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
 import { nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
-import { createMeaningClient, describeMeaning } from './modules/search/meaning-setup.js'
+import { createMeaningClient, describeMeaning, indexIsCatchingUp } from './modules/search/meaning-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { mountPageModule } from './modules/page.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
@@ -2356,6 +2356,7 @@ async function refreshMeaningSetup() {
   }
   renderMeaningSetup(status)
   if (status.state === 'downloading') meaningPoll = setTimeout(refreshMeaningSetup, 1000)
+  else if (indexIsCatchingUp(status)) meaningPoll = setTimeout(refreshMeaningSetup, 3000)
 }
 
 async function meaningSetupAction(action) {
