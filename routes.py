@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import subprocess
 import sys
 from datetime import datetime
@@ -33,7 +34,7 @@ from services import (
 )
 from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
 from meaning_index import MeaningIndexer
-from search_runtime import SearchError, SearchRuntime, default_search_runtime
+from search_runtime import SearchError, SearchRuntime, default_search_runtime, reap_dead_cli_engines
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
 
@@ -183,6 +184,8 @@ def create_app(
     app.state.indexer = MeaningIndexer(service, search)
     if not speedtest_instance:
         app.state.indexer.start()  # a quiet thread: it embeds only when the download is installed, never on a request
+        if getattr(search, 'root', None):  # an engine a command that died left behind (a Mac has no way to stop it with its parent): stopped off the main thread
+            threading.Thread(target=reap_dead_cli_engines, args=(search.root,), name='reap-cli-engines', daemon=True).start()
     if bound_host is not None and host_name(bound_host) in LOOPBACK_NAMES:
         app.add_middleware(LoopbackHostMiddleware)
 
