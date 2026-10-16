@@ -523,15 +523,17 @@ Cause: the Mac app bundles python.org's OpenSSL, which looks for certificates in
 - [x] voice and search downloads verify against certifi's bundle on top of the system's (download_tls.py); certifi is pinned and bundled in both builds
 - [x] a test reproduces a machine with no system certificates; a real GitHub fetch fails without the fix and succeeds with it
 - [ ] the captain downloads voice on the Mac from the next preview
-## F-082 Eraser on the tool island [todo]
+## F-082 Eraser on the tool island [done]
 Brief: docs/briefs/chrome-islands.md (captain's feedback 2026-10-16: the eraser is used as often as the pen) · Needs: none
-- [ ] the eraser sits on the island right after the pen (select, text, pen, eraser, shape, sticky); it leaves the + flyout; E still selects it
-- [ ] the island still fits a short window; every verify-* script passes
-## F-083 The notes panel sits beside the note [todo]
+Reviewed: PASS after one round (the I-key check's file-chooser race fixed at the cause, 146/146 x6).
+- [x] the eraser sits on the island right after the pen (select, text, pen, eraser, shape, sticky); it leaves the + flyout; E still selects it
+- [x] the island still fits a short window; every verify-* script passes
+## F-083 The notes panel sits beside the note [done]
 Brief: docs/briefs/chrome-islands.md (captain's feedback 2026-10-16: the panel covering the page looks lopsided) · Needs: none
-- [ ] on a wide window, opening the notes panel moves the note area right so the panel and note sit side by side; the title pill and top islands centre on the note area; closing moves it back
-- [ ] the note keeps its place on screen relative to its area (no jump of the content under the pointer beyond the shift); typing and drawing work with the panel open
-- [ ] on a narrow window (< 760px) the panel still slides over with its scrim
+Reviewed: PASS after one round (Esc does the note's job first after a press on it; no view jump after a pan with the panel open). Wide = the app's 800px breakpoint; a click on the note keeps the panel open.
+- [x] on a wide window, opening the notes panel moves the note area right so the panel and note sit side by side; the title pill and top islands centre on the note area; closing moves it back
+- [x] the note keeps its place on screen relative to its area (no jump of the content under the pointer beyond the shift); typing and drawing work with the panel open
+- [x] on a narrow window (< 760px) the panel still slides over with its scrim
 ## F-084 The dynamic island [todo]
 Brief: docs/briefs/chrome-islands.md · Design: docs/design/dynamic-island.md (Option A) · Needs: F-083
 - [ ] the title pill becomes the island: title only at rest; click opens the card (title, saved state, Focus first, then every ⋯ action); Esc/click away closes
