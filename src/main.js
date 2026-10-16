@@ -131,28 +131,25 @@ document.querySelector('#app').innerHTML = `
       <header class="topbar">
         <button class="icon-button glass-button sidebar-toggle" id="toggle-sidebar" title="Notebooks" aria-label="Open notebooks" aria-expanded="false" aria-controls="sidebar"><i data-lucide="panel-left"></i></button>
         <div class="topbar-title">
-          <div class="crumb" id="breadcrumb" aria-label="Notebook"><span id="crumb-category">Projects</span><span class="crumb-sep" aria-hidden="true">/</span><b id="crumb-notebook">Notebook</b></div>
           <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
           <div class="save-state" id="save-state"><span></span>Saved on this device</div>
-        </div>
-        <div class="omni-slot">
-          <button class="search-button" id="search-button" title="Search or jump to (Ctrl+K)" aria-label="Search or jump to" aria-haspopup="dialog"><i data-lucide="search"></i><span>Search or jump to…</span><kbd id="search-kbd">Ctrl K</kbd></button>
-        </div>
-        <div class="topbar-actions">
           <div class="share-wrap">
-            <button class="icon-button glass-button share-button" id="share-button" title="Share or export" aria-label="Share or export" aria-haspopup="menu" aria-expanded="false"><i data-lucide="share"></i></button>
-            <div class="share-menu" id="share-menu" role="menu" aria-label="Share or export" hidden>
+            <button class="pill-more share-button" id="share-button" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
+            <div class="share-menu" id="share-menu" role="menu" aria-label="More actions" hidden>
               <button role="menuitem" id="share-print"><i data-lucide="printer"></i><span>Print preview</span><kbd id="print-kbd">Ctrl P</kbd></button>
               <button role="menuitem" id="share-png"><i data-lucide="image-down"></i><span>Note as picture (PNG)</span></button>
               <button role="menuitem" id="share-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
               <button role="menuitem" id="share-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
               <button role="menuitem" id="share-vault"><i data-lucide="folder-down"></i><span>Obsidian vault</span></button>
+              <button role="menuitem" id="fold-all" title="Fold all linked objects into their words" hidden><i data-lucide="fold-vertical"></i><span>Fold all</span></button>
+              <button role="menuitem" id="clear-note" title="Clear all"><i data-lucide="eraser"></i><span>Clear all</span></button>
+              <button role="menuitem" id="top-properties" title="Settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i><span>Settings and properties</span></button>
             </div>
           </div>
-          <button class="icon-button glass-button" id="focus-button" data-keeps-text-editing title="Focus mode (Ctrl+.)" aria-label="Focus mode"><i data-lucide="focus"></i></button>
-          <button class="icon-button glass-button" id="fold-all" title="Fold all linked objects into their words" aria-label="Fold all linked objects" hidden><i data-lucide="fold-vertical"></i></button>
-          <button class="icon-button glass-button" id="clear-note" title="Clear all" aria-label="Clear all"><i data-lucide="eraser"></i></button>
-          <button class="icon-button glass-button properties-trigger" id="top-properties" title="Settings and properties" aria-label="Open settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
+        </div>
+        <div class="topbar-actions">
+          <button class="focus-pill" id="focus-button" data-keeps-text-editing title="Focus mode (Ctrl+.)" aria-label="Focus mode"><i data-lucide="focus"></i><span>Focus</span><kbd id="focus-top-kbd">Ctrl .</kbd></button>
+          <button class="search-button" id="search-button" title="Search or jump to (Ctrl+K)" aria-label="Search or jump to" aria-haspopup="dialog"><i data-lucide="search"></i><span>Search or jump to…</span><kbd id="search-kbd">Ctrl K</kbd></button>
         </div>
       </header>
       <div class="focus-strip" id="focus-strip"><b id="focus-title"></b><span id="focus-count"></span><button type="button" id="focus-leave" data-keeps-text-editing><i data-lucide="x"></i>Leave focus <kbd>Esc</kbd></button></div>
@@ -460,8 +457,6 @@ const elements = {
   scrollX: document.querySelector('#scroll-x'),
   scrollY: document.querySelector('#scroll-y'),
   dockCanvas: document.querySelector('#dock-canvas'),
-  breadcrumbCategory: document.querySelector('#crumb-category'),
-  breadcrumbNotebook: document.querySelector('#crumb-notebook'),
   shareButton: document.querySelector('#share-button'),
   shareMenu: document.querySelector('#share-menu'),
   sidebarScrim: document.querySelector('#sidebar-scrim'),
@@ -890,7 +885,6 @@ function toggleNotebook(id) {
 }
 
 function renderNoteList() {
-  const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
   // An unfiled note has no notebook (it sits in the Inbox), so no notebook is open for it.
   const selectedNotebook = state.notebooks.find((notebook) => notebook.id === state.selectedNotebookId)
   if (!selectedNotebook) state.selectedNotebookId = null
@@ -943,9 +937,6 @@ function renderNoteList() {
   if (lastInboxCount > unfiled.length) shelves?.bumpInbox() // a note just left the Inbox
   lastInboxCount = unfiled.length
 
-  const notebookForCrumb = state.notebooks.find((item) => item.id === activeNote?.notebookId)
-  elements.breadcrumbCategory.textContent = notebookForCrumb ? categoryLabel(notebookForCrumb.category) : 'Not filed yet'
-  elements.breadcrumbNotebook.textContent = notebookForCrumb ? notebookForCrumb.name : 'Inbox'
   renderNotebookPicker()
   createIcons({ icons })
   shelves?.afterRender()
@@ -1850,7 +1841,7 @@ function updateFoldAll() {
   const folded = leaferCanvas.allFolded()
   button.title = folded ? 'Open everything folded into words' : 'Fold all linked objects into their words'
   button.setAttribute('aria-label', button.title)
-  button.innerHTML = `<i data-lucide="${folded ? 'unfold-vertical' : 'fold-vertical'}"></i>`
+  button.innerHTML = `<i data-lucide="${folded ? 'unfold-vertical' : 'fold-vertical'}"></i><span>${folded ? 'Open all' : 'Fold all'}</span>`
   createIcons({ icons, root: button })
 }
 document.querySelector('#fold-all').addEventListener('click', () => { leaferCanvas.foldAll(!leaferCanvas.allFolded()); setTimeout(updateFoldAll, 700) })
@@ -2870,9 +2861,8 @@ function setOmniSelection(index, { scroll = true } = {}) {
 function openSearch() {
   const bar = elements.searchButton.getBoundingClientRect()
   const panel = elements.searchBackdrop.firstElementChild
-  // The panel unrolls from the bar: same centre, same top edge (a phone fills the screen instead, see chrome.css).
+  // The panel opens large, centred on the window, from the bar's top edge (a phone fills the screen instead, see chrome.css).
   panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top) - 2)}px`)
-  panel.style.setProperty('--omni-x', `${Math.round(bar.width ? bar.left + bar.width / 2 : window.innerWidth / 2)}px`)
   Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], wordsFailed: false })
   elements.searchInput.value = ''
   elements.searchBackdrop.hidden = false
@@ -3485,7 +3475,7 @@ searchButton.addEventListener('click', openSearch)
 function setShareMenuOpen(open) {
   elements.shareMenu.hidden = !open
   elements.shareButton.setAttribute('aria-expanded', String(open))
-  if (open) requestAnimationFrame(() => elements.shareMenu.querySelector('button:not(:disabled)')?.focus())
+  if (open) requestAnimationFrame(() => elements.shareMenu.querySelector('button:not(:disabled):not([hidden])')?.focus())
 }
 elements.shareButton.addEventListener('click', () => setShareMenuOpen(elements.shareMenu.hidden))
 elements.shareMenu.addEventListener('click', (event) => {
@@ -3501,7 +3491,7 @@ elements.shareMenu.addEventListener('click', (event) => {
 elements.shareMenu.addEventListener('keydown', (event) => {
   if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
   event.preventDefault()
-  const items = [...elements.shareMenu.querySelectorAll('button:not(:disabled)')]
+  const items = [...elements.shareMenu.querySelectorAll('button:not(:disabled):not([hidden])')]
   const index = items.indexOf(document.activeElement)
   items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
 })
@@ -4298,7 +4288,7 @@ async function initialize() {
     agentSync = mountAgentSync({
       api,
       saveStateElement: elements.saveState,
-      chipAnchor: document.querySelector('.share-wrap'),
+      chipAnchor: document.querySelector('#focus-button'),
       getActive: () => {
         const note = state.notes.find((item) => item.id === state.activeNoteId)
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null
@@ -4336,6 +4326,7 @@ async function initialize() {
   const glue = modifier === '⌘' ? '' : ' '
   document.querySelector('#quick-note-kbd').textContent = quickNoteKeycap(navigator.platform)
   document.querySelector('#search-kbd').textContent = `${modifier}${glue}K`
+  document.querySelector('#focus-top-kbd').textContent = `${modifier}${glue}.`
   document.querySelector('#print-kbd').textContent = `${modifier}${glue}P`
   elements.searchButton.title = `Search or jump to (${modifier}${glue}K)`
 }
