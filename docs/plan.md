@@ -562,10 +562,11 @@ Reviewed: PASS after one round (idle/forged callbacks, known-id set, 1→10→10
 ## F-088 X bookmarks notebook in the app [todo]
 Brief: docs/briefs/x-bookmarks.md · Needs: F-087, F-089
 - [ ] Settings "Connect X"; sync on start and hourly while open; new bookmarks become cards in an "X bookmarks" notebook (X icon); drag onto a note lands a link card; mark done archives
-## F-089 Notebook icons [todo]
+## F-089 Notebook icons [done]
 Brief: docs/briefs/notebook-icons.md · Needs: none
-- [ ] a notebook gets an icon guessed from its name (word list), a leading emoji wins, otherwise its first letter on its colour; shown in the notes panel
-- [ ] click the icon: ~40 icons, any emoji, 8 colours; saved with the notebook (revision-checked), in backup and restored on import; older backups still import
+Reviewed: PASS after one round (server emoji rule matches the browser, a leading emoji isn't shown twice, icon/colour changes don't reorder, CLI --icon validated). Phone bottom sheet left for the phone layout. CSS now 17.45/17.60 KiB.
+- [x] a notebook gets an icon guessed from its name (word list), a leading emoji wins, otherwise its first letter on its colour; shown in the notes panel
+- [x] click the icon: ~40 icons, any emoji, 8 colours; saved with the notebook (revision-checked), in backup and restored on import; older backups still import
 ## F-090 Plugins: the host and Mind maps as the first plugin [todo]
 Brief: docs/briefs/plugins.md · Needs: F-084
 - [ ] Settings → Plugins lists Mind maps, Voice, Search by meaning with what each needs and a switch; the choice is remembered
