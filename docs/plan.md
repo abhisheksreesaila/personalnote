@@ -552,11 +552,12 @@ Brief: docs/briefs/jam-sessions.md · Needs: none
 - [ ] `jam_brain.py`: one call turns (map JSON + new transcript) into validated map edits (add branch, emoji, 👍/👎 with reason, ghost branches), never removes/renames; two adapters: Claude Code (`claude -p`, found on a bare Mac PATH) and OpenAI-compatible (base URL + model + key, incl. Azure endpoint + deployment + api-version); the key comes from the environment or keychain, never the database
 - [ ] `scripts/jam_spike.py` feeds three real-style transcripts through a brain and prints the edits and seconds per turn; run against Claude Code here; Azure left for the captain (env vars named)
 - [ ] unit tests with fake brains: schema validation rejects removals/renames/unknown ids; bad output is a visible error, the map untouched
-## F-087 X bookmarks: connect and fetch [todo]
+## F-087 X bookmarks: connect and fetch [done]
 Brief: docs/briefs/x-bookmarks.md · Needs: none
-- [ ] `x_bookmarks.py`: OAuth 2.0 PKCE sign-in returning to loopback, refresh token kept in the system keychain (file fallback 0600 on Linux), fetch bookmarks with pagination and the 800 cap, newest first, never twice (since-id), pay-per-use friendly (one page per hourly run unless new)
-- [ ] `scripts/x-setup.sh` (wizard): exactly what the captain does on developer.x.com (app, callback URL, scopes tweet.read users.read bookmark.read offline.access, credits) and a live check that lists 5 bookmarks
-- [ ] tests against a fake X server: sign-in, refresh, pagination, cap, no duplicates, errors shown plainly
+Reviewed: PASS after one round (idle/forged callbacks, known-id set, 1→10→100 pages, secret_store.py shared with AI settings). Not yet run against real X or a real Mac keychain: the captain's x-setup.sh run is the proof. F-088 owes the invariant 8 line and must never run two syncs at once (X rotates the refresh token).
+- [x] `x_bookmarks.py`: OAuth 2.0 PKCE sign-in returning to loopback, refresh token kept in the system keychain (file fallback 0600 on Linux), fetch bookmarks with pagination and the 800 cap, newest first, never twice (since-id), pay-per-use friendly (one page per hourly run unless new)
+- [x] `scripts/x-setup.sh` (wizard): exactly what the captain does on developer.x.com (app, callback URL, scopes tweet.read users.read bookmark.read offline.access, credits) and a live check that lists 5 bookmarks
+- [x] tests against a fake X server: sign-in, refresh, pagination, cap, no duplicates, errors shown plainly
 ## F-088 X bookmarks notebook in the app [todo]
 Brief: docs/briefs/x-bookmarks.md · Needs: F-087, F-089
 - [ ] Settings "Connect X"; sync on start and hourly while open; new bookmarks become cards in an "X bookmarks" notebook (X icon); drag onto a note lands a link card; mark done archives
