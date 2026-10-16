@@ -1,6 +1,6 @@
 # Personal Note v1 Architecture
 
-Personal Note v1 is a local, single-user notebook with one required runtime path and two optional built-in editor/capture modules. The core does not load or call a reasoning worker.
+Personal Note v1 is a local, single-user notebook with one required runtime path and two optional built-in editor/capture modules. The core does not load or call a reasoning worker; the only worker is the optional embedding engine for search by meaning.
 
 ## Runtime
 
@@ -84,6 +84,10 @@ A `page` note is Markdown you can draw on (first build of Milestone 1; New note 
 `src/modules/mindmap.js` is the shell-facing boundary. Its only job is to lazy-import the SVG editor and return the established editor lifecycle (`getDocument`, `setTitle`, `destroy`). The module receives a host element and an `onChange` callback. It uses the normal note API and introduces no separate database or library.
 
 The editor chunk is fetched only when a mind-map note opens. Canvas notes created before this boundary continue to load unchanged.
+
+### Optional search by meaning
+
+`search_runtime.py` (stdlib only; `routes.py` exposes `GET /api/search-meaning/status` and `POST /api/search-meaning/install|cancel`) mirrors the voice download and reuses its checksum, process-reaping and die-with-parent helpers. It fetches the pinned official llama.cpp release (`b11681`: Linux x86_64 and macOS arm64 builds, sha256 in the file) and the pinned EmbeddingGemma 2 Q8 GGUF (Hugging Face revision in the URL), checks sizes and sha256, resumes `.part` files, unpacks only `llama-server` and its libraries (links may name a sibling file only), and writes `installed.json` last. Files live in `search-by-meaning/` beside the database. The engine (`llama-server --embedding --pooling mean -np 1`, loopback, a free port) starts the first time `SearchRuntime.embed(texts, 'document'|'query')` is called, never at startup, and stops with the app (`main.py` at exit, `desktop.py` on close). `embed` applies EmbeddingGemma's prompts (`title: … | text: …`, `task: search result | query: …`), cuts vectors to 256 numbers and renormalises them. A missing or broken install raises `SearchError`; callers keep today's search. State-changing routes need the `X-Personal-Note` header. Settings gets a "Search by meaning" row (`src/modules/search/meaning-setup.js`, same shape as the voice row). Tests: `tests/test_search_runtime.py` (fixture server, stand-in engine) and `scripts/verify-search-download.mjs`.
 
 ### Optional built-in voice capture
 
@@ -241,6 +245,8 @@ The canvas route statically loads Leafer and the shell (about 189 KiB of JavaScr
 | `src/mindmap/` | Built-in mind-map implementation |
 | `src/modules/voice/` | Transcript, capture, local provider and Settings › Voice modules |
 | `voice_runtime.py` | Voice engine and model download, verification, removal and process lifecycle |
+| `search_runtime.py` | Search-by-meaning download, verification and loopback embedding engine |
+| `src/modules/search/` | Settings › Search by meaning row |
 | `scripts/build-voice-engine.sh` | Builds the pinned NeMo-Speech.cpp engine for the release (Linux x86_64 CPU, macOS arm64 Metal) |
 | `routes.py` | Core HTTP routes |
 | `src/modules/secure/` | Secure notes in the page: the cover, sheets, countdown pill and the lock/unlock flow (`session.js`), pure helpers (`secure.js`) |
