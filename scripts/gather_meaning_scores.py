@@ -1,6 +1,6 @@
 """Measure search by meaning on the real engine and write tests/fixtures/meaning-scores.json (F-080).
 
-The fixture is what `tests/test_meaning_search.py` checks the ranking rule (`meaning_rank.py`) against, so the rule stays tied to real
+The fixture is what `tests/test_meaning_rank.py` checks the ranking rule (`meaning_rank.py`) against, so the rule stays tied to real
 scores without a network. Run it again after the model or the embedding size changes:
 
     PERSONAL_NOTE_SEARCH_DIR=<folder with the search download> .venv/bin/python scripts/gather_meaning_scores.py

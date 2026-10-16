@@ -11,6 +11,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 from typing import Any
@@ -327,13 +328,20 @@ NOT_INSTALLED = "Search by meaning is not installed. Download it in the app's Se
 def meaning_from_app(base: str, query: str) -> list[dict] | None:
     """What the running app says (it already has the engine and the index); None when it cannot be asked."""
     try:
-        with urlopen(f"{base}/api/search/meaning?{urlencode({'q': query, 'limit': 5})}", timeout=120) as response:
+        with urlopen(f"{base}/api/search/meaning?{urlencode({'q': query, 'limit': 5, 'strict': 1})}", timeout=120) as response:
             matches = json.load(response)
         if not matches:  # the app answers [] both for "nothing matches" and "not installed"
             with urlopen(f"{base}/api/search-meaning/status", timeout=5) as response:
                 if json.load(response).get("state") != "ready":
                     raise CliError(NOT_INSTALLED)
         return matches
+    except HTTPError as error:
+        if error.code == 503:  # the app's engine is down: say so, as the command's own engine would
+            try:
+                raise CliError(json.load(error)["error"]) from error
+            except (ValueError, KeyError):
+                raise CliError("The search engine did not answer. Try again.") from error
+        return None
     except (OSError, ValueError):
         return None
 

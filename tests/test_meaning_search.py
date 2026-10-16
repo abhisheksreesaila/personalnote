@@ -140,6 +140,14 @@ class MeaningRouteTests(MeaningSearchCase):
         (found,) = self.ask().json()  # with twice the notes the median drops and the same note now stands out
         self.assertEqual(found["title"], "Sleep diary")
 
+    def test_asked_to_be_strict_a_down_engine_is_a_503_with_the_reason_while_the_omnibar_still_gets_an_empty_list(self):
+        self.page("Sleep log", "tired woke slept badly early")
+        self.index()
+        self.engine.down = True
+        strict = self.ask(strict=1)
+        self.assertEqual((strict.status_code, strict.json()), (503, {"error": "The search engine did not answer. Try again."}))
+        self.assertEqual((self.ask().status_code, self.ask().json()), (200, []))
+
     def test_a_blank_query_is_an_empty_list_without_asking_the_engine(self):
         self.assertEqual(self.ask("   ").json(), [])
         self.assertEqual(self.engine.queries, [])
@@ -189,7 +197,7 @@ class MeaningCliTests(MeaningSearchCase):
     def test_the_health_check_names_the_database_so_the_command_can_tell_whose_app_it_is(self):
         self.assertEqual(self.client.get("/health").json()["database"], str(self.path.resolve()))
 
-    def stand_in_app(self, database, installed=True):
+    def stand_in_app(self, database, installed=True, engine_down=False):
         """A server answering like the running app on a free port; returns (port, the requests it saw, a stop function)."""
         seen = []
 
@@ -200,6 +208,14 @@ class MeaningCliTests(MeaningSearchCase):
                     body = {"status": "ok", "app": "personal-note", "backend": "fasthtml", "database": str(database)}
                 elif handler.path.startswith("/api/search-meaning/status"):
                     body = {"state": "ready" if installed else "not-installed"}
+                elif engine_down:
+                    handler.send_response(503)
+                    payload = json.dumps({"error": "The search engine did not answer. Try again."}).encode()
+                    handler.send_header("Content-Type", "application/json")
+                    handler.send_header("Content-Length", str(len(payload)))
+                    handler.end_headers()
+                    handler.wfile.write(payload)
+                    return
                 elif not installed:
                     body = []
                 else:
@@ -226,7 +242,7 @@ class MeaningCliTests(MeaningSearchCase):
         with mock.patch.dict(os.environ, {"PORT": str(port), "HOST": "127.0.0.1"}):
             code, text = self.run_cli("search", "--meaning", "tired woke")
         self.assertEqual((code, json.loads(text)), (0, [{"id": 7, "title": "From the app", "notebookName": "Inbox", "score": 0.8}]))
-        self.assertEqual(seen, ["/health", "/health", "/api/search/meaning?q=tired+woke&limit=5"])  # the first /health is the "is this our app" probe
+        self.assertEqual(seen, ["/health", "/health", "/api/search/meaning?q=tired+woke&limit=5&strict=1"])  # the first /health is the "is this our app" probe
         self.assertEqual((started, self.engine.queries), ([], []))
 
     def test_an_app_without_the_download_gives_the_not_installed_message(self):
@@ -235,6 +251,14 @@ class MeaningCliTests(MeaningSearchCase):
         with mock.patch.dict(os.environ, {"PORT": str(port), "HOST": "127.0.0.1"}):
             code, text = self.run_cli("search", "--meaning", "tired")
         self.assertEqual((code, json.loads(text)["error"]), (2, "Search by meaning is not installed. Download it in the app's Settings."))
+
+    def test_an_app_whose_engine_is_down_gives_the_did_not_answer_error_not_an_empty_list(self):
+        port, seen, stop = self.stand_in_app(self.path.resolve(), engine_down=True)
+        self.addCleanup(stop)
+        with mock.patch.dict(os.environ, {"PORT": str(port), "HOST": "127.0.0.1"}):
+            code, text = self.run_cli("search", "--meaning", "tired")
+        self.assertEqual((code, json.loads(text)), (2, {"ok": False, "error": "The search engine did not answer. Try again."}))
+        self.assertIn("strict=1", seen[-1])  # the command asks to be told, the omnibar does not
 
     def test_an_app_on_another_database_is_not_used(self):
         port, seen, stop = self.stand_in_app(Path(self.temporary.name) / "other.db")

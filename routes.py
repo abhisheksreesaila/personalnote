@@ -380,7 +380,9 @@ def create_app(
             limit = 5
         try:
             return JSONResponse(service.meaning_matches(request.query_params.get("q", ""), limit))
-        except SearchError:
+        except SearchError as error:
+            if request.query_params.get("strict"):  # the command line wants to know "engine down" from "no match"; the omnibar does not
+                return JSONResponse({"error": str(error)}, status_code=503)
             return JSONResponse([])
 
     @app.get("/api/search")
