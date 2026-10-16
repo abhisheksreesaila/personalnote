@@ -11,7 +11,7 @@
   .nbi-colors, .nbi-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px }
   .nbi-colors button::before { content: ""; display: block; width: 18px; height: 18px; margin: auto; border-radius: 50%; background: var(--notebook-color) }
   .nbi-in { box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid var(--sk-edge); background: var(--sk-desk); cursor: text }
-  .nbi-in[aria-invalid] { border-color: #c0392b }
+  .nbi-in[aria-invalid] { border-color: var(--sk-danger) }
   .nbi-grid svg { margin: auto }
   @media (max-width: 800px) {
     .app-shell .nbi { width: 44px }

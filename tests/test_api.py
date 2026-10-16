@@ -82,7 +82,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(house["icon"], "lucide:house")
         x = self.client.post("/api/notebooks", json={"name": "Feed", "icon": "brand:x"}).json()
         self.assertEqual(x["icon"], "brand:x")
-        for bad in ("lucide:not-an-icon", "emoji:ab", "emoji:", "emoji:🏠🏠", "<script>", 7, "lucide:house\n", "emoji:a"):
+        for bad in ("lucide:not-an-icon", "emoji:ab", "emoji:", "emoji:🏠🏠", "<script>", 7, "lucide:house\n", "emoji:a", "emoji:<", "emoji:\"", "emoji:-", "emoji:→", "emoji:\u0301", "emoji:!" + "\u0301" * 15, "emoji:🏠\u200da", "emoji:🏠\u200d"):
             made = self.client.post("/api/notebooks", json={"name": "Odd", "icon": bad}).json()
             self.assertEqual(made["icon"], "", bad)
 
@@ -104,6 +104,20 @@ class ApiContractTests(unittest.TestCase):
         self.client.post("/api/import/workspace", json=backup)
         feeds = [item["icon"] for item in self.client.get("/api/notebooks").json() if item["name"] == "Feed"]
         self.assertEqual(feeds, ["emoji:🐦", "emoji:🐦"])
+
+    def test_changing_only_the_icon_or_colour_does_not_reorder_notebooks(self):
+        import sqlite3
+        first = self.client.post("/api/notebooks", json={"name": "First"}).json()
+        second = self.client.post("/api/notebooks", json={"name": "Second"}).json()
+        database = Path(self.temporary_directory.name) / "personal-note.db"
+        with sqlite3.connect(database) as connection:
+            connection.execute("UPDATE notebooks SET updated_at = '2020-01-01 00:00:00'")
+        order = lambda: [item["name"] for item in self.client.get("/api/notebooks").json()]
+        before = order()
+        updated = self.client.put(f"/api/notebooks/{first['id']}", json={"revision": first["revision"], "icon": "lucide:star", "color": "#4D839C"}).json()
+        self.assertEqual(order(), before)
+        self.client.put(f"/api/notebooks/{first['id']}", json={"revision": updated["revision"], "name": "Renamed"})
+        self.assertEqual(order()[0], "Renamed")  # a rename still moves it up
 
     def test_importing_a_backup_from_before_icons_gives_notebooks_no_icon(self):
         self.client.post("/api/notebooks", json={"name": "Old backup", "icon": "lucide:star"})

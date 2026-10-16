@@ -111,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_notebook = notebook_commands.add_parser("create", help="Create a notebook")
     create_notebook.add_argument("--name", required=True)
     create_notebook.add_argument("--color")
-    create_notebook.add_argument("--icon", help="lucide:<name>, brand:x or emoji:<one emoji>; omit to let the app guess from the name")
+    create_notebook.add_argument("--icon", type=icon_argument, help="lucide:<name>, brand:x or emoji:<one emoji>; omit to let the app guess from the name")
     create_notebook.add_argument("--category", choices=["projects", "areas", "resources", "archive"])
     create_notebook.set_defaults(handler=command_notebooks_create)
 
@@ -214,6 +214,13 @@ def command_status(service: NoteService, _args: argparse.Namespace) -> dict:
         "noteCount": len(snapshot["notes"]),
         "storage": "sqlite",
     }
+
+
+def icon_argument(value: str) -> str:
+    from notebook_icon import valid_icon
+    if not valid_icon(value):
+        raise argparse.ArgumentTypeError("use lucide:<name>, brand:x or emoji:<one emoji>")
+    return value
 
 
 def command_notebooks_list(service: NoteService, _args: argparse.Namespace) -> list[dict]:

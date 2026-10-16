@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
-import { ICON_NAMES, NOTEBOOK_COLORS, guessIcon, iconOf, leadingEmoji, normalizeEmoji } from './notebook-icon.js'
+import { ICON_NAMES, NOTEBOOK_COLORS, displayName, guessIcon, iconOf, leadingEmoji, normalizeEmoji } from './notebook-icon.js'
 
 test('a name is matched to an icon by its words', () => {
   const guesses = {
@@ -49,4 +49,12 @@ test('there are eight colours and the icon list is the one the server allows', (
   assert.ok(NOTEBOOK_COLORS.every((color) => /^#[0-9A-Fa-f]{6}$/.test(color)))
   const run = spawnSync('node', ['scripts/run-python.mjs', '-c', 'import json, notebook_icon; print(json.dumps(notebook_icon.ICON_NAMES))'], { encoding: 'utf8' })
   assert.deepEqual(ICON_NAMES, JSON.parse(run.stdout))
+})
+
+test('the row does not say the leading emoji twice when it is the icon', () => {
+  assert.equal(displayName({ name: '🚀 Launch', icon: '' }), 'Launch')
+  assert.equal(displayName({ name: '🚀 Launch', icon: 'emoji:🚀' }), 'Launch')
+  assert.equal(displayName({ name: '🚀 Launch', icon: 'lucide:star' }), '🚀 Launch') // another icon was chosen: the name stays whole
+  assert.equal(displayName({ name: '🚀', icon: '' }), '🚀') // nothing left to show
+  assert.equal(displayName({ name: 'Chores', icon: '' }), 'Chores')
 })

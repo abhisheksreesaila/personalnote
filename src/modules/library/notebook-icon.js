@@ -63,6 +63,13 @@ export function iconOf(notebook) {
   return { kind: 'letter', value: String(notebook.name || '').trim().slice(0, 1).toUpperCase() || '?' }
 }
 
+/** The name as the row shows it: without its leading emoji when that emoji is the icon already drawn beside it. */
+export function displayName(notebook) {
+  const emoji = leadingEmoji(notebook.name)
+  const rest = emoji ? String(notebook.name).trimStart().slice(emoji.length).trim() : ''
+  return rest && iconOf(notebook).value === emoji ? rest : notebook.name
+}
+
 /** What the emoji field holds as a stored icon, or null when it is not exactly one emoji. */
 export function normalizeEmoji(text) {
   const parts = graphemes(String(text || '').trim())

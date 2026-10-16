@@ -654,8 +654,10 @@ class NoteService:
             category = self.notebook_category(payload.get("category"), current["category"])
             icon = self.notebook_icon(payload.get("icon"), current["icon"])
             revision = expected_revision + 1
+            # A new icon or colour is appearance only: it must not move the notebook in the list (the list is ordered by updated_at).
+            moved = (name, category) != (current["name"], current["category"])
             cursor = connection.execute(
-                "UPDATE notebooks SET name = ?, color = ?, category = ?, icon = ?, revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND revision = ?",
+                f"UPDATE notebooks SET name = ?, color = ?, category = ?, icon = ?, revision = ?{', updated_at = CURRENT_TIMESTAMP' if moved else ''} WHERE id = ? AND revision = ?",
                 (name, color, category, icon, revision, notebook_id, expected_revision),
             )
             if cursor.rowcount == 0:

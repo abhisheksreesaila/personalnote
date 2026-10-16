@@ -39,7 +39,7 @@ import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, NOTEBOOK_FOLD_KEY, readFolded, writeFolded } from './modules/library/outline.js'
 import { mountShelves } from './modules/library/shelves.js'
 import { iconButtonHtml, openIconPicker } from './modules/library/notebook-icon-picker.js'
-import { NOTEBOOK_COLORS } from './modules/library/notebook-icon.js'
+import { NOTEBOOK_COLORS, displayName } from './modules/library/notebook-icon.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
@@ -878,7 +878,7 @@ function notebookRowHtml(notebook, selectedNotebook) {
     <div class="nav-row ${isSelected ? 'active' : ''}">
       <button class="notebook-tab ${isSelected ? 'active' : ''}" draggable="true" data-notebook-select="${notebook.id}" data-notebook-drop="${notebook.id}" data-notebook-drag="${notebook.id}" data-category="${notebook.category}" aria-expanded="${isOpen}">
         <span class="nbi-gap"></span>
-        <span class="notebook-name">${escapeHtml(notebook.name)}</span>
+        <span class="notebook-name">${escapeHtml(displayName(notebook))}</span>
         <span class="notebook-count">${notebook.count}</span><i class="sec-chev" data-lucide="chevron-right"></i>
       </button>
       ${iconButtonHtml(notebook)}
@@ -2227,6 +2227,8 @@ function openNotebookIconPicker(id) {
   if (!notebook) return
   const anchor = () => elements.list.querySelector(`[data-icon-notebook="${id}"]`)
   const save = async (patch) => {
+    const notebook = state.notebooks.find((item) => item.id === id) // looked up now: a refresh replaces state.notebooks
+    if (!notebook) return
     try {
       Object.assign(notebook, await api(`/notebooks/${id}`, { method: 'PUT', body: JSON.stringify({ ...patch, revision: notebook.revision }) }))
       renderNoteList()
