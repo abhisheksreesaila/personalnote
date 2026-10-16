@@ -27,7 +27,7 @@ const server = await createServer({ server: { port: PORT, strictPort: true, host
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 
-async function open(perf, viewport = { width: 1440, height: 900 }) {
+async function open(perf, viewport = { width: 1668, height: 900 }) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 2 })
   const page = await context.newPage()
   const errors = []
