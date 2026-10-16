@@ -284,7 +284,7 @@
 
   /* ---------- Tool island (F-076): a vertical island on the right edge; + opens a flyout to its left ---------- */
   .app-shell .tool-dock {
-    position: fixed; right: 16px; top: 72px; bottom: 72px; margin: auto 0; height: max-content; width: 56px; display: flex; flex-direction: column; align-items: center; padding: 6px 0;
+    position: fixed; right: 16px; top: 72px; bottom: 72px; margin: auto 0; height: max-content; max-height: calc(100dvh - 144px); width: 56px; display: flex; flex-direction: column; align-items: center; padding: 6px 0;
     border-radius: var(--sk-radius); transition: opacity 150ms ease; z-index: 12;
   }
   .app-shell .dock-canvas, .app-shell .mindmap-dock-actions, .app-shell .tool-group { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
@@ -341,13 +341,13 @@
   }
   .app-shell .history-island { left: 16px; }
   /* Short windows: the island never reaches the top or corner islands (72px clear above and below): tighter first, then it scrolls and its flyout goes fixed. */
-  @media (max-height: 560px) {
+  @media (max-height: 620px) {
     .app-shell .tool-dock { padding: 4px 0; gap: 0; }
     .app-shell .tool-dock .tool-button, .app-shell .tool-dock .voice-button { width: 36px; height: 36px; flex-basis: 36px; }
     .app-shell .dock-divider { margin: 3px 0; }
     .app-shell .ink-options-dot { width: 24px; height: 24px; }
   }
-  @media (max-height: 470px) {
+  @media (max-height: 500px) {
     .app-shell .tool-dock { overflow-y: auto; scrollbar-width: none; }
     .app-shell .dock-flyout { position: fixed; right: 88px; top: 50%; transform: translateY(-50%); }
   }
