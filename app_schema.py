@@ -74,6 +74,18 @@ CREATE TABLE IF NOT EXISTS note_embeddings (
     text_hash TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- X bookmarks (F-088): every post ever imported (so a moved, archived or deleted note is never imported again; seq orders them
+-- oldest to newest) and the one notebook they land in, tracked by id so renaming or recolouring it changes nothing.
+-- Not in backup or export: the notes are, as normal notes.
+CREATE TABLE IF NOT EXISTS x_posts (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id TEXT NOT NULL UNIQUE,
+    note_id INTEGER REFERENCES notes(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS x_notebook (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    notebook_id INTEGER REFERENCES notebooks(id) ON DELETE SET NULL
+);
 CREATE INDEX IF NOT EXISTS idx_workspace_changes_resource
 ON workspace_changes(resource_kind, resource_id, sequence);
 """

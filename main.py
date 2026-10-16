@@ -19,6 +19,7 @@ logging.basicConfig(
 
 app = create_app(bound_host=os.getenv("HOST", "127.0.0.1"))
 atexit.register(app.state.voice.shutdown)  # a voice engine started on demand never outlives the server
+app.state.x_sync.start()  # hourly, only when X is connected; capture never waits on it
 atexit.register(close_search, app)  # nor does the search-by-meaning engine or the thread that feeds it
 
 

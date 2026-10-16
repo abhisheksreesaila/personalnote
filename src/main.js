@@ -14,6 +14,7 @@ import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './cor
 import { nudgeDistance } from './core/document/operations.js'
 import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountAISettings } from './modules/ai/ai-settings.js'
+import { mountXSettings } from './modules/x/x-settings.js'
 import { createMeaningClient, describeMeaning, indexIsCatchingUp } from './modules/search/meaning-setup.js'
 import { mountMindMapModule } from './modules/mindmap.js'
 import { mountPageModule } from './modules/page.js'
@@ -3620,6 +3621,7 @@ document.querySelector('#close-properties').addEventListener('click', () => setP
 document.querySelector('#top-properties').addEventListener('click', () => {
   if (elements.properties.classList.contains('open')) { void refreshVoiceSetup(); void refreshMeaningSetup(); void aiSettings.refresh() }
 })
+mountXSettings(document.querySelector('#settings-meaning-section'), api, elements.properties)
 document.querySelector('#meaning-download').addEventListener('click', () => void meaningSetupAction((client) => client.install()))
 document.querySelector('#meaning-cancel').addEventListener('click', () => void meaningSetupAction((client) => client.cancel()))
 document.querySelector('#voice-download').addEventListener('click', () => void voiceSetupAction((client) => client.install()))

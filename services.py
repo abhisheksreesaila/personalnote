@@ -20,6 +20,7 @@ from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_
 from media_store import MediaStore, data_url_of
 from meaning_rank import select_meaning
 from notebook_icon import valid_icon
+from x_bookmarks import x_post_note
 from page_note import empty_page_document, find_quote, normalize_page_document, page_document_of, page_text, reanchor_ink, utf16
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,8 @@ NOTE_TYPES = {"canvas", "mindmap", "page"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")
 DEFAULT_NOTEBOOK_CATEGORY = "projects"
+X_NOTEBOOK_NAME = "X bookmarks"
+X_POST_LINK = re.compile(r"^\[Open on X\]\(https://x\.com/[A-Za-z0-9_]+/status/(\d+)\)$", re.MULTILINE)
 INBOX_NAME = "Inbox"  # the built-in home of unfiled notes (notes.notebook_id IS NULL); not a notebook row
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
@@ -1774,6 +1777,65 @@ class NoteService:
         """Counts every write to notes, from the page or the CLI; the index looks again only when it moves."""
         with self.connection() as connection:
             return int(connection.execute("SELECT sequence FROM workspace_state WHERE id = 1").fetchone()[0])
+
+    # ---- X bookmarks (F-088): the sync thread (x_sync.py) hands over posts; only this class writes them ----------------------
+
+    def x_known_ids(self, limit: int = 20) -> list[str]:
+        """The newest imported post ids: the sync passes them to X so it stops at the first one it already holds."""
+        with self.connection() as connection:
+            return [row[0] for row in connection.execute("SELECT post_id FROM x_posts ORDER BY seq DESC LIMIT ?", (limit,))]
+
+    def adopt_x_posts_from_notes(self) -> None:
+        """After a restore the notes exist but `x_posts` does not: read each post id back from its note's "Open on X" link
+        (any notebook, archived included) so those posts are not imported again, and reuse the restored X notebook."""
+        with self.connection() as connection:
+            rows = connection.execute("SELECT id, content FROM notes WHERE note_type = 'page' AND secure = 0 AND content LIKE '%Open on X%' ORDER BY id").fetchall()
+            for row in rows:
+                found = X_POST_LINK.findall(page_text(row["content"]))  # the generated line is the last one; the post's own text is escaped
+                if found:
+                    connection.execute("INSERT OR IGNORE INTO x_posts (post_id, note_id) VALUES (?, ?)", (found[-1], row["id"]))
+            if connection.execute("SELECT COUNT(*) FROM x_posts").fetchone()[0]:
+                notebook = connection.execute("SELECT id FROM notebooks WHERE icon = 'brand:x' ORDER BY id LIMIT 1").fetchone()
+                if notebook:
+                    connection.execute("INSERT OR IGNORE INTO x_notebook (id, notebook_id) VALUES (1, ?)", (notebook[0],))
+                    connection.execute("UPDATE x_notebook SET notebook_id = ? WHERE id = 1 AND notebook_id IS NULL", (notebook[0],))
+            connection.commit()
+
+    def x_imported_count(self) -> int:
+        with self.connection() as connection:
+            return connection.execute("SELECT COUNT(*) FROM x_posts").fetchone()[0]
+
+    def import_x_bookmarks(self, posts: list[dict]) -> int:
+        """File new bookmarks (newest first, as X lists them) as page notes in the X bookmarks notebook. Returns how many were new.
+
+        A post already imported is skipped even if its note was moved, archived or deleted. Pictures stay links.
+        """
+        with self.connection() as connection:
+            fresh = list({post["id"]: post for post in reversed(posts)}.values())[::-1]  # a post listed twice is filed once
+            fresh = [post for post in fresh if connection.execute("SELECT 1 FROM x_posts WHERE post_id = ?", (post["id"],)).fetchone() is None]
+            if not fresh:
+                return 0
+            row = connection.execute(
+                "SELECT notebook_id FROM x_notebook JOIN notebooks ON notebooks.id = x_notebook.notebook_id WHERE x_notebook.id = 1"
+            ).fetchone()
+            notebook_id = row[0] if row else None
+        if notebook_id is None:
+            notebook_id = self.create_notebook({"name": X_NOTEBOOK_NAME, "category": "resources", "icon": "brand:x"})["id"]
+        with self.connection() as connection:
+            connection.execute("INSERT INTO x_notebook (id, notebook_id) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET notebook_id = excluded.notebook_id", (notebook_id,))
+            for post in reversed(fresh):  # oldest first, so the newest bookmark gets the newest id and sits on top
+                title, markdown = x_post_note(post)
+                content = json.dumps({**empty_page_document(), "markdown": markdown}, separators=(",", ":"))
+                resource_id = self.new_resource_id()
+                cursor = connection.execute(
+                    "INSERT INTO notes (resource_id, note_type, title, content, content_format, notebook_id) VALUES (?, 'page', ?, ?, ?, ?)",
+                    (resource_id, title, content, FORMAT_PAGE, notebook_id),
+                )
+                self.index_note(connection, cursor.lastrowid, title, content, "page", FORMAT_PAGE)
+                connection.execute("INSERT INTO x_posts (post_id, note_id) VALUES (?, ?)", (post["id"], cursor.lastrowid))
+                self.record_change(connection, "note", resource_id, 1, "created")
+            connection.commit()
+        return len(fresh)
 
     def note_revisions(self, note_ids) -> dict:
         """{note_id: revision} for those that still exist."""

@@ -36,6 +36,8 @@ from services import (
 from vault import PortabilityVaultError, export_vault_archive, import_vault_archive
 from meaning_index import MeaningIndexer
 from search_runtime import SearchError, SearchRuntime, default_search_runtime, reap_dead_cli_engines
+from x_bookmarks import XError
+from x_sync import XSync
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
 
@@ -82,6 +84,7 @@ def close_search(app) -> None:
     """The app is closing: stop the engine first, so a batch waiting on it fails at once, then the thread that was waiting."""
     app.state.search.shutdown()
     app.state.indexer.stop()
+    app.state.x_sync.stop()
 
 
 def speedtest_folder() -> Path:
@@ -171,6 +174,7 @@ def create_app(
     desktop_host: bool = False,
     secure_platform=None,
     ai: AISettings | None = None,
+    x_sync: XSync | None = None,
 ) -> FastHTML:
     """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
     data_path = Path(database_path or default_database_path())
@@ -185,6 +189,7 @@ def create_app(
     app.state.search = search
     app.state.ai = ai or AISettings()
     app.state.indexer = MeaningIndexer(service, search)
+    app.state.x_sync = x_sync or XSync(service)  # started by main.py / desktop.py, not here: a test's app never reaches X
     if not speedtest_instance:
         app.state.indexer.start()  # a quiet thread: it embeds only when the download is installed, never on a request
         if getattr(search, 'root', None):  # an engine a command that died left behind (a Mac has no way to stop it with its parent): stopped off the main thread
@@ -311,6 +316,42 @@ def create_app(
     async def ai_test(request):
         # one real model call (off the event loop, see ai_response); it tests the saved settings
         return await ai_response(request, lambda _: app.state.ai.test())
+
+    def x_response(call) -> JSONResponse:
+        try:
+            call()
+        except XError as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
+        return JSONResponse(app.state.x_sync.status())
+
+    @app.get("/api/x/status")
+    def x_status():
+        return JSONResponse(app.state.x_sync.status())
+
+    @app.post("/api/x/client-id")
+    async def x_client_id(request):
+        if not from_this_app(request):
+            return forbidden()
+        value = (await payload(request)).get("clientId")
+        return x_response(lambda: app.state.x_sync.set_client_id(value))
+
+    @app.post("/api/x/connect")
+    def x_connect(request):
+        if not from_this_app(request):
+            return forbidden()
+        return x_response(app.state.x_sync.connect)
+
+    @app.post("/api/x/sync")
+    def x_sync_now(request):
+        if not from_this_app(request):
+            return forbidden()
+        return x_response(app.state.x_sync.sync)
+
+    @app.delete("/api/x")
+    def x_disconnect(request):
+        if not from_this_app(request):
+            return forbidden()
+        return x_response(app.state.x_sync.disconnect)
 
     @app.get("/api/speedtest/status")
     def speedtest_status():
