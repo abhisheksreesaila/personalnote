@@ -91,22 +91,87 @@ class ValidationTests(unittest.TestCase):
             {"op": "add_branch", "parent_id": "root", "text": "Cats", "id": "n1"},
         ], "unknown node ('n1')")
 
-    def test_over_long_text_is_refused(self):
-        self.assertRejected([{"op": "add_branch", "parent_id": "a", "text": "one two three four five"}], "longer than 4 words")
-        self.assertRejected([{"op": "add_branch", "parent_id": "a", "text": "x" * 41}], "too long")
-        self.assertRejected([{"op": "react", "node_id": "a", "vote": "up", "reason": "r" * 81}], "reaction reason that is too long")
-
     def test_bad_vote_is_refused(self):
         self.assertRejected([{"op": "react", "node_id": "a", "vote": "meh", "reason": "ok"}], '"up" or "down"')
 
-    def test_too_many_edits_and_ghosts_are_refused(self):
-        many = [{"op": "add_branch", "parent_id": "a", "text": f"idea {i}"} for i in range(13)]
-        self.assertRejected(many, "13 edits; at most 12")
-        ghosts = [{"op": "ghost", "parent_id": "a", "text": f"idea {i}", "why": "maybe"} for i in range(4)]
-        self.assertRejected(ghosts, "more than 3 suggestions")
+    def test_over_twelve_edits_keep_the_first_twelve(self):
+        result = run([{"op": "add_branch", "parent_id": "a", "text": f"idea {i}"} for i in range(13)])
+        self.assertEqual([e.text for e in result.edits], [f"idea {i}" for i in range(12)])
+        self.assertEqual(result.dropped, ["edit 13 cut: at most 12 edits are kept"])
 
-    def test_twelve_edits_are_fine(self):
-        run([{"op": "add_branch", "parent_id": "a", "text": f"idea {i}"} for i in range(12)])
+    def test_cut_edits_take_nothing_else_with_them(self):
+        edits = [{"op": "add_branch", "parent_id": "a", "text": f"idea {i}", "id": f"n{i}"} for i in range(12)]
+        edits.append({"op": "add_branch", "parent_id": "n11", "text": "child of last"})
+        self.assertEqual(len(run(edits).edits), 12)
+
+    def test_extra_ghosts_are_dropped_keeping_three(self):
+        result = run([{"op": "ghost", "parent_id": "a", "text": f"idea {i}", "why": "maybe"} for i in range(4)])
+        self.assertEqual([e.text for e in result.edits], ["idea 0", "idea 1", "idea 2"])
+        self.assertEqual(result.dropped, ["edit 4 dropped: only 3 suggestions are kept"])
+
+    def test_over_long_edits_are_dropped_with_their_children(self):
+        result = run([
+            {"op": "add_branch", "parent_id": "a", "text": "one two three four five", "id": "n1"},
+            {"op": "add_branch", "parent_id": "n1", "text": "child"},
+            {"op": "react", "node_id": "n1", "vote": "up", "reason": "fine"},
+            {"op": "add_branch", "parent_id": "a", "text": "x" * 41},
+            {"op": "react", "node_id": "a", "vote": "up", "reason": "r" * 81},
+            {"op": "add_branch", "parent_id": "a", "text": "Kept"},
+        ])
+        self.assertEqual(result.edits, [AddBranch("a", "Kept", "", "")])
+        self.assertEqual(result.dropped, [
+            "edit 1 dropped: text longer than 4 words",
+            "edit 2 dropped: it hangs off a dropped branch",
+            "edit 3 dropped: it hangs off a dropped branch",
+            "edit 4 dropped: text longer than 40 characters",
+            "edit 5 dropped: reason longer than 80 characters",
+        ])
+
+    def test_nothing_left_after_trimming_is_an_error(self):
+        with self.assertRaises(JamError) as caught:
+            run([{"op": "add_branch", "parent_id": "a", "text": "one two three four five"}])
+        self.assertIn("Nothing usable", str(caught.exception))
+
+    def test_a_hard_failure_is_retried_once_with_the_error_fed_back(self):
+        class Flaky:
+            def __init__(self):
+                self.users = []
+
+            def complete(self, system, user):
+                self.users.append(user)
+                if len(self.users) == 1:
+                    return json.dumps({"edits": [{"op": "delete", "node_id": "a"}]})
+                return json.dumps({"edits": [{"op": "ghost", "parent_id": "a", "text": "Dogs", "why": "maybe"}]})
+
+        brain = Flaky()
+        result = propose(MAP, "hi", brain)
+        self.assertEqual(result.edits, [Ghost("a", "Dogs", "maybe")])
+        self.assertEqual(len(brain.users), 2)
+        self.assertIn('Your last answer was rejected: The brain tried "delete"', brain.users[1])
+
+    def test_a_second_hard_failure_is_the_error(self):
+        brain = FakeBrain("not json")
+        with self.assertRaises(JamError):
+            propose(MAP, "hi", brain)
+
+    def test_a_brain_that_cannot_be_reached_is_not_retried(self):
+        class Down:
+            calls = 0
+
+            def complete(self, system, user):
+                Down.calls += 1
+                raise jam_brain.BrainUnavailable("Claude Code is not installed")
+
+        with self.assertRaises(JamError):
+            propose(MAP, "hi", Down())
+        self.assertEqual(Down.calls, 1)
+
+    def test_pending_ghosts_are_listed_so_they_are_not_repeated(self):
+        brain = FakeBrain({"edits": []})
+        propose(MAP, "hi", brain, pending_ghosts=["Delivery", Ghost("root", "Pricing", "why")])
+        self.assertIn("Waiting suggestions (do not repeat): Delivery; Pricing", brain.seen[1])
+        propose(MAP, "hi", brain)
+        self.assertNotIn("Waiting suggestions", brain.seen[1])
 
     def test_not_json_is_a_plain_error_and_the_map_is_untouched(self):
         before = copy.deepcopy(MAP)
@@ -145,6 +210,7 @@ class ClaudeCodeTests(unittest.TestCase):
                 self.assertEqual(brain.complete("SYS", "USER TEXT"), '{"edits": []}')
             args = log.read_text()
             self.assertIn("-p --output-format json --tools  --no-session-persistence", args)
+            self.assertIn("--model sonnet", args)
             self.assertIn("--system-prompt SYS", args)
             self.assertEqual(Path(str(log) + ".stdin").read_text(), "USER TEXT")
 

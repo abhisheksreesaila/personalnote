@@ -95,20 +95,24 @@ def main():
         print(f"\n== {name}: {title}")
         current = {"version": 1, "title": title, "rootId": "root",
                    "nodes": [{"id": "root", "parentId": None, "text": title}]}
+        pending = []
         for number, said in enumerate(turns, 1):
             start = time.monotonic()
             try:
-                edits = jam_brain.propose(current, said, brain)
+                edits = jam_brain.propose(current, said, brain, pending)
             except jam_brain.JamError as exc:
                 print(f"  turn {number}: ERROR {exc}")
                 continue
             seconds = time.monotonic() - start
             times.append(seconds)
+            pending = list(edits.ghosts)
             before = {n["id"] for n in current["nodes"]}
             current = apply(current, edits)
             new_ids = {n["id"] for n in current["nodes"]} - before
             print(f"  turn {number}: {seconds:.1f}s  {len(edits.branches)} branches, "
                   f"{len(edits.reactions)} reactions, {len(edits.ghosts)} ghosts")
+            for note in edits.dropped:
+                print(f"    (trimmed: {note})")
             print_tree(current, edits, new_ids)
     if times:
         print(f"\n{len(times)} turns, mean {sum(times) / len(times):.1f}s, max {max(times):.1f}s")

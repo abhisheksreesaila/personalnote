@@ -39,6 +39,10 @@ class JamError(Exception):
     """The brain could not be reached or answered badly; the message is shown to the person as is."""
 
 
+class BrainUnavailable(JamError):
+    """The brain could not be reached or refused (not installed, no key, timeout): asking again would not help."""
+
+
 @dataclass(frozen=True)
 class AddBranch:
     parent_id: str
@@ -64,6 +68,7 @@ class Ghost:
 @dataclass(frozen=True)
 class JamEdits:
     edits: list = field(default_factory=list)
+    dropped: list = field(default_factory=list)  # why edits were trimmed, for a debug log
 
     @property
     def branches(self):
@@ -99,25 +104,36 @@ Answer exactly in this shape (up to 12 edits in all):
 ]}"""
 
 
-def build_user_prompt(map_json: dict, transcript: str) -> str:
+def build_user_prompt(map_json: dict, transcript: str, pending_ghosts=()) -> str:
     outline = [
         {"id": n["id"], "parent_id": n.get("parentId"), "text": n.get("text", "")}
         for n in map_json.get("nodes", [])
     ]
+    waiting = "; ".join(getattr(g, "text", g) for g in pending_ghosts)
+    waiting = f"Waiting suggestions (do not repeat): {waiting}\n" if waiting else ""
     return (
         f"Mind map title: {map_json.get('title', '')}\n"
         f"Centre node id: {map_json.get('rootId', '')}\n"
-        f"Map (nodes):\n{json.dumps(outline, ensure_ascii=False)}\n\n"
+        f"Map (nodes):\n{json.dumps(outline, ensure_ascii=False)}\n{waiting}\n"
         f"The person just said:\n\"\"\"\n{transcript.strip()}\n\"\"\"\n\nJSON only."
     )
 
 
-def propose(map_json: dict, transcript: str, brain) -> JamEdits:
-    """Ask the brain for edits to `map_json` given `transcript`; return them validated, or raise JamError."""
+def propose(map_json: dict, transcript: str, brain, pending_ghosts=()) -> JamEdits:
+    """Ask the brain for edits to `map_json` given `transcript`; return them validated, or raise JamError.
+
+    `pending_ghosts` (texts, or Ghost objects) are suggestions still waiting; the brain is told not to repeat them.
+    A hard-rule failure is retried once with the error fed back; a brain that cannot be reached is not retried."""
     if not transcript or not transcript.strip():
         raise JamError("There is nothing to jam on yet: say something first.")
-    raw = brain.complete(SYSTEM_PROMPT, build_user_prompt(map_json, transcript))
-    return parse_edits(raw, map_json)
+    prompt = build_user_prompt(map_json, transcript, pending_ghosts)
+    try:
+        return parse_edits(brain.complete(SYSTEM_PROMPT, prompt), map_json)
+    except BrainUnavailable:
+        raise
+    except JamError as first:
+        retry = f"{prompt}\n\nYour last answer was rejected: {first} Answer again, fixing that. JSON only."
+        return parse_edits(brain.complete(SYSTEM_PROMPT, retry), map_json)
 
 
 def _extract_json(raw: str):
@@ -138,71 +154,98 @@ def _extract_json(raw: str):
     raise JamError("The brain did not answer with map edits (it did not return JSON).")
 
 
-def _text(value, what: str, limit=MAX_TEXT, required=True) -> str:
+def _text(value, what: str, required=True) -> str:
+    """Text fields: missing or not text is a hard failure; length is a soft limit checked by the caller."""
     if value is None or value == "":
         if required:
             raise JamError(f"The brain left out the {what}.")
         return ""
     if not isinstance(value, str):
         raise JamError(f"The brain gave a {what} that is not text.")
-    value = value.strip()
-    if len(value) > limit:
-        raise JamError(f"The brain gave a {what} that is too long ({len(value)} characters, at most {limit}).")
-    return value
+    return value.strip()
 
 
-def _keyword(value, what: str) -> str:
-    value = _text(value, what)
-    if len(value.split()) > MAX_WORDS:
-        raise JamError(f"The brain gave a {what} longer than {MAX_WORDS} words: \"{value}\".")
-    return value
+def _too_long(text: str, limit: int, what: str, words: int | None = None) -> str | None:
+    if len(text) > limit:
+        return f"{what} longer than {limit} characters"
+    if words and len(text.split()) > words:
+        return f"{what} longer than {words} words"
+    return None
 
 
 def parse_edits(raw: str, map_json: dict) -> JamEdits:
+    """Hard rules raise JamError (removing ops, unknown or reused ids, bad shape). Soft limits trim and are
+    reported in `JamEdits.dropped`."""
     data = _extract_json(raw)
     items = data.get("edits") if isinstance(data, dict) else None
     if not isinstance(items, list):
         raise JamError("The brain's answer has no list of edits.")
-    if len(items) > MAX_EDITS:
-        raise JamError(f"The brain proposed {len(items)} edits; at most {MAX_EDITS} are accepted.")
+
+    dropped = []
+    for number in range(MAX_EDITS + 1, len(items) + 1):
+        dropped.append(f"edit {number} cut: at most {MAX_EDITS} edits are kept")
+    items = items[:MAX_EDITS]
 
     known = {str(n["id"]) for n in map_json.get("nodes", [])}
     existing = set(known)
+    lost_ids = set()  # ids of dropped branches: whatever hangs off them goes too
     edits, ghosts = [], 0
-    for item in items:
+    for number, item in enumerate(items, 1):
         if not isinstance(item, dict):
             raise JamError("The brain gave an edit that is not an object.")
         op = item.get("op")
         if op not in ALLOWED_OPS:
             raise JamError(f"The brain tried \"{op}\", which is not allowed: it may only add, react or suggest.")
+        anchor = item.get("node_id") if op == "react" else item.get("parent_id")
+        new_id = _text(item.get("id"), "branch id", required=False) if op == "add_branch" else ""
+        if new_id and new_id in existing:
+            raise JamError(f"The brain reused the id {new_id!r}, which would replace an existing node.")
+        if anchor in lost_ids:
+            dropped.append(f"edit {number} dropped: it hangs off a dropped branch")
+            if new_id:
+                lost_ids.add(new_id)
+            continue
+        if anchor not in known:
+            raise JamError(f"The brain used an unknown node ({anchor!r}).")
+
         if op == "add_branch":
-            parent = item.get("parent_id")
-            if parent not in known:
-                raise JamError(f"The brain put a branch under an unknown node ({parent!r}).")
-            new_id = _text(item.get("id"), "branch id", 40, required=False)
-            if new_id and new_id in existing:
-                raise JamError(f"The brain reused the id {new_id!r}, which would replace an existing node.")
-            emoji = _text(item.get("emoji"), "emoji", MAX_EMOJI, required=False)
-            edits.append(AddBranch(parent, _keyword(item.get("text"), "branch text"), emoji, new_id))
+            text = _text(item.get("text"), "branch text")
+            emoji = _text(item.get("emoji"), "emoji", required=False)
+            problem = (_too_long(text, MAX_TEXT, "text") or _too_long(text, MAX_TEXT, "text", MAX_WORDS)
+                       or _too_long(emoji, MAX_EMOJI, "emoji"))
+            if problem:
+                dropped.append(f"edit {number} dropped: {problem}")
+                if new_id:
+                    lost_ids.add(new_id)
+                continue
+            edits.append(AddBranch(anchor, text, emoji, new_id))
             if new_id:
                 known.add(new_id)
                 existing.add(new_id)
         elif op == "react":
-            node = item.get("node_id")
-            if node not in known:
-                raise JamError(f"The brain reacted to an unknown node ({node!r}).")
             if item.get("vote") not in ("up", "down"):
                 raise JamError("The brain's reaction must be \"up\" or \"down\".")
-            edits.append(React(node, item["vote"], _text(item.get("reason"), "reaction reason", MAX_REASON)))
+            reason = _text(item.get("reason"), "reaction reason")
+            problem = _too_long(reason, MAX_REASON, "reason")
+            if problem:
+                dropped.append(f"edit {number} dropped: {problem}")
+                continue
+            edits.append(React(anchor, item["vote"], reason))
         else:
-            parent = item.get("parent_id")
-            if parent not in known:
-                raise JamError(f"The brain hung a suggestion on an unknown node ({parent!r}).")
+            text, why = _text(item.get("text"), "suggestion text"), _text(item.get("why"), "suggestion reason")
+            problem = (_too_long(text, MAX_TEXT, "text") or _too_long(text, MAX_TEXT, "text", MAX_WORDS)
+                       or _too_long(why, MAX_REASON, "reason"))
+            if problem:
+                dropped.append(f"edit {number} dropped: {problem}")
+                continue
+            if ghosts >= MAX_GHOSTS:
+                dropped.append(f"edit {number} dropped: only {MAX_GHOSTS} suggestions are kept")
+                continue
             ghosts += 1
-            if ghosts > MAX_GHOSTS:
-                raise JamError(f"The brain offered more than {MAX_GHOSTS} suggestions.")
-            edits.append(Ghost(parent, _keyword(item.get("text"), "suggestion text"), _text(item.get("why"), "suggestion reason", MAX_REASON)))
-    return JamEdits(edits)
+            edits.append(Ghost(anchor, text, why))
+    if items and not edits:
+        raise JamError("Nothing usable was left in the brain's answer after trimming it.")
+    return JamEdits(edits, dropped)
 
 
 # ---------------------------------------------------------------- brains
@@ -240,13 +283,13 @@ def find_claude(extra_dirs=()) -> str | None:
 class ClaudeCodeBrain:
     """The person's own signed-in Claude Code, run as `claude -p` with no tools, no files and no saved session."""
 
-    def __init__(self, model: str | None = None, timeout: float = 90, extra_dirs=()):
+    def __init__(self, model: str | None = "sonnet", timeout: float = 90, extra_dirs=()):
         self.model, self.timeout, self.extra_dirs = model, timeout, tuple(extra_dirs)
 
     def complete(self, system: str, user: str) -> str:
         exe = find_claude(self.extra_dirs)
         if not exe:
-            raise JamError("Claude Code is not installed here. Install it and sign in, or pick another brain in Settings.")
+            raise BrainUnavailable("Claude Code is not installed here. Install it and sign in, or pick another brain in Settings.")
         command = [exe, "-p", "--output-format", "json", "--tools", "", "--no-session-persistence",
                    "--setting-sources", "", "--system-prompt", system]
         if self.model:
@@ -256,9 +299,9 @@ class ClaudeCodeBrain:
                 done = subprocess.run(command, input=user, capture_output=True, text=True,
                                       timeout=self.timeout, cwd=empty)
             except subprocess.TimeoutExpired:
-                raise JamError(f"Claude Code took longer than {int(self.timeout)} seconds; try again.") from None
+                raise BrainUnavailable(f"Claude Code took longer than {int(self.timeout)} seconds; try again.") from None
             except OSError as exc:
-                raise JamError(f"Claude Code could not start: {exc}") from None
+                raise BrainUnavailable(f"Claude Code could not start: {exc}") from None
         try:
             payload = json.loads(done.stdout)
         except ValueError:
@@ -266,10 +309,10 @@ class ClaudeCodeBrain:
         if done.returncode != 0 or not isinstance(payload, dict) or payload.get("is_error"):
             detail = (payload or {}).get("result") if isinstance(payload, dict) else None
             detail = detail or done.stderr.strip() or done.stdout.strip() or f"exit code {done.returncode}"
-            raise JamError(f"Claude Code did not answer: {detail[:300]}")
+            raise BrainUnavailable(f"Claude Code did not answer: {detail[:300]}")
         result = payload.get("result")
         if not isinstance(result, str):
-            raise JamError("Claude Code answered with nothing.")
+            raise BrainUnavailable("Claude Code answered with nothing.")
         return result
 
 
@@ -284,12 +327,12 @@ class OpenAICompatibleBrain:
         self.azure_endpoint, self.deployment = azure_endpoint.rstrip("/"), deployment
         self.api_version, self.key_env, self.timeout = api_version, key_env, timeout
         if not (self.azure_endpoint and self.deployment) and not (self.base_url and self.model):
-            raise JamError("Set a base URL and model, or an Azure endpoint and deployment, for this brain.")
+            raise BrainUnavailable("Set a base URL and model, or an Azure endpoint and deployment, for this brain.")
 
     def request_for(self, system: str, user: str) -> urllib.request.Request:
         key = os.environ.get(self.key_env, "")
         if not key:
-            raise JamError(f"No API key: set the {self.key_env} environment variable.")
+            raise BrainUnavailable(f"No API key: set the {self.key_env} environment variable.")
         body = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 "response_format": {"type": "json_object"}}
         headers = {"Content-Type": "application/json"}
@@ -310,12 +353,12 @@ class OpenAICompatibleBrain:
                 payload = json.load(response)
         except urllib.error.HTTPError as exc:
             exc.close()
-            raise JamError(f"The model service refused the request (HTTP {exc.code}).") from None
+            raise BrainUnavailable(f"The model service refused the request (HTTP {exc.code}).") from None
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
-            raise JamError(f"The model service could not be reached: {getattr(exc, 'reason', exc)}") from None
+            raise BrainUnavailable(f"The model service could not be reached: {getattr(exc, 'reason', exc)}") from None
         except ValueError:
-            raise JamError("The model service answered with something that is not JSON.") from None
+            raise BrainUnavailable("The model service answered with something that is not JSON.") from None
         try:
             return payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
-            raise JamError("The model service answered without a message.") from None
+            raise BrainUnavailable("The model service answered without a message.") from None
