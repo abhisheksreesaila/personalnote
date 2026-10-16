@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildGroups, flatten, highlight, moveSelection, queryTokens } from './omnibar.js'
+import { buildGroups, flatten, highlight, latestRequest, moveSelection, queryTokens } from './omnibar.js'
 
 const notebooks = [
   { id: 1, name: 'Travel', color: '#2f9d8f', noteCount: 2 },
@@ -105,4 +105,68 @@ test('the selection wraps around and stays put on an empty list', () => {
   assert.equal(moveSelection(2, 1, 3), 0)
   assert.equal(moveSelection(0, -1, 3), 2)
   assert.equal(moveSelection(0, 1, 0), 0)
+})
+
+// ---- By meaning (F-080) ----
+const meaning = (...hits) => hits.map(([id, title, notebook = 'Home']) => ({ id, title, notebook, score: 0.7 }))
+
+test('"By meaning" comes last under the word matches and lists notes not already shown', () => {
+  const wordHits = [{ id: 11, title: 'Packing list', excerpt: 'bring the tide chart', notebookId: 1 }]
+  const groups = buildGroups({ ...base, query: 'tide', wordHits, meaningHits: meaning([10, 'Tide tables'], [11, 'Packing list'], [14, 'Kitchen shelves']) })
+  assert.deepEqual(labels(groups), ['Notes', 'In your words', 'By meaning'])
+  assert.deepEqual(ids(groups), [10, 11, 14])
+  assert.deepEqual(groups[2].items.map((item) => [item.kind, item.title, item.notebookName]), [['meaning', 'Kitchen shelves', 'Home']])
+})
+
+test('it shows at most 5 notes, best first, and the rows keep their note type from the notebook list', () => {
+  const hits = meaning([10, 'a'], [11, 'b'], [13, 'c'], [14, 'd'], [15, 'e'], [12, 'f'], [99, 'g'])
+  const group = buildGroups({ ...base, query: 'zzz', meaningHits: hits }).find((item) => item.key === 'meaning')
+  assert.deepEqual(group.items.map((item) => item.id), [10, 11, 13, 14, 15])
+  assert.deepEqual(group.items.map((item) => item.noteType), ['canvas', 'page', 'canvas', 'canvas', 'mindmap'])
+})
+
+test('a note the title search already shows is not repeated under By meaning', () => {
+  const groups = buildGroups({ ...base, query: 'tide', meaningHits: meaning([10, 'Tide tables'], [13, 'Loose thought']) })
+  assert.deepEqual(ids(groups), [10, 13])
+  assert.deepEqual(labels(groups), ['Notes', 'By meaning'])
+})
+
+test('a secure note never appears under By meaning, even if the server sent it', () => {
+  const groups = buildGroups({ ...base, query: 'zzz', meaningHits: meaning([12, 'Card numbers'], [13, 'Loose thought']) })
+  assert.deepEqual(ids(groups), [13])
+})
+
+test('a note the page does not know (deleted since) is left out, and no hits means no group', () => {
+  assert.deepEqual(ids(buildGroups({ ...base, query: 'zzz', meaningHits: meaning([404, 'Gone']) })), [])
+  assert.deepEqual(labels(buildGroups({ ...base, query: 'tide', meaningHits: [] })), ['Notes'])
+})
+
+test('By meaning shows under All and Notes only, and never for an empty query', () => {
+  const hits = meaning([13, 'Loose thought'])
+  assert.deepEqual(labels(buildGroups({ ...base, query: 'zzz', meaningHits: hits, filter: 'Notes' })), ['By meaning'])
+  assert.deepEqual(labels(buildGroups({ ...base, query: 'zzz', meaningHits: hits, filter: 'Notebooks' })), [])
+  assert.deepEqual(labels(buildGroups({ ...base, query: 'zzz', meaningHits: hits, filter: 'Actions' })), [])
+  assert.deepEqual(labels(buildGroups({ ...base, query: '', meaningHits: hits })), ['Recent', 'Actions'])
+})
+
+test('By meaning is the last group, below the actions too, so arrows flow through every group in order', () => {
+  const groups = buildGroups({ ...base, query: 'note', meaningHits: meaning([13, 'Loose thought']) })
+  assert.deepEqual(labels(groups), ['Actions', 'By meaning'])
+  const items = flatten(groups)
+  assert.deepEqual(items.map((item) => item.id), ['new', 'quick', 'secure', 13])
+  assert.equal(items[moveSelection(2, 1, items.length)].id, 13)
+  assert.equal(items[moveSelection(3, 1, items.length)].id, 'new')
+})
+
+test('a new request cancels the one before it, and only the newest is current', () => {
+  const latest = latestRequest()
+  const first = latest.start()
+  const second = latest.start()
+  assert.equal(first.signal.aborted, true)
+  assert.equal(first.current(), false)
+  assert.equal(second.signal.aborted, false)
+  assert.equal(second.current(), true)
+  latest.cancel()
+  assert.equal(second.signal.aborted, true)
+  assert.equal(second.current(), false)
 })
