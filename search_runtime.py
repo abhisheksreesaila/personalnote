@@ -715,5 +715,14 @@ def default_search_runtime(database_path: Path, **options) -> SearchRuntime:
     return SearchRuntime(root=Path(folder) if folder else Path(database_path).parent / "search-by-meaning", **options)
 
 
+def reap_dead_cli_engines(root: Path) -> None:
+    """Stop engines that `personal-note search --meaning` commands left behind when they died (`engine-cli-<pid>.pid` names the command);
+    an engine whose command is still running is never touched."""
+    for record in Path(root).glob("engine-cli-*.pid"):
+        owner = record.name[len("engine-cli-"):-len(".pid")]
+        if not owner.isdigit() or not voice_runtime._alive(int(owner)):
+            voice_runtime.reap_stale_process(record)
+
+
 def _sha256(path: Path) -> str:
     return voice_runtime._sha256(path)

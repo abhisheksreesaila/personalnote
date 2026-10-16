@@ -512,6 +512,24 @@ class EngineTests(SearchTestCase):
         self.assertEqual(len(app.embed(["z"], "query")), 1)
         self.assertNotEqual(json.loads((self.root / "engine-cli.pid").read_text())["pid"], app_pid)
 
+    def test_engines_left_by_dead_commands_are_stopped_and_a_running_commands_is_not(self):
+        runtime = self.ready()
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        live_owner = self.runtime(pid_name=f"engine-cli-{os.getpid()}.pid")
+        dead_owner = self.runtime(pid_name=f"engine-cli-{gone.pid}.pid")
+        live_owner.embed(["x"], "query")
+        dead_owner.embed(["x"], "query")
+        live_pid = json.loads((self.root / f"engine-cli-{os.getpid()}.pid").read_text())["pid"]
+        dead_pid = json.loads((self.root / f"engine-cli-{gone.pid}.pid").read_text())["pid"]
+
+        search_runtime.reap_dead_cli_engines(self.root)
+
+        self.assertFalse(search_runtime.voice_runtime._alive(dead_pid))
+        self.assertFalse((self.root / f"engine-cli-{gone.pid}.pid").exists())
+        self.assertTrue(search_runtime.voice_runtime._alive(live_pid))
+        self.assertTrue((self.root / f"engine-cli-{os.getpid()}.pid").exists())
+
     def test_the_engine_needs_a_key_for_everything_but_health_and_the_key_is_not_on_the_command_line(self):
         runtime = self.ready()
         runtime.embed(["x"], "query")

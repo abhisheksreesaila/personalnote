@@ -11,15 +11,17 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import urlopen
 from typing import Any
 
 from app_paths import DATABASE_FILENAME, LEGACY_DATABASE, app_data_dir, default_database_path
-from startup import probe_host
+from startup import check_existing_server, probe_host
 from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
-from search_runtime import SearchError, SearchRuntime, default_search_runtime
+from search_runtime import SearchError, SearchRuntime, default_search_runtime, reap_dead_cli_engines
 from services import ConflictError, InvalidNoteContentError, NoteService, NotFoundError, SecureError, UnsupportedNoteTypeError, WorkspaceImportError, AppendTextError
 from vault import PortabilityVaultError, export_vault_directory, import_vault_archive, import_vault_directory
 
@@ -299,15 +301,51 @@ def command_notes_delete(service: NoteService, args: argparse.Namespace) -> dict
 
 
 def search_engine(database: Path) -> SearchRuntime:
-    """This command's own handle on the search-by-meaning engine (its own pid file, so it never stops the running app's engine)."""
-    return default_search_runtime(database, pid_name="engine-cli.pid")
+    """This command's own handle on the search-by-meaning engine. It has its own pid file (named for this process), so starting its engine
+    never stops the running app's or another command's; engines left by commands that died are cleaned up first."""
+    root = default_search_runtime(database).root
+    reap_dead_cli_engines(root)
+    return default_search_runtime(database, pid_name=f"engine-cli-{os.getpid()}.pid")
+
+
+def running_app(database: Path) -> str | None:
+    """The address of the app when it is running on this very database (its /health names the file), else None."""
+    try:
+        base = check_existing_server(env_setting("HOST", "127.0.0.1"), int(env_setting("PORT", "3137")))
+        if base is None:
+            return None
+        with urlopen(f"{base}/health", timeout=1) as response:
+            health = json.load(response)
+    except (RuntimeError, OSError, ValueError):
+        return None
+    return base if health.get("database") == str(Path(database).resolve()) else None
+
+
+NOT_INSTALLED = "Search by meaning is not installed. Download it in the app's Settings."
+
+
+def meaning_from_app(base: str, query: str) -> list[dict] | None:
+    """What the running app says (it already has the engine and the index); None when it cannot be asked."""
+    try:
+        with urlopen(f"{base}/api/search/meaning?{urlencode({'q': query, 'limit': 5})}", timeout=120) as response:
+            matches = json.load(response)
+        if not matches:  # the app answers [] both for "nothing matches" and "not installed"
+            with urlopen(f"{base}/api/search-meaning/status", timeout=5) as response:
+                if json.load(response).get("state") != "ready":
+                    raise CliError(NOT_INSTALLED)
+        return matches
+    except (OSError, ValueError):
+        return None
 
 
 def meaning_matches(service: NoteService, query: str) -> list[dict]:
+    asked = running_app(service.database_path)
+    if asked and (matches := meaning_from_app(asked, query)) is not None:
+        return matches
     engine = search_engine(service.database_path)
     try:
         if not engine.installed():
-            raise CliError("Search by meaning is not installed. Download it in the app's Settings.")
+            raise CliError(NOT_INSTALLED)
         service.embedder = engine
         return service.meaning_matches(query)
     except SearchError as error:

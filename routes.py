@@ -211,7 +211,7 @@ def create_app(
 
     @app.get("/health")
     def health():
-        return JSONResponse({"status": "ok", "app": "personal-note", "backend": "fasthtml"})
+        return JSONResponse({"status": "ok", "app": "personal-note", "backend": "fasthtml", "database": str(data_path.resolve())})  # the command line checks this is its own notebook
 
     @app.get("/api/settings/capabilities")
     def settings_capabilities():

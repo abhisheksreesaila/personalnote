@@ -8,8 +8,12 @@ with "tired woke slept" 0.600, and an unrelated trip note 0.169.
 import contextlib
 import io
 import json
+import os
+import socket
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest import mock
 
@@ -181,6 +185,76 @@ class MeaningCliTests(MeaningSearchCase):
         self.engine.down = True
         code, text = self.run_cli("search", "--meaning", "tired")
         self.assertEqual((code, json.loads(text)), (2, {"ok": False, "error": "The search engine did not answer. Try again."}))
+
+    def test_the_health_check_names_the_database_so_the_command_can_tell_whose_app_it_is(self):
+        self.assertEqual(self.client.get("/health").json()["database"], str(self.path.resolve()))
+
+    def stand_in_app(self, database, installed=True):
+        """A server answering like the running app on a free port; returns (port, the requests it saw, a stop function)."""
+        seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(handler):
+                seen.append(handler.path)
+                if handler.path == "/health":
+                    body = {"status": "ok", "app": "personal-note", "backend": "fasthtml", "database": str(database)}
+                elif handler.path.startswith("/api/search-meaning/status"):
+                    body = {"state": "ready" if installed else "not-installed"}
+                elif not installed:
+                    body = []
+                else:
+                    body = [{"id": 7, "title": "From the app", "notebookName": "Inbox", "score": 0.8}]
+                payload = json.dumps(body).encode()
+                handler.send_response(200)
+                handler.send_header("Content-Type", "application/json")
+                handler.send_header("Content-Length", str(len(payload)))
+                handler.end_headers()
+                handler.wfile.write(payload)
+
+            def log_message(handler, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server.server_port, seen, lambda: (server.shutdown(), server.server_close())
+
+    def test_when_the_app_is_running_on_this_database_the_command_asks_the_app_and_starts_no_engine_of_its_own(self):
+        port, seen, stop = self.stand_in_app(self.path.resolve())
+        self.addCleanup(stop)
+        started = []
+        self.engine.shutdown = lambda: started.append("own engine")
+        with mock.patch.dict(os.environ, {"PORT": str(port), "HOST": "127.0.0.1"}):
+            code, text = self.run_cli("search", "--meaning", "tired woke")
+        self.assertEqual((code, json.loads(text)), (0, [{"id": 7, "title": "From the app", "notebookName": "Inbox", "score": 0.8}]))
+        self.assertEqual(seen, ["/health", "/health", "/api/search/meaning?q=tired+woke&limit=5"])  # the first /health is the "is this our app" probe
+        self.assertEqual((started, self.engine.queries), ([], []))
+
+    def test_an_app_without_the_download_gives_the_not_installed_message(self):
+        port, seen, stop = self.stand_in_app(self.path.resolve(), installed=False)
+        self.addCleanup(stop)
+        with mock.patch.dict(os.environ, {"PORT": str(port), "HOST": "127.0.0.1"}):
+            code, text = self.run_cli("search", "--meaning", "tired")
+        self.assertEqual((code, json.loads(text)["error"]), (2, "Search by meaning is not installed. Download it in the app's Settings."))
+
+    def test_an_app_on_another_database_is_not_used(self):
+        port, seen, stop = self.stand_in_app(Path(self.temporary.name) / "other.db")
+        self.addCleanup(stop)
+        self.page("Sleep log", "tired woke slept badly early")
+        self.index()
+        with mock.patch.dict(os.environ, {"PORT": str(port), "HOST": "127.0.0.1"}):
+            code, text = self.run_cli("search", "--meaning", QUERY)
+        self.assertEqual((code, [item["title"] for item in json.loads(text)]), (0, ["Sleep log"]))
+        self.assertEqual(set(seen), {"/health"})
+
+    def test_with_nothing_listening_it_uses_its_own_engine(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            free = probe.getsockname()[1]
+        self.page("Sleep log", "tired woke slept badly early")
+        self.index()
+        with mock.patch.dict(os.environ, {"PORT": str(free), "HOST": "127.0.0.1"}):
+            code, text = self.run_cli("search", "--meaning", QUERY)
+        self.assertEqual((code, [item["title"] for item in json.loads(text)], self.stopped), (0, ["Sleep log"], [True]))
 
     def test_the_word_search_is_unchanged(self):
         note = self.page("Sleep log", "tired woke slept badly early")
