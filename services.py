@@ -53,11 +53,12 @@ DEFAULT_MINDMAP_CONTENT = {
     ],
 }
 MEANING_TEXT_CHARS = 6000  # the engine reads 2048 tokens; about 6000 characters of a note (its start) is safely inside
-# Which meaning matches are worth showing (F-080). On the real engine at 256 dimensions the right note scored 0.65-0.75 and unrelated
-# notes 0.50-0.60: nothing under the floor is shown, and of the rest only notes within the band of the best one (a weaker match
-# next to a strong one is the noise the strong one already beat).
-MEANING_FLOOR = 0.62
-MEANING_BAND = 0.08
+# Which meaning matches are worth showing (F-080), from a real run (EmbeddingGemma 2, 256 dimensions, 30 varied notes, 10 queries): the note
+# a query meant scored 0.66-0.83; the best unrelated note 0.60-0.66 (gibberish 0.66, "quantum chromodynamics" 0.62); the runners-up of a
+# good match 0.64-0.68. Nothing under the floor is shown, and of the rest only notes within the band of the best one: a weak match next to
+# a strong one is noise the strong one already beat.
+MEANING_FLOOR = 0.65
+MEANING_BAND = 0.04
 NOTE_TYPES = {"canvas", "mindmap", "page"}
 DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")

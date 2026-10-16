@@ -75,14 +75,15 @@ class MeaningRouteTests(MeaningSearchCase):
         self.index()
         self.assertEqual([item["notebook"] for item in self.ask().json()], ["Inbox"])
 
-    def test_only_notes_within_0_08_of_the_best_and_above_0_62_are_listed_in_order(self):
+    def test_only_notes_within_0_04_of_the_best_and_above_0_65_are_listed_best_first(self):
         best = self.page("Sleep log", "tired woke slept badly early")
-        near = self.page("Sleep log", "tired woke slept badly early again")
-        self.page("Sleep diary", "tired woke slept badly")  # 0.730: above the floor, but 0.115 below the best
+        tied = self.page("Sleep diary", "tired woke slept badly early")  # 0.845 too
+        self.page("Sleep log", "tired woke slept badly early again")  # 0.791: above the floor, but 0.054 below the best
+        self.page("Sleep diary", "tired woke slept badly")  # 0.730
         self.page("Trip", "flights to lisbon and a hotel")  # 0.169: below the floor
         self.index()
 
-        self.assertEqual([item["id"] for item in self.ask().json()], [best["id"], near["id"]])
+        self.assertCountEqual([item["id"] for item in self.ask().json()], [best["id"], tied["id"]])
 
     def test_when_even_the_best_is_under_the_floor_nothing_is_listed(self):
         self.page("Sleep diary", "tired woke slept")  # 0.600
