@@ -38,9 +38,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 import voice_runtime
+from download_tls import open_url
 from chromium_app import child_env
 from voice_runtime import platform_key
 
@@ -139,7 +140,7 @@ class SearchRuntime:
     engine: Pin | None = None
     model: Pin | None = None
     dimension: int = DIMENSION
-    opener: Callable = urlopen
+    opener: Callable = open_url
     ready_timeout: float = 60.0
     threads: int | None = None  # the engine's CPU threads; default leaves most of the machine to the person typing
     clock: Callable = time.monotonic

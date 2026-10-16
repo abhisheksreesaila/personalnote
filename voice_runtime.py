@@ -32,9 +32,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from chromium_app import child_env
+from download_tls import open_url
 
 logger = logging.getLogger("personal-note.voice")
 
@@ -124,7 +125,7 @@ class VoiceRuntime:
     model_url: str = MODEL_URL
     model_bytes: int = MODEL_BYTES
     model_sha256: str = MODEL_SHA256
-    opener: Callable = urlopen
+    opener: Callable = open_url
     ready_timeout: float = 90.0
     preferred_port: int = PREFERRED_PORT
 
