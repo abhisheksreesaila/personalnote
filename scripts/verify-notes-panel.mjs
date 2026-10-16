@@ -1,7 +1,11 @@
 // F-074 checks, in the real app (Vite dev server on PN_VERIFY_PORT, mocked in-memory /api, headless Chromium, real mouse and keyboard):
-// the one round notes button at the top left opens the sidebar as a floating panel over the desk.
-//   - closed by default; the button is a 44px circle; opening does not move or resize the paper; no scrim on a wide window
-//   - Esc and a click on the desk close it; the choice survives a reload; a broken localStorage does not break the app
+// the one round notes button at the top left opens the sidebar as a floating panel beside the note (F-083: on a wide window the note area
+// starts where the panel ends, so the two never overlap).
+//   - closed by default; the button is a 44px circle; no scrim on a wide window
+//   - F-083: open, the panel's right edge is left of the note area, the title pill is centred on the area, the corner islands stay at the area's
+//     edges, the page stays centred in the area, closing puts everything back exactly; text typed and a pen stroke drawn with the panel open save;
+//     focus mode ignores the panel; page and mind-map notes shift too
+//   - Esc closes it (a click on the note no longer does);  the choice survives a reload; a broken localStorage does not break the app
 //   - opening a note keeps it open on a wide window and closes it on a narrow one (where the scrim is back)
 //   - the panel's Quick note button, rows and skin dots are really clickable (nothing covers them)
 //
@@ -15,6 +19,7 @@ const now = new Date().toISOString()
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 const content = { objects: [] }
+const puts = []
 
 const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': `http://127.0.0.1:${PORT + 1}` } }, logLevel: 'error' })
 await server.listen()
@@ -28,12 +33,12 @@ try {
     const req = route.request()
     const p = new URL(req.url()).pathname.replace(/^\/api/, '')
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
-    const summary = (id) => ({ ...(id === 3 ? { secure: true } : {}), id, resourceId: `r${id}`, revision: 1, noteType: 'canvas', title: `Note ${id}`, notebookId: 1, createdAt: now, updatedAt: now })
-    if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'Garden', category: 'projects', color: '#76669a', noteCount: 2 }])
-    if (p === '/notes' && req.method() === 'GET') return json([summary(1), summary(2), summary(3)])
+    const summary = (id) => ({ ...(id === 3 ? { secure: true } : {}), id, resourceId: `r${id}`, revision: 1, noteType: { 4: 'page', 5: 'mindmap' }[id] ?? 'canvas', title: `Note ${id}`, notebookId: 1, createdAt: now, updatedAt: now })
+    if (p === '/notebooks') return json([{ id: 1, resourceId: 'nb', revision: 1, name: 'Garden', category: 'projects', color: '#76669a', noteCount: 5 }])
+    if (p === '/notes' && req.method() === 'GET') return json([1, 2, 3, 4, 5].map(summary))
     const m = p.match(/^\/notes\/(\d+)$/)
-    if (m && req.method() === 'GET') return json({ ...summary(Number(m[1])), ...(m[1] === '3' ? { locked: true, content: null, pageState: null } : { content, pageState: { columns: 1, rows: 1 } }) })
-    if (m && req.method() === 'PUT') return json({ revision: 2, resourceId: `r${m[1]}` })
+    if (m && req.method() === 'GET') return json({ ...summary(Number(m[1])), ...(m[1] === '3' ? { locked: true, content: null, pageState: null } : (m[1] === '4' ? { content: { version: 1, markdown: '# A page\n\nWords.', ink: { marks: [] } }, pageState: {} } : m[1] === '5' ? { content: null, pageState: {} } : { content, pageState: { columns: 1, rows: 1 } })) })
+    if (m && req.method() === 'PUT') { puts.push(JSON.parse(req.postData() || '{}')); return json({ revision: 2, resourceId: `r${m[1]}` }) }
     if (p.startsWith('/changes')) return json({ sequence: 1, changes: [], agents: [] })
     return json({})
   })
@@ -63,7 +68,21 @@ try {
   await clickToggle()
   await settleFade()
   check('the button opens the panel', (await isOpen()) && (await visible()))
-  check('opening the panel does not move or resize the paper', (await paper()) === closedPaper, `${closedPaper} -> ${await paper()}`)
+  const area = () => page.evaluate(() => { const r = document.querySelector('#workspace').getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width } })
+  const panelRight = await page.evaluate(() => document.querySelector('#sidebar').getBoundingClientRect().right)
+  const openArea = await area()
+  check('opening the panel moves the note area right of the panel: no overlap, the area ends where it did', openArea.left >= panelRight && openArea.left - panelRight <= 2 && openArea.right === 1280, JSON.stringify({ panelRight, openArea }))
+  const mid = (r) => (r.x + r.r) / 2
+  const geom = () => page.evaluate(() => { const g = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, r: r.right, b: r.bottom, w: r.width } }; return { title: g('.topbar-title'), search: g('#search-button'), history: g('#history-island'), zoom: g('#zoom-control'), dock: g('.tool-dock') } })
+  const g = await geom()
+  check('the title pill is centred on the note area', Math.abs(mid(g.title) - (openArea.left + openArea.right) / 2) <= 1, JSON.stringify({ title: g.title, openArea }))
+  check('undo and redo sit 16px inside the area edge; zoom and the tool island stay 16px from the right edge; the top-right islands stay put', Math.abs(g.history.x - (openArea.left + 16)) <= 1 && Math.abs(g.zoom.r - 1264) <= 1 && Math.abs(g.dock.r - 1264) <= 1 && Math.abs(g.search.r - 1264) <= 1, JSON.stringify(g))
+  check('the pill is clear of the panel and of the Focus pill', g.title.x > panelRight && g.title.r < (await page.evaluate(() => document.querySelector('#focus-button').getBoundingClientRect().x)))
+  const centredPaper = await page.evaluate(() => { const v = window.__personalNote.leaferCanvas().view(); const r = document.querySelector('#leafer-host').getBoundingClientRect(); return { left: r.left + v.x, right: r.left + v.x + 860 * v.scale } })
+  check('the page stays centred in the area (not cropped by it)', Math.abs((centredPaper.left - openArea.left) - (openArea.right - centredPaper.right)) <= 2 && centredPaper.left >= openArea.left, JSON.stringify({ centredPaper, openArea }))
+  await page.mouse.move(700, 400)
+  const canvasSize = await page.evaluate(() => { const c = document.querySelector('#leafer-host canvas'); const r = document.querySelector('#workspace').getBoundingClientRect(); return { cssW: c.getBoundingClientRect().width, w: c.width, ratio: devicePixelRatio, area: r.width } })
+  check('the canvas is resized to the area (redrawn crisp, one pixel per device pixel)', Math.abs(canvasSize.cssW - canvasSize.area) <= 1 && Math.abs(canvasSize.w - canvasSize.area * canvasSize.ratio) <= 2, JSON.stringify(canvasSize))
   const geo = await page.evaluate(() => { const r = document.querySelector('#sidebar').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, bottom: innerHeight - r.bottom } })
   check('the panel floats 16px in from the left and bottom, 280px wide, 72px from the top', geo.x === 16 && geo.w === 280 && geo.y === 72 && geo.bottom === 16, JSON.stringify(geo))
   check('no scrim on a wide window', !(await scrimShown()))
@@ -81,14 +100,18 @@ try {
   await page.keyboard.press('Escape')
   await settleFade()
   check('Esc closes the panel', !(await isOpen()) && !(await visible()))
-  check('closing does not move the paper', (await paper()) === closedPaper)
+  check('closing puts the paper and the area back exactly where they were', (await paper()) === closedPaper && (await area()).left === 0, `${closedPaper} -> ${await paper()}`)
+  const closedGeom = await geom()
+  check('and the title pill is centred on the whole window again', Math.abs(mid(closedGeom.title) - 640) <= 1 && closedGeom.history.x === 16, JSON.stringify(closedGeom))
 
   await clickToggle()
   await settleFade()
   const desk = { x: 900, y: 600 }
   await page.mouse.click(desk.x, desk.y)
   await settleFade()
-  check('a click on the desk closes the panel', !(await isOpen()))
+  check('a click on the note leaves the panel open (it sits beside the note, so using the note must not close it)', await isOpen())
+  await page.keyboard.press('Escape')
+  await settleFade()
 
   await clickToggle()
   await settleFade()
@@ -146,6 +169,84 @@ try {
   await blocked.click('#toggle-sidebar')
   check('with localStorage blocked the button still opens the panel', await blocked.evaluate(() => document.querySelector('#sidebar').classList.contains('open')), blockedErrors.join('; '))
   await blocked.close()
+
+  // F-083: typing and drawing with the panel open land in the note and save
+  await clickToggle()
+  await settleFade()
+  const lastContent = () => JSON.stringify(puts.filter((body) => body.content).at(-1)?.content ?? '')
+  const areaNow = await area()
+  await page.waitForFunction(() => window.__personalNote.state.tool === 'text')
+  await page.mouse.click(areaNow.left + 240, 260)
+  await page.waitForTimeout(400)
+  await page.keyboard.type('beside the panel', { delay: 20 })
+  await page.waitForFunction(() => JSON.stringify(window.__personalNote.leaferEdits.doc.objects).includes('beside the panel'), null, { timeout: 5000 })
+  await page.waitForTimeout(1500)
+  check('text typed with the panel open is in the note and was saved', lastContent().includes('beside the panel'), lastContent().slice(0, 200))
+  check('the panel is still open and beside the note while typing', (await isOpen()) && (await area()).left >= panelRight)
+  const pen = await page.evaluate(() => { const r = document.querySelector('[data-tool="pen"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+  await page.mouse.click(pen.x, pen.y)
+  await page.waitForFunction(() => window.__personalNote.state.tool === 'pen')
+  await page.waitForTimeout(700)
+  const strokeAt = await page.evaluate(() => { const v = window.__personalNote.leaferCanvas().view(); const r = document.querySelector('#leafer-host').getBoundingClientRect(); return { x: r.left + v.x + 100 * v.scale, y: r.top + v.y + 500 * v.scale } })
+  await page.mouse.move(strokeAt.x, strokeAt.y)
+  await page.mouse.down()
+  for (let k = 1; k <= 12; k += 1) { await page.mouse.move(strokeAt.x + k * 20, strokeAt.y + (k % 2) * 30); await page.waitForTimeout(16) }
+  await page.mouse.up()
+  await page.waitForTimeout(1800)
+  const strokes = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'ink'))
+  check('a pen stroke drawn with the panel open lands where the pointer went, and saved', strokes.length === 1 && strokes[0].geometry.width > 150 && lastContent().includes('"type":"ink"'), JSON.stringify(strokes).slice(0, 200))
+  check('the panel is still open after drawing', await isOpen())
+
+  // page notes and mind-map notes sit beside the panel too, and typing in the page note works with the panel open
+  for (const [id, host] of [[4, '.page-host'], [5, '.mindmap-host']]) {
+    await page.click(`#notebook-list [data-note-id="${id}"]`)
+    await page.waitForFunction((n) => window.__personalNote.state.activeNoteId === n, id)
+    await page.waitForSelector(`${host}:not([hidden])`, { timeout: 15000 })
+    await page.waitForTimeout(600)
+    const beside = await page.evaluate((sel) => { const h = document.querySelector(sel).getBoundingClientRect(); const a = document.querySelector('#workspace').getBoundingClientRect(); const p = document.querySelector('#sidebar').getBoundingClientRect(); return { hostLeft: h.left, hostRight: h.right, areaLeft: a.left, panelRight: p.right, w: innerWidth } }, host)
+    check(`${host}: with the panel open the note sits inside the area, right of the panel`, beside.hostLeft >= beside.panelRight - 1 && beside.hostRight <= beside.w + 1, JSON.stringify(beside))
+    await shot(`open-${host.slice(1)}`)
+  }
+  await page.click('#notebook-list [data-note-id="4"]')
+  await page.waitForSelector('.page-host:not([hidden]) .cm-content')
+  await page.click('.page-host .cm-content')
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type(' Typed beside the panel.')
+  await page.waitForTimeout(1500)
+  check('typing in a page note with the panel open saves', puts.filter((b) => b.content?.markdown).at(-1)?.content.markdown.includes('Typed beside the panel.'), JSON.stringify(puts.at(-1)).slice(0, 200))
+  check('...and the panel is still open', await isOpen())
+  await page.click('#notebook-list [data-note-id="1"]')
+  await page.waitForFunction(() => window.__personalNote.state.activeNoteId === 1)
+  await page.waitForTimeout(600)
+
+  // focus mode hides the panel and gives the note the whole window; leaving brings both back
+  const viewNow = () => page.evaluate(() => { const v = window.__personalNote.leaferCanvas().view(); return [v.x, v.y, v.scale].map((n) => Math.round(n * 100) / 100).join(',') })
+  const viewBeforeFocus = await viewNow()
+  await page.keyboard.press('Control+.')
+  await settleFade()
+  const inFocus = await page.evaluate(() => ({ focus: document.querySelector('.app-shell').classList.contains('focus-mode'), left: document.querySelector('#workspace').getBoundingClientRect().left, panel: getComputedStyle(document.querySelector('#sidebar')).display }))
+  check('focus mode: the panel is gone and the note area is the whole window', inFocus.focus && inFocus.left === 0 && inFocus.panel === 'none', JSON.stringify(inFocus))
+  await page.keyboard.press('Escape')
+  await settleFade()
+  check('leaving focus brings the panel and the shifted area back, and the view as it was', (await isOpen()) && (await area()).left === openArea.left && (await viewNow()) === viewBeforeFocus)
+  await page.waitForTimeout(700) // (the view is put back for a moment after focus; closing the panel waits for that)
+  await page.keyboard.press('Escape')
+  await settleFade()
+  check('closing after focus: the page is centred in the whole window again', (await viewNow()).startsWith('210,'), await viewNow())
+  await page.mouse.move(100, 100)
+  await shot('after-1280x800')
+  // the three skins: the same side-by-side layout (screenshots only; the skins differ in colour, not in geometry)
+  await clickToggle()
+  await settleFade()
+  check('reopening: the page is centred in the area again, as before focus', (await viewNow()) === viewBeforeFocus, `${await viewNow()} vs ${viewBeforeFocus}`)
+  for (const skin of ['crayon', 'paper', 'night']) {
+    await page.evaluate((k) => { document.documentElement.dataset.skin = k }, skin)
+    await page.waitForTimeout(300)
+    check(`${skin}: the panel and the note area sit side by side`, (await area()).left >= (await page.evaluate(() => document.querySelector('#sidebar').getBoundingClientRect().right)))
+    await shot(`skin-${skin}-open`)
+  }
+  await page.keyboard.press('Escape')
+  await settleFade()
 
   // 1440x900
   await page.setViewportSize({ width: 1440, height: 900 })

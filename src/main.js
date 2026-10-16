@@ -55,6 +55,7 @@ import {
   shiftExtents,
   viewMargins,
   wheelPanDelta,
+  moveWithCentre,
   zoomAtPoint,
 } from './modules/editor/viewport.js'
 
@@ -3794,7 +3795,8 @@ document.addEventListener('click', (event) => {
 document.addEventListener('pointerdown', (event) => {
   const target = event.target
   if (
-    elements.sidebar.classList.contains('open')
+    mobileLayout.matches // (wide: the panel sits beside the note, so using the note must not close it)
+    && elements.sidebar.classList.contains('open')
     && target.closest('.main-view')
     && !target.closest('#toggle-sidebar')
   ) setSidebarOpen(false, true)
@@ -4440,7 +4442,13 @@ async function initialize() {
 
 document.fonts.ready.then(refreshCanvasTextMetrics)
 document.fonts.addEventListener('loadingdone', refreshCanvasTextMetrics)
+// F-083: when the notes panel opens or closes beside the note, the area's left edge moves; the page then keeps its place in the middle of the area.
+let areaLeft = elements.workspace.getBoundingClientRect().left
 function handleWorkspaceResize() {
+  const left = elements.workspace.getBoundingClientRect().left
+  const areaMoved = left !== areaLeft
+  areaLeft = left
+  const oldSize = { width: viewSize.width, height: viewSize.height }
   if (state.activeNoteType === 'page' && focusRestore && !focusActive) return settleFocusRestore()
   if (state.activeNoteType !== 'canvas') return
   const previous = { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }
@@ -4450,7 +4458,7 @@ function handleWorkspaceResize() {
   if (focusActive) return layoutFocus() // F-073: the words stay in the middle of the window
   if (focusRestore) return settleFocusRestore() // F-073: coming back, the view is the one that was left
   const center = { x: viewSize.width / 2, y: viewSize.height / 2 }
-  const next = zoomAtPoint(previous, getCanvasScale(), center)
+  const next = areaMoved ? moveWithCentre(previous, oldSize, viewSize) : zoomAtPoint(previous, getCanvasScale(), center)
   setCanvasViewportOffset(next.x, next.y)
 }
 // Page colors and shadow come from skin tokens, so repaint when the skin changes.

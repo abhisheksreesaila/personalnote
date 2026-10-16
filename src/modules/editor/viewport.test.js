@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   clampView,
+  moveWithCentre,
   parseBoxShadow,
   pageExtents,
   shadowBands,
@@ -90,4 +91,16 @@ test('shadow bands stack from the outside in and reach the full shadow strength'
 
 test('an unblurred shadow is one solid band', () => {
   assert.deepEqual(shadowBands({ blur: 0, spread: 2, alpha: 0.5 }), [{ grow: 2, alpha: 0.5 }])
+})
+
+test('when the note area opens a 296px panel on its left, the page stays centred in what is left of it', () => {
+  // a 1280px area with the page at x=210 (860 wide, centred); the area becomes 984px wide
+  const next = moveWithCentre({ x: 210, y: 40, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 })
+  assert.deepEqual(next, { x: 62, y: 40, scale: 1 })
+  assert.equal(62 + 860 + 62, 984)
+})
+
+test('closing the panel puts the view back exactly where it was', () => {
+  const open = moveWithCentre({ x: 210, y: 40, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 })
+  assert.deepEqual(moveWithCentre(open, { width: 984, height: 800 }, { width: 1280, height: 800 }), { x: 210, y: 40, scale: 1 })
 })

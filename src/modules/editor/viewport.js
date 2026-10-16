@@ -35,6 +35,11 @@ export function zoomAtPoint(view, nextScale, point) {
   return { x: point.x - worldX * nextScale, y: point.y - worldY * nextScale, scale: nextScale }
 }
 
+// The note area changed size (the notes panel opened beside it): keep what was at the middle of the area at its middle, so the page stays centred.
+export function moveWithCentre(view, from, to) {
+  return { x: view.x + (to.width - from.width) / 2, y: view.y + (to.height - from.height) / 2, scale: view.scale }
+}
+
 export function pageExtents(columns, rows, pageWidth, pageHeight) {
   return { left: 0, top: 0, right: columns * pageWidth, bottom: rows * pageHeight }
 }
