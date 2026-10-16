@@ -350,6 +350,28 @@ class BackupTests(XSyncCase):
         self.assertEqual(sorted(n["title"] for n in fresh.list_notes()), sorted(f"@ada: post {i}" for i in range(1, 6)))
 
 
+class RestoredBackupTests(XSyncCase):
+    def test_a_restored_backup_does_not_make_the_next_sync_import_the_same_posts_again(self):
+        self.connect()
+        archive = self.service.create_notebook({"name": "Done", "category": "archive"})
+        archived = next(n for n in self.x_notes() if n["title"] == "@ada: post 4")
+        self.service.move_note(archived["id"], {"notebookId": archive["id"]})
+        snapshot = self.service.workspace_snapshot()
+
+        fresh = NoteService(self.folder / "fresh.db")  # a new machine: no x_posts
+        fresh.import_workspace_snapshot(snapshot)
+        self.x.posts.insert(0, {"id": "2000", "text": "after the restore", "author_id": "u1", "created_at": "2026-02-01T00:00:00.000Z"})
+        self.service = fresh
+        self.sync = self.make_sync()  # the same sign-in, a new app on the restored notes
+        self.sync.sync()
+
+        titles = sorted(n["title"] for n in fresh.list_notes() if n["title"].startswith("@ada: "))
+        self.assertEqual(titles, sorted([f"@ada: post {i}" for i in range(1, 6)] + ["@ada: after the restore"]))
+        books = [b for b in fresh.list_notebooks() if b["icon"] == "brand:x"]
+        self.assertEqual([(b["name"], b["noteCount"]) for b in books], [("X bookmarks", 5)])
+        self.assertEqual(fresh.x_imported_count(), 6)
+
+
 class RouteTests(XSyncCase):
     def setUp(self):
         super().setUp()

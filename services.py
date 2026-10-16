@@ -61,6 +61,7 @@ DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")
 DEFAULT_NOTEBOOK_CATEGORY = "projects"
 X_NOTEBOOK_NAME = "X bookmarks"
+X_POST_LINK = re.compile(r"\[Open on X\]\(https://x\.com/[A-Za-z0-9_]+/status/(\d+)\)")
 INBOX_NAME = "Inbox"  # the built-in home of unfiled notes (notes.notebook_id IS NULL); not a notebook row
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
 WORD_PATTERN = re.compile(r"[\w'-]+", re.UNICODE)
@@ -1783,6 +1784,22 @@ class NoteService:
         """The newest imported post ids: the sync passes them to X so it stops at the first one it already holds."""
         with self.connection() as connection:
             return [row[0] for row in connection.execute("SELECT post_id FROM x_posts ORDER BY seq DESC LIMIT ?", (limit,))]
+
+    def adopt_x_posts_from_notes(self) -> None:
+        """After a restore the notes exist but `x_posts` does not: read each post id back from its note's "Open on X" link
+        (any notebook, archived included) so those posts are not imported again, and reuse the restored X notebook."""
+        with self.connection() as connection:
+            rows = connection.execute("SELECT id, content FROM notes WHERE note_type = 'page' AND secure = 0 AND content LIKE '%Open on X%' ORDER BY id").fetchall()
+            for row in rows:
+                match = X_POST_LINK.search(page_text(row["content"]))
+                if match:
+                    connection.execute("INSERT OR IGNORE INTO x_posts (post_id, note_id) VALUES (?, ?)", (match.group(1), row["id"]))
+            if connection.execute("SELECT COUNT(*) FROM x_posts").fetchone()[0]:
+                notebook = connection.execute("SELECT id FROM notebooks WHERE icon = 'brand:x' ORDER BY id LIMIT 1").fetchone()
+                if notebook:
+                    connection.execute("INSERT OR IGNORE INTO x_notebook (id, notebook_id) VALUES (1, ?)", (notebook[0],))
+                    connection.execute("UPDATE x_notebook SET notebook_id = ? WHERE id = 1 AND notebook_id IS NULL", (notebook[0],))
+            connection.commit()
 
     def x_imported_count(self) -> int:
         with self.connection() as connection:
