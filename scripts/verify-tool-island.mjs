@@ -399,6 +399,20 @@ try {
   await page.evaluate(() => { document.querySelector('#voice-caption').hidden = true })
   check('the mic is the foot of the island and is live', await page.evaluate(() => { const b = document.querySelector('#voice-button'); return !b.disabled && getComputedStyle(b).pointerEvents !== 'none' }))
 
+  // ================= the inspector panel would cover the right-hand islands: they stand clear of it
+  await click('#share-button')
+  await click('#top-properties')
+  await page.waitForTimeout(500)
+  const panelBox = await rect('#properties-panel')
+  const dockBesidePanel = await rect('.tool-dock')
+  const zoomBesidePanel = await rect('#zoom-control')
+  check('with the inspector open the tool island and zoom island sit left of it', dockBesidePanel.r <= panelBox.x - 8 && zoomBesidePanel.r <= panelBox.x - 8, JSON.stringify({ panelBox, dockBesidePanel, zoomBesidePanel }))
+  await click('[data-tool="select"]')
+  check('and a tool can still be clicked there', (await tool()) === 'select')
+  await click('#close-properties')
+  await page.waitForTimeout(500)
+  check('closing the inspector puts the islands back at the edge', Math.abs((await rect('.tool-dock')).r - 1264) <= 1)
+
   // ================= focus mode
   await page.evaluate(() => window.__personalNote.setViewTo({ x: 200, y: 100, scale: 1 }))
   const restDock = await rect('.tool-dock')
@@ -447,11 +461,45 @@ try {
     await layout(label, width, height)
     await shot(`${width}x${height}${query ? '-mac' : ''}-rest`)
   }
-  // a note with words, a stroke and a sticky, as the screenshots show it
-  await page.setViewportSize({ width: 1280, height: 800 })
-  await load()
-  await page.keyboard.press('Escape')
-  await page.evaluate(() => window.__personalNote.setTool('text'))
+  // screenshots (PN_SHOT only): a note with words, a stroke and a sticky, at rest, with the + open, with the colour options open, and a mind map
+  if (process.env.PN_SHOT) {
+    for (const [width, height] of [[1280, 800], [1440, 900]]) {
+      await page.setViewportSize({ width, height })
+      stored[1].content = { objects: [] }
+      stored[1].pageState = { columns: 1, rows: 1 }
+      await load()
+      await page.keyboard.type('# Q4 launch board\nShip the beta by Nov 1. Pricing page, onboarding email, demo video.')
+      await page.keyboard.press('Escape')
+      await click('[data-tool="sticky"]')
+      await clickPage({ x: 520, y: 260 })
+      await page.waitForTimeout(300)
+      await page.keyboard.type('Key feedback: keep the chrome invisible until hovered')
+      await page.keyboard.press('Escape')
+      await click('[data-tool="pen"]')
+      await dragOnPage([{ x: 120, y: 420 }, { x: 220, y: 380 }, { x: 330, y: 440 }, { x: 440, y: 390 }])
+      await click('[data-tool="text"]')
+      await page.keyboard.press('Escape')
+      await page.mouse.move(width / 2, height / 2)
+      await page.waitForTimeout(800)
+      await shot(`${width}x${height}-note-rest`)
+      await click('#dock-more')
+      await page.waitForTimeout(300)
+      await shot(`${width}x${height}-note-plus`)
+      await page.keyboard.press('Escape')
+      await click('[data-tool="pen"]')
+      await click('#ink-options-trigger')
+      await page.waitForTimeout(300)
+      await shot(`${width}x${height}-note-colour`)
+      await page.keyboard.press('Escape')
+      await openPanel()
+      await click('[data-note-id="2"]')
+      await page.waitForSelector('.mindmap-host:not([hidden]) svg', { timeout: 15000 }).catch(() => {})
+      await page.waitForTimeout(900)
+      await click('#toggle-sidebar')
+      await page.waitForTimeout(500)
+      await shot(`${width}x${height}-mindmap`)
+    }
+  }
   // narrow windows keep the mobile controls and show no island
   await page.setViewportSize({ width: 500, height: 800 })
   await load()

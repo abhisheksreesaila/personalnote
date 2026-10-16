@@ -35,7 +35,7 @@ try {
   const pn = (fn, arg) => page.evaluate(fn, arg)
   const scale = () => pn(() => window.__personalNote.leaferCanvas().view().scale)
   const editing = () => pn(() => Boolean(document.querySelector('.md-editor .cm-content')) && document.activeElement === document.querySelector('.md-editor .cm-content'))
-  const quiet = () => pn(() => ({ quiet: document.querySelector('.app-shell').classList.contains('writing-quiet'), map: getComputedStyle(document.querySelector('#page-minimap')).opacity }))
+  const quiet = () => pn(() => ({ quiet: document.querySelector('.app-shell').classList.contains('writing-quiet'), map: getComputedStyle(document.querySelector('#zoom-control')).opacity }))
   const objects = async () => (await pn(() => JSON.parse(JSON.stringify(window.__personalNote.leaferEdits.doc)))).objects
   const shot = async (name) => { if (process.env.PN_SHOT) await page.screenshot({ path: process.env.PN_SHOT.replace('.png', `-${name}.png`) }) }
 
@@ -46,7 +46,7 @@ try {
   await page.waitForTimeout(600)
   check('a new note opens at 100% with the caret ready in the formatting editor', (await scale()) === 1 && (await editing()), JSON.stringify([await scale(), await editing()]))
   const q = await quiet()
-  check('the page map and zoom are quiet while writing', q.quiet && q.map === '0', JSON.stringify(q))
+  check('the zoom island is quiet while writing', q.quiet && q.map === '0', JSON.stringify(q))
   await shot('open')
   await page.keyboard.type('# Trip\nThe harbour walk at dusk.')
   await page.waitForTimeout(1200)

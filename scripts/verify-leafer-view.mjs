@@ -106,12 +106,12 @@ try {
   await page.waitForTimeout(250)
   const afterSpace = await compare(page)
   check('Space + drag pans', Math.abs(afterSpace.world.x - beforeSpace.world.x - 40) < 2 && Math.abs(afterSpace.world.y - beforeSpace.world.y - 40) < 2, JSON.stringify([beforeSpace.world, afterSpace.world]))
-  // minimap: go to the last page
+  // fit (the page minimap left in F-076): the Leafer picture goes to show every page
   const beforeMini = await compare(page)
-  await page.locator('.mini-page').last().click({ force: true })
-  await page.waitForTimeout(300)
+  await page.locator('#zoom-fit').click({ force: true })
+  await page.waitForTimeout(700)
   const afterMini = await compare(page)
-  check('the minimap jumps the Leafer picture to that page', afterMini.world.x !== beforeMini.world.x || afterMini.world.y !== beforeMini.world.y, JSON.stringify([beforeMini.world, afterMini.world]))
+  check('the fit button moves the Leafer picture to show every page', afterMini.world.x !== beforeMini.world.x || afterMini.world.y !== beforeMini.world.y || afterMini.world.scale !== beforeMini.world.scale, JSON.stringify([beforeMini.world, afterMini.world]))
   // zoom pill buttons
   await page.locator('#zoom-control button').first().click()
   await page.waitForTimeout(250)
