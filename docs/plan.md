@@ -559,9 +559,10 @@ Reviewed: PASS after one round (idle/forged callbacks, known-id set, 1→10→10
 - [x] `x_bookmarks.py`: OAuth 2.0 PKCE sign-in returning to loopback, refresh token kept in the system keychain (file fallback 0600 on Linux), fetch bookmarks with pagination and the 800 cap, newest first, never twice (since-id), pay-per-use friendly (one page per hourly run unless new)
 - [x] `scripts/x-setup.sh` (wizard): exactly what the captain does on developer.x.com (app, callback URL, scopes tweet.read users.read bookmark.read offline.access, credits) and a live check that lists 5 bookmarks
 - [x] tests against a fake X server: sign-in, refresh, pagination, cap, no duplicates, errors shown plainly
-## F-088 X bookmarks notebook in the app [todo]
+## F-088 X bookmarks notebook in the app [done]
 Brief: docs/briefs/x-bookmarks.md · Needs: F-087, F-089
-- [ ] Settings "Connect X"; sync on start and hourly while open; new bookmarks become cards in an "X bookmarks" notebook (X icon); drag onto a note lands a link card; mark done archives
+Reviewed: PASS after one round (client id never reaches the page, post text escaped, restore adoption reads only the generated link line, batches de-duplicated). Bookmarks are page notes in the X notebook; drag-onto-note and Done moved to F-095. Real X sign-in awaits the captain's x-setup.sh run.
+- [x] Settings "Connect X"; sync on start and hourly while open; new bookmarks become cards in an "X bookmarks" notebook (X icon); drag onto a note lands a link card; mark done archives
 ## F-089 Notebook icons [done]
 Brief: docs/briefs/notebook-icons.md · Needs: none
 Reviewed: PASS after one round (server emoji rule matches the browser, a leading emoji isn't shown twice, icon/colour changes don't reorder, CLI --icon validated). Phone bottom sheet left for the phone layout. CSS now 17.45/17.60 KiB.
