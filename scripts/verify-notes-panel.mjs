@@ -196,6 +196,9 @@ try {
   const strokes = await page.evaluate(() => window.__personalNote.leaferEdits.doc.objects.filter((o) => o.type === 'ink'))
   check('a pen stroke drawn with the panel open lands where the pointer went, and saved', strokes.length === 1 && strokes[0].geometry.width > 150 && lastContent().includes('"type":"ink"'), JSON.stringify(strokes).slice(0, 200))
   check('the panel is still open after drawing', await isOpen())
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  check('Esc after working on the note leaves the pen (back to writing) and keeps the panel; Esc with the last press in the panel closes it', (await page.evaluate(() => window.__personalNote.state.tool)) === 'text' && (await isOpen()))
 
   // page notes and mind-map notes sit beside the panel too, and typing in the page note works with the panel open
   for (const [id, host] of [[4, '.page-host'], [5, '.mindmap-host']]) {
