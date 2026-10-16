@@ -74,6 +74,73 @@ class ApiContractTests(unittest.TestCase):
         categories = [item["category"] for item in self.client.get("/api/notebooks").json() if item["name"] == "Health"]
         self.assertEqual(sorted(categories), ["archive", "archive"])
 
+    def test_notebook_icon_defaults_validates_updates_and_round_trips_in_a_backup(self):
+        default = self.client.get("/api/notebooks").json()[0]
+        self.assertEqual(default["icon"], "")  # empty means: the app guesses from the name
+
+        house = self.client.post("/api/notebooks", json={"name": "Chores", "icon": "lucide:house"}).json()
+        self.assertEqual(house["icon"], "lucide:house")
+        x = self.client.post("/api/notebooks", json={"name": "Feed", "icon": "brand:x"}).json()
+        self.assertEqual(x["icon"], "brand:x")
+        for bad in ("lucide:not-an-icon", "emoji:ab", "emoji:", "emoji:🏠🏠", "<script>", 7, "lucide:house\n", "emoji:a", "emoji:<", "emoji:\"", "emoji:-", "emoji:→", "emoji:\u0301", "emoji:!" + "\u0301" * 15, "emoji:🏠\u200da", "emoji:🏠\u200d"):
+            made = self.client.post("/api/notebooks", json={"name": "Odd", "icon": bad}).json()
+            self.assertEqual(made["icon"], "", bad)
+
+        family = "emoji:👨‍👩‍👧"  # one grapheme made of several code points
+        updated = self.client.put(f"/api/notebooks/{house['id']}", json={"revision": house["revision"], "icon": family}).json()
+        self.assertEqual((updated["icon"], updated["name"], updated["revision"]), (family, "Chores", house["revision"] + 1))
+        rejected = self.client.put(f"/api/notebooks/{house['id']}", json={"revision": updated["revision"], "icon": "emoji:xy"}).json()
+        self.assertEqual(rejected["icon"], family)  # an invalid icon leaves the old one
+        untouched = self.client.put(f"/api/notebooks/{house['id']}", json={"revision": rejected["revision"], "name": "Home"}).json()
+        self.assertEqual(untouched["icon"], family)  # not mentioned: kept
+        cleared = self.client.put(f"/api/notebooks/{house['id']}", json={"revision": untouched["revision"], "icon": ""}).json()
+        self.assertEqual(cleared["icon"], "")
+        stale = self.client.put(f"/api/notebooks/{house['id']}", json={"revision": 1, "icon": "lucide:star"})
+        self.assertEqual(stale.status_code, 409)
+
+        self.client.put(f"/api/notebooks/{x['id']}", json={"revision": x["revision"], "icon": "emoji:🐦"})
+        backup = self.client.get("/api/export/workspace").json()
+        self.assertEqual({item["name"]: item["icon"] for item in backup["notebooks"]}["Feed"], "emoji:🐦")
+        self.client.post("/api/import/workspace", json=backup)
+        feeds = [item["icon"] for item in self.client.get("/api/notebooks").json() if item["name"] == "Feed"]
+        self.assertEqual(feeds, ["emoji:🐦", "emoji:🐦"])
+
+    def test_changing_only_the_icon_or_colour_does_not_reorder_notebooks(self):
+        import sqlite3
+        first = self.client.post("/api/notebooks", json={"name": "First"}).json()
+        second = self.client.post("/api/notebooks", json={"name": "Second"}).json()
+        database = Path(self.temporary_directory.name) / "personal-note.db"
+        with sqlite3.connect(database) as connection:
+            connection.execute("UPDATE notebooks SET updated_at = '2020-01-01 00:00:00'")
+        order = lambda: [item["name"] for item in self.client.get("/api/notebooks").json()]
+        before = order()
+        updated = self.client.put(f"/api/notebooks/{first['id']}", json={"revision": first["revision"], "icon": "lucide:star", "color": "#4D839C"}).json()
+        self.assertEqual(order(), before)
+        self.client.put(f"/api/notebooks/{first['id']}", json={"revision": updated["revision"], "name": "Renamed"})
+        self.assertEqual(order()[0], "Renamed")  # a rename still moves it up
+
+    def test_importing_a_backup_from_before_icons_gives_notebooks_no_icon(self):
+        self.client.post("/api/notebooks", json={"name": "Old backup", "icon": "lucide:star"})
+        backup = self.client.get("/api/export/workspace").json()
+        for notebook in backup["notebooks"]:
+            notebook.pop("icon")
+        self.assertEqual(self.client.post("/api/import/workspace", json=backup).status_code, 201)
+        icons = [item["icon"] for item in self.client.get("/api/notebooks").json() if item["name"] == "Old backup"]
+        self.assertEqual(sorted(icons), ["", "lucide:star"])
+
+    def test_existing_database_without_icon_column_migrates_to_no_icon(self):
+        import sqlite3
+        legacy = Path(self.temporary_directory.name) / "legacy-icon.db"
+        connection = sqlite3.connect(legacy)
+        connection.execute(
+            "CREATE TABLE notebooks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '#B86B4B', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+        )
+        connection.execute("INSERT INTO notebooks (name) VALUES ('Old')")
+        connection.commit()
+        connection.close()
+        with TestClient(create_app(legacy)) as client:
+            self.assertEqual([item["icon"] for item in client.get("/api/notebooks").json()], [""])
+
     def test_existing_database_without_category_migrates_to_projects(self):
         import sqlite3
         legacy = Path(self.temporary_directory.name) / "legacy.db"

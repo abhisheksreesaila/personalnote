@@ -38,6 +38,8 @@ import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from
 import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, NOTEBOOK_FOLD_KEY, readFolded, writeFolded } from './modules/library/outline.js'
 import { mountShelves } from './modules/library/shelves.js'
+import { iconButtonHtml, openIconPicker } from './modules/library/notebook-icon-picker.js'
+import { NOTEBOOK_COLORS, displayName } from './modules/library/notebook-icon.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
@@ -419,7 +421,7 @@ document.querySelector('#app').innerHTML = `
       <fieldset class="color-fieldset">
         <legend>Color</legend>
         <div class="notebook-colors" id="notebook-colors">
-          ${['#B86B4B', '#D09A45', '#6F8C63', '#4D839C', '#7A6F9B', '#A55D6F'].map((color) => `
+          ${NOTEBOOK_COLORS.map((color) => `
             <label class="notebook-color" style="--notebook-color:${color}">
               <input type="radio" name="notebook-color" value="${color}" ${color === '#B86B4B' ? 'checked' : ''} />
               <span></span>
@@ -875,10 +877,11 @@ function notebookRowHtml(notebook, selectedNotebook) {
     <div class="nbk${isOpen ? ' open' : ''}" data-nbk="${notebook.id}">
     <div class="nav-row ${isSelected ? 'active' : ''}">
       <button class="notebook-tab ${isSelected ? 'active' : ''}" draggable="true" data-notebook-select="${notebook.id}" data-notebook-drop="${notebook.id}" data-notebook-drag="${notebook.id}" data-category="${notebook.category}" aria-expanded="${isOpen}">
-        <span class="notebook-dot" style="--notebook-color:${notebook.color}"></span>
-        <span class="notebook-name">${escapeHtml(notebook.name)}</span>
+        <span class="nbi-gap"></span>
+        <span class="notebook-name">${escapeHtml(displayName(notebook))}</span>
         <span class="notebook-count">${notebook.count}</span><i class="sec-chev" data-lucide="chevron-right"></i>
       </button>
+      ${iconButtonHtml(notebook)}
       <button class="nav-edit nav-new-note" data-new-note-in="${notebook.id}" title="New note in ${escapeHtml(notebook.name)}" aria-label="New note in ${escapeHtml(notebook.name)}"><i data-lucide="plus"></i></button>
       <button class="nav-edit" data-edit-notebook="${notebook.id}" title="Edit ${escapeHtml(notebook.name)}" aria-label="Edit notebook ${escapeHtml(notebook.name)}"><i data-lucide="more-horizontal"></i></button>
     </div>
@@ -2215,6 +2218,27 @@ function openNotebookDialog(notebook = null, category = 'projects') {
   if (colorInput) colorInput.checked = true
   elements.notebookDialog.showModal()
   requestAnimationFrame(() => elements.notebookName.focus())
+}
+
+// The icon and colour picker of the notes panel (F-089): each choice is saved at once, one after another so each carries the revision the last one returned.
+let notebookLookSaves = Promise.resolve()
+function openNotebookIconPicker(id) {
+  const notebook = state.notebooks.find((item) => item.id === id)
+  if (!notebook) return
+  const anchor = () => elements.list.querySelector(`[data-icon-notebook="${id}"]`)
+  const save = async (patch) => {
+    const notebook = state.notebooks.find((item) => item.id === id) // looked up now: a refresh replaces state.notebooks
+    if (!notebook) return
+    try {
+      Object.assign(notebook, await api(`/notebooks/${id}`, { method: 'PUT', body: JSON.stringify({ ...patch, revision: notebook.revision }) }))
+      renderNoteList()
+      if (document.activeElement === document.body) anchor()?.focus() // the picker had closed, and the list was drawn again under its focus
+    } catch {
+      showToast("Couldn't change the notebook. Try again.")
+      try { notebook.revision = (await api('/notebooks')).find((item) => item.id === id)?.revision ?? notebook.revision } catch {}
+    }
+  }
+  openIconPicker({ notebook, getAnchor: anchor, onChange: (patch) => { notebookLookSaves = notebookLookSaves.then(() => save(patch)) } })
 }
 
 async function saveNotebook() {
@@ -3840,6 +3864,8 @@ elements.list.addEventListener('click', (event) => {
   if (newNote) return void createNote(Number(newNote.dataset.newNoteIn))
   const add = event.target.closest('[data-new-notebook]')
   if (add) return openNotebookDialog(null, add.dataset.newNotebook) // (with the + naming in place, this is Shift+click)
+  const iconButton = event.target.closest('[data-icon-notebook]')
+  if (iconButton) return void openNotebookIconPicker(Number(iconButton.dataset.iconNotebook))
   const edit = event.target.closest('[data-edit-notebook]')
   if (edit) return openNotebookDialog(state.notebooks.find((notebook) => notebook.id === Number(edit.dataset.editNotebook)))
   const notebook = event.target.closest('[data-notebook-select]')

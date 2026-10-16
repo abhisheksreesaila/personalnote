@@ -24,4 +24,5 @@ a web icon … household chores … a house … more personal and more colorful"
 - The captain's notes panel shows a different icon and colour per notebook without him setting any; he can change one in two clicks.
 
 ## Decisions and trade-offs
+- A chosen icon beats a leading emoji in the name; the leading emoji beats the keyword guess.
 - Guessed and changeable: colourful from day one; con: a wrong guess until changed.
