@@ -18,7 +18,7 @@ from starlette.testclient import TestClient
 
 from meaning_index import MeaningIndexer
 from routes import create_app
-from search_runtime import SearchError
+from search_runtime import SearchError, SearchInputError
 from services import MEANING_TEXT_CHARS, NoteService
 from tests.test_secure_notes import FakeLinux
 
@@ -40,8 +40,11 @@ class FakeEngine:
         self.is_installed = installed
         self.model_id = "fake-model/64"
         self.down = False
+        self.refuse = ""  # a word: an input containing it is refused as too long, the way the real engine refuses
         self.documents: list[tuple] = []
         self.queries: list[str] = []
+        self.batches: list[float] = []
+        self.idle_checks: list[float] = []
 
     def installed(self):
         return self.is_installed
@@ -55,8 +58,15 @@ class FakeEngine:
         if kind == "query":
             self.queries.extend(texts)
             return [vector_of(text) for text in texts]
+        if self.refuse and any(self.refuse in text for _, text in texts):
+            raise SearchInputError("That note is too long for the search engine.")
+        self.batches.append(time.monotonic())
         self.documents.extend(texts)
         return [vector_of(f"{title} {text}") for title, text in texts]
+
+    def stop_if_idle(self, seconds):
+        self.idle_checks.append(seconds)
+        return False
 
     @property
     def embedded_text(self) -> str:
@@ -209,7 +219,7 @@ class IndexingTests(MeaningCase):
 
         with self.service.connection() as connection:
             total = connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
-        self.assertEqual(self.indexer.status(), {"indexed": 2, "total": total, "error": ""})
+        self.assertEqual(self.indexer.status(), {"indexed": 2, "total": total, "error": "", "failed": 0})
 
     def test_a_note_written_by_another_process_is_picked_up_the_same_way(self):
         other = NoteService(self.path, secure_platform=FakeLinux())  # what the CLI does: it only writes through NoteService
@@ -313,6 +323,149 @@ class EngineDownTests(MeaningCase):
         finally:
             indexer.stop()
         self.assertEqual(len(self.rows()), 1)
+
+
+class OneBadNoteTests(MeaningCase):
+    def test_a_note_the_engine_refuses_is_skipped_and_never_blocks_the_others(self):
+        self.engine.refuse = "TOOLONG"
+        bad = self.page("Oldest", "TOOLONG " * 10)  # first in line: the same batch would be picked again for ever
+        good = [self.page(f"Note {i}", f"words {i}") for i in range(5)]
+
+        self.assertEqual(self.drain(), 5)
+
+        self.assertEqual(set(self.rows()), {note["id"] for note in good})
+        self.assertEqual(self.indexer.status()["failed"], 1)
+        self.assertEqual(self.indexer.status()["error"], "")
+
+    def test_a_refused_note_is_not_tried_again_until_it_changes(self):
+        self.engine.refuse = "TOOLONG"
+        bad = self.page("Oldest", "TOOLONG " * 10)
+        self.drain()
+        asked = len(self.engine.batches)
+
+        self.assertEqual(self.indexer.run_once(), 0)
+        self.assertEqual(len(self.engine.batches), asked)
+
+        self.save_page(bad, "Oldest", "short now")
+        self.assertEqual(self.drain(), 1)
+        self.assertIn(bad["id"], self.rows())
+        self.assertEqual(self.indexer.status()["failed"], 0)
+
+    def test_an_engine_that_is_down_does_not_blame_the_notes(self):
+        self.engine.down = True
+        self.page("One", "alpha")
+        self.page("Two", "beta")
+        self.indexer.run_once()
+
+        self.engine.down = False
+        self.clock.now += 31
+        self.assertEqual(self.drain(), 2)
+        self.assertEqual(self.indexer.status()["failed"], 0)
+
+
+class QuietTests(MeaningCase):
+    def test_the_default_waits_for_the_person_to_stop_typing(self):
+        self.page("Trip", "flights to lisbon")
+        patient = MeaningIndexer(self.service, self.engine)  # defaults
+
+        self.assertEqual(patient.run_once(), 0)
+        self.assertEqual(self.engine.documents, [])
+
+    def test_nothing_is_read_while_nothing_has_changed(self):
+        self.page("Trip", "flights to lisbon")
+        calls = []
+        real = self.service.meaning_work
+        self.service.meaning_work = lambda *a, **k: (calls.append(1), real(*a, **k))[1]
+
+        self.indexer.tick()  # indexes the note
+        self.indexer.tick()  # nothing is left: reads the notes once more and settles
+        settled = len(calls)
+        for _ in range(5):
+            self.indexer.tick()
+        self.assertEqual(len(calls), settled)
+
+        self.clock.now += 61  # the slow safety poll still looks
+        self.indexer.tick()
+        self.assertEqual(len(calls), settled + 1)
+
+    def test_a_change_from_anywhere_wakes_the_index(self):
+        self.page("Trip", "flights to lisbon")
+        while self.indexer.tick():
+            pass
+        other = NoteService(self.path, secure_platform=FakeLinux())  # the CLI is another process
+        note = other.create_note({"title": "From agent", "noteType": "page"})
+        other.update_note(note["id"], {"title": "From agent", "content": {"markdown": "agent wrote this", "ink": {}}, "revision": 1})
+
+        self.assertEqual(self.indexer.tick(), 1)
+        self.assertIn(("From agent", "agent wrote this"), self.engine.documents)
+
+    def test_a_note_still_waiting_to_be_idle_keeps_the_index_looking(self):
+        self.indexer.idle = 3600
+        self.page("Trip", "flights to lisbon")
+        for _ in range(4):
+            self.indexer.tick()
+        self.indexer.idle = 0
+
+        self.assertEqual(self.indexer.tick(), 1)
+
+    def test_the_engine_is_offered_a_rest_once_the_index_has_caught_up_and_not_before(self):
+        self.page("Trip", "flights to lisbon")
+        self.indexer.tick()
+        self.assertEqual(self.engine.idle_checks, [], "still working")
+        self.indexer.tick()
+        self.assertEqual(self.engine.idle_checks, [300.0])
+
+    def test_the_thread_rests_between_batches(self):
+        for index in range(6):
+            self.page(f"Note {index}", f"words {index}")
+        indexer = MeaningIndexer(self.service, self.engine, idle=0, poll=0.05, batch=2, pause=0.3)
+        indexer.start()
+        try:
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and len(self.rows()) < 6:
+                time.sleep(0.02)
+        finally:
+            indexer.stop()
+        gaps = [later - earlier for earlier, later in zip(self.engine.batches, self.engine.batches[1:])]
+        self.assertEqual(len(self.engine.batches), 3)
+        self.assertTrue(all(gap >= 0.27 for gap in gaps), gaps)
+
+    def test_stopping_waits_for_a_batch_in_flight_and_nothing_runs_afterwards(self):
+        self.page("Trip", "flights to lisbon")
+        indexer = MeaningIndexer(self.service, self.engine, idle=0, poll=0.01)
+        indexer.start()
+        indexer.stop()
+
+        self.assertFalse(indexer._thread.is_alive())
+        before = len(self.engine.batches)
+        time.sleep(0.1)
+        self.assertEqual(len(self.engine.batches), before)
+
+    def test_the_engine_cannot_start_after_the_app_has_shut_it_down_even_when_a_batch_was_in_flight(self):
+        from tests.test_search_runtime import SearchTestCase
+
+        class Case(SearchTestCase):
+            def runTest(self):
+                pass
+
+        case = Case()
+        case.setUp()
+        try:
+            runtime = case.runtime()
+            case.install(runtime)
+            service = NoteService(Path(case.temporary.name) / "n.db", secure_platform=FakeLinux(), embedder=runtime)
+            note = service.create_note({"title": "Trip", "noteType": "page"})
+            service.update_note(note["id"], {"title": "Trip", "content": {"markdown": "flights", "ink": {}}, "revision": 1})
+            indexer = MeaningIndexer(service, runtime, idle=0)
+            real = runtime._choose_port
+            runtime._choose_port = lambda: (runtime.shutdown(), real())[1]  # the app closes just as the batch starts the engine
+
+            self.assertEqual(indexer.run_once(), 0)
+
+            self.assertFalse(runtime.status()["running"])
+            self.assertFalse((runtime.root / "engine.pid").exists())
+        finally:
+            case.tearDown()
 
 
 class SearchTests(MeaningCase):

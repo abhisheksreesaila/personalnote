@@ -1756,14 +1756,35 @@ class NoteService:
 
     # ---- search by meaning (F-079): derived vectors, never in backup or export ----------------------------------------------
 
-    def meaning_work(self, model: str, idle_seconds: float, limit: int) -> list[dict]:
+    def workspace_sequence(self) -> int:
+        """Counts every write to notes, from the page or the CLI; the index looks again only when it moves."""
+        with self.connection() as connection:
+            return int(connection.execute("SELECT sequence FROM workspace_state WHERE id = 1").fetchone()[0])
+
+    def meaning_waiting(self, model: str, idle_seconds: float) -> int:
+        """How many notes need a vector but were saved less than `idle_seconds` ago (they are indexed once left alone)."""
+        with self.connection() as connection:
+            return connection.execute(
+                """
+                SELECT COUNT(*) FROM notes n LEFT JOIN note_embeddings e ON e.note_id = n.id
+                WHERE n.secure = 0 AND (e.note_id IS NULL OR e.revision != n.revision OR e.model != ?)
+                  AND n.updated_at > datetime('now', ?)
+                """,
+                (model, f"-{max(idle_seconds, 0):.3f} seconds"),
+            ).fetchone()[0]
+
+    def meaning_work(self, model: str, idle_seconds: float, limit: int, skip: dict | None = None) -> list[dict]:
         """Notes whose meaning vector is missing or old, saved at least `idle_seconds` ago: [{id, revision, title, text, hash}].
 
         The text is exactly what search reads (`note_text`), cut to MEANING_TEXT_CHARS. A note whose revision moved but whose
         title and text did not (a move between notebooks) only gets its stored revision updated; it is not embedded again.
-        Secure notes are never returned.
+        Secure notes are never returned. `skip` is {note_id: revision} of notes the engine refused: they are left out until they change.
         """
         work: list[dict] = []
+        left_out, left_out_values = "", []
+        if skip:
+            left_out = " AND (n.id, n.revision) NOT IN (VALUES " + ", ".join(["(?, ?)"] * len(skip)) + ")"
+            left_out_values = [value for pair in skip.items() for value in pair]
         with self.connection() as connection:
             while not work:  # a pass of only unchanged notes gets the next ones, so they are not all that is looked at
                 rows = connection.execute(
@@ -1771,10 +1792,10 @@ class NoteService:
                     SELECT n.id, n.revision, n.title, n.note_type, n.content, n.content_format, n.page_state, e.text_hash, e.model
                     FROM notes n LEFT JOIN note_embeddings e ON e.note_id = n.id
                     WHERE n.secure = 0 AND (e.note_id IS NULL OR e.revision != n.revision OR e.model != ?)
-                      AND n.updated_at <= datetime('now', ?)
+                      AND n.updated_at <= datetime('now', ?)""" + left_out + """
                     ORDER BY n.updated_at, n.id LIMIT ?
                     """,
-                    (model, f"-{max(idle_seconds, 0):.3f} seconds", limit * 4),
+                    (model, f"-{max(idle_seconds, 0):.3f} seconds", *left_out_values, limit * 4),
                 ).fetchall()
                 if not rows:
                     break

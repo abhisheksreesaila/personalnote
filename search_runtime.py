@@ -54,6 +54,10 @@ DOWNLOAD_LABEL = "about 315 MB"
 DIMENSION = 256  # EmbeddingGemma is Matryoshka-trained: its first 256 numbers, renormalised, keep nearly all the quality
 RETRY_AFTER_FAILED_START = 60.0  # seconds before an engine that would not start is tried again
 NOT_AVAILABLE = "Search by meaning is not available on this system."
+CLOSING = "The app is closing; search by meaning is stopped."
+CONTEXT_TOKENS = 2048  # the engine is started with -c 2048 -ub 2048: an input over this is refused, not cut
+TOKEN_BUDGET = 1990  # what a prompt is cut to; the engine adds a start and an end token
+SAFE_BYTES = 1800  # a token covers at least one byte, so a prompt this short can never be over the context: no counting needed
 
 # Environment override, for tests and mirrors; not reachable from the page. A JSON file holding
 # {"engine": {url, bytes, sha256}, "model": {url, bytes, sha256}}. Sizes and checksums are still checked.
@@ -88,6 +92,10 @@ KEEP_FILES = {SERVER_BINARY, "LICENSE"}  # and every lib*; the release also ship
 
 class SearchError(Exception):
     """A search-by-meaning problem with a message that is safe to show the user."""
+
+
+class SearchInputError(SearchError):
+    """The engine is up but refused this input (too long for its context). Trying other inputs is fine; this one will not work."""
 
 
 class _Cancelled(Exception):
@@ -132,8 +140,14 @@ class SearchRuntime:
     dimension: int = DIMENSION
     opener: Callable = urlopen
     ready_timeout: float = 60.0
+    threads: int | None = None  # the engine's CPU threads; default leaves most of the machine to the person typing
+    clock: Callable = time.monotonic
 
     def __post_init__(self):
+        if self.threads is None:
+            self.threads = max(1, min(4, (os.cpu_count() or 2) // 2))
+        self._closed = False
+        self._last_used = self.clock()
         self.root = Path(self.root)
         engine, model = _manifest_pins()
         self.engine = self.engine or engine or ENGINE_PINS.get(self.key)
@@ -473,7 +487,7 @@ class SearchRuntime:
     def _command(self, port: int) -> list[str]:
         return [
             str(self.binary_path), "-m", str(self.model_path), "--embedding", "--pooling", "mean",
-            "--host", HOST, "--port", str(port), "-c", "2048", "-ub", "2048", "-np", "1", "--no-webui", "--no-slots",
+            "--host", HOST, "--port", str(port), "-c", str(CONTEXT_TOKENS), "-ub", str(CONTEXT_TOKENS), "-np", "1", "-t", str(self.threads), "--no-webui", "--no-slots",
         ]
 
     def _open_log(self):
@@ -535,6 +549,8 @@ class SearchRuntime:
 
     def _ensure_started(self) -> int:
         with self._start_lock:
+            if self._closed:
+                raise SearchError(CLOSING)
             if self._running():
                 return self._port
             if self.key is None:
@@ -546,6 +562,8 @@ class SearchRuntime:
             voice_runtime.reap_stale_process(self.pid_path)
             self._api_key = secrets.token_urlsafe(32)
             port = self._choose_port()
+            if self._closed:  # the app began closing while this was starting: spawn nothing
+                raise SearchError(CLOSING)
             spawned = threading.Event()
             outcome: dict = {}
             threading.Thread(target=self._supervise, args=(port, spawned, outcome), name="personal-note-search-engine", daemon=True).start()
@@ -553,7 +571,11 @@ class SearchRuntime:
             try:
                 if "error" in outcome:
                     raise outcome["error"]
+                if self._closed:  # shutdown ran before the process was registered, so it could not stop it
+                    raise SearchError(CLOSING)
                 self._await_ready(outcome["process"], port)
+                if self._closed:
+                    raise SearchError(CLOSING)
             except SearchError as error:
                 process = outcome.get("process")
                 with self._lock:
@@ -586,7 +608,18 @@ class SearchRuntime:
             self._terminate(process)
         self.pid_path.unlink(missing_ok=True)
 
-    shutdown = stop_engine
+    def shutdown(self) -> None:
+        """The app is closing: stop the engine for good. Nothing can start it again (a background embed may be racing this)."""
+        self._closed = True
+        self.stop_engine()
+
+    def stop_if_idle(self, seconds: float) -> bool:
+        """Stop the engine when nothing has embedded for `seconds`; the next embed starts it again. True when it was stopped."""
+        with self._lock:
+            if not self._running() or self.clock() - self._last_used < seconds:
+                return False
+        self.stop_engine()
+        return True
 
     # ---- embedding -----------------------------------------------------------------------
 
@@ -601,7 +634,9 @@ class SearchRuntime:
         if not texts:
             return []
         prompts = [query_prompt(item) if kind == "query" else document_prompt(*(item if isinstance(item, tuple) else (None, item))) for item in texts]
+        self._last_used = self.clock()
         port = self._ensure_started()
+        prompts = [self._fit(prompt, port) for prompt in prompts]
         request = Request(
             f"http://{HOST}:{port}/v1/embeddings", data=json.dumps({"input": prompts}).encode(),
             headers={"Content-Type": "application/json", "User-Agent": USER_AGENT, "Authorization": f"Bearer {self._api_key}"},
@@ -609,11 +644,43 @@ class SearchRuntime:
         try:
             with self._loopback.open(request, timeout=120) as response:
                 data = json.load(response)["data"]
+        except HTTPError as error:
+            if error.code in (400, 413, 500) and b"too large" in error.read(2000):  # the engine answered: this input is the problem
+                raise SearchInputError("That note is too long for the search engine.") from error
+            raise SearchError("The search engine did not answer. Try again.") from error
         except (OSError, URLError, ValueError, KeyError) as error:
             raise SearchError("The search engine did not answer. Try again.") from error
+        finally:
+            self._last_used = self.clock()
         if len(data) != len(prompts):
             raise SearchError("The search engine answered with the wrong number of results.")
         return [self._shape(item["embedding"]) for item in sorted(data, key=lambda item: item["index"])]
+
+    def _fit(self, prompt: str, port: int) -> str:
+        """Cut a prompt to the engine's context: the engine refuses an over-long input instead of cutting it (HTTP 500).
+
+        Dense text (CJK, URLs, minified code) runs to 2 or more tokens per character, so the length is counted by the engine.
+        A short prompt needs no counting: a token covers at least one byte.
+        """
+        if len(prompt.encode()) <= SAFE_BYTES:
+            return prompt
+        try:
+            for _ in range(8):
+                count = self._count_tokens(prompt, port)
+                if count <= TOKEN_BUDGET:
+                    return prompt
+                prompt = prompt[: max(1, int(len(prompt) * TOKEN_BUDGET / count * 0.98))]
+        except (OSError, URLError, ValueError, KeyError):
+            pass  # cannot count: fall back to a length that is under the context whatever the text
+        return prompt.encode()[:SAFE_BYTES].decode(errors="ignore")
+
+    def _count_tokens(self, text: str, port: int) -> int:
+        request = Request(
+            f"http://{HOST}:{port}/tokenize", data=json.dumps({"content": text}).encode(),
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT, "Authorization": f"Bearer {self._api_key}"},
+        )
+        with self._loopback.open(request, timeout=30) as response:
+            return len(json.load(response)["tokens"])
 
     def _shape(self, vector: list[float]) -> list[float]:
         if len(vector) < self.dimension:
