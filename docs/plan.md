@@ -495,14 +495,15 @@ Reviewed: PASS (fixes: island fits short windows, dead dot rule removed). Quick 
 - [x] mind-map notes show their actions in the same island; every verify-* script and the speed test pass
 ## F-077 Make the flaky canvas checks honest [todo]
 Brief: none (test reliability) · Needs: none
-Found during F-074 to F-076 review: on a clean main, verify-leafer-hybrid fails 4 of 5 runs (bitmap blur, "only the touched page", sometimes "typing grows the grid") and verify-leafer-lod fails "vectors are back after zoom" 1 of 2.
+Found during F-074 to F-076 review: on a clean main, verify-leafer-hybrid fails 4 of 5 runs (bitmap blur, "only the touched page", sometimes "typing grows the grid") and verify-leafer-lod fails "vectors are back after zoom" 1 of 2; verify-leafer-voice fails "no page errors" (null sampleRate in microphone-pcm-capture.js:48) about 1 in 5.
 - [ ] find why each check flakes (timing vs a real rendering bug) and fix the cause, never the threshold
 - [ ] each script passes 5 runs in a row on main
-## F-078 Download search by meaning [todo]
+## F-078 Download search by meaning [done]
 Brief: docs/briefs/search-by-meaning.md · Needs: none
-- [ ] Settings offers "Search by meaning: Download (≈315 MB)"; it fetches the pinned llama.cpp server build for this OS (macOS arm64, Linux x86_64) and the pinned EmbeddingGemma 2 Q8 GGUF, checks sizes and sha256, installs beside the database, and shows progress, success and failure in place
-- [ ] the engine starts on loopback on first use, embeds text, and stops with the app; a missing or broken install leaves search exactly as today
-- [ ] a real-app check installs from local fixture files (no network in tests) and embeds a sentence end to end
+Reviewed: PASS (fixes: download stops at the pinned size, per-launch engine key via LLAMA_API_KEY + --no-slots, stop-with-app tests, unpack refusal tests, 44px setup buttons). Real engine checked on Linux; not yet run on a Mac.
+- [x] Settings offers "Search by meaning: Download (≈315 MB)"; it fetches the pinned llama.cpp server build for this OS (macOS arm64, Linux x86_64) and the pinned EmbeddingGemma 2 Q8 GGUF, checks sizes and sha256, installs beside the database, and shows progress, success and failure in place
+- [x] the engine starts on loopback on first use, embeds text, and stops with the app; a missing or broken install leaves search exactly as today
+- [x] a real-app check installs from local fixture files (no network in tests) and embeds a sentence end to end
 ## F-079 Index notes by meaning [todo]
 Brief: docs/briefs/search-by-meaning.md · Needs: F-078
 - [ ] with the engine installed, every non-secure note's title and searchable text is embedded in the background and stored in SQLite with the note's revision; a changed note is re-embedded, a deleted one loses its vector
