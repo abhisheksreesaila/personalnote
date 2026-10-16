@@ -67,6 +67,10 @@
     .app-shell .glass-button.sidebar-toggle svg { width: 20px; height: 20px; }
     .app-shell .glass-button.sidebar-toggle[aria-expanded="true"] { background: color-mix(in srgb, var(--sk-panel) 87%, var(--sk-ink)); }
     @media (prefers-reduced-motion: reduce) { .app-shell .sidebar, .app-shell .sidebar.open { transition: none; } }
+    /* F-083: the open panel and the note sit side by side: the note area starts where the panel ends. --note-left is that width, 0 when the panel is closed or hidden by focus mode. */
+    .app-shell.sidebar-open { --note-left: calc(16px + var(--sidebar-width)); }
+    .app-shell.sidebar-open.focus-mode { --note-left: 0px; }
+    .app-shell .main-view { left: var(--note-left, 0px); }
   }
   .app-shell .brand-row { height: auto; flex: none; display: flex; align-items: center; gap: 9px; padding: 2px 6px 12px; border: 0; }
   .app-shell .brand-mark {
@@ -210,7 +214,7 @@
   .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }
   .app-shell :is(.topbar-title, .search-button, .focus-pill, .agent-chip) { background: var(--sk-panel); border: 1px solid var(--sk-edge); box-shadow: var(--sk-shadow); -webkit-backdrop-filter: none; backdrop-filter: none; }
   .app-shell .topbar-title { flex: 0 1 auto; min-width: 0; height: var(--h); display: flex; align-items: center; gap: 8px; padding: 0 6px 0 18px; border-radius: 999px; }
-  @media (min-width: 801px) { .app-shell .topbar-title { position: absolute; left: 50%; translate: -50% 0; max-width: min(40vw, calc(100vw - 2 * (var(--omni-w) + 188px))); } } /* (clear of the Focus and search pills on the right) */
+  @media (min-width: 801px) { .app-shell .topbar-title { position: absolute; left: 50%; translate: -50% 0; max-width: min(40vw, calc(100vw - var(--note-left, 0px) - 2 * (var(--omni-w) + 188px))); } } /* (clear of the Focus and search pills on the right) */
   .app-shell .note-title {
     min-width: 7ch; width: 22ch; flex: 0 1 auto; height: 28px; padding: 0 6px; border: 0; border-radius: 8px; outline: none;
     background: transparent; color: var(--sk-ink); text-shadow: none; text-overflow: ellipsis; field-sizing: content; letter-spacing: 0; font: 600 13.5px/1 var(--ui-font);
@@ -284,7 +288,7 @@
 
   /* ---------- Tool island (F-076): a vertical island on the right edge; + opens a flyout to its left ---------- */
   .app-shell .tool-dock {
-    position: fixed; right: 16px; top: 72px; bottom: 72px; margin: auto 0; height: max-content; width: 56px; display: flex; flex-direction: column; align-items: center; padding: 6px 0;
+    position: fixed; right: 16px; top: 72px; bottom: 72px; margin: auto 0; height: max-content; max-height: calc(100dvh - 144px); width: 56px; display: flex; flex-direction: column; align-items: center; padding: 6px 0;
     border-radius: var(--sk-radius); transition: opacity 150ms ease; z-index: 12;
   }
   .app-shell .dock-canvas, .app-shell .mindmap-dock-actions, .app-shell .tool-group { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
@@ -327,7 +331,7 @@
 
   .app-shell .workspace.is-drop-target::after { content: ""; position: absolute; inset: 8px; z-index: 6; pointer-events: none; border: 2px dashed var(--sk-accent); border-radius: var(--sk-radius); background: color-mix(in srgb, var(--sk-accent) 6%, transparent); }
   .app-shell .ink-options-popover { position: fixed; left: auto; bottom: auto; transform: none; border-radius: 16px; background: var(--glass-solid); animation: menu-in 120ms ease; }
-  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - 24px)); font-size: 11px; left: 50%; bottom: 28px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
+  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - 24px)); font-size: 11px; left: calc(var(--note-left, 0px) + (100vw - var(--note-left, 0px)) / 2); bottom: 28px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
   .app-shell .voice-pulse { background: var(--sk-accent); }
   .app-shell .note-create-menu { position: fixed; z-index: 60; width: 168px; padding: 6px; border-radius: 14px; background: var(--glass-solid); animation: menu-in 160ms var(--ease-out); }
   .app-shell .note-create-menu[hidden] { display: none; }
@@ -339,15 +343,15 @@
   .app-shell .history-island, .app-shell .zoom-control {
     position: fixed; bottom: 16px; height: 48px; display: flex; align-items: center; gap: 2px; padding: 0 6px; border-radius: 99px; z-index: 5; transition: opacity 200ms ease;
   }
-  .app-shell .history-island { left: 16px; }
+  .app-shell .history-island { left: calc(var(--note-left, 0px) + 16px); }
   /* Short windows: the island never reaches the top or corner islands (72px clear above and below): tighter first, then it scrolls and its flyout goes fixed. */
-  @media (max-height: 560px) {
+  @media (max-height: 620px) {
     .app-shell .tool-dock { padding: 4px 0; gap: 0; }
     .app-shell .tool-dock .tool-button, .app-shell .tool-dock .voice-button { width: 36px; height: 36px; flex-basis: 36px; }
     .app-shell .dock-divider { margin: 3px 0; }
     .app-shell .ink-options-dot { width: 24px; height: 24px; }
   }
-  @media (max-height: 470px) {
+  @media (max-height: 500px) {
     .app-shell .tool-dock { overflow-y: auto; scrollbar-width: none; }
     .app-shell .dock-flyout { position: fixed; right: 88px; top: 50%; transform: translateY(-50%); }
   }

@@ -1,11 +1,11 @@
 // F-076 checks, in the real app (Vite dev server on PN_VERIFY_PORT, mocked in-memory /api, headless Chromium, real mouse and keyboard):
 // the bottom dock is a slim vertical tool island on the right edge, undo/redo is a small island bottom left and zoom one bottom right.
-//   - the shape of the islands: select, text, pen, shape, sticky | colour dot | + | mic; no quick swatches, no page minimap; the page
+//   - the shape of the islands: select, text, pen, eraser, shape, sticky | colour dot | + | mic; no quick swatches, no page minimap; the page
 //     count is the fit button's tooltip; at 1280x800 and 1440x900 (also with ?host=desktop&chrome=mac) nothing overlaps and the paper
 //     at its default view is clear of the island
 //   - each of the five tools: click it, then draw or place with it (a pen stroke, a shape, a sticky, typed text, a selection)
 //   - the colour dot: opens beside the island, recolours the pen, the sticky and the shape, sets the pen width
-//   - the +: hand, highlighter, connect, image (file input), eraser (erases a stroke) and prettify, each from the flyout; the + wears the
+//   - the +: hand, highlighter, connect, image (file input) and prettify, each from the flyout; the eraser is its own island button (it erases a stroke); the + wears the
 //     tool picked from it; hold-for-options on a tool and on the highlighter in the flyout
 //   - every keyboard shortcut, Space-to-pan, double-tap Control and the middle click, each shown on the island
 //   - undo and redo from the corner island, zoom out/in/reset/fit from the other
@@ -49,6 +49,9 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(String(error)))
+  // Playwright only intercepts file choosers while some listener is attached, and attaches that asynchronously: a waitForEvent added in the same
+  // breath as a key press can lose the race and the real dialog opens instead. A standing listener keeps interception on for the whole run.
+  page.on('filechooser', () => {})
   await context.route('**/api/**', async (route) => {
     const req = route.request()
     const p = new URL(req.url()).pathname.replace(/^\/api/, '')
@@ -128,8 +131,8 @@ try {
   }
   await layout('1280x800', 1280, 800)
   const labels = await page.evaluate(() => [...document.querySelectorAll('.tool-dock #dock-canvas > .tool-group > button, .tool-dock #dock-canvas > button, .tool-dock #dock-canvas .dock-more-wrap > button')].map((b) => b.dataset.tool || b.id))
-  check('the island lists select, text, pen, shape, sticky, colour dot, +, mic in that order', JSON.stringify(labels) === JSON.stringify(['select', 'text', 'pen', 'shape', 'sticky', 'ink-options-trigger', 'dock-more', 'voice-button']), JSON.stringify(labels))
-  const ys = await page.evaluate(() => ['select', 'text', 'pen', 'shape', 'sticky'].map((t) => document.querySelector(`[data-tool="${t}"]`).getBoundingClientRect().y).concat(['ink-options-trigger', 'dock-more', 'voice-button'].map((id) => document.getElementById(id).getBoundingClientRect().y)))
+  check('the island lists select, text, pen, eraser, shape, sticky, colour dot, +, mic in that order', JSON.stringify(labels) === JSON.stringify(['select', 'text', 'pen', 'eraser', 'shape', 'sticky', 'ink-options-trigger', 'dock-more', 'voice-button']), JSON.stringify(labels))
+  const ys = await page.evaluate(() => ['select', 'text', 'pen', 'eraser', 'shape', 'sticky'].map((t) => document.querySelector(`[data-tool="${t}"]`).getBoundingClientRect().y).concat(['ink-options-trigger', 'dock-more', 'voice-button'].map((id) => document.getElementById(id).getBoundingClientRect().y)))
   check('they run top to bottom', ys.every((y, k) => k === 0 || y > ys[k - 1]), JSON.stringify(ys))
   const sizes = await page.evaluate(() => ({ buttons: [...document.querySelectorAll('.tool-dock #dock-canvas > .tool-group > button, #dock-more, #voice-button, #ink-options-trigger')].map((b) => [Math.round(b.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().height)]), dot: document.querySelector('#ink-options-dot').getBoundingClientRect().width, round: getComputedStyle(document.querySelector('#voice-button')).borderRadius, dividers: document.querySelectorAll('.tool-dock #dock-canvas > .dock-divider').length }))
   check('44px buttons, a 28px colour dot, a round mic and two dividers', sizes.buttons.every(([w, h]) => w === 44 && h === 44) && sizes.dot === 28 && sizes.round === '50%' && sizes.dividers === 2, JSON.stringify(sizes))
@@ -225,7 +228,7 @@ try {
   const dockR2 = await rect('.tool-dock')
   check('the flyout is left of the island, level with the +, inside the window', fly.r <= dockR2.x && fly.x >= 0 && fly.y >= 0 && fly.b <= 800 && Math.abs((fly.y + fly.b) / 2 - (more.y + more.b) / 2) <= 8, JSON.stringify({ fly, more }))
   const flyLabels = await page.evaluate(() => [...document.querySelectorAll('#dock-flyout button')].map((b) => b.dataset.tool || b.id))
-  check('it holds hand, highlighter, connect, image, eraser and prettify', JSON.stringify(flyLabels) === JSON.stringify(['hand', 'highlight', 'connect', 'add-image', 'eraser', 'prettify']), JSON.stringify(flyLabels))
+  check('it holds hand, highlighter, connect, image and prettify, and no eraser', JSON.stringify(flyLabels) === JSON.stringify(['hand', 'highlight', 'connect', 'add-image', 'prettify']), JSON.stringify(flyLabels))
   await shot('1280x800-plus')
   await page.keyboard.press('Escape')
   check('Esc closes the flyout', !(await flyoutOpen()))
@@ -263,9 +266,10 @@ try {
   await dragOnPage([aCenter, bCenter])
   check('connect draws an arrow from one object to another', (await objects('connector')).length === connectors + 1, `${connectors} -> ${(await objects('connector')).length}`)
 
-  await fromFlyout('[data-tool="eraser"]')
+  check('the eraser is a direct button on the island, right after the pen, and not in the flyout', await page.evaluate(() => { const b = document.querySelector('.tool-dock .dock-tools [data-tool="eraser"]'); return Boolean(b) && b.previousElementSibling?.dataset.tool === 'pen' && b.nextElementSibling?.dataset.tool === 'shape' && !document.querySelector('#dock-flyout [data-tool="eraser"]') }))
+  await click('[data-tool="eraser"]')
   w = await moreShows()
-  check('the eraser from the flyout is the tool and the + wears it', (await tool()) === 'eraser' && w.active && w.tool)
+  check('picking the eraser makes it the tool, lights its own button and leaves the + as a plus', (await tool()) === 'eraser' && await buttonOn('[data-tool="eraser"]') && !w.active && !w.tool && w.plusHidden === false, JSON.stringify(w))
   const firstStroke = (await objects('ink')).find((o) => o.tool === 'pen' && Math.round(o.geometry.y) === 700)
   await dragOnPage([{ x: 90, y: 740 }, { x: 250, y: 700 }, { x: 420, y: 740 }])
   const afterErase = await objects('ink')
@@ -324,7 +328,7 @@ try {
   for (const [key, expected] of keys) {
     await page.keyboard.press(key)
     await page.waitForTimeout(80)
-    const main = tools.includes(expected)
+    const main = [...tools, 'eraser'].includes(expected)
     const shows = main ? await buttonOn(`[data-tool="${expected}"]`) : await page.evaluate((t) => document.querySelector(`#dock-flyout [data-tool="${t}"]`) && document.querySelector('#dock-more').classList.contains('active') && document.querySelector('#dock-more-tool').innerHTML.includes('<svg'), expected)
     check(`the ${key.toUpperCase()} key picks ${expected} and the island shows it`, (await tool()) === expected && Boolean(shows), `${await tool()} ${shows}`)
   }
@@ -513,7 +517,7 @@ try {
   check('at 700px (no mobile controls yet) the island is at the right edge', mid700.shows && mid700.mobile === 'none' && mid700.r <= 700 - 8 + 1 && mid700.w === 56, JSON.stringify(mid700))
 
   // short windows: the island never covers the top or corner islands, and fit stays clickable
-  for (const [w, h] of [[700, 500], [1280, 460], [1280, 560]]) {
+  for (const [w, h] of [[700, 500], [1280, 460], [1280, 500], [1280, 560], [1280, 600], [1280, 640], [1280, 720]]) {
     await page.setViewportSize({ width: w, height: h })
     await load()
     const d = await rect('.tool-dock')
@@ -525,7 +529,8 @@ try {
     await page.mouse.move(fit.x, fit.y)
     await page.mouse.click(fit.x, fit.y)
     check(`${w}x${h}: ...and clicking it raises no error`, errors.length === 0, JSON.stringify(errors))
-    if (h <= 470) {
+    check(`${w}x${h}: all the island's buttons are reachable (it fits whole above 500px high, it scrolls at or below)`, await page.evaluate((h) => { const d = document.querySelector('.tool-dock'); return d.scrollHeight <= d.clientHeight + 1 || (h <= 500 && getComputedStyle(d).overflowY === 'auto') }, h))
+    if (h <= 500) {
       await click('#dock-more')
       const fl = await rect('#dock-flyout')
       check(`${w}x${h}: the flyout still opens, inside the window and clear of the island`, fl.y >= 0 && fl.b <= h && fl.r <= d.x, JSON.stringify({ fl, d }))

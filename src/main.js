@@ -55,11 +55,17 @@ import {
   shiftExtents,
   viewMargins,
   wheelPanDelta,
+  giveWayToIsland,
+  moveWithCentre,
   zoomAtPoint,
 } from './modules/editor/viewport.js'
 
 const PAGE_WIDTH = 860
 const PAGE_HEIGHT = 1080
+const PAGE_ISLAND_CLEARANCE = { right: PAGE_WIDTH, clear: 80 } // the tool island (56px) and its 16px inset, plus a gap: the page's right edge stays left of this strip
+let panelGaveWay = 0 // how far the page gave way to the tool island when the notes panel narrowed the area (F-083); closing the panel returns it
+let gaveWayAt = null // the view that left it there: if the person has panned or zoomed since, nothing is owed
+const panelOwed = () => (gaveWayAt && Math.abs(viewportOffsetX - gaveWayAt.x) < 0.5 && Math.abs(getCanvasScale() - gaveWayAt.scale) < 1e-6 ? panelGaveWay : 0)
 const CANVAS_ZOOM_MIN = 0.25
 const CANVAS_ZOOM_MAX = 4
 // desktop.py opens the Chromium app window with engine=chromium (see createSaveTiming).
@@ -163,6 +169,7 @@ document.querySelector('#app').innerHTML = `
               <button class="tool-button" data-tool="select" title="Select (V)" aria-label="Select">${dockIcon('select')}</button>
               <button class="tool-button active" data-tool="text" data-tool-options title="Text (T) - hold for color" aria-label="Text">${dockIcon('text')}</button>
               <button class="tool-button" data-tool="pen" data-tool-options title="Pen (D or P) - hold for color and width" aria-label="Pen">${dockIcon('pen')}</button>
+              <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser">${dockIcon('eraser')}</button>
               <button class="tool-button" data-tool="shape" data-tool-options title="Shape (R) - click the page to place, hold for color" aria-label="Shape">${dockIcon('shape')}</button>
               <button class="tool-button" data-tool="sticky" data-tool-options title="Sticky note (N) - click the page to place, hold for color" aria-label="Sticky note">${dockIcon('sticky')}</button>
             </div>
@@ -175,7 +182,6 @@ document.querySelector('#app').innerHTML = `
                 <button class="tool-button" data-tool="highlight" data-tool-options title="Highlighter (M) - hold for color and width" aria-label="Highlighter">${dockIcon('marker')}</button>
                 <button class="tool-button" data-tool="connect" title="Connect (C) - drag from one object to another" aria-label="Connect">${dockIcon('connect')}</button>
                 <button class="tool-button" id="add-image" title="Image (I) - choose a file, or drop one on the page" aria-label="Add image">${dockIcon('image')}</button>
-                <button class="tool-button" data-tool="eraser" title="Stroke eraser (E)" aria-label="Stroke eraser">${dockIcon('eraser')}</button>
                 <button class="tool-button prettify-button" id="prettify" data-keeps-text-editing title="Prettify selected text or this note" aria-label="Prettify selected text or this note"><i data-lucide="align-left"></i></button>
               </div>
             </div>
@@ -1250,12 +1256,15 @@ function updateWritingQuiet() {
 }
 
 function openCanvasView() {
+  panelGaveWay = 0
   if (window.innerWidth <= 800) return resetCanvasView()
   const writing = writingTarget()
   if (writing) {
     const view = writingViewFor(writing.text)
     state.canvasZoom = view.scale / state.displayScale
-    setCanvasViewportOffset(view.x, view.y)
+    panelGaveWay = giveWayToIsland(view.x, view.scale, viewSize.width, PAGE_ISLAND_CLEARANCE) // (the notes panel narrows the area: the page keeps clear of the tool island)
+    setCanvasViewportOffset(view.x - panelGaveWay, view.y)
+    gaveWayAt = { x: viewportOffsetX, scale: getCanvasScale() }
     return
   }
   const target = pageExtentsTarget()
@@ -3791,10 +3800,22 @@ document.addEventListener('click', (event) => {
   if (!event.target.closest('.ink-options-popover, #ink-options-trigger, [data-tool-options]')) closeInkOptions()
   if (!event.target.closest('.dock-flyout, #dock-more')) setFlyoutOpen(false)
 })
+// F-083: the notes panel sits beside the note, so Esc first leaves the tool being used on the note (as it always did) when the last press was on
+// the note, and closes the panel when the last press was in the panel or on its button.
+let lastPressInNote = false
+// What Esc would do on the note after a press on it: a canvas leaves its tool or clears its selection; a page or mind-map note has its own
+// Esc handling while focus is inside it (typing, a drawing mode, a node being edited).
+function noteWantsEsc() {
+  if (!lastPressInNote || mobileLayout.matches) return false
+  if (state.activeNoteType === 'canvas') return state.tool !== 'select' || (leaferCanvas?.selection() ?? []).length > 0
+  return Boolean(document.activeElement?.closest?.('.page-host, .mindmap-host'))
+}
+document.addEventListener('pointerdown', (event) => { lastPressInNote = Boolean(event.target.closest('.main-view')) && !event.target.closest('#toggle-sidebar') }, true) // (capture: editors may stop the event)
 document.addEventListener('pointerdown', (event) => {
   const target = event.target
   if (
-    elements.sidebar.classList.contains('open')
+    mobileLayout.matches // (wide: the panel sits beside the note, so using the note must not close it)
+    && elements.sidebar.classList.contains('open')
     && target.closest('.main-view')
     && !target.closest('#toggle-sidebar')
   ) setSidebarOpen(false, true)
@@ -4301,7 +4322,7 @@ document.addEventListener('keydown', (event) => {
   } else if (event.key === 'Escape' && !elements.noteCreateMenu.hidden) {
     setNoteCreateMenuOpen(false)
     document.querySelector('#rail-new-note').focus()
-  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open') && !event.isComposing && event.keyCode !== IME_KEY && !document.querySelector('dialog[open]') && !event.target.matches?.('.namer, .namer *')) { // (Esc in a dialog or the naming row closes only that)
+  } else if (event.key === 'Escape' && elements.sidebar.classList.contains('open') && !noteWantsEsc() && !event.isComposing && event.keyCode !== IME_KEY && !document.querySelector('dialog[open]') && !event.target.matches?.('.namer, .namer *')) { // (Esc in a dialog or the naming row closes only that)
     setSidebarOpen(false, true)
   } else if (pendingClearUndo && !isTyping && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
     event.preventDefault()
@@ -4440,7 +4461,13 @@ async function initialize() {
 
 document.fonts.ready.then(refreshCanvasTextMetrics)
 document.fonts.addEventListener('loadingdone', refreshCanvasTextMetrics)
+// F-083: when the notes panel opens or closes beside the note, the area's left edge moves; the page then keeps its place in the middle of the area.
+let areaLeft = elements.workspace.getBoundingClientRect().left
 function handleWorkspaceResize() {
+  const left = elements.workspace.getBoundingClientRect().left
+  const areaMoved = left !== areaLeft
+  areaLeft = left
+  const oldSize = { width: viewSize.width, height: viewSize.height }
   if (state.activeNoteType === 'page' && focusRestore && !focusActive) return settleFocusRestore()
   if (state.activeNoteType !== 'canvas') return
   const previous = { x: viewportOffsetX, y: viewportOffsetY, scale: getCanvasScale() }
@@ -4450,8 +4477,13 @@ function handleWorkspaceResize() {
   if (focusActive) return layoutFocus() // F-073: the words stay in the middle of the window
   if (focusRestore) return settleFocusRestore() // F-073: coming back, the view is the one that was left
   const center = { x: viewSize.width / 2, y: viewSize.height / 2 }
-  const next = zoomAtPoint(previous, getCanvasScale(), center)
+  let next
+  if (areaMoved) {
+    next = moveWithCentre(previous, oldSize, viewSize, PAGE_ISLAND_CLEARANCE, panelOwed())
+    panelGaveWay = next.owed
+  } else next = zoomAtPoint(previous, getCanvasScale(), center)
   setCanvasViewportOffset(next.x, next.y)
+  if (areaMoved) gaveWayAt = { x: viewportOffsetX, scale: getCanvasScale() }
 }
 // Page colors and shadow come from skin tokens, so repaint when the skin changes.
 const repaintPageColors = () => refreshPageColors()

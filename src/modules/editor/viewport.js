@@ -35,6 +35,23 @@ export function zoomAtPoint(view, nextScale, point) {
   return { x: point.x - worldX * nextScale, y: point.y - worldY * nextScale, scale: nextScale }
 }
 
+// A page in an area narrowed by the notes panel may have no room for both itself and the tool island at the area's right edge. `page`:
+// { right, clear }: its right edge in world pixels and the strip the island needs. How far the page gives way to the island (it keeps a 16px margin), never negative.
+export function giveWayToIsland(x, scale, areaWidth, page) {
+  const over = x + page.right * scale - (areaWidth - page.clear)
+  return over > 0 ? Math.max(0, Math.min(over, x - 16)) : 0
+}
+
+// The note area changed size (the notes panel opened beside it): keep what was at the middle of the area at its middle, so the page stays centred,
+// giving way to the tool island when `page` is given (see giveWayToIsland).
+// `owed`: how far it gave way last time; the area growing back returns it, so closing the panel restores the view exactly. Returns the new `owed` too.
+export function moveWithCentre(view, from, to, page, owed = 0) {
+  const grows = to.width > from.width
+  let x = view.x + (to.width - from.width) / 2 + (grows ? owed : 0)
+  const gave = !grows && page ? giveWayToIsland(x, view.scale, to.width, page) : 0
+  return { x: x - gave, y: view.y + (to.height - from.height) / 2, scale: view.scale, owed: grows ? 0 : owed + gave }
+}
+
 export function pageExtents(columns, rows, pageWidth, pageHeight) {
   return { left: 0, top: 0, right: columns * pageWidth, bottom: rows * pageHeight }
 }

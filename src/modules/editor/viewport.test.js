@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   clampView,
+  giveWayToIsland,
+  moveWithCentre,
   parseBoxShadow,
   pageExtents,
   shadowBands,
@@ -90,4 +92,38 @@ test('shadow bands stack from the outside in and reach the full shadow strength'
 
 test('an unblurred shadow is one solid band', () => {
   assert.deepEqual(shadowBands({ blur: 0, spread: 2, alpha: 0.5 }), [{ grow: 2, alpha: 0.5 }])
+})
+
+test('when the note area opens a 296px panel on its left, the page stays centred in what is left of it', () => {
+  // a 1280px area with the page at x=210 (860 wide, centred); the area becomes 984px wide
+  const next = moveWithCentre({ x: 210, y: 40, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 })
+  assert.deepEqual(next, { x: 62, y: 40, scale: 1, owed: 0 })
+})
+
+test('closing the panel puts the view back exactly where it was', () => {
+  const open = moveWithCentre({ x: 210, y: 40, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 })
+  assert.deepEqual(moveWithCentre(open, { width: 984, height: 800 }, { width: 1280, height: 800 }, undefined, open.owed), { x: 210, y: 40, scale: 1, owed: 0 })
+})
+
+test('with the panel open the page gives way to the tool island rather than slide under it, and closing gives it back', () => {
+  // centred it would end at 922px; the island strip starts at 984 - 80 = 904
+  const page = { right: 860, clear: 80 }
+  const open = moveWithCentre({ x: 210, y: 40, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 }, page)
+  assert.deepEqual(open, { x: 44, y: 40, scale: 1, owed: 18 })
+  assert.deepEqual(moveWithCentre(open, { width: 984, height: 800 }, { width: 1280, height: 800 }, page, open.owed), { x: 210, y: 40, scale: 1, owed: 0 })
+})
+
+test('a page already clear of the island, or scrolled off to the left, is not moved by it', () => {
+  const page = { right: 860, clear: 80 }
+  assert.equal(moveWithCentre({ x: 100, y: 0, scale: 1 }, { width: 1440, height: 800 }, { width: 1144, height: 800 }, page).x, -48)
+  assert.equal(moveWithCentre({ x: 40, y: 0, scale: 1 }, { width: 1280, height: 800 }, { width: 984, height: 800 }, page).x, -108)
+})
+
+test('giveWayToIsland: how far a page must move left to end clear of the island strip, never past a 16px margin, never negative', () => {
+  const page = { right: 860, clear: 80 }
+  assert.equal(giveWayToIsland(62, 1, 984, page), 18) // ends at 922, strip starts at 904
+  assert.equal(giveWayToIsland(62, 1, 1100, page), 0) // already clear
+  assert.equal(giveWayToIsland(20, 1, 900, page), 4) // would need 40, but only 4px are left above the 16px margin
+  assert.equal(giveWayToIsland(10, 1, 900, page), 0) // already inside the margin: not pushed further
+  assert.equal(giveWayToIsland(62, 0.5, 984, page), 0) // zoomed out: the page ends at 492
 })
