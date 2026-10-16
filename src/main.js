@@ -149,7 +149,7 @@ document.querySelector('#app').innerHTML = `
         </div>
         <div class="topbar-actions">
           <button class="focus-pill" id="focus-button" data-keeps-text-editing title="Focus mode (Ctrl+.)" aria-label="Focus mode"><i data-lucide="focus"></i><span>Focus</span><kbd id="focus-top-kbd">Ctrl .</kbd></button>
-          <button class="search-button" id="search-button" title="Search or jump to (Ctrl+K)" aria-label="Search or jump to" aria-haspopup="dialog"><i data-lucide="search"></i><span>Search or jump to…</span><kbd id="search-kbd">Ctrl K</kbd></button>
+          <button class="search-button" id="search-button" title="Search or jump to (Ctrl+K)" aria-label="Search or jump to" aria-haspopup="dialog"><i data-lucide="search"></i><span>Search</span><kbd id="search-kbd">Ctrl K</kbd></button>
         </div>
       </header>
       <div class="focus-strip" id="focus-strip"><b id="focus-title"></b><span id="focus-count"></span><button type="button" id="focus-leave" data-keeps-text-editing><i data-lucide="x"></i>Leave focus <kbd>Esc</kbd></button></div>
@@ -2257,10 +2257,15 @@ async function deleteNotebook() {
   renderNoteList()
 }
 
+let settingsFromMenu = false // opened from the ... menu: closing it puts the focus back on the ... button
 function setPropertiesOpen(open) {
   elements.properties.classList.toggle('open', open)
   elements.properties.setAttribute('aria-hidden', String(!open))
   elements.properties.inert = !open
+  if (!open && settingsFromMenu) {
+    settingsFromMenu = false
+    if (!document.activeElement || document.activeElement === document.body) elements.shareButton.focus()
+  }
   const trigger = document.querySelector('#top-properties')
   trigger.classList.toggle('active', open)
   trigger.setAttribute('aria-expanded', String(open))
@@ -3489,13 +3494,18 @@ elements.shareMenu.addEventListener('click', (event) => {
   else if (item.id === 'share-vault') void downloadWorkspaceExport('/export/vault', 'personal-note-obsidian-vault.zip')
 })
 elements.shareMenu.addEventListener('keydown', (event) => {
+  if (event.key === 'Tab') return setShareMenuOpen(false) // tabbing out of the menu closes it
   if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
   event.preventDefault()
   const items = [...elements.shareMenu.querySelectorAll('button:not(:disabled):not([hidden])')]
   const index = items.indexOf(document.activeElement)
   items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
 })
-document.querySelector('#top-properties').addEventListener('click', () => setPropertiesOpen(!elements.properties.classList.contains('open')))
+document.querySelector('#top-properties').addEventListener('click', () => {
+  const open = !elements.properties.classList.contains('open')
+  setPropertiesOpen(open)
+  settingsFromMenu = open
+})
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#top-properties').addEventListener('click', () => {
   if (elements.properties.classList.contains('open')) void refreshVoiceSetup()
@@ -4288,7 +4298,7 @@ async function initialize() {
     agentSync = mountAgentSync({
       api,
       saveStateElement: elements.saveState,
-      chipAnchor: document.querySelector('#focus-button'),
+      chipAnchor: document.querySelector('.topbar-title'),
       getActive: () => {
         const note = state.notes.find((item) => item.id === state.activeNoteId)
         return note ? { id: note.id, resourceId: note.resourceId, revision: note.revision, noteType: state.activeNoteType } : null

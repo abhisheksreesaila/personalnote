@@ -69,7 +69,7 @@ try {
 
   // ---- the bar ----
   const bar = await pn(() => { const r = document.querySelector('#search-button').getBoundingClientRect(); const m = document.querySelector('.main-view').getBoundingClientRect(); return { x: r.left + r.width / 2, w: r.width, h: r.height, top: r.top, mainX: m.left + m.width / 2, inActions: Boolean(document.querySelector('.topbar-actions #search-button')), count: document.querySelectorAll('.topbar-actions .search-button').length } })
-  check('a slim bar sits at the top right of the window (F-075 moved it from the top centre)', bar.x > bar.mainX + 100 && bar.h <= 40 && bar.w >= 200 && bar.top < 30, JSON.stringify(bar))
+  check('a slim bar sits at the top right of the window (F-075 moved it from the top centre)', bar.x > bar.mainX + 100 && bar.h <= 40 && bar.w >= 160 && bar.top < 30, JSON.stringify(bar))
   check('it is the one search button, in the top-right group', bar.inActions && bar.count === 1)
   const overlap = await pn(() => { const b = document.querySelector('#search-button').getBoundingClientRect(); return ['.topbar-title', '#focus-button'].map((s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.right > b.left && r.left < b.right }) })
   check('the bar does not run into the note title or the Focus pill', !overlap[0] && !overlap[1], JSON.stringify(overlap))

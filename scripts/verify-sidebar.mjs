@@ -20,8 +20,9 @@ const api = spawn(python, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '
   env: { ...process.env, PERSONAL_NOTE_DB: path.join(scratch, 'verify.db') }, stdio: 'ignore',
 })
 const apiUp = async () => { for (let i = 0; i < 100; i++) { try { if ((await fetch(`${API}/api/notebooks`)).ok) return } catch {} await new Promise((r) => setTimeout(r, 150)) } throw new Error('API did not start') }
-// The breadcrumb left the top bar (F-075); what it said is the notebook the open note is filed in.
-const NOTEBOOK_OF_OPEN_NOTE = "(() => { const s = window.__personalNote.state; const note = s.notes.find((n) => n.id === s.activeNoteId); return s.notebooks.find((b) => b.id === note?.notebookId)?.name ?? 'Inbox' })()"
+// The breadcrumb left the top bar (F-075). What is on screen now: the open note's row, and the group of the notes panel it sits in ("Inbox" or "Notes in <notebook>").
+const GROUP_OF_OPEN_NOTE = "document.querySelector('.note-list-item.active')?.closest('[role=group]')?.getAttribute('aria-label') ?? null"
+const IN = (name) => (name === 'Inbox' ? 'Inbox' : `Notes in ${name}`)
 const call = async (method, url, body) => {
   const response = await fetch(`${API}/api${url}`, { method, headers: { 'content-type': 'application/json', 'x-personal-note': '1' }, body: body === undefined ? undefined : JSON.stringify(body) })
   return response.status === 204 ? null : response.json()
@@ -62,7 +63,7 @@ try {
   await settle()
   const afterQuick = await call('GET', '/notes')
   check('a quick note lands in the Inbox too', afterQuick.filter((note) => note.notebookId === null).length === 2 && (await inboxCount()) === 2, JSON.stringify(afterQuick.map((n) => n.notebookId)))
-  check('the breadcrumb says the note is in the Inbox', (await page.evaluate(NOTEBOOK_OF_OPEN_NOTE)) === 'Inbox')
+  check('the open note sits in the Inbox group of the notes panel', (await page.evaluate(GROUP_OF_OPEN_NOTE)) === IN('Inbox'))
 
   await page.click(`[data-new-note-in="${garden.id}"]`, { force: true })
   await page.waitForFunction(() => !window.__personalNote.state.creatingNote)
@@ -70,7 +71,7 @@ try {
   const afterPlus = await call('GET', '/notes')
   const made = afterPlus.find((note) => note.notebookId === garden.id)
   check("a note made from a notebook's + goes into that notebook, and the Inbox count stays", Boolean(made) && (await inboxCount()) === 2, JSON.stringify(afterPlus.map((n) => n.notebookId)))
-  check('the breadcrumb shows that notebook', (await page.evaluate(NOTEBOOK_OF_OPEN_NOTE)) === 'Garden')
+  check('the open note sits in the Garden group of the notes panel', (await page.evaluate(GROUP_OF_OPEN_NOTE)) === IN('Garden'))
 
   // The notebook picker can file an Inbox note, and can send it back
   await page.evaluate((id) => window.__personalNote.selectNote(id), afterQuick.find((note) => note.notebookId === null).id)
@@ -84,14 +85,14 @@ try {
   check('the picker lists Inbox and every notebook', pickerItems[0] === 'Inbox' && pickerItems.includes('Garden') && pickerItems.includes('House'), JSON.stringify(pickerItems))
   await page.click(`#notebook-picker-menu [data-move-to-notebook="${house.id}"]`)
   await settle(400)
-  check('picking a notebook files the Inbox note there (Inbox count drops)', (await inboxCount()) === 1 && (await page.evaluate(NOTEBOOK_OF_OPEN_NOTE)) === 'House', String(await inboxCount()))
+  check('picking a notebook files the Inbox note there (Inbox count drops)', (await inboxCount()) === 1 && (await page.evaluate(GROUP_OF_OPEN_NOTE)) === IN('House'), String(await inboxCount()))
   await page.click('#notebook-picker')
   await page.click('#notebook-picker-menu [data-move-to-notebook="inbox"]')
   await settle(400)
   await page.keyboard.press('Escape')
   await page.click('#share-button') // (Settings now sits in the ... menu)
   await page.click('#top-properties')
-  check('picking Inbox in the picker unfiles it', (await inboxCount()) === 2 && (await page.evaluate(NOTEBOOK_OF_OPEN_NOTE)) === 'Inbox')
+  check('picking Inbox in the picker unfiles it', (await inboxCount()) === 2 && (await page.evaluate(GROUP_OF_OPEN_NOTE)) === IN('Inbox'))
   const stored = await call('GET', '/notes')
   check('and the server agrees', stored.filter((note) => note.notebookId === null).length === 2, JSON.stringify(stored.map((n) => n.notebookId)))
 
@@ -574,12 +575,12 @@ try {
   await ensureOpen(shelfA.id)
   await ensureOpen(shelfB.id)
   await settle(300)
-  const picked = () => page.evaluate(() => ({ selected: window.__personalNote.state.selectedNotebookId, crumb: (() => { const s = window.__personalNote.state; const note = s.notes.find((n) => n.id === s.activeNoteId); return s.notebooks.find((b) => b.id === note?.notebookId)?.name ?? 'Inbox' })(), marked: [...document.querySelectorAll('.nav-row.active')].map((row) => row.parentElement.dataset.nbk) }))
+  const picked = () => page.evaluate(() => ({ selected: window.__personalNote.state.selectedNotebookId, crumb: document.querySelector('.note-list-item.active')?.closest('[role=group]')?.getAttribute('aria-label') ?? null, marked: [...document.querySelectorAll('.nav-row.active')].map((row) => row.parentElement.dataset.nbk) }))
   const pickedBefore = await picked()
   await tab(shelfB.id).click()
   await settle(350)
   const pickedAfter = await picked()
-  check('folding another notebook leaves the selected notebook, its row and the breadcrumb alone', JSON.stringify(pickedBefore) === JSON.stringify(pickedAfter) && pickedAfter.selected === shelfA.id && pickedAfter.crumb === 'Shelf A', JSON.stringify([pickedBefore, pickedAfter]))
+  check('folding another notebook leaves the selected notebook, its row and the breadcrumb alone', JSON.stringify(pickedBefore) === JSON.stringify(pickedAfter) && pickedAfter.selected === shelfA.id && pickedAfter.crumb === 'Notes in Shelf A', JSON.stringify([pickedBefore, pickedAfter]))
   await tab(shelfA.id).click() // fold the open note's own notebook
   await settle(350)
   check("(setup) the open note's own notebook is folded", !(await nbOpen(shelfA.id)))

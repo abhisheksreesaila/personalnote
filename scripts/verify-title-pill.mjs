@@ -17,6 +17,7 @@ const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 let content = { objects: [] }
 let failSave = false
+let agents = []
 const requests = []
 let savedTitle = 'Garden plan'
 
@@ -48,7 +49,7 @@ try {
       if (body.content) content = body.content
       return json({ revision: 2, resourceId: `r${m[1]}` })
     }
-    if (p.startsWith('/changes')) return json({ sequence: 1, changes: [], agents: [] })
+    if (p.startsWith('/changes')) return json({ sequence: 1, changes: [], agents })
     return json({})
   })
   const url = `http://127.0.0.1:${PORT}/notes`
@@ -71,7 +72,7 @@ try {
 
   // --- the shape of the islands
   check('the breadcrumb is gone', await page.evaluate(() => !document.querySelector('#breadcrumb')))
-  const islands = async () => ({ notes: await rect('#toggle-sidebar'), title: await rect('.topbar-title'), focus: await rect('#focus-button'), search: await rect('#search-button') })
+  const islands = async () => ({ notes: await rect('#toggle-sidebar'), title: await rect('.topbar-title'), focus: await rect('#focus-button'), search: await rect('#search-button'), ...(await page.evaluate(() => !document.querySelector('#agent-chip')?.hidden)) ? { chip: await rect('#agent-chip') } : {} })
   const layoutChecks = async (label, width, height) => {
     const i = await islands()
     const inset = i.title.y >= 16 && i.focus.y >= 16 && i.search.y >= 16 && i.focus.r <= width - 16 && i.search.r <= width - 16
@@ -237,6 +238,56 @@ try {
   await shot('1440x900-menu-open')
   await page.keyboard.press('Escape')
 
+  // --- the agent chip: top left, its own island beside the notes button, never under the title pill
+  agents = [{ agent: 'Claude Code', action: 'writing', noteId: 1, noteTitle: 'Garden plan' }]
+  for (const [w, h] of [[1280, 800], [1440, 900]]) {
+    await page.setViewportSize({ width: w, height: h })
+    await page.click('#note-title', { clickCount: 3 })
+    await page.keyboard.type(longTitle)
+    await page.keyboard.press('Tab')
+    await page.waitForFunction(() => !document.querySelector('#agent-chip')?.hidden, null, { timeout: 8000 })
+    await page.waitForTimeout(300)
+    const label = await page.evaluate(() => document.querySelector('#agent-chip').textContent)
+    check(`${w}: the chip reads the agent and what it does`, label === 'Claude Code is writing', label)
+    const i = await islands()
+    check(`${w} long title: the chip is at the top left, just right of the notes button, clear of the title pill`, i.chip.x >= i.notes.r && i.chip.x - i.notes.r <= 16 && i.chip.r <= i.title.x - 8, JSON.stringify(i))
+    await layoutChecks(`${w}x${h} long title with the agent chip`, w, h)
+    // the search pill never truncates its label
+    const searchFits = await page.evaluate(() => { const s = document.querySelector('#search-button span'); return { text: s.textContent, fits: s.scrollWidth <= s.clientWidth, aria: document.querySelector('#search-button').getAttribute('aria-label') } })
+    check(`${w}: the search pill says Search in full, and keeps its long accessible name`, searchFits.text === 'Search' && searchFits.fits && searchFits.aria === 'Search or jump to', JSON.stringify(searchFits))
+
+    await shot(`${w}x${h}-agent-menu-closed`)
+    await click('#share-button')
+    await page.waitForTimeout(250)
+    check(`${w}: with the chip showing, the ... button still opens the menu`, !(await menuHidden()))
+    await shot(`${w}x${h}-agent-menu-open`)
+    await page.keyboard.press('Escape')
+  }
+  // a very long agent name is cut, not allowed to reach the title pill
+  agents = [{ agent: 'A remarkably verbose local agent called Claude Code Deluxe', action: 'writing', noteId: 1, noteTitle: 'x' }]
+  await page.waitForFunction(() => /verbose/.test(document.querySelector('#agent-chip').textContent), null, { timeout: 8000 })
+  const longChip = await islands()
+  check('a very long agent label is truncated before the title pill', longChip.chip.r <= longChip.title.x - 8, JSON.stringify(longChip))
+  agents = [{ agent: 'Claude Code', action: 'writing', noteId: 1, noteTitle: 'Garden plan' }]
+
+  // --- keyboard: Tab leaves the menu and closes it; Settings opened from the menu gives focus back to the ... button on Esc
+  await page.focus('#share-button')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(250)
+  await page.keyboard.press('Tab')
+  await page.waitForTimeout(150)
+  check('Tab out of the open menu closes it, focus does not fall to the page', (await menuHidden()) && (await page.evaluate(() => document.activeElement !== document.body)))
+  await page.focus('#share-button')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(250)
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(300)
+  check('Settings opens from the menu by keyboard', await page.evaluate(() => document.querySelector('#properties-panel').classList.contains('open')))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  check('Esc closes Settings and puts the focus back on the ... button', (await page.evaluate(() => !document.querySelector('#properties-panel').classList.contains('open'))) && (await page.evaluate(() => document.activeElement.id)) === 'share-button')
+
   // --- the middle widths, where the right-hand pills shrink
   for (const [w, h] of [[1101, 800], [1000, 700], [820, 700]]) {
     await page.setViewportSize({ width: w, height: h })
@@ -252,7 +303,7 @@ try {
   await page.setViewportSize({ width: 390, height: 780 })
   await page.waitForTimeout(400)
   const more = await rect('#share-button')
-  check('on a phone width the ... button is on screen and the menu opens', more && more.r <= 390 && more.x >= 0 && more.w > 0)
+  check('on a phone width the ... button is on screen, at least 40px square, and the menu opens', more && more.r <= 390 && more.x >= 0 && more.w >= 40 && more.h >= 40, JSON.stringify(more))
   await click('#share-button')
   await page.waitForTimeout(300)
   const narrowMenu = await rect('#share-menu')
