@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en" data-skin="paper">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal Note: dynamic island prototype</title>
+<style>
+  :root[data-skin="paper"] {
+    --sk-desk: #e9e4da; --sk-desk-dot: rgba(60, 45, 20, .10);
+    --sk-panel: #fffdf8; --sk-edge: #e2dbcd;
+    --sk-ink: #1f1b16; --sk-ink-soft: #4a443b; --sk-muted: #6b6357; --sk-line: #e2dbcd;
+    --sk-accent-soft: #ece6da; --sk-danger: #b93a27; --ok: #2f8a5b;
+    --paper: #fbfaf5;
+    --sk-radius: 14px;
+    --sk-shadow: 0 1px 0 rgba(31, 27, 22, .04), 0 12px 32px -12px rgba(60, 40, 10, .22);
+  }
+  :root[data-skin="night"] {
+    --sk-desk: #0d1015; --sk-desk-dot: rgba(160, 190, 255, .07);
+    --sk-panel: #161b23; --sk-edge: #232a35;
+    --sk-ink: #eceff4; --sk-ink-soft: #b9c1cd; --sk-muted: #7d8796; --sk-line: #262e3a;
+    --sk-accent-soft: rgba(126, 231, 200, .14); --sk-danger: #ff8fb1; --ok: #7ee7c8;
+    --paper: #fbfaf5;
+    --sk-radius: 14px;
+    --sk-shadow: 0 0 0 1px rgba(236, 239, 244, .04), 0 20px 50px -20px rgba(0, 0, 0, .7);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  .frame.phone .wide-only { display: none; }
+  body { margin: 0; font: 14px/1.4 "Geist", system-ui, -apple-system, sans-serif; color: #1f1b16; background: transparent; }
+  .wrap { background: #f4f1ea; border-radius: 14px; padding-top: 4px; }
+  svg { width: 18px; height: 18px; flex: none; }
+
+  /* Controls above the frame */
+  .bar { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; padding: 16px 20px 6px; }
+  .group { display: flex; flex-direction: column; gap: 6px; }
+  .group > b { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #6b6357; }
+  .seg { display: inline-flex; background: #e6e0d4; border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button, .sim button { font: inherit; font-size: 13px; border: 0; background: transparent; padding: 6px 11px; border-radius: 8px; cursor: pointer; color: #1f1b16; }
+  .seg button[aria-pressed="true"] { background: #fffdf8; box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
+  .sim { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sim button { background: #fffdf8; border: 1px solid #e2dbcd; }
+  .sim button:hover { border-color: #b9ae98; }
+  .explain { margin: 4px 20px 12px; max-width: 980px; color: #4a443b; font-size: 13.5px; min-height: 2.8em; }
+
+  /* The app frame */
+  .stage { display: flex; justify-content: center; padding: 0 20px 28px; }
+  .frame { position: relative; width: 1280px; height: 800px; border-radius: 12px; overflow: hidden; flex: none;
+    background: var(--sk-desk) radial-gradient(var(--sk-desk-dot) 1.2px, transparent 1.3px) 0 0 / 22px 22px;
+    box-shadow: 0 30px 60px -30px rgba(0,0,0,.4), 0 0 0 1px rgba(0,0,0,.08); transform-origin: top center; }
+  .frame.phone { width: 390px; height: 844px; border-radius: 44px; box-shadow: 0 0 0 10px #1b1b1b, 0 30px 60px -20px rgba(0,0,0,.5); }
+
+  .island { position: absolute; background: var(--sk-panel); border: 1px solid var(--sk-edge); box-shadow: var(--sk-shadow); color: var(--sk-ink); }
+  .round { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; }
+  .notes-btn { top: 16px; left: 16px; }
+  .top-right { top: 16px; right: 16px; display: flex; gap: 8px; position: absolute; }
+  .pill { position: static; height: 44px; border-radius: 22px; display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 13px; font-weight: 500; }
+  .pill kbd { font: 11px "Geist Mono", ui-monospace, monospace; color: var(--sk-muted); border: 1px solid var(--sk-line); border-radius: 5px; padding: 1px 5px; }
+  .tools { right: 16px; top: 50%; transform: translateY(-50%); width: 56px; border-radius: 28px; padding: 6px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .tools .t { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; color: var(--sk-ink-soft); }
+  .tools .t.on { background: var(--sk-ink); color: var(--sk-panel); }
+  .tools hr { width: 28px; border: 0; border-top: 1px solid var(--sk-line); margin: 2px 0; }
+  .tools .dot { width: 28px; height: 28px; border-radius: 14px; background: #2b6fd6; border: 3px solid var(--sk-panel); box-shadow: 0 0 0 1px var(--sk-line); margin: 8px 0; }
+  .tools .mic { background: var(--sk-ink); color: var(--sk-panel); }
+  .history { left: 16px; bottom: 16px; height: 44px; border-radius: 22px; display: flex; align-items: center; padding: 0 6px; gap: 2px; }
+  .history span, .zoom span { width: 36px; height: 36px; display: grid; place-items: center; color: var(--sk-ink-soft); }
+  .zoom { right: 16px; bottom: 16px; height: 44px; border-radius: 22px; display: flex; align-items: center; padding: 0 6px; font-size: 13px; }
+  .zoom b { font-weight: 500; padding: 0 6px; }
+
+  .page { position: absolute; left: 50%; top: 92px; transform: translateX(-50%); width: 760px; height: 980px; background: var(--paper); border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 18px 40px -24px rgba(60,40,10,.35); padding: 56px 64px; color: #1f1b16; }
+  .page h1 { font: 700 30px/1.15 "Bricolage Grotesque", system-ui, sans-serif; letter-spacing: -.02em; margin: 0 0 18px; }
+  .page p { margin: 0 0 12px; font-size: 15.5px; line-height: 1.6; color: #2c2720; max-width: 560px; }
+  .page svg.ink { position: absolute; width: 260px; height: 140px; right: 70px; top: 230px; }
+
+  /* ---- The island under test ---- */
+  .dyn { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 5;
+    background: var(--sk-panel); border: 1px solid var(--sk-edge); box-shadow: var(--sk-shadow); color: var(--sk-ink);
+    border-radius: 22px; overflow: hidden; cursor: pointer;
+    transition: width 180ms ease-out, height 180ms ease-out, border-radius 180ms ease-out, background-color 180ms ease-out, border-color 180ms ease-out; }
+  .frame.phone .dyn { top: 58px; transition-duration: 420ms; transition-timing-function: cubic-bezier(.28, 1.32, .5, 1); }
+  .dyn.hidden { opacity: 0; pointer-events: none; transition: opacity 150ms ease-out; }
+  .dyn > .face { position: absolute; left: 0; top: 0; white-space: nowrap; transition: opacity 120ms ease-out; }
+  .dyn > .face.out { opacity: 0; }
+  .dyn.error { border-color: color-mix(in srgb, var(--sk-danger) 45%, var(--sk-edge)); }
+  .dyn.dark { background: #1f1b16; border-color: #1f1b16; color: #fffdf8; }
+  :root[data-skin="night"] .dyn.dark { background: #eceff4; border-color: #eceff4; color: #0d1015; }
+  .row { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; font-size: 13.5px; }
+  .row .title { font-weight: 600; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+  .row .muted { color: var(--sk-muted); font-weight: 400; }
+  .dyn.dark .row .muted { color: inherit; opacity: .65; }
+  .row .ok { color: var(--ok); }
+  .row .bad { color: var(--sk-danger); font-weight: 600; }
+  .row .chip { margin-left: 4px; font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: var(--sk-accent-soft); color: var(--sk-ink); }
+  .dyn.dark .row .chip { background: rgba(255,255,255,.14); color: inherit; }
+  .spin { animation: spin 900ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .rec { width: 9px; height: 9px; border-radius: 5px; background: #e5484d; }
+  .wave { display: flex; gap: 2px; align-items: center; height: 18px; }
+  .wave i { width: 3px; border-radius: 2px; background: currentColor; opacity: .8; transition: height 120ms ease-out; }
+  .bar-track { width: 120px; height: 4px; border-radius: 2px; background: var(--sk-accent-soft); overflow: hidden; }
+  .dyn.dark .bar-track { background: rgba(255,255,255,.18); }
+  .bar-track > i { display: block; height: 100%; background: currentColor; width: 0; transition: width 300ms linear; }
+  .tiny { width: 8px; height: 8px; border-radius: 4px; background: var(--sk-muted); opacity: .55; }
+  .ok-dot { background: var(--ok); opacity: 1; }
+
+  .card { padding: 14px 14px 12px; width: 420px; white-space: normal; }
+  .card input { width: 100%; font: 600 15px "Geist", system-ui, sans-serif; border: 1px solid var(--sk-line); background: transparent; color: var(--sk-ink); border-radius: 10px; padding: 9px 11px; outline: none; }
+  .card input:focus { border-color: var(--sk-ink-soft); }
+  .card .meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--sk-muted); margin: 8px 2px 10px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .grid button { font: inherit; font-size: 11.5px; color: var(--sk-ink); background: transparent; border: 1px solid var(--sk-line); border-radius: 12px; height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
+  .grid button:hover { background: var(--sk-accent-soft); }
+  .grid button.danger { color: var(--sk-danger); }
+  .frame.phone .card { width: 350px; }
+
+  /* Option C: the title at the top left, beside the notes button */
+  .corner-title { position: absolute; top: 16px; left: 68px; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 14px; border-radius: 22px; font-size: 13.5px; font-weight: 600; color: var(--sk-ink); }
+  .corner-title .t { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .corner-title .more { width: 32px; height: 32px; border-radius: 16px; display: grid; place-items: center; color: var(--sk-muted); }
+  .corner-title .tiny { margin-left: 2px; }
+
+  /* Phone layout */
+  .frame.phone .top-right .pill span, .frame.phone .top-right .pill kbd, .frame.phone .focus-pill { display: none; }
+  .frame.phone .notes-btn { top: 56px; }
+  .frame.phone .top-right { top: 56px; }
+  .frame.phone .top-right .pill { width: 44px; padding: 0; justify-content: center; }
+  .frame.phone .tools { top: auto; bottom: 28px; right: 50%; transform: translateX(50%); width: auto; height: 60px; flex-direction: row; padding: 0 8px; border-radius: 30px; }
+  .frame.phone .tools hr { width: 1px; height: 28px; border-top: 0; border-left: 1px solid var(--sk-line); margin: 0 2px; }
+  .frame.phone .tools .dot { margin: 0 6px; }
+  .frame.phone .tools .t.extra { display: none; }
+  .frame.phone .history, .frame.phone .zoom { display: none; }
+  .frame.phone .page { top: 118px; width: 358px; padding: 28px 24px; }
+  .frame.phone .page h1 { font-size: 24px; }
+  .frame.phone .page p { font-size: 15px; }
+  .frame.phone .page svg.ink { display: none; }
+  .frame.phone .corner-title { top: 56px; }
+  .frame.phone .corner-title .t { max-width: 140px; }
+  .notch { display: none; position: absolute; top: 11px; left: 50%; transform: translateX(-50%); width: 120px; height: 34px; border-radius: 17px; background: #000; z-index: 9; }
+  .frame.phone .notch { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="bar">
+  <div class="group"><b>Option</b>
+    <div class="seg" id="opt">
+      <button data-v="A" aria-pressed="true">A · Shrinking island</button>
+      <button data-v="B" aria-pressed="false">B · Just a dot</button>
+      <button data-v="C" aria-pressed="false">C · Title in the corner</button>
+    </div>
+  </div>
+  <div class="group"><b>Screen</b>
+    <div class="seg" id="dev">
+      <button data-v="mac" aria-pressed="true">Mac</button>
+      <button data-v="phone" aria-pressed="false">Phone</button>
+    </div>
+  </div>
+  <div class="group"><b>Skin</b>
+    <div class="seg" id="skin">
+      <button data-v="paper" aria-pressed="true">Paper</button>
+      <button data-v="night" aria-pressed="false">Night</button>
+    </div>
+  </div>
+  <div class="group"><b>Make something happen</b>
+    <div class="sim">
+      <button data-sim="save">Type (it saves)</button>
+      <button data-sim="voice">Voice</button>
+      <button data-sim="agent">Claude edits</button>
+      <button data-sim="download">Download</button>
+      <button data-sim="error">Save fails</button>
+      <button data-sim="open">Click the island</button>
+      <button data-sim="tour">Play all</button>
+    </div>
+  </div>
+</div>
+<p class="explain" id="explain"></p>
+
+<div class="stage" id="stage">
+  <div class="frame" id="frame">
+    <div class="notch"></div>
+    <div class="page">
+      <h1>Kitchen renovation</h1>
+      <p>Quotes from three builders by the end of the month. Ask each about the plumbing for the island sink and whether the old tiles can stay under the new floor.</p>
+      <p>Budget ceiling £18k including appliances. Keep the window over the sink; move the fridge to the pantry wall.</p>
+      <p>Measure the alcove again: 2.4 m or 2.6 m?</p>
+      <svg class="ink" viewBox="0 0 260 140" fill="none" stroke="#2b6fd6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 112 C 40 30, 90 24, 120 70 S 200 120, 240 30"/><path d="M220 26l22 2-6 20"/><path d="M30 128h190" stroke="#1f1b16" stroke-width="1.6" opacity=".5"/></svg>
+    </div>
+
+    <div class="island round notes-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg></div>
+    <div class="corner-title island" id="corner" hidden><span class="t" id="corner-t">Kitchen renovation</span><span class="tiny" id="corner-dot"></span><span class="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span></div>
+    <div class="top-right">
+      <div class="island pill focus-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg><span>Focus</span><kbd>⌘ .</kbd></div>
+      <div class="island pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span>Search</span><kbd>⌘ K</kbd></div>
+    </div>
+
+    <div class="dyn" id="dyn" role="button" tabindex="0" aria-label="Note title and actions"></div>
+
+    <div class="island tools">
+      <span class="t extra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg></span><span class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></svg></span><span class="t on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg></span><span class="t extra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/></svg></span><span class="t extra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"/><path d="M15 3v5a1 1 0 0 0 1 1h5"/></svg></span>
+      <hr><span class="dot"></span><span class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span><hr><span class="t mic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg></span>
+    </div>
+    <div class="island history"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg></span></div>
+    <div class="island zoom"><span>−</span><b>100%</b><span>+</span></div>
+  </div>
+</div>
+</div>
+
+<script>
+const I = {
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`, loader: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`, alert: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`, sparkles: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>`, download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>`,
+  printer: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>`, png: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21"/><path d="m14 19 3 3v-5.5"/><path d="m17 22 3-3"/><circle cx="9" cy="9" r="2"/></svg>`, archive: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`, md: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>`, vault: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="m15 13-3 3-3-3"/></svg>`, fold: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-6"/><path d="M12 8V2"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/><path d="m15 19-3-3-3 3"/><path d="m15 5-3 3-3-3"/></svg>`,
+  eraser: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>`, sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>`, more: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>`, mic: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>`, x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+}
+const TITLE = 'Kitchen renovation'
+const EXPLAIN = {
+  A: '<b>A · Shrinking island.</b> At rest it is only the title, in a small pill. When something happens it grows for a moment to say so (saved, listening, Claude changed the note, a download), then shrinks back. A save error stays until you deal with it. Click it to open a card with the title and every action.',
+  B: '<b>B · Just a dot.</b> At rest there is only a small dot at the top. It grows for the same moments as A. Hover shows the title; click opens the same card. The quietest option; the title shows on the page and in the notes panel anyway.',
+  C: '<b>C · Title in the corner.</b> The title and ⋯ move next to the notes button at the top left, with a small save dot. The middle stays empty until something happens: then an island appears there for a moment and leaves.',
+}
+
+const frame = document.querySelector('#frame')
+const dyn = document.querySelector('#dyn')
+const corner = document.querySelector('#corner')
+const cornerDot = document.querySelector('#corner-dot')
+let option = 'A'
+let mode = 'rest' // rest | hover | event | open
+let face = null
+let timers = []
+let waveTimer = null
+let errorStuck = false
+
+const later = (ms, fn) => { const t = setTimeout(fn, ms); timers.push(t); return t }
+const clearTimers = () => { timers.forEach(clearTimeout); timers = []; clearInterval(waveTimer); waveTimer = null }
+
+const faces = {
+  rest: () => option === 'A' ? `<div class="row"><span class="title">${TITLE}</span></div>`
+    : `<div class="row" style="padding:0 14px"><span class="tiny"></span></div>`,
+  hover: () => `<div class="row"><span class="title">${TITLE}</span><span class="muted">${I.more}</span></div>`,
+  saving: () => `<div class="row"><span class="muted spin" style="display:grid">${I.loader}</span><span class="muted">Saving</span></div>`,
+  saved: () => `<div class="row"><span class="ok" style="display:grid">${I.check}</span><span>Saved</span></div>`,
+  voice: (s) => `<div class="row"><span class="rec"></span><span class="wave" id="wave">${'<i></i>'.repeat(14)}</span><span>Listening</span><span class="muted" id="clock">0:0${s}</span><span class="chip">Stop</span></div>`,
+  typing: () => `<div class="row"><span style="display:grid">${I.check}</span><span>Added 24 words</span></div>`,
+  agent: () => `<div class="row"><span style="display:grid">${I.sparkles}</span><span><b>Claude</b> edited this note</span><span class="chip wide-only">Show</span><span class="chip">Undo</span></div>`,
+  download: (p) => `<div class="row"><span style="display:grid">${I.download}</span><span class="wide-only">Voice model</span><span class="bar-track"><i style="width:${p}%"></i></span><span class="muted">${p}%</span></div>`,
+  downloaded: () => `<div class="row"><span class="ok" style="display:grid">${I.check}</span><span>Voice is ready</span></div>`,
+  error: () => `<div class="row"><span class="bad" style="display:grid">${I.alert}</span><span class="bad">Couldn't save</span><span class="muted wide-only">disk full</span><span class="chip">Try again</span></div>`,
+  open: () => `<div class="card">
+      <input value="${TITLE}" aria-label="Note title">
+      <div class="meta"><span>Saved on this Mac · 2 min ago</span><span>Projects › Home</span></div>
+      <div class="grid">
+        <button>${I.printer}Print</button><button>${I.png}Picture</button><button>${I.archive}Backup</button><button>${I.md}Markdown</button>
+        <button>${I.vault}Obsidian</button><button>${I.fold}Fold all</button><button>${I.sliders}Settings</button><button class="danger">${I.eraser}Clear all</button>
+      </div></div>`,
+}
+
+function show(name, arg, { dark = false, error = false } = {}) {
+  const html = faces[name](arg)
+  if (face && face.dataset.name === name && name !== 'voice') { face.innerHTML = html; return }
+  const next = document.createElement('div')
+  next.className = 'face out'
+  next.dataset.name = name
+  next.innerHTML = html
+  dyn.appendChild(next)
+  const w = next.offsetWidth, h = next.offsetHeight
+  dyn.style.width = w + 'px'
+  dyn.style.height = h + 'px'
+  dyn.style.borderRadius = name === 'open' ? '20px' : '22px'
+  dyn.classList.toggle('dark', dark)
+  dyn.classList.toggle('error', error)
+  const old = face
+  face = next
+  if (old) { old.classList.add('out'); setTimeout(() => old.remove(), 140) }
+  requestAnimationFrame(() => requestAnimationFrame(() => next.classList.remove('out')))
+}
+
+function rest() {
+  clearTimers()
+  mode = 'rest'
+  if (errorStuck) return show('error', null, { error: true })
+  if (option === 'C') { dyn.classList.add('hidden'); return }
+  dyn.classList.remove('hidden')
+  show('rest')
+}
+
+function event(steps) {
+  // steps: [[face, arg, ms, opts], …]; then back to rest
+  clearTimers()
+  mode = 'event'
+  dyn.classList.remove('hidden')
+  let at = 0
+  for (const [name, arg, ms, opts] of steps) {
+    later(at, () => show(name, typeof arg === 'function' ? arg() : arg, opts))
+    at += ms
+  }
+  later(at, rest)
+}
+
+const sims = {
+  save() {
+    if (option === 'C') { cornerDot.className = 'tiny'; later(700, () => { cornerDot.className = 'tiny ok-dot' }); later(2200, () => { cornerDot.className = 'tiny' }) }
+    event([['saving', null, 700], ['saved', null, 1300]])
+  },
+  voice() {
+    clearTimers(); mode = 'event'; dyn.classList.remove('hidden')
+    let s = 0
+    show('voice', s, { dark: true })
+    waveTimer = setInterval(() => {
+      document.querySelectorAll('#wave i').forEach((bar) => { bar.style.height = (4 + Math.random() * 14) + 'px' })
+    }, 140)
+    for (let i = 1; i <= 4; i++) later(i * 1000, () => { const c = document.querySelector('#clock'); if (c) c.textContent = '0:0' + i })
+    later(4600, () => { clearInterval(waveTimer); waveTimer = null; show('typing') })
+    later(6300, rest)
+  },
+  agent() { event([['agent', null, 4200]]) },
+  download() {
+    const steps = []
+    for (let p = 0; p <= 100; p += 10) steps.push(['download', p, 380])
+    steps.push(['downloaded', null, 1500])
+    event(steps)
+  },
+  error() {
+    errorStuck = true
+    clearTimers(); mode = 'event'; dyn.classList.remove('hidden')
+    show('error', null, { error: true })
+    if (option === 'C') cornerDot.style.background = 'var(--sk-danger)'
+  },
+  open() {
+    if (errorStuck) { errorStuck = false; cornerDot.style.background = ''; }
+    clearTimers(); mode = 'open'; dyn.classList.remove('hidden')
+    show('open')
+  },
+  async tour() {
+    const order = ['save', 'voice', 'agent', 'download', 'open']
+    const length = { save: 2400, voice: 6600, agent: 4600, download: 6200, open: 3200 }
+    for (const name of order) { sims[name](); await new Promise((r) => setTimeout(r, length[name])) }
+    rest()
+  },
+}
+
+dyn.addEventListener('click', (e) => {
+  if (mode === 'open') return
+  if (e.target.closest('.chip') && errorStuck) { errorStuck = false; cornerDot.style.background = ''; return sims.save() }
+  sims.open()
+})
+dyn.addEventListener('mouseenter', () => { if (mode === 'rest' && option === 'B') { mode = 'hover'; show('hover') } })
+dyn.addEventListener('mouseleave', () => { if (mode === 'hover') rest() })
+corner.addEventListener('click', () => sims.open())
+document.addEventListener('pointerdown', (e) => { if (mode === 'open' && !dyn.contains(e.target) && !corner.contains(e.target) && !e.target.closest('.bar')) rest() })
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && mode === 'open') rest() })
+
+function seg(id, onPick) {
+  const root = document.querySelector('#' + id)
+  root.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return
+    root.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+    onPick(b.dataset.v)
+  })
+}
+seg('opt', (v) => { option = v; errorStuck = false; cornerDot.style.background = ''; corner.hidden = v !== 'C'; document.querySelector('#explain').innerHTML = EXPLAIN[v]; rest() })
+seg('dev', (v) => { frame.classList.toggle('phone', v === 'phone'); fit(); rest() })
+seg('skin', (v) => { document.documentElement.dataset.skin = v })
+document.querySelectorAll('[data-sim]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); sims[b.dataset.sim]() }))
+
+function fit() {
+  const avail = document.querySelector('#stage').clientWidth - 40
+  const w = frame.offsetWidth
+  const s = Math.min(1, avail / w)
+  frame.style.transform = `scale(${s})`
+  frame.style.marginBottom = `${(s - 1) * frame.offsetHeight}px`
+}
+addEventListener('resize', fit)
+document.querySelector('#explain').innerHTML = EXPLAIN.A
+fit()
+rest()
+</script>
+</body>
+</html>
