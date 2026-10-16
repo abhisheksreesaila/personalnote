@@ -362,6 +362,20 @@ class OneBadNoteTests(MeaningCase):
         self.assertEqual(self.drain(), 2)
         self.assertEqual(self.indexer.status()["failed"], 0)
 
+    def test_a_refused_note_that_is_deleted_or_changed_stops_being_counted_as_refused(self):
+        self.engine.refuse = "TOOLONG"
+        gone = self.page("Gone", "TOOLONG " * 10)
+        edited = self.page("Edited", "TOOLONG " * 10)
+        self.drain()
+        self.assertEqual(self.indexer.status()["failed"], 2)
+
+        self.service.delete_note(gone["id"])
+        self.assertEqual(self.indexer.status()["failed"], 1)
+        self.save_page(edited, "Edited", "TOOLONG still")  # changed, and still refused: it is looked at again, and counted again
+        self.assertEqual(self.indexer.status()["failed"], 0, "the old refusal no longer applies until it is tried again")
+        self.drain()
+        self.assertEqual(self.indexer.status()["failed"], 1)
+
 
 class QuietTests(MeaningCase):
     def test_the_default_waits_for_the_person_to_stop_typing(self):

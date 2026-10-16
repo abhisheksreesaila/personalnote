@@ -57,6 +57,7 @@ NOT_AVAILABLE = "Search by meaning is not available on this system."
 CLOSING = "The app is closing; search by meaning is stopped."
 CONTEXT_TOKENS = 2048  # the engine is started with -c 2048 -ub 2048: an input over this is refused, not cut
 TOKEN_BUDGET = 1990  # what a prompt is cut to; the engine adds a start and an end token
+ENGINE_NICE = 10  # the engine runs this much nicer than the app
 SAFE_BYTES = 1800  # a token covers at least one byte, so a prompt this short can never be over the context: no counting needed
 
 # Environment override, for tests and mirrors; not reachable from the page. A JSON file holding
@@ -490,6 +491,21 @@ class SearchRuntime:
             "--host", HOST, "--port", str(port), "-c", str(CONTEXT_TOKENS), "-ub", str(CONTEXT_TOKENS), "-np", "1", "-t", str(self.threads), "--no-webui", "--no-slots",
         ]
 
+    @staticmethod
+    def _child_setup(parent: int) -> None:
+        """Runs in the engine's process before it starts: low priority (it is a background job; typing comes first), and die with the app."""
+        try:
+            os.nice(ENGINE_NICE)
+        except OSError:
+            pass
+        if voice_runtime._PRCTL:
+            voice_runtime._die_with_parent(parent)
+
+    def _launch_prefix(self) -> list[str]:
+        """On a Mac, `taskpolicy -b` also puts the engine on the efficiency cores and lowers its disk and network priority."""
+        tool = shutil.which("taskpolicy") if (self.key or "").startswith("macos") else None
+        return [tool, "-b"] if tool else []
+
     def _open_log(self):
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         if self.log_path.exists() and self.log_path.stat().st_size > LOG_LIMIT:
@@ -504,8 +520,8 @@ class SearchRuntime:
             with self._open_log() as log:
                 try:
                     process = subprocess.Popen(
-                        self._command(port), cwd=self.engine_dir, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                        preexec_fn=(lambda parent=os.getpid(): voice_runtime._die_with_parent(parent)) if voice_runtime._PRCTL else None,
+                        self._launch_prefix() + self._command(port), cwd=self.engine_dir, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                        preexec_fn=lambda parent=os.getpid(): self._child_setup(parent),
                     )
                 except OSError as error:
                     outcome["error"] = SearchError("The search engine could not be started. Download search by meaning again.")

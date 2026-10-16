@@ -67,6 +67,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path == "/tokenize" and os.environ.get("FAKE_TOKENIZE") == "fail":
+            self.send_error(500)
+            return
+        if self.path != "/tokenize" and os.environ.get("FAKE_ENGINE_MODE") == "hang":  # an engine that never answers an embedding
+            import time
+            time.sleep(120)
         if self.path == "/tokenize":  # one token per character, or one in all when FAKE_TOKENS=few (a tokenizer that undercounts)
             self.send({{"tokens": [0] if os.environ.get("FAKE_TOKENS") == "few" else [0] * len(body["content"])}})
             return
@@ -636,6 +642,57 @@ class EngineTests(SearchTestCase):
         now[0] += 250
         self.assertFalse(runtime.stop_if_idle(300))
         self.assertTrue(runtime.status()["running"])
+
+    def test_when_the_engine_cannot_count_tokens_a_prompt_is_cut_by_bytes_and_keeps_its_prefix(self):
+        runtime = self.ready()
+        with mock.patch.dict(os.environ, {"FAKE_TOKENIZE": "fail"}):
+            runtime.stop_engine()
+            for filler in ("a", "漢", "😀"):
+                Path(self.log).write_text("")
+                runtime.embed([("Long", filler * 6000)], "document")
+                runtime.embed([filler * 6000], "query")
+                documents, queries = (self.asked()[0][0], self.asked()[1][0])
+                self.assertTrue(documents.startswith("title: Long | text: "), filler)
+                self.assertTrue(queries.startswith("task: search result | query: "), filler)
+                self.assertLessEqual(len(documents.encode()), 1800, filler)
+                self.assertLessEqual(len(queries.encode()), 1800, filler)
+                self.assertGreater(len(documents.encode()), 1700, "cut to the budget, not to nothing")
+
+    def test_the_engine_runs_at_low_priority_so_typing_keeps_the_machine(self):
+        runtime = self.ready()
+        runtime.embed(["x"], "query")
+        pid = json.loads((self.root / "engine.pid").read_text())["pid"]
+        self.assertGreaterEqual(os.getpriority(os.PRIO_PROCESS, pid), 10)
+
+    def test_on_a_mac_the_engine_is_started_as_a_background_task_when_taskpolicy_exists(self):
+        runtime = SearchRuntime(root=self.root, key="macos-arm64")
+        with mock.patch("shutil.which", return_value="/usr/sbin/taskpolicy"):
+            self.assertEqual(runtime._launch_prefix()[:2], ["/usr/sbin/taskpolicy", "-b"])
+        with mock.patch("shutil.which", return_value=None):
+            self.assertEqual(runtime._launch_prefix(), [])
+        self.assertEqual(SearchRuntime(root=self.root, key=KEY)._launch_prefix(), [])
+
+    def test_closing_the_app_is_quick_even_when_the_engine_never_answers(self):
+        from routes import close_search
+        from meaning_index import MeaningIndexer
+        from services import NoteService
+        runtime = self.ready()
+        service = NoteService(Path(self.temporary.name) / "n.db", embedder=runtime)
+        note = service.create_note({"title": "Trip", "noteType": "page"})
+        service.update_note(note["id"], {"title": "Trip", "content": {"markdown": "flights", "ink": {}}, "revision": 1})
+        indexer = MeaningIndexer(service, runtime, idle=0, poll=0.05)
+        with mock.patch.dict(os.environ, {"FAKE_ENGINE_MODE": "hang"}):
+            indexer.start()
+            deadline = time.monotonic() + 15
+            while not runtime.status()["running"] and time.monotonic() < deadline:
+                time.sleep(0.05)
+            time.sleep(0.5)  # the batch is now waiting on the engine
+            started = time.monotonic()
+            close_search(type("App", (), {"state": type("State", (), {"search": runtime, "indexer": indexer})()})())
+            took = time.monotonic() - started
+        self.assertLess(took, 3.0)
+        self.assertFalse(indexer._thread.is_alive())
+        self.assertFalse(runtime.status()["running"])
 
 
 class StopsWithTheAppTests(SearchTestCase):

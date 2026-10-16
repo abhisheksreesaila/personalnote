@@ -24,7 +24,8 @@ export function describeMeaning(status) {
     case 'ready': {
       const index = status.index
       const headline = index?.total ? `Indexed ${index.indexed} of ${index.total} ${index.total === 1 ? 'note' : 'notes'}` : 'Ready'
-      return { headline, detail: index?.error || status.engineError || 'Runs on this computer, only while the app is open. Nothing leaves this computer.', percent: null, download: null, cancel: null }
+      const refused = index?.failed ? (index.failed === 1 ? '1 note is too long to index.' : `${index.failed} notes are too long to index.`) : ''
+      return { headline, detail: index?.error || status.engineError || refused || 'Runs on this computer, only while the app is open. Nothing leaves this computer.', percent: null, download: null, cancel: null }
     }
     case 'error':
       return { headline: 'Error', detail: status.error || 'Search by meaning could not be set up.', percent: null, download: resume || 'Try again', cancel: null }
@@ -34,4 +35,4 @@ export function describeMeaning(status) {
 }
 
 // Notes are indexed in the background after the download; keep the count moving until it catches up (or the engine failed).
-export const indexIsCatchingUp = (status) => status?.state === 'ready' && !status.index?.error && status.index?.indexed < status.index?.total
+export const indexIsCatchingUp = (status) => status?.state === 'ready' && !status.index?.error && status.index?.indexed + (status.index?.failed || 0) < status.index?.total

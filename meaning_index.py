@@ -136,5 +136,12 @@ class MeaningIndexer:
         logger.warning("event=search.index outcome=engine_failed retry_in=%ds error=%s", self._backoff, error)
         self._backoff = min(self._backoff * 2, MAX_BACKOFF)
 
+    def _forget_stale_refusals(self) -> None:
+        """A refusal holds only for that revision of a note that still exists."""
+        current = self.service.note_revisions(self.failed)
+        for note_id in [note_id for note_id, revision in self.failed.items() if current.get(note_id) != revision]:
+            del self.failed[note_id]
+
     def status(self) -> dict:
+        self._forget_stale_refusals()
         return {**self.service.meaning_counts(self.runtime.model_id), "error": self.error, "failed": len(self.failed)}

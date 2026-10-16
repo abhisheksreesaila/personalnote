@@ -33,6 +33,13 @@ test('each state says what it is and offers only the actions that make sense', (
   assert.equal(indexIsCatchingUp({ ...indexing, index: { indexed: 130, total: 130, error: '' } }), false)
   assert.equal(indexIsCatchingUp({ ...indexing, index: { indexed: 3, total: 9, error: 'x' } }), false)
 
+  const refused = { state: 'ready', index: { indexed: 129, total: 130, error: '', failed: 1 } }
+  assert.equal(describeMeaning(refused).headline, 'Indexed 129 of 130 notes')
+  assert.equal(describeMeaning(refused).detail, '1 note is too long to index.')
+  assert.equal(describeMeaning({ state: 'ready', index: { indexed: 120, total: 130, error: '', failed: 10 } }).detail, '10 notes are too long to index.')
+  assert.equal(indexIsCatchingUp(refused), false, 'a refused note is done as far as catching up goes')
+  assert.equal(indexIsCatchingUp({ state: 'ready', index: { indexed: 100, total: 130, error: '', failed: 1 } }), true)
+
   const failed = describeMeaning({ state: 'error', error: 'Could not reach the download server.' })
   assert.equal(failed.headline, 'Error')
   assert.match(failed.detail, /Could not reach/)

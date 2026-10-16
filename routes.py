@@ -76,6 +76,12 @@ def default_voice_runtime() -> VoiceRuntime:
     return VoiceRuntime(root=Path(folder) if folder else app_data_dir() / "voice", version=app_version(ROOT))
 
 
+def close_search(app) -> None:
+    """The app is closing: stop the engine first, so a batch waiting on it fails at once, then the thread that was waiting."""
+    app.state.search.shutdown()
+    app.state.indexer.stop()
+
+
 def default_search_runtime(database_path: Path) -> SearchRuntime:
     """Search by meaning lives beside the database (PERSONAL_NOTE_SEARCH_DIR overrides it), so a scratch database gets a scratch folder."""
     folder = os.environ.get("PERSONAL_NOTE_SEARCH_DIR")

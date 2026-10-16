@@ -1761,6 +1761,15 @@ class NoteService:
         with self.connection() as connection:
             return int(connection.execute("SELECT sequence FROM workspace_state WHERE id = 1").fetchone()[0])
 
+    def note_revisions(self, note_ids) -> dict:
+        """{note_id: revision} for those that still exist."""
+        ids = list(note_ids)
+        if not ids:
+            return {}
+        with self.connection() as connection:
+            rows = connection.execute(f"SELECT id, revision FROM notes WHERE id IN ({', '.join('?' * len(ids))})", ids).fetchall()
+        return {row["id"]: row["revision"] for row in rows}
+
     def meaning_waiting(self, model: str, idle_seconds: float) -> int:
         """How many notes need a vector but were saved less than `idle_seconds` ago (they are indexed once left alone)."""
         with self.connection() as connection:
