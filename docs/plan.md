@@ -495,7 +495,7 @@ Reviewed: PASS (fixes: island fits short windows, dead dot rule removed). Quick 
 - [x] mind-map notes show their actions in the same island; every verify-* script and the speed test pass
 ## F-077 Make the flaky canvas checks honest [todo]
 Brief: none (test reliability) · Needs: none
-Found during F-074 to F-076 review: on a clean main, verify-leafer-hybrid fails 4 of 5 runs (bitmap blur, "only the touched page", sometimes "typing grows the grid") and verify-leafer-lod fails "vectors are back after zoom" 1 of 2; verify-leafer-voice fails "no page errors" (null sampleRate in microphone-pcm-capture.js:48) about 1 in 5.
+Found during F-074 to F-076 review: on a clean main, verify-leafer-hybrid fails 4 of 5 runs (bitmap blur, "only the touched page", sometimes "typing grows the grid") and verify-leafer-lod fails "vectors are back after zoom" 1 of 2; verify-leafer-voice fails "no page errors" (null sampleRate in microphone-pcm-capture.js:48) about 1 in 5; verify-omnibar "Enter on it creates a note with that title" fails now and then under load, on main too.
 - [ ] find why each check flakes (timing vs a real rendering bug) and fix the cause, never the threshold
 - [ ] each script passes 5 runs in a row on main
 ## F-078 Download search by meaning [done]
@@ -510,8 +510,9 @@ Reviewed: PASS after three rounds (token-safe cutting, per-note refusals, low-pr
 - [x] with the engine installed, every non-secure note's title and searchable text is embedded in the background and stored in SQLite with the note's revision; a changed note is re-embedded, a deleted one loses its vector
 - [x] secure notes are never embedded; vectors are not in backup or export and are rebuilt when missing
 - [x] saving and typing never wait on indexing; the speed test is unchanged
-## F-080 Search finds by meaning [todo]
+## F-080 Search finds by meaning [done]
 Brief: docs/briefs/search-by-meaning.md · Needs: F-079
-- [ ] the omnibar shows a "By meaning" group under the word matches with the closest notes not already listed; without the download it is unchanged
-- [ ] `personal-note search --meaning "…"` returns the same ranking for agents
-- [ ] on a seeded notebook, meaning queries with no shared words find the right note
+Reviewed: PASS after two rounds (New note never lost, relative rule from real-engine fixtures: in-sample P 0.76 / R 0.83, held-out P 0.75 / R 0.94; CLI asks the running app). Live check on main (12 short notes): precise but cautious; the rule holds back queries the model itself ranks wrong. Knobs in meaning_rank.py.
+- [x] the omnibar shows a "By meaning" group under the word matches with the closest notes not already listed; without the download it is unchanged
+- [x] `personal-note search --meaning "…"` returns the same ranking for agents
+- [x] on a seeded notebook, meaning queries with no shared words find the right note
