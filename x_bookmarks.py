@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import time
@@ -355,6 +356,32 @@ def _normalize(page: dict) -> list[dict]:
             }
         )
     return items
+
+
+_HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}")
+TITLE_WORDS = 60  # characters of the post in the note's title
+
+
+def x_post_note(post: dict) -> tuple[str, str]:
+    """(title, Markdown) of the page note for one bookmark: "@handle: first words…", then the text, author, date and links.
+
+    The picture stays a link (nothing is fetched into the note). Links are built only from checked parts: the handle must
+    look like one and the picture must be https.
+    """
+    handle = post.get("author_handle") or ""
+    handle = handle if _HANDLE.fullmatch(handle) else ""
+    text = " ".join(str(post.get("text") or "").split())
+    cut = text[:TITLE_WORDS].rsplit(" ", 1)[0] if len(text) > TITLE_WORDS else text
+    title = f"{'@' + handle if handle else 'X post'}: {cut}{'…' if len(text) > TITLE_WORDS else ''}".strip()
+    name = str(post.get("author_name") or "").strip()
+    who = f"[@{handle}](https://x.com/{handle})" if handle else ""
+    byline = " ".join(part for part in (name, who) if part)
+    date = str(post.get("created_at") or "")[:10]
+    lines = [str(post.get("text") or "").strip(), "", " · ".join(part for part in (byline, date) if part), "", f"[Open on X]({post['url']})"]
+    image = post.get("image_url") or ""
+    if image.startswith("https://"):
+        lines += ["", f"[Picture]({image})"]
+    return title[:180], "\n".join(lines) + "\n"
 
 
 def _live_check() -> int:

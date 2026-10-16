@@ -668,6 +668,7 @@ def main(argv: list[str] | None = None) -> int:
     record_instance(database, base_url, server.nonce)
     if not speedtest_dir:
         app.state.voice.autostart()  # when voice is installed, its engine starts with the window (in the background)
+        app.state.x_sync.start()  # hourly, only when X is connected
     try:
         if engine == "serve":
             wait_for_stop(base_url)
