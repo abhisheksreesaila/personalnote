@@ -669,7 +669,7 @@ try {
     await page.locator('#ink-palette .palette-swatch').nth(3).click()
     await page.waitForTimeout(200)
     const made2 = newObjects(before2, await live(page))[0]
-    check('a swatch clicked while typing ends the edit and colours that text', made2?.content === 'colour me' && made2.style.color === color && !(await editorOpen(page)), JSON.stringify(made2?.style))
+    check('the colour dot clicked while typing ends the edit, and a palette swatch then colours that text', made2?.content === 'colour me' && made2.style.color === color && !(await editorOpen(page)), JSON.stringify(made2?.style))
     await page.click('[data-tool="select"]')
     await page.waitForTimeout(900)
   }

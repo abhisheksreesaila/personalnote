@@ -220,17 +220,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mindmap-toast.visible { transform: translate(-50%,0); opacity: 1; }
 
 .tool-group { display: flex; align-items: center; gap: 2px; }
-.tool-button[data-tool-options]::after {
-  content: '';
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: .55;
-}
 .tool-button[data-tool-options].is-holding { box-shadow: 0 0 0 4px rgba(180,83,63,.13); }
 .tool-button[data-tool-options][aria-expanded="true"] { box-shadow: 0 0 0 3px rgba(180,83,63,.15); }
 .ink-options-trigger { position: relative; }

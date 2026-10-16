@@ -512,6 +512,27 @@ try {
   const mid700 = await page.evaluate(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); const d = r('.tool-dock'); return { x: d.x, r: d.right, w: d.width, shows: getComputedStyle(document.querySelector('.tool-dock')).display !== 'none', mobile: getComputedStyle(document.querySelector('.mobile-capture-controls')).display } })
   check('at 700px (no mobile controls yet) the island is at the right edge', mid700.shows && mid700.mobile === 'none' && mid700.r <= 700 - 8 + 1 && mid700.w === 56, JSON.stringify(mid700))
 
+  // short windows: the island never covers the top or corner islands, and fit stays clickable
+  for (const [w, h] of [[700, 500], [1280, 460], [1280, 560]]) {
+    await page.setViewportSize({ width: w, height: h })
+    await load()
+    const d = await rect('.tool-dock')
+    const others = { search: await rect('#search-button'), focus: await rect('#focus-button'), zoom: await rect('#zoom-control'), history: await rect('#history-island'), notes: await rect('#toggle-sidebar') }
+    const clash = Object.keys(others).filter((k) => overlap(d, others[k]))
+    check(`${w}x${h}: the tool island overlaps no other island and is inside the window`, clash.length === 0 && d.y >= 0 && d.b <= h, JSON.stringify({ d, clash }))
+    const fit = await center('#zoom-fit')
+    check(`${w}x${h}: the fit button is the element under its own centre`, await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('#zoom-fit') !== null, [fit.x, fit.y]))
+    await page.mouse.move(fit.x, fit.y)
+    await page.mouse.click(fit.x, fit.y)
+    check(`${w}x${h}: ...and clicking it raises no error`, errors.length === 0, JSON.stringify(errors))
+    if (h <= 470) {
+      await click('#dock-more')
+      const fl = await rect('#dock-flyout')
+      check(`${w}x${h}: the flyout still opens, inside the window and clear of the island`, fl.y >= 0 && fl.b <= h && fl.r <= d.x, JSON.stringify({ fl, d }))
+      await page.keyboard.press('Escape')
+    }
+  }
+
   // reduced motion: the flyout does not animate
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
