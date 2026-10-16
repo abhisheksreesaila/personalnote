@@ -112,6 +112,10 @@ try {
     }
     check(`[${label}] before the download the row says "Not installed" and offers Download (≈315 MB)`, (await r.download.textContent()).trim() === 'Download (≈315 MB)' && await r.cancel.isHidden() && await r.progress.isHidden())
     check(`[${label}] the row is reachable inside the panel`, await r.download.isVisible() && (await r.download.boundingBox()).x + (await r.download.boundingBox()).width <= viewport.width)
+    if (label === 'phone') {
+      const heights = await page.evaluate(() => ['#voice-download', '#meaning-download'].map((id) => document.querySelector(id).getBoundingClientRect().height))
+      check('[phone] the Download buttons (voice and search) are at least 44px tall to touch', heights.every((h) => h >= 44), JSON.stringify(heights))
+    }
     await shot(page, `${label}-idle`)
 
     if (label === 'phone') {

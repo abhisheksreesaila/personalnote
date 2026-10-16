@@ -446,6 +446,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .dialog-danger:hover { background: #ad544a; }
 
 @media (max-width: 800px) {
+  .portability-actions button[id$="-download"], .portability-actions button[id$="-cancel"], .portability-actions button[id$="-remove"] { min-height: 44px; }
   .note-create-menu { display: none; }
   .mindmap-active .workspace { padding: 0; }
   .mindmap-minimap { display: none; }

@@ -11,9 +11,11 @@ import math
 import os
 import sys
 import tarfile
+import subprocess
 import tempfile
 import time
 import unittest
+import urllib.error
 import urllib.request
 from pathlib import Path
 from unittest import mock
@@ -33,6 +35,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 args = sys.argv[1:]
 assert "--embedding" in args and args[args.index("--pooling") + 1] == "mean"
 assert args[args.index("--host") + 1] == "127.0.0.1"
+assert "--no-slots" in args and "--api-key" not in args, "the key goes in the environment, not on the command line"
+key = os.environ["LLAMA_API_KEY"]
 port = int(args[args.index("--port") + 1])
 if os.environ.get("FAKE_ENGINE_MODE") == "crash":
     sys.exit(3)
@@ -47,9 +51,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+    def allowed(self):
+        if self.headers.get("Authorization") == "Bearer " + key:
+            return True
+        self.send_error(401)
+        return False
     def do_GET(self):
-        self.send({{"status": "ok"}}) if self.path == "/health" else self.send_error(404)
+        if self.path == "/health":
+            self.send({{"status": "ok"}})
+        elif self.path == "/props" and self.allowed():
+            self.send({{"model": "stub"}})
+        else:
+            self.send_error(404)
     def do_POST(self):
+        if not self.allowed():
+            return
         asked = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["input"]
         if log:
             with open(log, "a") as handle:
@@ -65,7 +81,7 @@ ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 """
 
 
-def llama_archive(files: dict[str, bytes] | None = None, links: dict[str, str] | None = None, top: str = "llama-b11681") -> bytes:
+def llama_archive(files: dict[str, bytes] | None = None, links: dict[str, str] | None = None, top: str = "llama-b11681", special: dict[str, tuple[bytes, str]] | None = None) -> bytes:
     if files is None:
         files = {"llama-server": FAKE_SERVER.encode(), "libggml.so.0.27.0": b"lib", "llama-cli": b"unused tool", "LICENSE": b"MIT"}
     buffer = io.BytesIO()
@@ -79,6 +95,11 @@ def llama_archive(files: dict[str, bytes] | None = None, links: dict[str, str] |
             info.size = len(data)
             info.mode = 0o755
             archive.addfile(info, io.BytesIO(data))
+        for name, (kind, target) in (special or {}).items():  # hard links and device files
+            info = tarfile.TarInfo(f"{top}/{name}")
+            info.type = kind
+            info.linkname = target
+            archive.addfile(info)
         for name, target in (links or {}).items():
             info = tarfile.TarInfo(f"{top}/{name}")
             info.type = tarfile.SYMTYPE
@@ -180,6 +201,17 @@ class InstallTests(SearchTestCase):
         self.assertFalse((self.root / "installed.json").exists())
         self.assertFalse(runtime.binary_path.exists())
         self.assertFalse(list(self.root.rglob("*.part")) or list((self.root / "downloads").glob("*")))
+
+    def test_a_server_that_sends_more_than_the_pinned_size_is_cut_off_and_nothing_is_kept(self):
+        self.source.files["/model.gguf"] = self.model + os.urandom(2_000_000)
+        runtime = self.runtime()
+
+        status = self.install(runtime)
+
+        self.assertEqual(status["state"], "error")
+        self.assertIn("more than expected", status["error"])
+        self.assertFalse(list(self.root.rglob("*.part")))
+        self.assertFalse(runtime.model_path.exists())
 
     def test_a_wrong_sized_engine_is_rejected_before_anything_is_unpacked(self):
         runtime = self.runtime(engine=Pin(f"{self.source.base}/engine.tar.gz", len(self.engine_archive) + 5, hashlib.sha256(self.engine_archive).hexdigest()))
@@ -305,6 +337,16 @@ class UnpackTests(SearchTestCase):
     def test_a_link_pointing_outside_the_folder_is_refused(self):
         self.failed(llama_archive(links={"libevil.so": "/etc/passwd"}), "not safe to unpack")
         self.failed(llama_archive(links={"libevil.so": "../../outside"}), "not safe to unpack")
+
+    def test_an_absolute_path_is_refused(self):
+        self.failed(llama_archive({"llama-server": b"x", "/tmp/pn-f078-absolute.txt": b"bad"}), "not safe to unpack")
+        self.assertFalse(Path("/tmp/pn-f078-absolute.txt").exists())
+
+    def test_a_hard_link_is_refused(self):
+        self.failed(llama_archive(special={"libhard.so": (tarfile.LNKTYPE, "llama-server")}), "not safe to unpack")
+
+    def test_a_device_file_is_refused(self):
+        self.failed(llama_archive(special={"libdevice.so": (tarfile.CHRTYPE, "")}), "not safe to unpack")
 
     def test_the_library_links_a_release_ships_are_kept_as_links_inside_the_folder(self):
         archive = llama_archive(links={"libggml.so.0": "libggml.so.0.27.0", "libggml.so": "libggml.so.0"})
@@ -440,6 +482,39 @@ class EngineTests(SearchTestCase):
 
         self.assertEqual(len(runtime.embed(["y"], "query")), 1)
 
+    def test_the_engine_needs_a_key_for_everything_but_health_and_the_key_is_not_on_the_command_line(self):
+        runtime = self.ready()
+        runtime.embed(["x"], "query")
+        endpoint = runtime.status()["endpoint"]
+        pid = json.loads((self.root / "engine.pid").read_text())["pid"]
+
+        def code(path, data=None, key=None):
+            request = urllib.request.Request(f"{endpoint}{path}", data=data, headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {})})
+            try:
+                with urllib.request.urlopen(request, timeout=3) as response:
+                    return response.status
+            except urllib.error.HTTPError as error:
+                return error.code
+
+        body = json.dumps({"input": ["x"]}).encode()
+        self.assertEqual(code("/v1/embeddings", body), 401)
+        self.assertEqual(code("/props"), 401)
+        self.assertEqual(code("/v1/embeddings", body, key="wrong"), 401)
+        self.assertEqual(code("/health"), 200)
+        self.assertEqual(code("/props", key=runtime._api_key), 200)
+        self.assertEqual(code("/v1/embeddings", body, key=runtime._api_key), 200)
+        arguments = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "args="], capture_output=True, text=True).stdout
+        self.assertNotIn(runtime._api_key, arguments)
+        self.assertGreaterEqual(len(runtime._api_key), 32)
+
+    def test_each_launch_gets_a_new_key(self):
+        runtime = self.ready()
+        runtime.embed(["x"], "query")
+        first = runtime._api_key
+        runtime.shutdown()
+        runtime.embed(["x"], "query")
+        self.assertNotEqual(runtime._api_key, first)
+
     def test_the_engine_listens_on_loopback_only(self):
         runtime = self.ready()
         runtime.embed(["x"], "query")
@@ -447,6 +522,49 @@ class EngineTests(SearchTestCase):
         self.assertTrue(endpoint.startswith("http://127.0.0.1:"))
         with urllib.request.urlopen(f"{endpoint}/health", timeout=3) as response:
             self.assertEqual(json.load(response), {"status": "ok"})
+
+
+class StopsWithTheAppTests(SearchTestCase):
+    """The app's two exits: main.py's atexit hook and a process that is killed outright."""
+
+    def ready(self) -> SearchRuntime:
+        runtime = self.runtime()
+        self.assertEqual(self.install(runtime)["state"], "ready")
+        return runtime
+
+    def app_process(self, then: str) -> subprocess.Popen:
+        runtime = self.ready()
+        manifest = Path(self.temporary.name) / "manifest.json"
+        manifest.write_text(json.dumps({"engine": self.pin_dict(runtime.engine), "model": self.pin_dict(runtime.model)}))
+        env = dict(os.environ, PERSONAL_NOTE_DB=str(Path(self.temporary.name) / "app.db"), PERSONAL_NOTE_SEARCH_DIR=str(self.root), PERSONAL_NOTE_SEARCH_MANIFEST=str(manifest), PERSONAL_NOTE_VOICE_DIR=str(Path(self.temporary.name) / "voice"))
+        code = f"import main; main.app.state.search.embed(['x'], 'query'); print(open(r'{self.root / 'engine.pid'}').read(), flush=True); {then}"
+        return subprocess.Popen([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1], env=env, stdout=subprocess.PIPE, text=True)
+
+    @staticmethod
+    def pin_dict(pin: Pin) -> dict:
+        return {"url": pin.url, "bytes": pin.bytes, "sha256": pin.sha256}
+
+    def gone(self, pid: int) -> bool:
+        deadline = time.monotonic() + 8
+        while search_runtime.voice_runtime._alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return not search_runtime.voice_runtime._alive(pid)
+
+    def test_a_normal_exit_stops_the_engine_and_removes_its_pid_file(self):
+        app = self.app_process("pass")
+        pid = json.loads(app.stdout.readline())["pid"]
+        self.assertEqual(app.wait(30), 0)
+        self.assertTrue(self.gone(pid))
+        self.assertFalse((self.root / "engine.pid").exists())
+
+    @unittest.skipUnless(search_runtime.voice_runtime._PRCTL, "the kernel stops a child with its parent on Linux only")
+    def test_an_app_that_is_killed_outright_takes_the_engine_with_it(self):
+        app = self.app_process("import time; time.sleep(60)")
+        pid = json.loads(app.stdout.readline())["pid"]
+        self.assertTrue(search_runtime.voice_runtime._alive(pid))
+        app.kill()
+        app.wait(10)
+        self.assertTrue(self.gone(pid))
 
 
 class RoutesTests(SearchTestCase):

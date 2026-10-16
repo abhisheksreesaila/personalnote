@@ -25,6 +25,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import shutil
 import signal
 import socket
@@ -147,6 +148,7 @@ class SearchRuntime:
         self._port: int | None = None
         self._ready = False
         self._engine_error = ""
+        self._api_key = ""  # new for every launch; the engine reads it from its environment, so it is not in `ps`
         self._retry_after = 0.0
         self._start_lock = threading.Lock()
         self._loopback = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never through a proxy
@@ -398,8 +400,12 @@ class SearchRuntime:
                         raise SearchError("The download was interrupted. Try again to resume it.") from error
                     if not block:
                         break
-                    handle.write(block)
                     written += len(block)
+                    if written > expected:  # a bad mirror must not fill the disk beside the database
+                        handle.close()
+                        part.unlink(missing_ok=True)
+                        raise SearchError("The download server sent more than expected. Nothing was installed.")
+                    handle.write(block)
                     with self._lock:
                         self._progress.current = written
         if written != expected:
@@ -462,7 +468,7 @@ class SearchRuntime:
     def _command(self, port: int) -> list[str]:
         return [
             str(self.binary_path), "-m", str(self.model_path), "--embedding", "--pooling", "mean",
-            "--host", HOST, "--port", str(port), "-c", "2048", "-ub", "2048", "-np", "1", "--no-webui",
+            "--host", HOST, "--port", str(port), "-c", "2048", "-ub", "2048", "-np", "1", "--no-webui", "--no-slots",
         ]
 
     def _open_log(self):
@@ -472,7 +478,7 @@ class SearchRuntime:
         return open(self.log_path, "ab")
 
     def _supervise(self, port: int, spawned: threading.Event, outcome: dict) -> None:
-        env = child_env()
+        env = child_env() | {"LLAMA_API_KEY": self._api_key}
         if self.key == "linux-x86_64":  # the libraries sit beside the server
             env["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [str(self.engine_dir), env.get("LD_LIBRARY_PATH", "")]))
         try:
@@ -533,6 +539,7 @@ class SearchRuntime:
             if time.monotonic() < self._retry_after:
                 raise SearchError(self._engine_error)
             voice_runtime.reap_stale_process(self.pid_path)
+            self._api_key = secrets.token_urlsafe(32)
             port = self._choose_port()
             spawned = threading.Event()
             outcome: dict = {}
@@ -592,7 +599,7 @@ class SearchRuntime:
         port = self._ensure_started()
         request = Request(
             f"http://{HOST}:{port}/v1/embeddings", data=json.dumps({"input": prompts}).encode(),
-            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT, "Authorization": f"Bearer {self._api_key}"},
         )
         try:
             with self._loopback.open(request, timeout=120) as response:
