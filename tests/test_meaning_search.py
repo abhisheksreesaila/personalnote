@@ -67,13 +67,13 @@ class MeaningRouteTests(MeaningSearchCase):
 
         self.assertEqual(response.status_code, 200)
         (found,) = response.json()
-        self.assertEqual({key: found[key] for key in ("id", "title", "notebook")}, {"id": sleep["id"], "title": "Sleep log", "notebook": "Health"})
+        self.assertEqual({key: found[key] for key in ("id", "title", "notebookName")}, {"id": sleep["id"], "title": "Sleep log", "notebookName": "Health"})
         self.assertAlmostEqual(found["score"], cosine(QUERY, "Sleep log tired woke slept badly early"), places=4)
 
     def test_a_note_in_the_inbox_names_the_inbox(self):
         self.page("Sleep log", "tired woke slept badly early")
         self.index()
-        self.assertEqual([item["notebook"] for item in self.ask().json()], ["Inbox"])
+        self.assertEqual([item["notebookName"] for item in self.ask().json()], ["Inbox"])
 
     def test_only_notes_within_0_04_of_the_best_and_above_0_65_are_listed_best_first(self):
         best = self.page("Sleep log", "tired woke slept badly early")
@@ -122,6 +122,19 @@ class MeaningRouteTests(MeaningSearchCase):
         self.engine.down = True
         response = self.ask()
         self.assertEqual((response.status_code, response.json()), (200, []))
+
+    def test_the_note_must_stand_out_from_the_notebook_s_ordinary_score_for_the_query(self):
+        for _ in range(8):
+            self.page("Sleep log", "tired woke slept badly early again")  # 0.791 each: the notebook is full of near matches
+        self.page("Sleep diary", "tired woke slept badly early")  # 0.845: only 0.054 over the median
+        self.index()
+        self.assertEqual(self.ask().json(), [])
+
+        for _ in range(10):
+            self.page("Trip", "flights to lisbon and a hotel")
+        self.index()
+        (found,) = self.ask().json()  # with twice the notes the median drops and the same note now stands out
+        self.assertEqual(found["title"], "Sleep diary")
 
     def test_a_blank_query_is_an_empty_list_without_asking_the_engine(self):
         self.assertEqual(self.ask("   ").json(), [])

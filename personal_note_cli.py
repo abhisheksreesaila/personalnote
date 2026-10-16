@@ -323,7 +323,7 @@ def command_search(service: NoteService, args: argparse.Namespace) -> list[dict]
         return matches
     for match in matches:
         if args.meaning:
-            print_text(f"#{match['id']} {match['title']} [{match['notebook']}] - {match['score']:.2f}")
+            print_text(f"#{match['id']} {match['title']} [{match['notebookName']}] - {match['score']:.2f}")
             continue
         excerpt = " ".join(match["excerpt"].split())
         print_text(f"#{match['id']} {match['title']} [{match['notebookName']}]" + (f" - {excerpt}" if excerpt else ""))
