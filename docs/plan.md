@@ -589,3 +589,8 @@ Reviewed: PASS (key in the keychain only, never in responses/file/DB/exports/DOM
 Brief: none (Encode Lessons in Structure: "never kill a process you didn't start" was broken twice, 2026-10-02 and 2026-10-16) · Needs: none
 - [ ] every scripts/verify-*.mjs and benchmark that starts a server checks its port first and fails with "port N is busy: set PORT/… to another" instead of reusing or killing whatever is there
 - [ ] one shared helper, one test; the lessons line points to it
+## F-095 Drop a note into a note [todo]
+Brief: docs/briefs/x-bookmarks.md ("drag onto any note … lands as a link card"); captain: "I can just move around and drop it into a note and it will be there" · Needs: F-088
+- [ ] drag a note's row from the notes panel onto an open canvas or page note: it lands as a link card (title, first lines, icon) that opens that note; works for X bookmark notes and any other note
+- [ ] the link survives backup/import and Markdown export (as a link); a deleted target shows as "note removed", never an error
+- [ ] a "Done" action on an X bookmark note archives it in one click
