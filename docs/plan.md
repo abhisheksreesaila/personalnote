@@ -579,11 +579,12 @@ Brief: docs/briefs/plugins.md · Needs: F-090
 Brief: docs/briefs/jam-sessions.md · Design: to do (Stitch: ghost branches, 👍/👎, live line) · Needs: F-086, F-090
 - [ ] New jam; hold mic, live line, Jam button → brain edits applied as one undo step; ghosts accepted by click or "yes"; Settings → Jam picks the brain
 - [ ] branch text and emoji rendered as plain text (never HTML); AGENTS.md invariant 8 updated and an ADR for the opt-in generative worker (Claude Code or OpenAI-compatible)
-## F-093 Settings → AI: pick the model once for every AI feature [todo]
+## F-093 Settings → AI: pick the model once for every AI feature [done]
 Brief: docs/briefs/jam-sessions.md ("the brain is your choice"); captain 2026-10-16: "give me … the config menu … so I can put my base URL, API key and deployment name, save it … settings for future AI stuff" · Needs: F-086, F-087 (secret_store.py)
-- [ ] Settings has an AI section: provider (Claude Code on this machine / Azure OpenAI / OpenAI-compatible), endpoint or base URL, deployment or model, API version (Azure), API key; Save; "Test" runs one tiny real call and shows the answer time or the plain error
-- [ ] the key is kept in the system keychain (0600 file on Linux), never in SQLite, backup, export, logs or the page; the page only learns "a key is saved" and can replace or remove it
-- [ ] jam_brain builds its brain from these settings, the key read from secret_store (F-086 reads only the env var; env vars still override for scripts)
+Reviewed: PASS (key in the keychain only, never in responses/file/DB/exports/DOM; /api/ai/test uses saved settings only). Should-fixes done: a key is dropped when the provider or host changes; deployment names refuse / and ... Real Claude Code Test 2.1 s; Azure and the Mac keychain await the captain.
+- [x] Settings has an AI section: provider (Claude Code on this machine / Azure OpenAI / OpenAI-compatible), endpoint or base URL, deployment or model, API version (Azure), API key; Save; "Test" runs one tiny real call and shows the answer time or the plain error
+- [x] the key is kept in the system keychain (0600 file on Linux), never in SQLite, backup, export, logs or the page; the page only learns "a key is saved" and can replace or remove it
+- [x] jam_brain builds its brain from these settings, the key read from secret_store (F-086 reads only the env var; env vars still override for scripts)
 ## F-094 Check scripts refuse a busy port [todo]
 Brief: none (Encode Lessons in Structure: "never kill a process you didn't start" was broken twice, 2026-10-02 and 2026-10-16) · Needs: none
 - [ ] every scripts/verify-*.mjs and benchmark that starts a server checks its port first and fails with "port N is busy: set PORT/… to another" instead of reusing or killing whatever is there
