@@ -480,11 +480,12 @@ Reviewed: PASS after fixes (button above a locked note, focus exit repaints, Esc
 - [x] the button, Esc or a click on the desk closes it; open or closed is remembered on this machine (storage guarded)
 - [x] opening a note keeps the panel open on a wide window and closes it on a narrow one
 - [x] Quick note, Inbox, PARA shelves, drag to file and the skin dots work inside the panel exactly as before
-## F-075 Title pill, Focus and search on top [todo]
+## F-075 Title pill, Focus and search on top [done]
 Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md · Needs: F-074
-- [ ] the top bar becomes islands: a centred title pill (editable title + save state, errors shown there) and, top right, a Focus button beside the search pill
-- [ ] a ⋯ in the title pill holds print, PNG, backup, Markdown, Obsidian vault, Clear all, Fold all and Settings; nothing that was on the top bar is lost
-- [ ] ⌘K, ⌘. and ⌘P still work; focus mode still hides all chrome and restores it
+Reviewed: PASS after fixes (agent chip moved top left and checked on the Mac host, search label "Search", ⋯ 40px on phones, focus returns to ⋯). The breadcrumb is gone; the agent chip is a dot below 960px.
+- [x] the top bar becomes islands: a centred title pill (editable title + save state, errors shown there) and, top right, a Focus button beside the search pill
+- [x] a ⋯ in the title pill holds print, PNG, backup, Markdown, Obsidian vault, Clear all, Fold all and Settings; nothing that was on the top bar is lost
+- [x] ⌘K, ⌘. and ⌘P still work; focus mode still hides all chrome and restores it
 ## F-076 Side tool island [todo]
 Brief: docs/briefs/chrome-islands.md · Design: docs/design/chrome-islands.md · Needs: F-075
 - [ ] the bottom dock becomes a vertical island on the right: select, text, pen, shape, sticky, a colour dot, +, mic
