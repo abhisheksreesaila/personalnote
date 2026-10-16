@@ -104,7 +104,7 @@ try {
     await page.waitForFunction(() => document.querySelector('#meaning-setup-headline').textContent !== 'Checking…', null, { timeout: 10000 })
     await page.waitForTimeout(500) // the panel slides in
     if (label === 'desktop') {
-      check('[desktop] the finished install is remembered after a reload: Ready, no download button', (await r.headline.textContent()) === 'Ready' && await r.download.isHidden())
+      check('[desktop] the finished install is remembered after a reload: Ready, no download button', /^(Ready|Indexed \d+ of \d+ notes?)$/.test(await r.headline.textContent()) && await r.download.isHidden())
       await shot(page, 'desktop-ready')
       check('[desktop] the row sits inside the panel', await r.headline.isVisible() && (await r.headline.boundingBox()).x + (await r.headline.boundingBox()).width <= viewport.width)
       await page.context().close()
@@ -137,9 +137,9 @@ try {
       await r.headline.filter({ hasText: 'Not installed' }).waitFor({ timeout: 10000 })
       check('[phone] Cancel keeps the partial download and offers Resume', (await r.download.textContent()).trim() === 'Resume download', await r.download.textContent())
       await r.download.click()
-      await r.headline.filter({ hasText: 'Ready' }).waitFor({ timeout: 60000 })
+      await r.headline.filter({ hasText: /^(Ready|Indexed )/  }).waitFor({ timeout: 60000 })
       const done = await status()
-      check('[phone] it finishes: Ready, files verified, installed.json written, engine not running', done.state === 'ready' && done.running === false && fs.existsSync(path.join(searchDir, 'installed.json')), JSON.stringify(done))
+      check('[phone] it finishes: Ready, files verified, installed.json written (the engine may start: the index embeds the notes in the background, F-079)', done.state === 'ready' && fs.existsSync(path.join(searchDir, 'installed.json')), JSON.stringify(done))
       check('[phone] only the server and its libraries are kept', JSON.stringify(fs.readdirSync(path.join(searchDir, 'engine')).filter((n) => !n.startsWith('.')).sort()) === JSON.stringify(['libggml.so', 'libggml.so.0.27.0', 'llama-server']))
       await shot(page, 'phone-ready')
     }
