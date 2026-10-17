@@ -8,9 +8,11 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4860)
+const UI_PORT = basePort(4860)
 const API_PORT = UI_PORT + 1
+await assertPortsFree([UI_PORT, API_PORT])
 const API = `http://127.0.0.1:${API_PORT}`
 const QUIET_SECONDS = 6
 const SECRET = 'ZEBRA-CARD-4111-1111 quokkaphrase'

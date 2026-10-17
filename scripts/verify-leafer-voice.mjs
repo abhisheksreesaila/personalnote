@@ -14,8 +14,10 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { readJsonCanvas } from '../src/core/document/jsoncanvas.js'
 import { prettifySelection } from '../src/modules/editor/prettify.js'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = 4810
+const PORT = basePort(4810)
+await assertPortsFree([PORT])
 const now = new Date().toISOString()
 const fixture = JSON.parse(fs.readFileSync(new URL('../tests/fixtures/documents/app-all-tools.json', import.meta.url), 'utf8'))
 const results = []

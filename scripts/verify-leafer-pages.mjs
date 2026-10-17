@@ -11,8 +11,10 @@ import { readJsonCanvas, writeJsonCanvas } from '../src/core/document/jsoncanvas
 import { followChanges } from '../src/modules/canvas-leafer/connectors.js'
 import { boundingRect } from '../src/modules/canvas-leafer/bounds.js'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = Number(process.env.VERIFY_PORT) || 4780
+const PORT = basePort(4780)
+await assertPortsFree([PORT])
 const W = 860
 const H = 1080
 const now = new Date().toISOString()

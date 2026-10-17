@@ -6,8 +6,10 @@
 //   TMPDIR=/var/tmp/x node scripts/verify-notebook-dialog.mjs   (PN_VERIFY_BROWSER=webkit for the Mac app's engine)
 import { createServer } from 'vite'
 import { chromium, webkit } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4870)
+const UI_PORT = basePort(4870)
+await assertPortsFree([UI_PORT])
 const now = new Date().toISOString()
 const posts = []
 const results = []

@@ -11,8 +11,10 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { generateStressDocument } from '../src/modules/speedtest/stress-note.js'
 import { writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = 4850
+const PORT = basePort(4850)
+await assertPortsFree([PORT])
 const now = new Date().toISOString()
 const doc = generateStressDocument(Number(process.env.HYB_COUNT ?? 1500), { columns: 4, rows: 4 })
 // one shape whose stroke keeps its screen width at every zoom (the bitmaps must not leave it at a stale width)

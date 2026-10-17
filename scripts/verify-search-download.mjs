@@ -12,11 +12,13 @@ import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4890)
+const UI_PORT = basePort(4890)
 if (UI_PORT === 3137 || UI_PORT + 1 === 3137 || UI_PORT + 2 === 3137) throw new Error('Never use the real app port (3137)')
 const API_PORT = UI_PORT + 1
 const FILE_PORT = UI_PORT + 2
+await assertPortsFree([UI_PORT, API_PORT, FILE_PORT])
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'pn-verify-search-'))

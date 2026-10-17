@@ -12,6 +12,9 @@
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
+const PORT = basePort(4830)
+await assertPortsFree([PORT])
 
 const now = new Date().toISOString()
 const load = (name) => JSON.parse(fs.readFileSync(new URL(`../tests/fixtures/documents/${name}.json`, import.meta.url), 'utf8'))
@@ -23,12 +26,12 @@ let report = null
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 
-const server = await createServer({ server: { port: 4830, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4839' } }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4839' } }, logLevel: 'error' })
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:4830' })
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://127.0.0.1:${PORT}` })
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -65,7 +68,7 @@ try {
     return json({})
    }
   await context.route('**/api/**', apiHandler)
-  await page.goto('http://127.0.0.1:4830/notes?speedtest=1')
+  await page.goto(`http://127.0.0.1:${PORT}/notes?speedtest=1`)
   await page.waitForSelector('.speedtest-panel [data-act="start"]', { timeout: 60000 })
   check('the panel offers Compare render modes, ticked', await page.evaluate(() => document.querySelector('#speedtest-compare')?.checked === true))
   const started = Date.now()
@@ -126,7 +129,7 @@ try {
   instance = false
   calls.length = 0
   const own = await context.newPage()
-  await own.goto('http://127.0.0.1:4830/notes?speedtest=1')
+  await own.goto(`http://127.0.0.1:${PORT}/notes?speedtest=1`)
   await own.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   await own.waitForTimeout(2500)
   check('?speedtest=1 in the person\'s own app does not run the test', !await own.evaluate(() => document.querySelector('.speedtest-panel')) && !calls.some((call) => call[0] === 'POST' && call[1] === '/notes'), JSON.stringify(calls))
@@ -141,7 +144,7 @@ try {
   mac.on('pageerror', (error) => errors.push(error.message))
   const ratio = () => mac.evaluate(() => Math.max(...[...document.querySelectorAll('#leafer-host canvas')].map((canvas) => canvas.width / canvas.getBoundingClientRect().width)))
   const choose = async (value) => { await mac.evaluate((v) => { const select = document.querySelector('#settings-render-mode'); select.value = v; select.dispatchEvent(new Event('change', { bubbles: true })) }, value); await mac.waitForTimeout(1000) }
-  await mac.goto('http://127.0.0.1:4830/notes')
+  await mac.goto(`http://127.0.0.1:${PORT}/notes`)
   await mac.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   check('Render mode starts at Default and draws at the screen\'s 2x', await mac.evaluate(() => document.querySelector('#settings-render-mode').value === 'default' && !window.__pnPerf?.pageBitmaps) && Math.abs(await ratio() - 2) < 0.05, String(await ratio()))
   await choose('bitmaps')

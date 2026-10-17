@@ -6,6 +6,9 @@
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
+const PORT = basePort(4807)
+await assertPortsFree([PORT])
 
 const now = new Date().toISOString()
 const UP = { rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, skewX: 0, skewY: 0 }
@@ -26,7 +29,7 @@ const notesDb = { 1: { id: 1, resourceId: 'r1', revision: 1, noteType: 'canvas',
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 
-const server = await createServer({ server: { port: 4807, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4809' } }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4809' } }, logLevel: 'error' })
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 try {
@@ -43,7 +46,7 @@ try {
     if (p === '/notes/1' && req.method() === 'PUT') { notesDb[1].revision += 1; return json({ revision: notesDb[1].revision, resourceId: 'r1' }) }
     return json({})
   })
-  await page.goto('http://127.0.0.1:4807/notes')
+  await page.goto(`http://127.0.0.1:${PORT}/notes`)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   await page.waitForTimeout(800)
   const scene = (name, ...args) => page.evaluate(([n, a]) => window.__personalNote.leaferCanvas()[n](...a), [name, args])

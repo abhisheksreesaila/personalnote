@@ -11,6 +11,9 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { generateStressDocument } from '../src/modules/speedtest/stress-note.js'
 import { writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
+const PORT = basePort(4805)
+await assertPortsFree([PORT])
 
 const now = new Date().toISOString()
 const stressDoc = generateStressDocument(1500, { columns: 4, rows: 4 })
@@ -23,7 +26,7 @@ const OLD = { hybrid: false, dragCrowd: 0, lodZoom: 0.6 }
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 
-const server = await createServer({ server: { port: 4805, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4809' } }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': 'http://127.0.0.1:4809' } }, logLevel: 'error' })
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 
@@ -41,7 +44,7 @@ async function open(perf) {
     if (p === '/notes/1' && route.request().method() === 'GET') return json({ ...summary, content: stress.content, pageState: stress.pageState })
     return json({ revision: 2, resourceId: 'r1' })
   })
-  await page.goto('http://127.0.0.1:4805/notes')
+  await page.goto(`http://127.0.0.1:${PORT}/notes`)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 120000 })
   await page.waitForTimeout(1500)
   await page.evaluate(() => window.__personalNote.setTool('select')) // a note opens with the Text tool; these checks select and drag

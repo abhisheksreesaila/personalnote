@@ -9,8 +9,10 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { readJsonCanvas, writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = Number(process.env.PN_VERIFY_PORT || 4771)
+const PORT = basePort(4771)
+await assertPortsFree([PORT])
 const MOCK_PORT = PORT + 8 // (the mocked /api answers here)
 const now = new Date().toISOString()
 const fixture = JSON.parse(fs.readFileSync(new URL('../tests/fixtures/documents/app-all-tools.json', import.meta.url), 'utf8'))

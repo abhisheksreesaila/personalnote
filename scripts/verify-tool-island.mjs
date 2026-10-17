@@ -18,9 +18,10 @@ import zlib from 'node:zlib'
 import { createHash } from 'node:crypto'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = Number(process.env.PN_VERIFY_PORT || 4905)
-if (PORT === 3137) throw new Error('never the real app port')
+const PORT = basePort(4905)
+await assertPortsFree([PORT])
 const now = new Date().toISOString()
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }

@@ -8,9 +8,11 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium, webkit } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4890)
+const UI_PORT = basePort(4890)
 const API_PORT = UI_PORT + 1
+await assertPortsFree([UI_PORT, API_PORT])
 const API = `http://127.0.0.1:${API_PORT}`
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }

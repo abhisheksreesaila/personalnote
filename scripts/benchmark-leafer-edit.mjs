@@ -8,10 +8,12 @@
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => { const [key, value = 'true'] = arg.replace(/^--/, '').split('='); return [key, value] }))
 const dprs = args.dpr ? [Number(args.dpr)] : [1, 2]
-const PORT = 4745
+const PORT = basePort(4745)
+await assertPortsFree([PORT])
 
 const now = new Date().toISOString()
 const summary = { id: 1, resourceId: 'res_bench', revision: 1, noteType: 'canvas', title: 'Benchmark note', notebookId: 1, createdAt: now, updatedAt: now }
