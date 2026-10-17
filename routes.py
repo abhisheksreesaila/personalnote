@@ -639,6 +639,13 @@ def create_app(
         except Exception as error:
             return json_error(error)
 
+    @app.patch("/api/notes/{note_id}/icon")
+    async def set_note_icon(request, note_id: int):
+        try:
+            return JSONResponse(service.set_note_icon(note_id, await payload(request)))
+        except Exception as error:
+            return json_error(error)
+
     @app.delete("/api/notes/{note_id}")
     def delete_note(note_id: int):
         try:

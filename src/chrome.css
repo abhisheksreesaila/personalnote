@@ -235,6 +235,12 @@
   .isl-face[hidden] { display: none; }
   .isl-open, .isl-moment, .isl-focus { height: calc(var(--h) - 2px); align-items: center; font: 500 13.5px/1 var(--ui-font); }
   .isl-open { display: block; padding: 0 18px; border: 0; background: none; color: inherit; font-weight: 600; cursor: pointer; }
+  .nt { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: color-mix(in srgb, var(--t) 36%, var(--sk-panel)); font: 14px/1 "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", sans-serif; }
+  .isl-ico { position: absolute; left: 0; top: 0; width: 44px; height: calc(var(--h) - 2px); padding: 0; border: 0; border-radius: 0; background: none; isolation: isolate; cursor: pointer; } /* the button is a 44 px target; the tile is drawn inside it */
+  .isl-ico::before { content: ""; position: absolute; z-index: -1; left: 10px; top: calc((var(--h) - 26px) / 2); width: 24px; height: 24px; border-radius: 7px; background: color-mix(in srgb, var(--t) 36%, var(--sk-panel)); }
+  .isl-ico:empty { display: none; }
+  .isl-ico:not(:empty) + .isl-open { padding-left: 44px; }
+  @media (min-width: 901px) { .page-active .isl-ico { display: none; } .page-active .isl-ico + .isl-open { padding-left: 18px; } }
   #island-title { display: block; max-width: min(300px, calc(100vw - 150px)); overflow: hidden; text-overflow: ellipsis; }
   .isl-moment { display: flex; gap: 8px; padding: 0 16px; }
   .isl-hit { position: absolute; inset: 0; border: 0; background: none; cursor: pointer; }
@@ -420,7 +426,8 @@
     .app-shell.sidebar-open .sidebar-scrim { opacity: 1; pointer-events: auto; }
     .app-shell .notebook-tab { height: 44px; font-size: 14px; }
     .app-shell .sec-head { height: 44px; font-size: 14px; }
-    .app-shell .note-list-item { min-height: 40px; }
+    .app-shell .note-list-item { min-height: 48px; }
+    .app-shell .note-list-item .nt { width: 32px; height: 32px; border-radius: 9px; font-size: 18px; }
     .app-shell .sec-add, .app-shell .nav-edit { opacity: 1; width: 32px; height: 32px; }
     .app-shell .nav-edit { top: 6px; right: 24px; }
     .app-shell .nav-new-note { right: 58px; }

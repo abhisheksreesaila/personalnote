@@ -97,13 +97,14 @@ const noteLinks = () => {
 
 export const PAGE_SHEET_HEIGHT = 1080
 
-export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote = () => {} } = {}) {
+export function mountPage(host, { documentValue, icon, onIcon = () => {}, onChange = () => {}, onOpenNote = () => {} } = {}) {
   installPageStyle()
   const initial = normalizePageDocument(documentValue)
   host.innerHTML = `
     <div class="page-desk">
       <div class="page-stage">
         <div class="page-paper">
+          <button class="page-icon" aria-label="Change icon"></button>
           <div class="page-sheets" aria-hidden="true"></div>
           <div class="page-editor"></div>
         </div>
@@ -112,6 +113,13 @@ export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote
   const desk = host.querySelector('.page-desk')
   const paper = host.querySelector('.page-paper')
   const sheets = host.querySelector('.page-sheets')
+  const iconButton = host.querySelector('.page-icon')
+  const setIcon = (shown) => { // the note's emoji (F-100), big above the words on a wide screen; the island shows it on a phone
+    iconButton.textContent = shown?.emoji ?? ''
+    iconButton.style.setProperty('--t', `var(--sk-c${shown?.tint})`)
+  }
+  setIcon(icon)
+  iconButton.addEventListener('click', () => onIcon(() => iconButton))
   let silent = false
   let base = initial.markdown // what the server holds: the common ancestor when an agent's change meets unsaved typing
 
@@ -172,6 +180,7 @@ export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote
   resize.observe(paper)
 
   return {
+    setIcon,
     view,
     getDocument() {
       return { version: initial.version, markdown: view.state.doc.toString(), ink: readInk(view.state) }

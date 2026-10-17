@@ -157,6 +157,12 @@ def build_parser() -> argparse.ArgumentParser:
     destination.add_argument("--notebook-id", type=int)
     destination.add_argument("--inbox", action="store_true", help="Unfile the note")
     move_note.set_defaults(handler=command_notes_move)
+    update_note = note_commands.add_parser("update", help="Change a note's icon (one emoji and a tint 1-5; 'none' goes back to the guess from its title)")
+    update_note.add_argument("note_id", type=int)
+    update_note.add_argument("--icon", required=True, type=note_icon_argument, help="One emoji, or none")
+    update_note.add_argument("--tint", type=int, choices=(1, 2, 3, 4, 5), help="Tint of the icon's tile; omit to let the app pick one for the emoji")
+    update_note.add_argument("--revision", type=int, help="Fail if the note is no longer at this revision")
+    update_note.set_defaults(handler=command_notes_update)
     delete_note = note_commands.add_parser("delete", help="Delete a note")
     delete_note.add_argument("note_id", type=int)
     delete_note.set_defaults(handler=command_notes_delete)
@@ -222,6 +228,13 @@ def icon_argument(value: str) -> str:
     if not valid_icon(value):
         raise argparse.ArgumentTypeError("use lucide:<name>, brand:x or emoji:<one emoji>")
     return value
+
+
+def note_icon_argument(value: str) -> str:
+    from note_icon import is_chosen_icon
+    if value != "none" and not is_chosen_icon(value):
+        raise argparse.ArgumentTypeError("use one emoji, or none")
+    return "" if value == "none" else value
 
 
 def command_notebooks_list(service: NoteService, _args: argparse.Namespace) -> list[dict]:
@@ -306,6 +319,14 @@ def command_notes_create(service: NoteService, args: argparse.Namespace) -> dict
 
 def command_notes_move(service: NoteService, args: argparse.Namespace) -> dict:
     return service.move_note(args.note_id, {"notebookId": None if args.inbox else args.notebook_id})
+
+
+def command_notes_update(service: NoteService, args: argparse.Namespace) -> dict:
+    service.refuse_agent_on_secure(args.note_id)  # a secure note is the app's alone, as for every other agent write
+    payload = {"icon": args.icon, "tint": args.tint or 0}
+    if args.revision is not None:
+        payload["revision"] = args.revision
+    return service.set_note_icon(args.note_id, payload)
 
 
 def command_notes_delete(service: NoteService, args: argparse.Namespace) -> dict:
