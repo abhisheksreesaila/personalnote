@@ -12,12 +12,8 @@ import { createHeldEdit, noteRowIcon, searchResultView } from './modules/secure/
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
 import { nudgeDistance } from './core/document/operations.js'
-import { mountAISettings } from './modules/ai/ai-settings.js'
-import { mountXSettings } from './modules/x/x-settings.js'
 import { createPluginRegistry } from './core/plugins.js'
 import { BUILTIN_PLUGINS } from './modules/plugins/builtin.js'
-import { createIslandDownload, createSetupSection, renderSetupRow } from './modules/plugins/setup-row.js'
-import { mountPluginSettings } from './modules/plugins/plugins-settings.js'
 import { mountPageModule } from './modules/page.js'
 import { mountAgentSync } from './modules/sync/index.js'
 import { mountIsland } from './modules/island/island.js'
@@ -2306,6 +2302,7 @@ async function deleteNotebook() {
 
 let settingsFromMenu = false // opened from the ... menu: closing it puts the focus back on the ... button
 function setPropertiesOpen(open) {
+  if (open) void loadOptional() // the panels it shows are optional code (F-097)
   elements.properties.classList.toggle('open', open)
   elements.properties.setAttribute('aria-hidden', String(!open))
   elements.properties.inert = !open
@@ -2347,7 +2344,7 @@ async function loadCapabilitySettings() {
   }
 }
 
-const aiSettings = mountAISettings(document.querySelector('#ai-settings'), api)
+let aiSettings = null // Settings → AI, mounted with the rest of the optional code (loadOptional)
 function setPortabilityStatus(message, error = false) {
   elements.portabilityStatus.textContent = message
   elements.portabilityStatus.classList.toggle('error', error)
@@ -2528,7 +2525,7 @@ const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], i
 const pluginEntries = new Map() // what plugins offer as a way to start something new: { id, label, icon, keywords, run }
 const hasCreateChoices = () => plugins.creatableKinds().length > 0 || pluginEntries.size > 0
 const pluginShell = {
-  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, latestRequest, setup: { createSetupSection, renderSetupRow, createIslandDownload },
+  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, latestRequest, setup: null, // setup: the setup-row helpers, set by loadOptional before any plugin is activated
   canvas: () => leaferCanvas,
   voiceSink: null, // a plugin that listens to the mic itself (a jam) sets { heard(text, {final}), listening(on) }; dictation then goes there, not into a text box
   voice: () => plugins.get('voice'),
@@ -2630,6 +2627,7 @@ function openSearch() {
   panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top))}px`)
   panel.style.setProperty('--omni-right', `${Math.max(0, Math.round(innerWidth - bar.right))}px`)
   Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], meaningHits: [], meaningPending: false, wordsFailed: false })
+  void loadOptional() // Search by meaning joins as soon as its code is there (F-097)
   plugins.get('meaning')?.open()
   elements.searchInput.value = ''
   elements.searchBackdrop.hidden = false
@@ -3304,10 +3302,8 @@ document.querySelector('#top-properties').addEventListener('click', () => {
 })
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#top-properties').addEventListener('click', () => {
-  if (elements.properties.classList.contains('open')) { plugins.instances().forEach((plugin) => plugin.onSettingsOpen?.()); void aiSettings.refresh() }
+  if (elements.properties.classList.contains('open')) void loadOptional().then(() => { plugins.instances().forEach((plugin) => plugin.onSettingsOpen?.()); void aiSettings.refresh() })
 })
-mountXSettings(document.querySelector('#ai-settings'), api, elements.properties)
-mountPluginSettings(document.querySelector('#settings-plugins-rows'), plugins, switchPlugin, () => createIcons({ icons }))
 document.querySelector('#download-backup').addEventListener('click', () => {
   void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
 })
@@ -4105,6 +4101,58 @@ document.querySelector('#zoom-out').addEventListener('click', () => zoomStep(-1)
 document.querySelector('#zoom-fit').addEventListener('click', fitAllPages)
 elements.zoomValue.addEventListener('click', resetZoom)
 
+// F-097: everything optional (the plugins' code, the AI / X / Plugins settings panels) comes after the first screen is drawn, on idle, so the notes
+// list and the open note are never waiting for it. Anything that needs it sooner (Settings, the omnibar, a plugin's button, a map that was
+// made as a jam) calls this and waits for the same single load: nothing is lost, nothing loads twice.
+let optionalLoad = null
+function loadOptional() {
+  optionalLoad ??= (async () => {
+    const panels = await import('./modules/plugins/settings-panels.js')
+    pluginShell.setup = { createSetupSection: panels.createSetupSection, renderSetupRow: panels.renderSetupRow, createIslandDownload: panels.createIslandDownload }
+    aiSettings = panels.mountAISettings(document.querySelector('#ai-settings'), api)
+    panels.mountXSettings(document.querySelector('#ai-settings'), api, elements.properties)
+    panels.mountPluginSettings(document.querySelector('#settings-plugins-rows'), plugins, switchPlugin, () => createIcons({ icons }))
+    try { await plugins.sync(pluginShell) } catch (error) { console.error(error) } // a plugin that fails to load never takes the notebook with it
+    plugins.get('jam')?.attach(mindmapEditor) // a map opened before Jam arrived gets its session now
+    if (omni.open) plugins.get('meaning')?.queue(elements.searchInput.value.trim()) // and a search typed before Search by meaning arrived
+  })()
+  return optionalLoad
+}
+const whenIdle = (work) => ('requestIdleCallback' in window ? window.requestIdleCallback(work, { timeout: 1500 }) : setTimeout(work, 200))
+
+// The mic is on the page from the first screen (it is only a button until Voice's code arrives): pressing it first brings that code in at once,
+// and the press then starts dictation. Hold-to-talk degrades to a tap to start in that one case.
+function showMicEarly() {
+  if (!plugins.isEnabled('voice')) return
+  const parts = [elements.voiceButton, document.querySelector('#voice-divider'), elements.mobileSpeak]
+  parts.forEach((part) => { part.hidden = false })
+  let pressedEarly = false // a press that began before Voice arrived is finished here, whenever Voice arrives
+  let held = false // the finger or button is still down
+  let startedByHold = false
+  const early = async (event) => {
+    if (event.type === 'pointerdown') {
+      if (plugins.get('voice')) return
+      pressedEarly = true
+      held = true
+      await loadOptional()
+      if (held && !state.listening) { startedByHold = true; void plugins.get('voice')?.toggle() } // still held when Voice arrived: talk until let go
+      return
+    }
+    if (event.type !== 'click') { // pointerup / pointercancel
+      held = false
+      if (startedByHold) { startedByHold = false; pressedEarly = false; if (state.listening) void plugins.get('voice')?.toggle() }
+      return
+    }
+    if (plugins.get('voice') && !pressedEarly) return // Voice was already there: its own handlers took this click
+    pressedEarly = false
+    await loadOptional()
+    if (!state.listening) void plugins.get('voice')?.toggle() // tapped before Voice arrived: keep listening
+  }
+  for (const part of [elements.voiceButton, elements.mobileSpeak]) {
+    for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'click']) part.addEventListener(type, early)
+  }
+}
+
 async function initialize() {
   await prepareCanvasFonts()
   refreshPageColors()
@@ -4115,7 +4163,7 @@ async function initialize() {
   loadCapabilitySettings()
   plugins.apply((await api('/plugins').catch(() => ({}))).plugins) // the machine's choice; unreachable: every plugin keeps its default
   syncNoteCreateMenu()
-  void plugins.sync(pluginShell)
+  showMicEarly()
   try {
     // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server.
     await api('/secure/lock', { method: 'POST' }).catch(() => {})
@@ -4125,6 +4173,10 @@ async function initialize() {
     state.selectedNotebookId = state.notes[0]?.notebookId ?? null
     if (!state.notes.length) await createNote()
     else await selectNote(state.notes[0].id)
+    requestAnimationFrame(() => requestAnimationFrame(() => { // the first screen is on the glass: now the optional code
+      performance.mark('pn-first-screen')
+      whenIdle(() => void loadOptional())
+    }))
     agentSync = mountAgentSync({
       api,
       island: island.model,

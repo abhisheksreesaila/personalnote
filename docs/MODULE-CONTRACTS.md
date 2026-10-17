@@ -35,7 +35,7 @@ Agent-facing commands: `search`, `notes read` (canvas text in reading order, min
 
 ## Plugin host contract (built-in plugins, ADR 0006)
 
-Optional features are built-in plugins. `src/modules/plugins/builtin.js` lists them; `src/core/plugins.js` (`createPluginRegistry`) is what the shell asks. A definition is
+Optional features are built-in plugins. `src/modules/plugins/builtin.js` lists them; `src/core/plugins.js` (`createPluginRegistry`) is what the shell asks. None of their code is in the first load (F-097): the shell draws the first note, then `loadOptional()` in `src/main.js` imports `settings-panels.js` and runs `plugins.sync` on idle. Settings, the omnibar and a press on the mic call the same single load sooner and wait for it; `scripts/verify-first-screen.mjs` proves the order. A definition is
 
 ```js
 { id, name, description, icon, defaultOn, needs: [{ kind: 'download' | 'network' | 'model', text }],

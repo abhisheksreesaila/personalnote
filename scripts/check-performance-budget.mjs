@@ -7,8 +7,11 @@ const DIST_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url))
 const KIB = 1024
 const budgets = {
   // 240 until F-092: the captain raised it to 260 on 2026-10-16 for jam sessions and the plugins after them ("two hundred sixty KB is fine");
-  // F-097 then moves optional plugins out of the first load so the first screen stays fast.
+  // F-097 moved the optional plugins and settings panels out of the first load (see firstLoadGzip below).
   javascriptGzip: 260 * KIB,
+  // F-097: the JavaScript the first screen waits for (index.html's script and everything it imports statically). It was 243.27 KiB when the
+  // plugins and settings panels were in it; this number can only go down.
+  firstLoadGzip: 243.27 * KIB,
   // The editors built on CodeMirror are not in the first load: the page editor comes when a page note opens (F-040), the Markdown text
   // editor is fetched once a canvas has opened and the window is idle (F-049). They have their own budget instead of eating the app's:
   // the two editors and the CodeMirror chunk they share.
@@ -49,8 +52,26 @@ const javascriptGzip = javascript.reduce((total, asset) => total + asset.gzip, 0
 const cssGzip = css.reduce((total, asset) => total + asset.gzip, 0)
 const largestJavascript = javascript.reduce((largest, asset) => asset.raw > largest.raw ? asset : largest, javascript[0])
 
+// The first load: the module graph index.html starts (script and modulepreload links, then each file's static imports). index.html's own entry
+// boots the app with one dynamic import(), which is followed (it is the app, not a plugin). Every other dynamic import() is not: that is the
+// code fetched after the first paint.
+const byName = new Map(assets.map((asset) => [relative(DIST_DIRECTORY, asset.path), asset]))
+const html = await readFile(join(DIST_DIRECTORY, 'index.html'), 'utf8')
+const firstLoad = new Set()
+async function follow(name, entry = false) {
+  if (firstLoad.has(name) || !byName.has(name)) return
+  firstLoad.add(name)
+  const code = await readFile(join(DIST_DIRECTORY, name), 'utf8')
+  const here = name.includes('/') ? name.slice(0, name.lastIndexOf('/')) : ''
+  for (const [, target] of code.matchAll(/(?:\bfrom|\bimport)\s*["']\.\/([^"']+\.js)["']/g)) await follow(join(here, target))
+  if (entry) for (const [, target] of code.matchAll(/\bimport\(`\.\/([^`]+\.js)`\)/g)) await follow(join(here, target))
+}
+for (const [, target] of html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.js)"/g)) await follow(target, true)
+const firstLoadGzip = [...firstLoad].reduce((total, name) => total + byName.get(name).gzip, 0)
+
 const checks = [
   ['JavaScript gzip (app, without the editors loaded on demand)', javascriptGzip, budgets.javascriptGzip],
+  ['JavaScript gzip (first load: what the first screen waits for)', firstLoadGzip, budgets.firstLoadGzip],
   ['Editors gzip (CodeMirror, fetched after the first paint: on idle once a canvas opens, or with a page note)', pageEditorGzip, budgets.pageEditorGzip],
   ['CSS gzip', cssGzip, budgets.cssGzip],
   ['Largest JavaScript chunk', largestJavascript.raw, budgets.largestJavascriptRaw],
@@ -61,10 +82,7 @@ for (const [label, actual, budget] of checks) {
   const status = actual <= budget ? 'PASS' : 'FAIL'
   console.log(`${status}  ${label}: ${kib(actual)} / ${kib(budget)}`)
 }
-// Information only (F-091): the part of the total above that a default user's first paint does not wait for, because Voice and Search by
-// meaning are fetched only while on. It excludes nothing from the checks; both plugins are on by default, so the total above is what is downloaded.
-const pluginGzip = javascript.filter((asset) => /(^|\/)(voice-plugin|meaning-plugin)-[^/]*\.js$/.test(asset.path)).reduce((total, asset) => total + asset.gzip, 0)
-console.log(`INFO  first load without the plugin chunks (not a check): ${kib(javascriptGzip - pluginGzip)}; plugin chunks: ${kib(pluginGzip)}`)
+console.log(`INFO  first load files: ${[...firstLoad].join(', ')}`)
 console.log(`Largest chunk: ${relative(DIST_DIRECTORY, largestJavascript.path)}`)
 
 if (checks.some(([, actual, budget]) => actual > budget)) process.exitCode = 1
