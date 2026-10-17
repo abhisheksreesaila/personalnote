@@ -33,6 +33,19 @@ Agent-facing commands: `search`, `notes read` (canvas text in reading order, min
 
 `GET /api/changes?since=<sequence>` returns the workspace sequence, the change rows after `since` (`resourceKind`, `resourceId`, `revision`, `changeType`), an `overflow` flag, and the currently active agents. Omit `since` for a baseline. `src/modules/sync/` polls it every two seconds while the page is visible, refreshes lists, reloads the open note when it has no unsaved edits, and otherwise merges only objects the agent added (by `semanticId`) into the user's canvas so local edits are never discarded. The shell supplies canvas operations through callbacks; the module never imports shell state.
 
+## Plugin host contract (built-in plugins, ADR 0006)
+
+Optional features are built-in plugins. `src/modules/plugins/builtin.js` lists them; `src/core/plugins.js` (`createPluginRegistry`) is what the shell asks. A definition is
+
+```js
+{ id, name, description, icon, defaultOn, needs: [{ kind: 'download' | 'network' | 'model', text }],
+  noteKinds: [{ type, label, icon, defaultTitle, mount(host, options) -> Promise<editor>, readOnly(host, document, { turnOn }) }] }
+```
+
+The registry offers `list()`, `isEnabled(id)`, `apply({id: bool})` (the machine's choice; anything else keeps `defaultOn`), `onChange(fn)`, `creatableKinds()` (what the new-note menu may offer: kinds of plugins that are on), `kindOf(type)` (a note type's plugin, on or off), `mountEditor(type, host, options)` (the only road to a plugin's editor code; rejects while the plugin is off) and `showReadOnly(type, host, document, handlers)`. The shell turns a plugin on or off with `POST /api/plugins/{id}` `{enabled}` (same-app header required) and reads `GET /api/plugins` -> `{plugins: {id: bool}}` at load. Contribution points today are only the ones Mind maps needs: a new-note kind, a note-type editor loader with a read-only view, and a Settings → Plugins row (drawn from the definition: name, description, needs, switch). Commands and omnibar actions, island card actions and further settings rows join when a plugin needs them (F-091 onwards), by adding a field to the definition.
+
+`plugin_settings.py` (`PluginSettings`) owns the choice per machine (`plugins.json`, `PERSONAL_NOTE_PLUGINS_DIR`); `PluginSettings.require(id)` is what the server and the command line call before creating a note of an off plugin's type. Off means hidden, not loaded, data kept; reading, backup, export and import never consult the switch.
+
 ## Mind-map contract
 
 `src/modules/mindmap.js` exports:
