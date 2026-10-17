@@ -26,6 +26,7 @@ import { DEFAULTS, DEFAULT_PAGE, DocumentError, PAGE, SCHEMA_VERSION } from './s
 
 export const JSON_CANVAS_PRESETS = Object.freeze({ 1: '#fb464c', 2: '#e9973f', 3: '#e0de71', 4: '#44cf6e', 5: '#53dfdd', 6: '#a882ff' })
 export const HEX6 = /^#[0-9a-fA-F]{6}$/
+export const NOTE_URL = 'personal-note://note/' // a link node to another note (F-095): the url is the address; the pn holds only the title
 
 export const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
 export const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
@@ -115,8 +116,8 @@ function nodeCommon(object, id, box) {
 }
 
 function pnOf(object, extra = {}) {
-  const { id, z, type, content, mediaRef, children, raw, ...rest } = object
-  void id; void z; void content; void mediaRef; void children; void raw
+  const { id, z, type, content, mediaRef, children, raw, noteRef, ...rest } = object
+  void id; void z; void content; void mediaRef; void children; void raw; void noteRef
   return { type, ...extra, ...clone(rest) }
 }
 
@@ -160,6 +161,9 @@ export function writeJsonCanvas(doc, { media, derived = 'file', svg } = {}) {
         const ref = object.mediaRef
         node.file = ref.kind === 'media' ? store.fromId(ref.id) : store.putDataUrl(ref.dataUrl)
         if (typeof node.file !== 'string') node.file = ref.dataUrl
+      } else if (object.type === 'notelink') {
+        node.type = 'link'
+        node.url = NOTE_URL + object.noteRef
       } else if (object.type === 'group') {
         node.type = 'group'
         pn.children = object.children.map((child) => externalize(child, store))
@@ -231,8 +235,8 @@ function objectFromNode(node, foreign) {
     else if (!pn.noId) object.id = node.id
     return [object]
   }
-  const valid = new Set(['text', 'sticky', 'shape', 'ink', 'image', 'group'])
-  if (!pn || !valid.has(kind)) return foreign ? foreign.objects(node) : []
+  const valid = new Set(['text', 'sticky', 'shape', 'ink', 'image', 'group', 'notelink'])
+  if (!pn || !valid.has(kind) || (kind === 'notelink' && !(typeof node.url === 'string' && node.url.startsWith(NOTE_URL) && node.url.length > NOTE_URL.length))) return foreign ? foreign.objects(node) : [] // (a link another app pointed elsewhere is an ordinary web link)
   const object = { ...clone(pn), id: node.id }
   delete object.noId
   delete object.origId
@@ -250,6 +254,9 @@ function objectFromNode(node, foreign) {
     object.mediaRef = typeof node.file === 'string' && node.file !== '' ? mediaRefOf(node.file) : { kind: 'inline', dataUrl: '' }
   } else if (kind === 'group') {
     object.children = Array.isArray(pn.children) ? clone(pn.children) : []
+  } else if (kind === 'notelink') {
+    object.noteRef = node.url.slice(NOTE_URL.length)
+    object.title ??= ''
   }
   if (!object.extras) object.extras = {}
   return [object]

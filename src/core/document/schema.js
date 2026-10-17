@@ -49,6 +49,7 @@
 //   image      mediaRef { kind: 'inline', dataUrl } now, { kind: 'media', id } once the media library exists (F-023)
 //   connector  fromId, toId, color, lineWidth, reverseX, reverseY, arrowheads { start, end } (the app draws one head, at the end)
 //   group      children [DocObject], in the group's box frame
+//   notelink   noteRef (the target note's resource id), title (its title when linked; the card shows the live one, F-095)
 //   unknown    raw: the original value, verbatim: an object type this model does not know, an object whose placement fields are
 //              malformed, an ink path with commands other than absolute M/L/Q/C/Z, or something that is not an object. Unknown
 //              objects have no geometry; a group's unknown children stay in Fabric's group-centred frame.
@@ -57,7 +58,7 @@ export const SCHEMA_VERSION = 1
 
 export const PAGE = Object.freeze({ width: 860, height: 1080 })
 
-export const OBJECT_TYPES = Object.freeze(['text', 'sticky', 'shape', 'ink', 'image', 'connector', 'group', 'unknown'])
+export const OBJECT_TYPES = Object.freeze(['text', 'sticky', 'shape', 'ink', 'image', 'connector', 'group', 'notelink', 'unknown'])
 export const SHAPE_KINDS = Object.freeze(['rect', 'circle'])
 export const INK_KINDS = Object.freeze(['stroke', 'dot'])
 export const TEXT_MODES = Object.freeze(['point', 'box'])

@@ -115,6 +115,10 @@ function checkObject(object, path, report) {
       if (!Array.isArray(object.children)) report(`${path}.children`, 'must be an array', true)
       else object.children.forEach((child, index) => checkObject(child, `${path}.children[${index}]`, report))
       break
+    case 'notelink':
+      if (!isText(object.noteRef) || object.noteRef === '') report(`${path}.noteRef`, 'a note link needs the note it points at', true)
+      if (!isText(object.title)) report(`${path}.title`, 'must be a string')
+      break
     case 'unknown':
       if (object.raw === undefined) report(`${path}.raw`, 'unknown objects must keep their raw value', true)
       break
