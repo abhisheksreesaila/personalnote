@@ -203,6 +203,74 @@ try {
   }
 
   {
+    // a held sticky is placed (the tool picked before the engine arrived is what the press places)
+    const page = await newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    await slowEngine(page)
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    await page.click('[data-tool="sticky"]')
+    await page.mouse.click(640, 420)
+    const plain = (await call('GET', '/notes')).body.find((n) => n.title === 'Plain note')
+    let saved = ''
+    for (let i = 0; i < 40 && !/sticky/.test(saved); i++) { await page.waitForTimeout(300); saved = JSON.stringify((await call('GET', `/notes/${plain.id}`)).body.content ?? '') }
+    check('a sticky pressed on the page before the canvas engine arrives is placed (and saved) when it does', /sticky/.test(saved) && errors.length === 0, `${saved.slice(0, 120)} ${errors.join()}`)
+    await page.context().close()
+  }
+  {
+    // a press held for the note being opened is dropped when another note is picked: nothing lands in it, or in the note picked after
+    const page = await newPage()
+    await page.addInitScript(() => localStorage.setItem('pn.notesPanelOpen', '1'))
+    await slowEngine(page)
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    await page.mouse.click(900, 300)
+    await page.getByText('Trip map').first().click()
+    await page.locator('.mindmap-host svg').first().waitFor({ timeout: 25000 })
+    await page.waitForTimeout(500)
+    await page.locator('[data-note-id]', { hasText: 'Plain note' }).first().click()
+    await page.waitForFunction(() => document.documentElement.dataset.leaferSettled && document.querySelector('#note-title').value === 'Plain note', null, { timeout: 25000 })
+    await page.waitForTimeout(1500) // (the note opens ready for writing; whatever it opens is not under the press)
+    const near = await page.locator('.leafer-text-editor').evaluateAll((els, p) => els.some((e) => { const r = e.getBoundingClientRect(); return Math.abs(r.x - p.x) < 150 && Math.abs(r.y - p.y) < 150 }), { x: 900, y: 300 })
+    check('a press made while one note loads does not land in the note picked after it (nothing is written under the press)', !near)
+    await page.context().close()
+  }
+  {
+    // the title cannot be typed into while the engine is awaited (the words would be overwritten and unsaved); it can once the note is drawn, and is saved
+    const page = await newPage()
+    await slowEngine(page)
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    const readOnly = await page.locator('#note-title').evaluate((e) => e.readOnly)
+    await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 25000 })
+    await page.waitForFunction(() => !document.querySelector('#note-title').readOnly, null, { timeout: 10000 })
+    await page.click('#share-button')
+    await page.locator('#note-title').fill('Plain note renamed')
+    let name = ''
+    for (let i = 0; i < 30 && name !== 'Plain note renamed'; i++) { await page.waitForTimeout(300); name = (await call('GET', '/notes')).body.find((n) => /Plain note/.test(n.title))?.title }
+    check('the title is read-only until the note is drawn, then it takes typing and saves it', readOnly && name === 'Plain note renamed', `${readOnly} ${name}`)
+    const note = (await call('GET', '/notes')).body.find((n) => n.title === 'Plain note renamed')
+    await call('PUT', `/notes/${note.id}`, { title: 'Plain note', revision: note.revision })
+    await page.context().close()
+  }
+  {
+    // nothing moves after the first paint: the title pill, the notes panel and its rows are where they were when the canvas arrives
+    const page = await newPage()
+    await page.addInitScript(() => localStorage.setItem('pn.notesPanelOpen', '1'))
+    await slowEngine(page)
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    const rects = () => page.evaluate(() => [...document.querySelectorAll('.sidebar, #notebook-navigator, #notebook-navigator *, .island, #island-title, .topbar, .topbar *')].map((e) => { const r = e.getBoundingClientRect(); return `${e.id || e.className || e.tagName}:${r.x.toFixed(1)},${r.y.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}` }))
+    const first = await rects()
+    await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 25000 })
+    await page.waitForTimeout(1500)
+    const later = await rects()
+    const moved = first.map((r, i) => r === later[i] ? null : `${r} -> ${later[i]}`).filter(Boolean)
+    check('the title pill, top bar and notes panel do not move or change size after the first paint', first.length === later.length && first.length > 5 && moved.length === 0, moved.slice(0, 4).join(' | '))
+    await page.context().close()
+  }
+  {
     // the engine chunk answers with an error once: the notes list is still there, the failure is said in plain words, and Reload brings the canvas
     const page = await newPage()
     let failed = 0

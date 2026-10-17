@@ -223,6 +223,7 @@
   .app-shell .search-button:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
 
   /* The island: one box whose width and height follow the face it wears (island.js measures a face once, when it changes). */
+  .app-shell .island.booting { visibility: hidden; } /* F-098: until the first note's title is known (setNoteTitle) */
   .app-shell .island {
     position: relative; flex: none; max-width: 100%; overflow: hidden; pointer-events: auto; color: var(--sk-ink); background: var(--sk-panel); border: 1px solid var(--sk-edge);
     border-radius: calc(var(--h) / 2); box-shadow: var(--sk-shadow); transition: width 180ms ease-out, height 180ms ease-out, border-radius 180ms ease-out, background-color 180ms ease-out, border-color 180ms ease-out;
