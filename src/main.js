@@ -572,7 +572,6 @@ const state = {
 const plugins = createPluginRegistry(BUILTIN_PLUGINS)
 let mindmapEditor = null
 let mindmapReadOnly = null // the outline shown instead of the editor while Mind maps is off
-let mindmapShown = null // the map's document as loaded, so a map shown read-only is saved back exactly as it was
 let pageEditor = null
 
 function setActiveNoteType(noteType) {
@@ -637,7 +636,6 @@ async function mountActiveMindMap(documentValue) {
   mindmapEditor = null
   mindmapReadOnly?.destroy()
   mindmapReadOnly = null
-  mindmapShown = documentValue
   elements.title.readOnly = !plugins.isEnabled('mindmap')
   hideMindmapTools(!plugins.isEnabled('mindmap'))
   if (!plugins.isEnabled('mindmap')) {
@@ -1517,6 +1515,7 @@ let agentSync = null
 
 async function saveActiveNote({ unloading = false } = {}) {
   if (!state.activeNoteId || state.loading || speedTestPaused || state.noteLocked) return
+  if (state.activeNoteType === 'mindmap' && !mindmapEditor) return // a map shown read-only (Mind maps off) is never saved
   if (saveInFlight && !unloading) {
     saveQueued = true
     return
@@ -1540,7 +1539,7 @@ async function saveActiveNote({ unloading = false } = {}) {
     const editedLeafer = state.activeNoteType === 'canvas' && leaferSource.editedDoc
     const savedShift = leaferSource.shift
     saveFrame = editedLeafer && savedShift ? savedShift : null
-    const savedContent = state.activeNoteType === 'mindmap' ? (mindmapEditor ? mindmapEditor.getDocument() : mindmapShown)
+    const savedContent = state.activeNoteType === 'mindmap' ? mindmapEditor?.getDocument()
       : state.activeNoteType === 'page' ? pageEditor?.getDocument()
       : leaferSource.content
     const fields = {

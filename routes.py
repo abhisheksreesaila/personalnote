@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 ROOT = resource_root()
 
 
-def runtime_capabilities() -> dict:
+def runtime_capabilities(mindmap_on: bool = True) -> dict:
     """Return only capabilities that are part of the v1 notebook runtime."""
     return {
         "storage": {
@@ -60,7 +60,7 @@ def runtime_capabilities() -> dict:
             "markdownAssets": True,
         },
         "modules": {
-            "mindmap": {"available": True, "loading": "on-demand"},
+            "mindmap": {"available": mindmap_on, "loading": "on-demand"},
             "page": {"available": True, "loading": "on-demand"},
             "voice": {
                 "available": True,
@@ -229,7 +229,7 @@ def create_app(
 
     @app.get("/api/settings/capabilities")
     def settings_capabilities():
-        return JSONResponse(runtime_capabilities())
+        return JSONResponse(runtime_capabilities(app.state.plugins.enabled("mindmap")))
 
     def voice_response(call, status_code: int = 200) -> JSONResponse:
         try:

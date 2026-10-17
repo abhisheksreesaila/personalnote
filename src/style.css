@@ -133,7 +133,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mindmap-host { position: absolute; inset: 0; min-width: 0; min-height: 0; color: #292a25; background: #f8f6ef; }
 .mindmap-host[hidden] { display: none; }
 .mindmap-host.readonly { overflow: auto; padding: 72px 24px 24px; }
-#settings-plugins .setting-row { min-height: 44px; }
+#settings-plugins .setting-row { min-height: 48px; }
 .mindmap-active .workspace { overflow: hidden; padding: 0; background: #f8f6ef; }
 .mindmap-active .tool-dock,
 .mindmap-active .ink-options-popover,

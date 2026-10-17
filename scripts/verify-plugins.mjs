@@ -6,20 +6,16 @@
 // back without a reload, and an edit saves. Phone width first, then desktop. The command line's side is tests/test_plugin_settings.py.
 //   PN_VERIFY_PORT=4910 node scripts/verify-plugins.mjs        (PN_SHOT=/path/shot.png also saves pictures)
 import fs from 'node:fs'
-import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4910)
+const UI_PORT = basePort(4910)
 const API_PORT = UI_PORT + 1
-if ([UI_PORT, API_PORT].includes(3137)) throw new Error('Never use the real app port (3137)')
-for (const port of [UI_PORT, API_PORT]) {
-  const busy = await new Promise((resolve) => { const probe = net.connect(port, '127.0.0.1'); probe.on('connect', () => { probe.destroy(); resolve(true) }); probe.on('error', () => resolve(false)) })
-  if (busy) throw new Error(`port ${port} is busy: set PN_VERIFY_PORT to another`)
-}
+await assertPortsFree([UI_PORT, API_PORT])
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'pn-verify-plugins-'))
@@ -87,7 +83,7 @@ try {
       await page.locator('#plugin-mindmap').isChecked() && /Draw ideas as a branching map\. Nothing to download\./.test(await page.locator('#settings-plugins').textContent()))
     if (label === 'phone') {
       const row = await page.locator('#settings-plugins .setting-row').first().boundingBox()
-      check('[phone] the switch row is at least 44px tall', row.height >= 44, JSON.stringify(row))
+      check('[phone] the switch row is at least 48px tall', row.height >= 48, JSON.stringify(row))
     }
     await shot('settings-on')
     check(`[${label}] on: the new-note menu offers Mind map`, (await menuKinds()).join() === 'canvas,mindmap')
@@ -125,6 +121,17 @@ try {
     await page.keyboard.type('xyz')
     await page.waitForTimeout(700)
     check(`[${label}] off: typing on the read-only map changes nothing`, (await mapState()).revision === before.revision && (await mapState()).title === 'Trip map')
+
+    const puts = []
+    page.on('request', (request) => { if (request.method() === 'PUT' && request.url().includes(`/api/notes/${map.id}`)) puts.push(request.url()) })
+    await settings()
+    await page.click('#download-backup')
+    await page.locator('#portability-status').filter({ hasText: 'Export downloaded' }).waitFor({ timeout: 15000 }).catch(() => {})
+    await pick(plain.id)
+    await open()
+    await pick(map.id)
+    await page.locator('.mindmap-readonly').waitFor()
+    check(`[${label}] off: exporting and leaving the read-only map send no save and leave its revision alone`, puts.length === 0 && (await mapState()).revision === before.revision, JSON.stringify(puts))
 
     // ---- on again, no restart
     mapCode = []

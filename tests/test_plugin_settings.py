@@ -88,6 +88,22 @@ class ApiTests(Base):
         self.assertEqual([note["title"] for note in response.json()["notes"] if note["noteType"] == "mindmap"], ["Kept map"])
 
 
+    def test_a_backup_with_mind_maps_imports_while_off_and_the_maps_open(self):
+        self.client.post("/api/notes", json={"title": "Carried map", "noteType": "mindmap"})
+        backup = self.client.get("/api/export/workspace").json()
+        self.client.post("/api/plugins/mindmap", json={"enabled": False}, headers=H)
+        other = TestClient(create_app(self.dir / "other.db", plugins=self.settings))
+        self.assertEqual(other.post("/api/import/workspace", json=backup).status_code, 201)
+        maps = [note for note in other.get("/api/notes").json() if note["noteType"] == "mindmap"]
+        self.assertEqual([note["title"] for note in maps], ["Carried map"])
+        self.assertEqual(other.get(f"/api/notes/{maps[0]['id']}").json()["content"]["nodes"][0]["text"], "Central idea")
+
+    def test_capabilities_say_whether_mind_maps_are_on(self):
+        self.assertTrue(self.client.get("/api/settings/capabilities").json()["modules"]["mindmap"]["available"])
+        self.client.post("/api/plugins/mindmap", json={"enabled": False}, headers=H)
+        self.assertFalse(self.client.get("/api/settings/capabilities").json()["modules"]["mindmap"]["available"])
+
+
 class CliTests(Base):
     def run_cli(self, *arguments):
         output = io.StringIO()
