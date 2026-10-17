@@ -29,7 +29,7 @@
   }
 
   .sidebar, .sidebar-footer,
-  .properties-heading, .property-section, .settings-section,
+  .property-section,
   .mindmap-inspector section,
   .print-summary { border-color: var(--line); }
   .sidebar, .properties-panel { box-shadow: none; }
@@ -46,14 +46,13 @@
   .voice-button { transform: none; will-change: auto; }
 
   .notebook-picker,
-  .property-note-info strong, .setting-row, .setting-field-heading,
+  .property-note-info strong, .setting-row,
   .mindmap-inspector header strong, .print-summary dd,
   .paper-select select { color: var(--ink); }
   .ink-options-heading > span, .ink-options-heading button, .stroke-options > span,
-  .properties-heading span,
   .property-label, .property-section-title > span, .property-section-title small,
-  .property-note-info span, .font-size-row, .settings-section-label,
-  .setting-field-heading small, .setting-row small, .setting-row svg,
+  .property-note-info span, .font-size-row,
+  .setting-row small, .setting-row svg,
   .dialog-eyebrow, .field-label, .color-fieldset legend, .dialog-note,
   .print-preview-title span,
   .print-summary > p, .print-summary dt,

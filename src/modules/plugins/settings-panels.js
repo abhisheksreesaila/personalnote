@@ -3,5 +3,6 @@
 // is in the first load.
 export { mountAISettings } from '../ai/ai-settings.js'
 export { mountXSettings } from '../x/x-settings.js'
+export { mountSettingsWindow } from '../settings/settings-window.js'
 export { mountPluginSettings } from './plugins-settings.js'
 export { createIslandDownload, createSetupSection, renderSetupRow } from './setup-row.js'

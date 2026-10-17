@@ -43,7 +43,7 @@ export async function activateVoice(shell) {
   let attemptCount = 0
 
   const section = createSetupSection({ name: 'voice', label: 'Voice', rowLabel: 'Dictation', icon: 'mic', actions: ['download', 'cancel', 'remove'] })
-  document.querySelector('#settings-plugins').after(section)
+  document.querySelector('[data-sw-page="voice"]').append(section)
   shell.refreshIcons()
 
   // ---- the Settings row ----
@@ -72,6 +72,7 @@ export async function activateVoice(shell) {
   }
   function openSettings() {
     shell.setPropertiesOpen(true)
+    document.querySelector('#properties-panel').dispatchEvent(new CustomEvent('settings-show', { detail: 'voice' }))
     void refreshSetup()
     section.scrollIntoView?.({ block: 'center' })
     section.querySelector('button:not([hidden])')?.focus({ preventScroll: true })

@@ -7,13 +7,20 @@ export function describePlugin({ description, needs }) {
 
 export function mountPluginSettings(root, registry, onSwitch, afterDraw = () => {}) {
   function draw() {
-    root.replaceChildren(...registry.list().flatMap((plugin) => {
+    root.replaceChildren(...registry.list().map((plugin) => {
       const row = document.createElement('label')
       row.className = 'setting-row'
       const name = document.createElement('span')
       const icon = document.createElement('i')
       icon.dataset.lucide = plugin.icon
-      name.append(icon, plugin.name)
+      const text = document.createElement('span')
+      text.className = 'row-text'
+      const title = document.createElement('b')
+      title.textContent = plugin.name
+      const help = document.createElement('small')
+      help.textContent = describePlugin(plugin)
+      text.append(title, help)
+      name.append(icon, text)
       const box = document.createElement('input')
       box.type = 'checkbox'
       box.id = `plugin-${plugin.id}`
@@ -23,10 +30,7 @@ export function mountPluginSettings(root, registry, onSwitch, afterDraw = () => 
         try { await onSwitch(plugin.id, box.checked) } catch { box.checked = !box.checked } finally { box.disabled = false }
       })
       row.append(name, box)
-      const help = document.createElement('p')
-      help.className = 'portability-help'
-      help.textContent = describePlugin(plugin)
-      return [row, help]
+      return row
     }))
     afterDraw()
   }
