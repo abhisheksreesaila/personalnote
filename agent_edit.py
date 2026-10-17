@@ -89,13 +89,12 @@ def merge_markdown(base: str, ours: str, target: str) -> str | None:
     new = target[prefix:len(target) - suffix]
     before_context = base[max(0, prefix - CONTEXT):prefix]
     after_context = base[len(base) - suffix:len(base) - suffix + CONTEXT]
-    if old and ours.count(old) == 1:
-        at = ours.find(old)
-    else:  # empty, or said more than once: the words around it say which one
-        wanted = before_context + old + after_context
-        if ours.count(wanted) != 1:
-            return None
-        at = ours.find(wanted) + len(before_context)
+    # The changed words must still stand, with the words around them, exactly once: anything less and a short change (a typo fix) could land
+    # on other words the person typed. When unsure, refuse.
+    wanted = before_context + old + after_context
+    if ours.count(wanted) != 1:
+        return None
+    at = ours.find(wanted) + len(before_context)
     return ours[:at] + new + ours[at + len(old):]
 
 

@@ -66,7 +66,8 @@ async function turn(host, direction) {
     host.island.agentNotice(undid ? `Undid ${first(edit.agent)}’s edit` : `Put ${first(edit.agent)}’s edit back`, { actions: [undid ? ['agent-redo', 'Redo'] : ['agent-undo', 'Undo']] })
   } catch (error) {
     // The island says it in a few words (it is small); the toast has the server's plain sentence.
-    host.island.agentNotice(error.status === 409 ? `Can’t ${direction}: you changed it since` : `Couldn’t ${direction}`, { ms: 6000 })
+    const yours = error.status === 409 && /overwrite your edit/.test(error.message) // (any other 409 is a save that landed meanwhile)
+    host.island.agentNotice(yours ? `Can’t ${direction}: you changed it since` : `Couldn’t ${direction}: try again`, { ms: 6000 })
     host.toast(error.message)
   }
 }

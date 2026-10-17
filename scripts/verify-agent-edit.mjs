@@ -51,17 +51,20 @@ try {
   // The notes: a canvas with two texts far apart, a second canvas the agent edits while it is not open, and a page.
   const makeCanvas = async (title, objects) => {
     const note = await call('POST', '/notes', { title })
-    await call('PUT', `/notes/${note.id}`, { title, revision: note.revision, notebookId: note.notebookId, content: { objects }, pageState: { columns: 1, rows: 3 } })
+    await call('PUT', `/notes/${note.id}`, { title, revision: note.revision, notebookId: note.notebookId, content: { nodes: objects }, pageState: { columns: 1, rows: 3 } })
     return note.id
   }
-  const text = (words, left, top) => ({ type: 'Textbox', text: words, left, top, width: 500, fontSize: 24 })
+  // JSON Canvas nodes, on the page (x and y from the page's top-left corner). A note made by the command line sits in the page frame as it is.
+  let nodeNumber = 0
+  const text = (words, x, y) => ({ id: `n${++nodeNumber}`, type: 'text', text: words, x, y, width: 500, height: 60 })
   const seed = async () => { // (fresh notes for each session, so each starts from the same words)
     const canvasId = await makeCanvas('Agent canvas', [text('First thought', 120, 120), text('Second thought', 120, 2300)])
     const otherId = await makeCanvas('Another canvas', [text('Another note', 120, 120)])
+    const edgeId = await makeCanvas('Past the edge', [text('Edge thought', -130, 120), text('Inside thought', 200, 400)]) // (a text past the page's left edge: the app adds a page there and saves in its own frame)
     const pageNote = await call('POST', '/notes', { title: 'Agent page', noteType: 'page' })
     const lines = Array.from({ length: 24 }, (_, i) => `Line ${i + 1} of the page, written by a person.`)
     await call('PUT', `/notes/${pageNote.id}`, { title: 'Agent page', revision: pageNote.revision, notebookId: pageNote.notebookId, content: { version: 1, markdown: lines.join('\n\n'), ink: { marks: [], drawings: [] } } })
-    return { canvasId, otherId, pageId: pageNote.id }
+    return { canvasId, otherId, edgeId, pageId: pageNote.id }
   }
 
   browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
@@ -69,7 +72,7 @@ try {
 
   const session = async (name, contextOptions, tap) => {
     console.log(`--- ${name}`)
-    const { canvasId, otherId, pageId } = await seed()
+    const { canvasId, otherId, edgeId, pageId } = await seed()
     const context = await browser.newContext(contextOptions)
     const page = await context.newPage()
     const errors = []
@@ -187,6 +190,23 @@ try {
     await open(otherId)
     await page.waitForTimeout(1500)
     check('and nothing shows when that note is opened afterwards', (await face()).kind === 'rest')
+
+    // Content past the page's left edge: the app saves it in a frame of its own (everything moved by a page); Undo must still work and keep the person's words
+    await open(edgeId)
+    await page.waitForTimeout(400)
+    cli('notes', 'append', String(edgeId), '--text', 'Edge append')
+    await waitNotice('Claude edited')
+    const edgeText = (await objects()).find((object) => object.content === 'Edge thought')
+    await pn((id) => window.__personalNote.leaferCanvas().editText(id, { select: false }), edgeText.id)
+    await page.waitForTimeout(250)
+    await page.keyboard.press('Control+End')
+    await page.keyboard.type(' typed here')
+    await press('agent-undo')
+    await waitNotice('Undid Claude’s edit')
+    const edgeStored = canvasTexts(await fresh(edgeId))
+    check('past the left edge: Undo takes the agent\'s words out and keeps the typed ones (the saved frame is compensated)', edgeStored.some((words) => /Edge thought typed here/.test(words)) && !edgeStored.includes('Edge append') && edgeStored.includes('Inside thought'), JSON.stringify(edgeStored))
+    await pn(() => document.activeElement?.blur())
+    await waitFor(async () => (await face()).kind !== 'agent', 6000)
 
     // ------------------------------------------------------------------ page note
     await open(pageId)

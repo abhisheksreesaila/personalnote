@@ -5,13 +5,16 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from starlette.testclient import TestClient
 
+from agent_edit import merge_markdown
 from json_canvas import from_json_canvas
 from personal_note_cli import main
 from routes import create_app
-from services import NoteService
+from services import ConflictError, NoteService, NotFoundError, SecureNoteAgentError
+from tests.test_secure_notes import SECRET, SecureCase
 
 APP = {"x-personal-note": "1"}
 
@@ -229,6 +232,93 @@ class UndoPageTests(AgentEditCase):
         edit = self.edit_of(note["id"], result["revision"])
         self.assertEqual(self.undo(edit["id"]).status_code, 200)
         self.assertEqual(self.service.get_note(note["id"])["content"]["markdown"], "One\n\nTwo\n\nThree")
+
+
+class MergeMarkdownTests(unittest.TestCase):
+    def test_a_short_change_never_lands_on_other_words(self):
+        # base -> target fixes a typo in "the"; the person has since rewritten the rest of the line
+        self.assertIsNone(merge_markdown("Notes: the plan", "Notes: hello world", "Notes: teh plan"))
+
+    def test_the_change_is_made_where_the_same_words_still_stand(self):
+        self.assertEqual(merge_markdown("one two three", "zero one two three", "one TWO three"), "zero one TWO three")
+
+    def test_words_that_appear_twice_are_found_by_what_surrounds_them(self):
+        self.assertEqual(merge_markdown("a cat\n\nb cat", "a cat\n\nb cat\n\nmine", "a cat\n\nb dog"), "a cat\n\nb dog\n\nmine")
+
+    def test_the_words_around_the_change_being_edited_is_unsure_and_refused(self):
+        self.assertIsNone(merge_markdown("alpha beta gamma", "alpha BETA! gamma", "alpha beta2 gamma"))
+
+
+class SecureNoteTests(SecureCase):
+    def agent_edit(self, text):
+        note = self.page_note(markdown="plain start")
+        with self.service.as_agent("Claude Code"):
+            result = self.service.append_text(note["id"], text, revision=note["revision"])
+        with self.service.connection() as connection:
+            edit = connection.execute("SELECT id FROM agent_edits WHERE note_id = ?", (note["id"],)).fetchone()
+        return note, result, edit["id"]
+
+    def edit_count(self):
+        with self.service.connection() as connection:
+            return connection.execute("SELECT COUNT(*) FROM agent_edits").fetchone()[0]
+
+    def test_making_the_note_secure_forgets_the_agents_plain_copies_and_undo_cannot_wipe_it(self):
+        note, _, edit_id = self.agent_edit(SECRET)
+        self.assertEqual(self.edit_count(), 1)
+        self.service.mark_secure(note["id"])
+        self.assertEqual(self.edit_count(), 0)
+        self.assert_no_words_on_disk()
+        with self.assertRaises(NotFoundError):
+            self.service.undo_agent_edit(edit_id)
+        self.assertIn(SECRET, json.dumps(self.service.get_note(note["id"])["content"]))  # (still there, sealed)
+
+    def test_undo_on_a_secure_note_refuses_plainly_even_if_a_copy_were_left(self):
+        note, _, edit_id = self.agent_edit("plain agent words")
+        self.service.mark_secure(note["id"])
+        with self.service.connection() as connection:
+            connection.execute("INSERT INTO agent_edits (id, note_id, agent, after_revision, changed, before_content, before_format, before_page_state, after_content, after_format, after_page_state, at) VALUES (?, ?, 'x', 1, '{}', '{}', 'page', '{}', '{}', 'page', '{}', 0)", (edit_id + 100, note["id"]))
+            connection.commit()
+        with self.assertRaisesRegex(ConflictError, "secure now"):
+            self.service.undo_agent_edit(edit_id + 100)
+        self.assertIn("plain start", json.dumps(self.service.get_note(note["id"])["content"]))
+
+    def test_an_agent_write_to_a_secure_note_is_refused_and_records_nothing(self):
+        note = self.page_note()
+        self.service.mark_secure(note["id"])
+        with self.service.as_agent("Claude Code"), self.assertRaises(SecureNoteAgentError):
+            self.service.append_text(note["id"], "more words", revision=self.service.get_note(note["id"])["revision"])
+        self.assertEqual(self.edit_count(), 0)
+
+
+class TurnTests(AgentEditCase):
+    def test_a_save_landing_between_the_merge_and_the_write_is_looked_at_again_once(self):
+        note = self.canvas()
+        result = self.cli("notes", "append", str(note["id"]), "--text", "From the agent")
+        edit = self.edit_of(note["id"], result["revision"])
+        real = self.service.update_note
+        calls = []
+
+        def racing(note_id, payload, **kwargs):
+            calls.append(payload["revision"])
+            if len(calls) == 1:
+                real(note_id, {**payload, "title": "Renamed meanwhile"})  # an autosave lands first
+            return real(note_id, payload, **kwargs)
+
+        with mock.patch.object(self.service, "update_note", racing):
+            saved = self.service.undo_agent_edit(edit["id"])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(self.texts(note["id"]), ["First thought"])
+        self.assertEqual(self.service.get_note(note["id"])["revision"], saved["revision"])
+
+    def test_the_note_and_the_edits_state_change_together(self):
+        note = self.canvas()
+        result = self.cli("notes", "append", str(note["id"]), "--text", "From the agent")
+        edit = self.edit_of(note["id"], result["revision"])
+        with mock.patch.object(self.service, "record_change", side_effect=RuntimeError("disk")):
+            with self.assertRaises(RuntimeError):
+                self.service.undo_agent_edit(edit["id"])
+        self.assertEqual(self.texts(note["id"]), ["First thought", "From the agent"])
+        self.assertEqual(self.edit_of(note["id"], result["revision"])["state"], "applied")
 
 
 if __name__ == "__main__":

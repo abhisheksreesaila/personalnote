@@ -787,7 +787,8 @@ class NoteService:
             connection.commit()
         return self.serialize_note(note)
 
-    def update_note(self, note_id: int, payload: dict) -> dict:
+    def update_note(self, note_id: int, payload: dict, agent_edit_state: tuple[int, str] | None = None) -> dict:
+        """`agent_edit_state` (edit id, state): flipped in the same transaction as the write (Undo and Redo, F-096)."""
         title = str(payload.get("title") or "Untitled note")[:180]
         page_state = json.dumps(payload.get("pageState") or DEFAULT_PAGE_STATE, separators=(",", ":"))
         with self.connection() as connection:
@@ -848,7 +849,9 @@ class NoteService:
                 )
             self.index_note(connection, note_id, title, stored_content, note_type, content_format, body=body)
             self.record_change(connection, "note", current["resource_id"], revision, "updated")
-            if self.acting_agent and data_key is None and note_type in ("canvas", "page"):
+            if agent_edit_state:
+                connection.execute("UPDATE agent_edits SET state = ? WHERE id = ?", (agent_edit_state[1], agent_edit_state[0]))
+            if self.acting_agent and data_key is None and not current["secure"] and note_type in ("canvas", "page"):
                 self.remember_agent_edit(connection, current, (stored_content, content_format, stored_page_state), revision)
             connection.commit()
         return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
@@ -1270,6 +1273,7 @@ class NoteService:
                 raise ConflictError("Resource revision does not match")
             self.index_note(connection, note_id, current["title"], "", current["note_type"], current["content_format"], body="")
             connection.execute("DELETE FROM note_embeddings WHERE note_id = ?", (note_id,))  # a meaning vector leaks content (F-079)
+            connection.execute("DELETE FROM agent_edits WHERE note_id = ?", (note_id,))  # the plain before and after of an agent's write (F-096)
             self.record_change(connection, "note", current["resource_id"], new_revision, "updated")
             connection.commit()
         self.keyring.unlock(key_id, data_key)
@@ -1823,19 +1827,30 @@ class NoteService:
 
     def turn_agent_edit(self, edit_id: int, undo: bool) -> dict:
         """Undo or redo over whatever is stored now. The person's later edits stay unless they touched the very thing the agent did (then nothing
-        changes and the answer says so). The write is revision-checked like any other, so a save landing meanwhile is a plain conflict."""
+        changes and the answer says so). The write is revision-checked like any other; a save landing meanwhile (an autosave) makes it look
+        again once, on the new revision, before it gives up."""
+        try:
+            return self.turn_agent_edit_once(edit_id, undo)
+        except AgentEditConflict:
+            raise
+        except ConflictError:
+            return self.turn_agent_edit_once(edit_id, undo)
+
+    def turn_agent_edit_once(self, edit_id: int, undo: bool) -> dict:
         with self.connection() as connection:
             edit = connection.execute("SELECT * FROM agent_edits WHERE id = ?", (edit_id,)).fetchone()
             if edit is None:
                 raise NotFoundError("That edit is no longer kept")
             note = connection.execute("SELECT * FROM notes WHERE id = ?", (edit["note_id"],)).fetchone()
+        if note["secure"]:
+            raise AgentEditConflict("This note is secure now, so the agent's edit can't be undone or redone.")
         if edit["state"] != ("applied" if undo else "undone"):
             raise AgentEditConflict("This edit is already undone." if undo else "This edit is not undone.")
         now, goal = ("after", "before") if undo else ("before", "after")  # (the version the note should be at, the one to take it to)
         note_type = note["note_type"]
         snapshot = lambda side: self.snapshot_document(note_type, edit[f"{side}_content"], edit[f"{side}_format"], edit[f"{side}_page_state"])
-        # Always a merge into what is stored now, even when nothing came between: the app may have saved the note in a page frame of its own since,
-        # and the result must stay in that frame, not jump back to the one the agent wrote in.
+        # Always a merge into what is stored now, even when nothing came between: the app may have saved the note in a page frame of its own since
+        # (content past the left or top edge moves the origin), and the result must stay in that frame.
         ours = self.snapshot_document(note_type, note["content"], self.format_of(note), note["page_state"])
         if note_type == "page":
             markdown = merge_markdown(snapshot(now)["markdown"], ours["markdown"], snapshot(goal)["markdown"])
@@ -1844,15 +1859,11 @@ class NoteService:
             document = merge_canvas(snapshot(now), ours, snapshot(goal))
         if document is None:
             raise AgentEditConflict(f"You changed {edit['agent']}’s words after it wrote them, so {'Undo' if undo else 'Redo'} would overwrite your edit. Nothing was changed.")
-        saved = self.update_note(note["id"], {
+        return self.update_note(note["id"], {
             "title": note["title"], "notebookId": note["notebook_id"], "revision": note["revision"],
             "pageState": document.get("page") if note_type == "canvas" else None,
             "content": document if note_type == "page" else to_json_canvas(document, media=self.media),
-        })
-        with self.connection() as connection:
-            connection.execute("UPDATE agent_edits SET state = ? WHERE id = ?", ("undone" if undo else "applied", edit_id))
-            connection.commit()
-        return saved
+        }, agent_edit_state=(edit_id, "undone" if undo else "applied"))  # (the note and the edit's state change in one transaction)
 
     def changes_since(self, since: int | None) -> dict:
         """Cheap change feed: the current sequence plus changes after `since`."""
