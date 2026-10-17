@@ -387,6 +387,36 @@ class EngineProcessTests(VoiceTestCase):
         self.assertIsNone(runtime.status()["endpoint"])
         self.assertTrue((self.root / "logs").is_dir())
 
+    def test_a_stop_that_lands_while_the_engine_is_starting_leaves_nothing_running(self):
+        runtime = self.installed()
+        entered, proceed = threading.Event(), threading.Event()
+        choose_port = runtime._choose_port
+
+        def slow_port():
+            entered.set()
+            proceed.wait(5)
+            return choose_port()
+
+        runtime._choose_port = slow_port
+        outcome = {}
+
+        def start():
+            try:
+                runtime.start_engine()
+            except VoiceError as error:
+                outcome["error"] = str(error)
+
+        starter = threading.Thread(target=start)
+        starter.start()
+        self.assertTrue(entered.wait(5))
+        runtime.stop_engine()  # the plugin was switched off while the engine was being started
+        proceed.set()
+        starter.join(20)
+
+        self.assertFalse(starter.is_alive())
+        self.assertEqual(outcome, {"error": "Voice was switched off while it was starting."})
+        self.assertEqual((runtime.status()["running"], runtime._process), (False, None))
+
     def test_the_preferred_port_is_used_when_free_and_another_when_taken(self):
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))

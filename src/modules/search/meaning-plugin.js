@@ -2,7 +2,7 @@
 // only while the plugin is on. Off, the group never appears and no request is made; the server's side (indexer thread, engine) follows the same
 // switch (routes.py). Words search never waits on any of this.
 //
-// `shell`: { api, island, omni (the omnibar's state; this fills omni.meaningHits / meaningReady / meaningPending), renderOmni(), refreshIcons() }
+// `shell`: { api, island, omni (the omnibar's state; this fills omni.meaningHits / meaningReady / meaningPending), renderOmni(), refreshIcons(), latestRequest(), setup }
 
 import { createMeaningClient, describeMeaning, indexIsCatchingUp } from './meaning-setup.js'
 
@@ -18,18 +18,7 @@ export async function activateMeaning(shell) {
   const client = createMeaningClient(api)
   const { createIslandDownload, createSetupSection, renderSetupRow } = shell.setup
   const islandDownload = createIslandDownload(shell.island)
-  let controller = null // one request at a time: a new one aborts the one before, and `current()` says whether this one is still the newest
-  const request = {
-    start() {
-      controller?.abort()
-      const mine = (controller = new AbortController())
-      return { signal: mine.signal, current: () => controller === mine }
-    },
-    cancel() {
-      controller?.abort()
-      controller = null
-    },
-  }
+  const request = shell.latestRequest() // one request at a time (omnibar.js); handed over by the shell so this chunk does not pull the omnibar into a chunk of its own
   const listeners = new AbortController()
   let poll = null
   let timer

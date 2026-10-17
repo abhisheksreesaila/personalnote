@@ -4,7 +4,7 @@ import './skins.css'
 import './chrome.css'
 import './secure.css'
 import { mountSkinSwitcher, SKINS, startSkins } from './skins.js'
-import { buildGroups, FILTERS, flatten, highlight, moveSelection, queryTokens } from './modules/omnibar/omnibar.js'
+import { buildGroups, FILTERS, flatten, highlight, latestRequest, moveSelection, queryTokens } from './modules/omnibar/omnibar.js'
 import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
 import { createIcons, icons } from './icons.js'
 import { createSecureSession } from './modules/secure/session.js'
@@ -2522,7 +2522,7 @@ const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], i
 
 // What a plugin that puts things in the page is given (docs/MODULE-CONTRACTS.md, "Plugin host contract"). Plugins are imported only while on.
 const pluginShell = {
-  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, setup: { createSetupSection, renderSetupRow, createIslandDownload },
+  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, latestRequest, setup: { createSetupSection, renderSetupRow, createIslandDownload },
   canvas: () => leaferCanvas,
   renderOmni: () => renderOmni(),
   refreshIcons: () => createIcons({ icons }),

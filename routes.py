@@ -191,7 +191,7 @@ def create_app(
     app.state.search = search
     app.state.ai = ai or AISettings()
     app.state.plugins = plugins or PluginSettings()
-    app.state.indexer = MeaningIndexer(service, search)
+    app.state.indexer = MeaningIndexer(service, search, enabled=lambda: app.state.plugins.enabled("meaning"))
     app.state.x_sync = x_sync or XSync(service)  # started by main.py / desktop.py, not here: a test's app never reaches X
     if not speedtest_instance:
         if app.state.plugins.enabled("meaning"):
@@ -325,7 +325,7 @@ def create_app(
             state = app.state.plugins.set_enabled(plugin_id, (await payload(request)).get("enabled"))
         except PluginSettingsError as error:
             return JSONResponse({"error": str(error)}, status_code=400)
-        follow_plugin(plugin_id, state[plugin_id])
+        await asyncio.to_thread(follow_plugin, plugin_id, state[plugin_id])  # stopping an engine or the indexer waits for a batch: never on the event loop, which saves notes
         return JSONResponse({"plugins": state})
 
     @app.get("/api/ai/settings")

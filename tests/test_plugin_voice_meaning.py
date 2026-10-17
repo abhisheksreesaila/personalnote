@@ -159,6 +159,26 @@ class MeaningOffTests(Base):
         self.assertEqual([item["title"] for item in found], ["Sleep log"])
 
 
+class SwitchDoesNotStallTheApp(Base):
+    def test_a_note_saves_promptly_while_a_slow_switch_off_is_in_progress(self):
+        import threading
+        import time
+
+        app, _ = self.start()
+        real_stop = app.state.indexer.stop
+        app.state.indexer.stop = lambda: (time.sleep(1.5), real_stop())  # a batch in flight that takes a while to finish
+        with TestClient(app) as client:  # one event loop for every request, as in the real server
+            switching = threading.Thread(target=lambda: self.switch(client, "meaning", False))
+            switching.start()
+            time.sleep(0.3)
+            began = time.monotonic()
+            saved = client.post("/api/notes", json={"title": "Saved while switching"})
+            took = time.monotonic() - began
+            switching.join(10)
+        self.assertEqual(saved.status_code, 201)
+        self.assertLess(took, 0.8)
+
+
 class MeaningCliTests(Base):
     def run_cli(self, *arguments):
         output = io.StringIO()

@@ -631,6 +631,8 @@ class VoiceRuntime:
     def _await_ready(self, process: subprocess.Popen, port: int) -> None:
         deadline = time.monotonic() + self.ready_timeout
         while time.monotonic() < deadline:
+            if self._stopping:  # stop_engine() ran while this start was waiting (the plugin was switched off): do not come up behind it
+                raise VoiceError("Voice was switched off while it was starting.")
             code = process.poll()
             if code is not None:
                 if code == -signal.SIGILL:
