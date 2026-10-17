@@ -53,6 +53,7 @@ export class MicrophonePcmCapture {
   }
 
   async stop() {
+    if (this.processor) this.processor.onaudioprocess = null // (a buffer already queued must not read the context cleared below)
     this.processor?.disconnect()
     this.source?.disconnect()
     this.stream?.getTracks().forEach((track) => track.stop())
