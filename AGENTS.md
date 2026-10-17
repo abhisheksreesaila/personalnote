@@ -18,7 +18,8 @@ Design language: web=Personal Note skins (Crayon, Paper, Night in `src/skins.css
 - `routes.py` owns core HTTP routes.
 - `services.py::NoteService` is the only owner of canonical SQLite reads and writes.
 - `portability.py` projects storage into backup and readable export formats.
-- `src/modules/mindmap.js` lazy-loads `src/mindmap/` only when a mind-map note opens.
+- Optional features are built-in plugins (ADR 0006): `src/core/plugins.js` is the registry the shell asks, `src/modules/plugins/builtin.js` lists them, `plugin_settings.py` keeps the per-machine on/off. Off = hidden, not loaded, data kept.
+- `src/modules/mindmap.js` lazy-loads `src/mindmap/` only when a mind-map note opens and the Mind maps plugin is on.
 - `search_runtime.py` owns the optional search-by-meaning download and its loopback embedding engine; it never blocks startup or saves (F-080 searches). `meaning_index.py` is the background thread that fills `note_embeddings` (derived, never in backup or export; owned by `NoteService`).
 - `ai_settings.py` + `src/modules/ai/` own Settings → AI: the model choice every AI feature shares (`AISettings.brain()`); choices in `ai-settings.json` in the app-data folder, the API key only in `SecretStore` (never SQLite, backup, export, logs or the page).
 - `src/modules/voice/` owns voice transcript and capture adapters. It must never persist audio.
@@ -34,7 +35,7 @@ These are internal contracts, not a public plugin SDK.
 5. Local transcription failure must be visible and must leave the note intact.
 6. Backup JSON is lossless and versioned (version 3 adds Inbox notes, which have no notebook, so an older build refuses it rather than misfiling them; version 2 carries JSON Canvas with pictures inline; versions 1 and 2 still import). Import, including an Obsidian vault import, is validated, transactional, and merge-only; it never deletes or overwrites existing notes.
 7. Markdown export (the reading-order projection) is explicitly lossy and never fetches remote assets. Pictures and ink/shape SVGs are content-addressed files `media/<sha256>.<ext>` beside the database, never inside a note row.
-8. Local agents (Claude Code and similar) are first-class clients through `bin/personal-note` (`personal_note_cli.py`), which goes through `NoteService` with revision checks. There is one optional local embedding worker, for search by meaning (`search_runtime.py`: the llama.cpp server and EmbeddingGemma 2, downloaded on request, started on first use, loopback only, nothing sent off the machine). There is still no generative model worker, automatic suggestions, chat, sync, authentication, or remote agent endpoint; agents act only when they run the CLI. One optional exception to "no sync": the X bookmarks sync (`x_sync.py`, `x_bookmarks.py`) runs only after "Connect X" in Settings, talks only to x.com and api.x.com, is read-only (bookmarks in, nothing posted), and never blocks capture.
+8. Local agents (Claude Code and similar) are first-class clients through `bin/personal-note` (`personal_note_cli.py`), which goes through `NoteService` with revision checks. There is one optional local embedding worker, for search by meaning (`search_runtime.py`: the llama.cpp server and EmbeddingGemma 2, downloaded on request, started on first use, loopback only, nothing sent off the machine). There is still no generative model worker, automatic suggestions, chat, sync, authentication, or remote agent endpoint; agents act only when they run the CLI. Plugins are built in and written by us; none installs or runs outside code, and a plugin gains no authority by being one (ADR 0006). One optional exception to "no sync": the X bookmarks sync (`x_sync.py`, `x_bookmarks.py`) runs only after "Connect X" in Settings, talks only to x.com and api.x.com, is read-only (bookmarks in, nothing posted), and never blocks capture.
 9. `src/workspace-theme.css` is screen-only. Do not change saved canvas appearance or print output when changing app chrome.
 
 ## Commands
@@ -45,7 +46,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run dev
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_secret_store tests.test_x_bookmarks tests.test_download_tls tests.test_meaning_index tests.test_meaning_search tests.test_meaning_rank tests.test_jam_brain tests.test_ai_settings -v
+python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_secret_store tests.test_x_bookmarks tests.test_download_tls tests.test_meaning_index tests.test_meaning_search tests.test_meaning_rank tests.test_plugin_settings tests.test_jam_brain tests.test_ai_settings -v
 npm run benchmark:bundle
 ```
 

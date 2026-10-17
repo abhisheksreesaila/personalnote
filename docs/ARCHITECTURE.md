@@ -83,7 +83,11 @@ A `page` note is Markdown you can draw on (first build of Milestone 1; New note 
 
 `src/modules/mindmap.js` is the shell-facing boundary. Its only job is to lazy-import the SVG editor and return the established editor lifecycle (`getDocument`, `setTitle`, `destroy`). The module receives a host element and an `onChange` callback. It uses the normal note API and introduces no separate database or library.
 
-The editor chunk is fetched only when a mind-map note opens. Canvas notes created before this boundary continue to load unchanged.
+The editor chunk is fetched only when a mind-map note opens, and only while the Mind maps plugin is on (F-090): the shell reaches it through the plugin registry (`mountEditor` refuses while off), and a map opened while it is off is drawn as a read-only outline (`src/modules/plugins/mindmap-readonly.js`). Canvas notes created before this boundary continue to load unchanged.
+
+### Built-in plugins
+
+`src/core/plugins.js` is the registry the shell asks about optional features; `src/modules/plugins/builtin.js` declares them; `plugin_settings.py` keeps which are on, per machine (`plugins.json`), for the page, the server and the CLI alike. See ADR 0006 and docs/MODULE-CONTRACTS.md.
 
 ### Optional search by meaning
 
@@ -257,6 +261,8 @@ The canvas route statically loads Leafer and the shell (about 189 KiB of JavaScr
 |---|---|
 | `src/main.js` | Notebook shell and Leafer canvas host (view, input surface, save, note lifecycle) |
 | `src/core/api.js` | Browser API boundary |
+| `src/core/plugins.js`, `src/modules/plugins/` | Built-in plugin registry, the plugin list, Settings › Plugins, the read-only map view |
+| `plugin_settings.py` | Which plugins are on, per machine |
 | `src/modules/mindmap.js` | Lazy mind-map boundary |
 | `src/mindmap/` | Built-in mind-map implementation |
 | `src/modules/voice/` | Transcript, capture, local provider and Settings › Voice modules |

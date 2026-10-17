@@ -13,6 +13,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from ai_settings import AISettings, AISettingsError
+from plugin_settings import PluginSettings, PluginSettingsError
 from app_paths import app_data_dir, default_database_path, resource_root
 from portability import (
     PortabilityError,
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 ROOT = resource_root()
 
 
-def runtime_capabilities() -> dict:
+def runtime_capabilities(mindmap_on: bool = True) -> dict:
     """Return only capabilities that are part of the v1 notebook runtime."""
     return {
         "storage": {
@@ -59,7 +60,7 @@ def runtime_capabilities() -> dict:
             "markdownAssets": True,
         },
         "modules": {
-            "mindmap": {"available": True, "loading": "on-demand"},
+            "mindmap": {"available": mindmap_on, "loading": "on-demand"},
             "page": {"available": True, "loading": "on-demand"},
             "voice": {
                 "available": True,
@@ -174,6 +175,7 @@ def create_app(
     desktop_host: bool = False,
     secure_platform=None,
     ai: AISettings | None = None,
+    plugins: PluginSettings | None = None,
     x_sync: XSync | None = None,
 ) -> FastHTML:
     """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
@@ -188,6 +190,7 @@ def create_app(
     app.state.voice = voice or default_voice_runtime()
     app.state.search = search
     app.state.ai = ai or AISettings()
+    app.state.plugins = plugins or PluginSettings()
     app.state.indexer = MeaningIndexer(service, search)
     app.state.x_sync = x_sync or XSync(service)  # started by main.py / desktop.py, not here: a test's app never reaches X
     if not speedtest_instance:
@@ -226,7 +229,7 @@ def create_app(
 
     @app.get("/api/settings/capabilities")
     def settings_capabilities():
-        return JSONResponse(runtime_capabilities())
+        return JSONResponse(runtime_capabilities(app.state.plugins.enabled("mindmap")))
 
     def voice_response(call, status_code: int = 200) -> JSONResponse:
         try:
@@ -291,6 +294,19 @@ def create_app(
         if not from_this_app(request):
             return forbidden()
         return search_response(lambda: app.state.search.cancel_install())
+
+    @app.get("/api/plugins")
+    def plugins_view():
+        return JSONResponse({"plugins": app.state.plugins.view()})
+
+    @app.post("/api/plugins/{plugin_id}")
+    async def plugins_switch(request, plugin_id: str):
+        if not from_this_app(request):
+            return forbidden()
+        try:
+            return JSONResponse({"plugins": app.state.plugins.set_enabled(plugin_id, (await payload(request)).get("enabled"))})
+        except PluginSettingsError as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
 
     @app.get("/api/ai/settings")
     def ai_settings_view():
@@ -478,7 +494,13 @@ def create_app(
 
     @app.post("/api/notes")
     async def create_note(request):
-        return JSONResponse(service.create_note(await payload(request)), status_code=201)
+        body = await payload(request)
+        try:
+            if body.get("noteType") == "mindmap":
+                app.state.plugins.require("mindmap")  # off: no new maps; the ones already there stay readable and in every backup
+            return JSONResponse(service.create_note(body), status_code=201)
+        except PluginSettingsError as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
 
     @app.put("/api/notes/{note_id}")
     async def update_note(request, note_id: int):

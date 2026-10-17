@@ -16,7 +16,9 @@ import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/v
 import { mountAISettings } from './modules/ai/ai-settings.js'
 import { mountXSettings } from './modules/x/x-settings.js'
 import { createMeaningClient, describeMeaning, indexIsCatchingUp } from './modules/search/meaning-setup.js'
-import { mountMindMapModule } from './modules/mindmap.js'
+import { createPluginRegistry } from './core/plugins.js'
+import { BUILTIN_PLUGINS } from './modules/plugins/builtin.js'
+import { mountPluginSettings } from './modules/plugins/plugins-settings.js'
 import { mountPageModule } from './modules/page.js'
 import { DictationSession } from './modules/voice/transcript-session.js'
 import { createMobileHoldController } from './modules/voice/mobile-hold-controller.js'
@@ -111,7 +113,6 @@ document.querySelector('#app').innerHTML = `
   <div class="app-shell">
     <div class="note-create-menu" id="note-create-menu" role="menu" aria-label="Create note as" hidden>
       <button role="menuitem" data-create-note-type="canvas"><i data-lucide="file-text"></i><span>Canvas note</span></button>
-      <button role="menuitem" data-create-note-type="mindmap"><i data-lucide="git-fork"></i><span>Mind map</span></button>
     </div>
     <div class="sidebar-scrim" id="sidebar-scrim" aria-hidden="true"></div>
     <aside class="sidebar" id="sidebar" aria-label="Notebooks">
@@ -312,9 +313,12 @@ document.querySelector('#app').innerHTML = `
       </section>
       <section class="settings-section">
         <p class="settings-section-label">Built-in modules</p>
-        <div class="setting-row"><span><i data-lucide="git-fork"></i>Mind maps</span><small id="settings-mindmap">On demand</small></div>
         <div class="setting-row"><span><i data-lucide="mic"></i>Voice capture</span><small id="settings-voice">Transcript only</small></div>
         <div class="setting-row"><span><i data-lucide="audio-lines"></i>Audio retention</span><small>None</small></div>
+      </section>
+      <section class="settings-section" id="settings-plugins" aria-labelledby="settings-plugins-label">
+        <p class="settings-section-label" id="settings-plugins-label">Plugins</p>
+        <div id="settings-plugins-rows"></div>
       </section>
       <section class="settings-section" id="settings-voice-section" aria-labelledby="settings-voice-label">
         <p class="settings-section-label" id="settings-voice-label">Voice</p>
@@ -564,7 +568,10 @@ const state = {
   noteLocked: false, // the open note is a locked secure note: the page shows its cover and nothing here may be saved
 }
 
+// Optional features come from the plugin registry (src/core/plugins.js): the shell asks it, never names a plugin's feature itself.
+const plugins = createPluginRegistry(BUILTIN_PLUGINS)
 let mindmapEditor = null
+let mindmapReadOnly = null // the outline shown instead of the editor while Mind maps is off
 let pageEditor = null
 
 function setActiveNoteType(noteType) {
@@ -594,6 +601,9 @@ function setActiveNoteType(noteType) {
   if (!isMindMap) {
     mindmapEditor?.destroy()
     mindmapEditor = null
+    mindmapReadOnly?.destroy()
+    mindmapReadOnly = null
+    hideMindmapTools(false)
   }
   if (!isPage) {
     pageMountTicket += 1
@@ -613,15 +623,41 @@ async function mountActivePage(documentValue) {
   pageEditor = editor
 }
 
+// The editor's tool pill has nothing to act on while Mind maps is off (an inline style, since the dock's own rule is !important).
+function hideMindmapTools(hide) {
+  const dock = elements.mindmapRailActions.closest('.tool-dock')
+  if (hide) dock.style.setProperty('display', 'none', 'important')
+  else dock.style.removeProperty('display')
+}
+
+// A map opens in its editor while Mind maps is on, and as a read-only outline (no editor code loaded) while it is off.
 async function mountActiveMindMap(documentValue) {
   mindmapEditor?.destroy()
-  mindmapEditor = await mountMindMapModule(elements.mindmapHost, {
+  mindmapEditor = null
+  mindmapReadOnly?.destroy()
+  mindmapReadOnly = null
+  elements.title.readOnly = !plugins.isEnabled('mindmap')
+  hideMindmapTools(!plugins.isEnabled('mindmap'))
+  if (!plugins.isEnabled('mindmap')) {
+    mindmapReadOnly = plugins.showReadOnly('mindmap', elements.mindmapHost, documentValue, { turnOn: () => void switchPlugin('mindmap', true) })
+    return
+  }
+  mindmapEditor = await plugins.mountEditor('mindmap', elements.mindmapHost, {
     documentValue,
     inspectorRoot: elements.mindmapProperties,
     controlsRoot: elements.mindmapRailActions,
     createIcons: () => createIcons({ icons }),
     onChange: () => queueSave(),
   })
+}
+
+// Turn a plugin on or off: the machine remembers it (the server and the command line read the same file), the page follows at once, and an
+// open note of that plugin is opened again the right way (editor or read-only), after any edit of it is saved.
+async function switchPlugin(id, on) {
+  const saved = await api(`/plugins/${id}`, { method: 'POST', body: JSON.stringify({ enabled: on }) })
+  plugins.apply(saved.plugins)
+  syncNoteCreateMenu()
+  if (plugins.kindOf(state.activeNoteType)?.pluginId === id && state.activeNoteId) await selectNote(state.activeNoteId, { reload: true })
 }
 
 function loadPreferences() {
@@ -1479,6 +1515,7 @@ let agentSync = null
 
 async function saveActiveNote({ unloading = false } = {}) {
   if (!state.activeNoteId || state.loading || speedTestPaused || state.noteLocked) return
+  if (state.activeNoteType === 'mindmap' && !mindmapEditor) return // a map shown read-only (Mind maps off) is never saved
   if (saveInFlight && !unloading) {
     saveQueued = true
     return
@@ -1979,6 +2016,7 @@ async function selectNoteNow(id, { reload = false } = {}) {
     setActiveNoteType(note.noteType)
     if (state.activeNoteType === 'mindmap') {
       await mountActiveMindMap(note.content || structuredClone(DEFAULT_MINDMAP_DOCUMENT))
+      if (sequence !== selectSequence) return
       mindmapSnapshot = JSON.stringify({ content: mindmapEditor?.getDocument() }) // what the map was when it was loaded: leaving it unchanged sends nothing
     } else if (state.activeNoteType === 'page') {
       await mountActivePage(note.content)
@@ -2124,13 +2162,14 @@ async function mergeRemoteNote(note) {
 
 async function createNote(notebookId, noteType = 'canvas', title) {
   if (state.creatingNote) return
+  if (plugins.kindOf(noteType)?.enabled === false) return // its plugin is off: no new notes of that kind
   state.creatingNote = true
   const destinationId = Number(notebookId) || null // no notebook named: the note lands in the Inbox
   try {
     const note = await api('/notes', {
       method: 'POST',
       body: JSON.stringify({
-        title: title || (noteType === 'mindmap' ? 'Untitled mind map' : 'Untitled note'),
+        title: title || plugins.kindOf(noteType)?.defaultTitle || 'Untitled note',
         notebookId: destinationId,
         noteType,
       }),
@@ -2337,9 +2376,6 @@ function updateCapabilitySettings(capabilities) {
   document.querySelector('#settings-storage').textContent = storage.engine === 'sqlite'
     ? 'SQLite · This device'
     : 'Unavailable'
-  document.querySelector('#settings-mindmap').textContent = modules.mindmap?.available
-    ? 'On demand'
-    : 'Unavailable'
   document.querySelector('#settings-voice').textContent = modules.voice?.available
     ? 'Transcript only'
     : 'Unavailable'
@@ -2350,7 +2386,6 @@ async function loadCapabilitySettings() {
     updateCapabilitySettings(await api('/settings/capabilities'))
   } catch {
     document.querySelector('#settings-storage').textContent = 'Unavailable'
-    document.querySelector('#settings-mindmap').textContent = 'Unavailable'
     document.querySelector('#settings-voice').textContent = 'Unavailable'
   }
 }
@@ -3180,7 +3215,8 @@ async function clearActiveNote() {
     return
   }
   if (state.activeNoteType === 'mindmap') {
-    const previous = mindmapEditor?.getDocument()
+    if (!mindmapEditor) return // read-only while Mind maps is off
+    const previous = mindmapEditor.getDocument()
     await mountActiveMindMap(structuredClone(DEFAULT_MINDMAP_DOCUMENT))
     queueSave()
     pendingClearUndo = { noteId: state.activeNoteId, mindmap: previous }
@@ -3537,7 +3573,27 @@ setSidebarOpen(restoredSidebar())
 const desktopNewNoteButtons = [document.querySelector('#rail-new-note')]
 const suppressedNewNoteClicks = new WeakSet()
 
+// The menu is the canvas note plus a kind for each plugin that is on; with no plugin kind, the new-note button just makes a note.
+function syncNoteCreateMenu() {
+  elements.noteCreateMenu.querySelectorAll('[data-plugin-kind]').forEach((button) => button.remove())
+  for (const kind of plugins.creatableKinds()) {
+    const button = document.createElement('button')
+    button.setAttribute('role', 'menuitem')
+    button.dataset.createNoteType = kind.type
+    button.dataset.pluginKind = ''
+    const icon = document.createElement('i')
+    icon.dataset.lucide = kind.icon
+    const label = document.createElement('span')
+    label.textContent = kind.label
+    button.append(icon, label)
+    elements.noteCreateMenu.append(button)
+  }
+  createIcons({ icons })
+  if (!plugins.creatableKinds().length) setNoteCreateMenuOpen(false)
+}
+
 function setNoteCreateMenuOpen(open, anchor) {
+  if (!plugins.creatableKinds().length) open = false
   elements.noteCreateMenu.hidden = !open
   desktopNewNoteButtons.forEach((button) => button.setAttribute('aria-expanded', String(open && button === anchor)))
   if (!open || !anchor) return
@@ -3563,6 +3619,7 @@ desktopNewNoteButtons.forEach((button) => {
     cancelHold()
     startPoint = { x: event.clientX, y: event.clientY }
     button.classList.add('is-holding')
+    if (!plugins.creatableKinds().length) return
     holdTimer = setTimeout(() => {
       suppressedNewNoteClicks.add(button)
       button.classList.remove('is-holding')
@@ -3576,6 +3633,7 @@ desktopNewNoteButtons.forEach((button) => {
   button.addEventListener('pointerup', cancelHold)
   button.addEventListener('pointercancel', cancelHold)
   button.addEventListener('contextmenu', (event) => {
+    if (!plugins.creatableKinds().length) return
     event.preventDefault()
     cancelHold()
     setNoteCreateMenuOpen(true, button)
@@ -3690,6 +3748,7 @@ document.querySelector('#top-properties').addEventListener('click', () => {
   if (elements.properties.classList.contains('open')) { void refreshVoiceSetup(); void refreshMeaningSetup(); void aiSettings.refresh() }
 })
 mountXSettings(document.querySelector('#settings-meaning-section'), api, elements.properties)
+mountPluginSettings(document.querySelector('#settings-plugins-rows'), plugins, switchPlugin, () => createIcons({ icons }))
 document.querySelector('#meaning-download').addEventListener('click', () => void meaningSetupAction((client) => client.install()))
 document.querySelector('#meaning-cancel').addEventListener('click', () => void meaningSetupAction((client) => client.cancel()))
 document.querySelector('#voice-download').addEventListener('click', () => void voiceSetupAction((client) => client.install()))
@@ -4500,6 +4559,8 @@ async function initialize() {
   syncDefaultTypographySettings()
   syncTypographyControls()
   loadCapabilitySettings()
+  plugins.apply((await api('/plugins').catch(() => ({}))).plugins) // the machine's choice; unreachable: every plugin keeps its default
+  syncNoteCreateMenu()
   try {
     // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server.
     await api('/secure/lock', { method: 'POST' }).catch(() => {})
