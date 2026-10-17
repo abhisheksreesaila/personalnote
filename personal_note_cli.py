@@ -271,17 +271,19 @@ def command_notes_read(service: NoteService, args: argparse.Namespace) -> dict |
 
 def command_notes_append(service: NoteService, args: argparse.Namespace) -> dict:
     text = args.text if args.text not in (None, "-") else read_stdin_text()
-    result = service.append_text(args.note_id, text, revision=args.revision)
+    with service.as_agent(args.agent):
+        result = service.append_text(args.note_id, text, revision=args.revision)
     service.record_agent_activity(args.agent, args.note_id, "writing")
     return result
 
 
 def command_notes_write(service: NoteService, args: argparse.Namespace) -> dict:
     text = args.text if args.text not in (None, "-") else read_stdin_text()
-    if service.get_note(args.note_id)["noteType"] == "canvas":
-        result = service.write_canvas_text(args.note_id, text, object_id=args.object_id, revision=args.revision)
-    else:
-        result = service.write_page(args.note_id, text, revision=args.revision)
+    with service.as_agent(args.agent):
+        if service.get_note(args.note_id)["noteType"] == "canvas":
+            result = service.write_canvas_text(args.note_id, text, object_id=args.object_id, revision=args.revision)
+        else:
+            result = service.write_page(args.note_id, text, revision=args.revision)
     service.record_agent_activity(args.agent, args.note_id, "writing")
     return result
 

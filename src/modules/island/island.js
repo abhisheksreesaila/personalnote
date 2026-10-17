@@ -14,6 +14,7 @@ function h(tag, className, text) {
   return node
 }
 const icon = (name, className) => { const node = h('i', className); node.dataset.lucide = name; return node }
+const chip = (action, label) => { const button = h('button', 'isl-chip', label); button.dataset.islandAction = action; return button }
 
 // The live line shows the latest words, not the first.
 const jamLine = (f) => (f.line ? (f.line.length > 44 ? `…${f.line.slice(-43)}` : f.line) : f.phase === 'listening' ? 'Listening…' : 'Hold the mic and talk')
@@ -24,7 +25,11 @@ const MOMENTS = {
   saved: () => [icon('check', 'isl-ok'), h('span', '', 'Saved')],
   added: (f) => [icon('check'), h('span', '', `Added ${f.words} ${f.words === 1 ? 'word' : 'words'}`)],
   ready: (f) => [icon('check', 'isl-ok'), h('span', '', `${f.name} is ready`)],
-  agent: (f) => [icon('sparkles'), h('span', 'isl-label', f.label)],
+  agent: (f) => { // (Show and Undo after an agent's edit; a phone has no room for the wide words)
+    const label = h('span', 'isl-label', f.label)
+    if (f.wide) label.append(h('span', 'isl-wide-only', f.wide))
+    return [icon('sparkles'), label, ...(f.actions ?? []).map(([action, text]) => chip(action, text))]
+  },
   download: (f) => {
     const bar = h('span', 'isl-bar'); bar.append(h('i'))
     return [icon('download'), h('span', 'isl-wide-only', f.name), bar, h('span', 'isl-muted isl-pct', `${f.percent}%`)]
@@ -32,12 +37,11 @@ const MOMENTS = {
   error: (f) => {
     const nodes = [icon('triangle-alert', 'isl-bad'), h('span', 'isl-bad', f.title)]
     if (f.message) nodes.push(h('span', 'isl-muted isl-wide-only isl-label', f.message))
-    if (f.retry) { const retry = h('button', 'isl-chip', 'Try again'); retry.dataset.islandAction = 'retry'; nodes.push(retry) }
+    if (f.retry) nodes.push(chip('retry', 'Try again'))
     return nodes
   },
   // A jam on the open map (F-092): the live line and Jam; Thinking while the brain works; a plain error with Try again; a pointer to Settings → AI.
   jam: (f) => {
-    const chip = (action, label) => { const button = h('button', 'isl-chip', label); button.dataset.islandAction = action; return button }
     if (f.phase === 'thinking') return [h('span', 'saving-spinner'), h('span', 'isl-label', 'Thinking…')]
     if (f.phase === 'error') return [icon('triangle-alert', 'isl-bad'), h('span', 'isl-bad isl-label', f.message), chip('jam', 'Try again')]
     if (f.phase === 'setup') return [icon('sliders-horizontal'), h('span', 'isl-label', f.message), chip('jam-setup', 'Open Settings')]
@@ -46,13 +50,13 @@ const MOMENTS = {
   recording: (f) => {
     const wave = h('span', 'isl-wave')
     for (let i = 0; i < BARS; i += 1) wave.append(h('i'))
-    const stop = h('button', 'isl-chip', 'Stop'); stop.dataset.islandAction = 'stop'
+    const stop = chip('stop', 'Stop')
     stop.setAttribute('aria-label', 'Stop recording')
     return [h('span', 'isl-rec'), wave, h('span', '', 'Listening'), h('span', 'isl-muted isl-clock', clock(Date.now() - f.startedAt)), stop]
   },
 }
 
-export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onOpen = () => {}, onJam = () => {} } = {}) {
+export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onOpen = () => {}, onJam = () => {}, onAgent = () => {} } = {}) {
   const faceBox = (name) => island.querySelector(`:scope > [data-face="${name}"]`)
   const boxes = { rest: faceBox('rest'), card: faceBox('card'), moment: faceBox('moment'), focus: faceBox('focus') }
   let current = boxes.rest
@@ -128,6 +132,7 @@ export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onO
     else if (action === 'stop') onStop()
     else if (action === 'open') onOpen(event.detail === 0)
     else if (action === 'jam' || action === 'jam-setup') onJam(action)
+    else if (action?.startsWith('agent-')) onAgent(action)
   })
 
   return {

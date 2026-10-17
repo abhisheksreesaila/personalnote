@@ -25,7 +25,8 @@ export function createIslandModel({ schedule = setTimeout, cancel = clearTimeout
     if (s.recording) return { kind: 'recording', startedAt: s.recording.startedAt }
     if (s.flash) return s.flash
     if (s.download) return { kind: 'download', name: s.download.name, percent: s.download.percent }
-    if (s.notice || s.presence) return { kind: 'agent', label: s.notice || s.presence }
+    if (s.notice) return { kind: 'agent', ...s.notice }
+    if (s.presence) return { kind: 'agent', label: s.presence }
     if (s.slow) return { kind: 'saving' }
     return { kind: 'rest' }
   }
@@ -84,10 +85,11 @@ export function createIslandModel({ schedule = setTimeout, cancel = clearTimeout
     // A jam session on the open map (F-092): { phase: 'idle'|'listening'|'thinking'|'error'|'setup', line, message }, or null when none.
     jam(face) { s.jam = face; emit() },
     agentPresence(label) { s.presence = label || null; emit() },
-    agentNotice(label) {
+    // A line for `ms`, with actions to click ([id, label] pairs: Show, Undo) and words that only a wide window has room for; null takes it away (an action was clicked).
+    agentNotice(label, { actions, ms = NOTICE_MS, wide } = {}) {
       cancel(timers.notice)
-      s.notice = label
-      timers.notice = schedule(() => { s.notice = null; emit() }, NOTICE_MS)
+      s.notice = label && { label, ...(wide && { wide }), ...(actions?.length && { actions }) }
+      if (label) timers.notice = schedule(() => { s.notice = null; emit() }, ms)
       emit()
     },
     download(key, name, percent) { s.download = { key, name, percent }; emit() },

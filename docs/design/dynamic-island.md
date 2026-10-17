@@ -35,4 +35,4 @@ picking a result or a click away shrinks it back to the circle. Same keyboard, g
   the level bars run only while recording. Nothing reacts per keystroke.
 - Speed test (typing p50/p99) unchanged; bundle budget held.
 
-Agent face: message only for now. Show and Undo are deferred to a follow-up ticket (the app has no such actions yet).
+Agent face (F-096): "Claude edited this note" with Show and Undo chips (the words "this note" only where there is room: a phone keeps "Claude edited"), 4 s or until Undo is clicked. Show glides the new words to the middle of the window (zoomed in to 100% if further out, out only as far as it takes to fit) and outlines them for 1.8 s; on a page it scrolls to and outlines the new lines. Undo puts the note back as one new revision; the island then offers Redo. If the person changed the very words the agent wrote, nothing changes and the island and a toast say so.

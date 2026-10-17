@@ -116,6 +116,9 @@ A note's row in the notes panel can be dragged onto the open canvas or page note
 - The code for it loads on the first note drag or pick (`src/modules/links/note-links-ui.js`), never in the first load; on a narrow window the dragged row slides the panel away so the note is under the finger.
 - "Done" on an X bookmark (`src/modules/x/x-done.js`, `POST /api/notes/{id}/x-done`, `NoteService.mark_x_done`) files the open bookmark into an Archive notebook named "X bookmarks done" (made on first use); the note is archived, never deleted, and Undo moves it back.
 
+### Show and Undo on an agent's edit (F-096)
+A note write made by the CLI (`notes append`, `notes write`) runs inside `NoteService.as_agent(name)`; `update_note` then keeps the note before and as the agent left it in `agent_edits` (same transaction; the last 10 per note; never in backup or export; secure and mind-map notes never), with what changed (canvas: object ids; page: the new lines as UTF-16 offsets). When a change from outside reaches the open note the app asks `GET /api/notes/{id}/agent-edit?revision=` (no work at rest), and only then loads `src/modules/agent-edit/` (lazy): the island's agent face gets Show (glide the view to the changed boxes, outline them for 1.8 s; a page scrolls to the lines) and Undo. Undo and Redo are always a three-way merge (`agent_edit.py`) of the agent's version, what is stored now and the version to go back to, written as a new revision through `update_note` (revision-checked): the person's later edits stay; if they changed an object (or text) the agent's write also touched, it refuses with 409 and a plain sentence and changes nothing. The app may have saved the note in its own page frame since (everything moved by a page width), so objects are compared after undoing that shift (`frame_shift`). The app sends its unsaved words first (`settle`), and the new revision then reaches the screen through the ordinary agent sync. The agent's version stays kept, so Redo brings it back. Checked by `tests/test_agent_edit.py` and, with the real CLI against a scratch database, `scripts/verify-agent-edit.mjs`.
+
 ### Optional built-in voice capture
 
 `src/modules/voice/` contains three responsibilities:
@@ -247,6 +250,8 @@ LeaferJS is the canvas engine and the only one: F-036 removed Fabric.js (the dep
 | `POST` | `/api/secure/unlock`, `/api/secure/lock`, `/api/secure/passphrase` | Unlock (Touch ID, `{passphrase}` or `{recoveryKey}`) or lock; app header needed |
 | `POST/DELETE` | `/api/notes/{id}/secure` | Mark a note secure (first time returns `recoveryKey` once) or take it out |
 | `GET` | `/api/changes?since=` | Cheap change feed plus active agent presence, polled by the open app |
+| `GET` | `/api/notes/{id}/agent-edit?revision=` | The agent write that made that revision (`{edit: {id, agent, state, changed} | null}`; F-096) |
+| `POST` | `/api/agent-edits/{id}/undo`, `/redo` | Take an agent write back, or put it back, as one new revision over what is stored now; 409 with a plain sentence when the person changed the same words since (app header needed) |
 
 There are no v1 model, suggestion, or remote workspace endpoints. Agents reach the notebook through the local CLI, which writes through `NoteService` to the same SQLite file; the browser notices those writes through `/api/changes`.
 
@@ -295,6 +300,7 @@ The first load is the shell only: the HTML entry, the app chunk and a few small 
 | `media_store.py` | Content-addressed media files `media/<sha256>.<ext>` beside the database |
 | `vault.py` | Obsidian vault export and import |
 | `note_text.py` | Plain-text projections of notes for agents (reading-order canvas text, mind-map outline) |
+| `agent_edit.py`, `src/modules/agent-edit/` | Show and Undo on "Claude edited this note" (F-096): what a CLI write changed, the three-way undo, and the lazy Show/Undo code |
 | `src/modules/sync/` | Change-feed polling, safe merge of agent writes, and the agent presence (a face on the island, plus the cursor flag) |
 | `services.py` | SQLite persistence and FTS5 indexing |
 | `portability.py` | Backup/import and Markdown archive projection |
