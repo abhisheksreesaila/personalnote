@@ -43,8 +43,8 @@ export function createPluginRegistry(definitions) {
         } else if (on && !instances.has(plugin.id)) {
           if (!loading.has(plugin.id)) loading.set(plugin.id, plugin.activate(shell))
           const started = loading.get(plugin.id)
-          const instance = await started
-          if (loading.get(plugin.id) === started) loading.delete(plugin.id)
+          let instance
+          try { instance = await started } finally { if (loading.get(plugin.id) === started) loading.delete(plugin.id) } // a load that failed is forgotten, so the next sync tries again
           if (instances.has(plugin.id)) return
           if (runs(plugin)) instances.set(plugin.id, instance)
           else await instance.dispose()
