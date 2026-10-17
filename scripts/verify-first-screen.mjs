@@ -24,6 +24,11 @@ const python = path.resolve(fs.existsSync('.venv/bin/python') ? '.venv/bin/pytho
 const env = { ...process.env, PERSONAL_NOTE_DB: path.join(scratch, 'verify.db'), PERSONAL_NOTE_PLUGINS_DIR: pluginsDir }
 const BASE = `http://127.0.0.1:${PORT}`
 const api = spawn(python, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(PORT)], { cwd: ROOT, env, stdio: process.env.PN_DEBUG ? 'inherit' : 'ignore' })
+// Stop the API this script started (and only it) however the script ends: normal exit, a closed output pipe, Ctrl-C or SIGTERM.
+const stopApi = () => { try { api.kill() } catch {} }
+process.on('exit', stopApi)
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => { stopApi(); process.exit(1) })
+process.stdout.on('error', () => { stopApi(); process.exit(1) }) // EPIPE: whoever was reading our output has gone
 const call = async (method, url, body) => { const r = await fetch(`${BASE}/api${url}`, { method, headers: { 'content-type': 'application/json', 'x-personal-note': '1' }, body: body && JSON.stringify(body) }); return { status: r.status, body: await r.json() } }
 const up = async () => { for (let i = 0; i < 100; i++) { try { if ((await fetch(`${BASE}/api/notebooks`)).ok) return } catch {} await new Promise((r) => setTimeout(r, 150)) } throw new Error('API did not start') }
 const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
