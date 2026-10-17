@@ -571,12 +571,12 @@ Reviewed: PASS after one round (server emoji rule matches the browser, a leading
 - [x] click the icon: ~40 icons, any emoji, 8 colours; saved with the notebook (revision-checked), in backup and restored on import; older backups still import
 ## F-090 Plugins: the host and Mind maps as the first plugin [todo]
 Brief: docs/briefs/plugins.md · Needs: F-084
-- [ ] Settings → Plugins lists Mind maps, Voice, Search by meaning with what each needs and a switch; the choice is remembered
+- [ ] Settings → Plugins lists Mind maps with what it needs and a switch; the choice is remembered (Voice and Search by meaning rows arrive with their switches in F-091)
 - [ ] Mind maps off: no new-mind-map entry, no mind-map code loaded, existing maps open read-only with "turn on Mind maps to edit"; on again without restart
-- [ ] a small host contract (buttons, note types, omnibar actions, settings rows) in docs/MODULE-CONTRACTS.md; ADR for built-in plugins
+- [ ] a small host contract (note types, settings rows; buttons and omnibar actions arrive with their first plugin that needs them) in docs/MODULE-CONTRACTS.md; ADR for built-in plugins
 ## F-091 Voice and Search by meaning become plugins [todo]
 Brief: docs/briefs/plugins.md · Needs: F-090
-- [ ] each off: no mic / no meaning group, nothing started or downloaded, data kept; on: as today
+- [ ] each off: no mic / no meaning group, nothing started or downloaded, data kept; on: as today; both listed in Settings → Plugins with what they need
 ## F-092 Jam sessions in a mind map [todo]
 Brief: docs/briefs/jam-sessions.md · Design: to do (Stitch: ghost branches, 👍/👎, live line) · Needs: F-086, F-090
 - [ ] New jam; hold mic, live line, Jam button → brain edits applied as one undo step; ghosts accepted by click or "yes"; Settings → Jam picks the brain
