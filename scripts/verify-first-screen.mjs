@@ -163,6 +163,7 @@ try {
     await page.locator('#voice-button').waitFor({ state: 'visible', timeout: 15000 })
     await openSettings(page)
     await page.locator('#plugin-mindmap').waitFor({ state: 'attached', timeout: 15000 })
+    await page.keyboard.press('Escape') // (Settings is a dialog over the page: the mic is behind it until it is closed)
     await page.click('#voice-button')
     await page.locator('#voice-caption').waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
     check('after Reload Settings is filled in and the mic works', await page.locator('#voice-caption').evaluate((e) => !e.hidden))

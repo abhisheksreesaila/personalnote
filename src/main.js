@@ -254,52 +254,6 @@ document.querySelector('#app').innerHTML = `
     <div class="settings-dim" id="settings-dim"></div>
     <aside class="properties-panel" id="properties-panel" role="dialog" aria-modal="true" aria-label="Settings" aria-hidden="true" inert>
       <div class="properties-heading"><h2>Settings</h2><button class="icon-button" id="close-properties" title="Close settings" aria-label="Close settings"><i data-lucide="x"></i></button></div>
-      <section class="settings-section" data-sw="writing">
-        <p class="settings-section-label">Writing</p>
-        <div class="setting-field-heading"><span>Default text</span><small>New objects</small></div>
-        <div class="font-family-control settings-font-control" aria-label="Default font family">
-          <button data-default-font-family="Source Serif 4" title="Serif" aria-label="Serif">Ag</button>
-          <button data-default-font-family="IBM Plex Sans" title="Sans serif" aria-label="Sans serif">Ag</button>
-          <button data-default-font-family="monospace" title="Monospace" aria-label="Monospace">Ag</button>
-        </div>
-        <label class="font-size-row settings-font-size-row" for="settings-font-size">
-          <span>Size</span><output id="settings-font-size-value">24</output>
-          <input id="settings-font-size" type="range" min="12" max="72" step="1" value="24" />
-        </label>
-      </section>
-      <section class="settings-section" data-sw="advanced">
-        <p class="settings-section-label">Performance</p>
-        <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
-        <details class="settings-advanced">
-          <summary>Advanced</summary>
-          <label class="setting-row" for="settings-render-mode"><span>Render mode</span><select id="settings-render-mode"><option value="default">Hybrid (page bitmaps while navigating)</option><option value="classic">Draw every step (before)</option><option value="bitmaps">Page bitmaps always</option><option value="gestureTransform">Slide picture (preview 3)</option><option value="dpr1">Lower resolution (1x)</option></select></label>
-          <p class="portability-help">For trying how the canvas feels on this computer. Changes only how the screen is drawn, never a note. "Page bitmaps always" can make drawing and typing slower.</p>
-        </details>
-        <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
-        <div class="portability-actions speedtest-offer"><button type="button" id="settings-speed-test"><i data-lucide="gauge"></i><span>Run speed test…</span></button></div>
-      </section>
-      <section class="settings-section" data-sw="voice">
-        <p class="settings-section-label">Built-in modules</p>
-        <div class="setting-row"><span><i data-lucide="mic"></i>Voice capture</span><small id="settings-voice">Transcript only</small></div>
-        <div class="setting-row"><span><i data-lucide="audio-lines"></i>Audio retention</span><small>None</small></div>
-      </section>
-      <section class="settings-section" id="settings-plugins" data-sw="plugins" aria-labelledby="settings-plugins-label">
-        <p class="settings-section-label" id="settings-plugins-label">Plugins</p>
-        <div id="settings-plugins-rows"></div>
-      </section>
-      <section class="settings-section" id="ai-settings" data-sw="ai" aria-labelledby="ai-label"></section>
-      <section class="settings-section" data-sw="advanced">
-        <p class="settings-section-label">Workspace data</p>
-        <div class="setting-row"><span><i data-lucide="hard-drive"></i>Storage</span><small id="settings-storage">SQLite · This device</small></div>
-        <div class="portability-actions">
-          <button id="download-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
-          <button id="export-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
-          <button id="import-backup"><i data-lucide="folder-input"></i><span>Import backup</span></button>
-          <input id="import-backup-file" type="file" accept="application/json,.json" hidden />
-        </div>
-        <p class="portability-help">Backup JSON preserves editable canvas and mind-map data. Import merges copies without replacing existing notes.</p>
-        <p class="portability-status" id="portability-status" role="status" aria-live="polite"></p>
-      </section>
     </aside>
     <div class="note-popover" id="note-popover" role="dialog" aria-label="Note properties" hidden>
       <section class="property-section">
@@ -482,10 +436,6 @@ const elements = {
   printButton: document.querySelector('#share-print'),
   fontSize: document.querySelector('#font-size-control'),
   fontSizeValue: document.querySelector('#font-size-value'),
-  settingsFontSize: document.querySelector('#settings-font-size'),
-  settingsSpeedMeter: document.querySelector('#settings-speed-meter'),
-  settingsRenderMode: document.querySelector('#settings-render-mode'),
-  settingsFontSizeValue: document.querySelector('#settings-font-size-value'),
   voiceButton: document.querySelector('#voice-button'),
   voiceCaption: document.querySelector('#voice-caption'),
   voiceStatus: document.querySelector('#voice-status'),
@@ -500,8 +450,6 @@ const elements = {
   strokeOptions: document.querySelector('#stroke-options'),
   strokeOptionsLabel: document.querySelector('#stroke-options-label'),
   strokeWidths: document.querySelector('#stroke-widths'),
-  portabilityStatus: document.querySelector('#portability-status'),
-  importBackupFile: document.querySelector('#import-backup-file'),
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
@@ -629,7 +577,6 @@ async function switchPlugin(id, on) {
   plugins.apply(saved.plugins)
   syncNoteCreateMenu()
   await plugins.sync(pluginShell)
-  void loadCapabilitySettings()
   if (plugins.kindOf(state.activeNoteType)?.pluginId === id && state.activeNoteId) await selectNote(state.activeNoteId, { reload: true })
 }
 
@@ -2428,38 +2375,12 @@ function setNotePropsOpen(open) {
   else if (elements.noteProps.contains(document.activeElement)) focusIsland()
 }
 
-function syncDefaultTypographySettings() {
-  document.querySelectorAll('[data-default-font-family]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.defaultFontFamily === state.fontFamily)
-  })
-  elements.settingsFontSize.value = state.fontSize
-  elements.settingsFontSizeValue.value = state.fontSize
-}
-
-function updateCapabilitySettings(capabilities) {
-  const storage = capabilities.storage || {}
-  const modules = capabilities.modules || {}
-  document.querySelector('#settings-storage').textContent = storage.engine === 'sqlite'
-    ? 'SQLite · This device'
-    : 'Unavailable'
-  document.querySelector('#settings-voice').textContent = modules.voice?.available
-    ? 'Transcript only'
-    : 'Unavailable'
-}
-
-async function loadCapabilitySettings() {
-  try {
-    updateCapabilitySettings(await api('/settings/capabilities'))
-  } catch {
-    document.querySelector('#settings-storage').textContent = 'Unavailable'
-    document.querySelector('#settings-voice').textContent = 'Unavailable'
-  }
-}
-
 let aiSettings = null // Settings → AI, mounted with the rest of the optional code (loadOptional)
 function setPortabilityStatus(message, error = false) {
-  elements.portabilityStatus.textContent = message
-  elements.portabilityStatus.classList.toggle('error', error)
+  const status = document.querySelector('#portability-status') // (Settings draws it, once its code has arrived)
+  if (!status) return
+  status.textContent = message
+  status.classList.toggle('error', error)
 }
 
 async function downloadWorkspaceExport(path, fileName) {
@@ -2495,7 +2416,6 @@ async function importWorkspaceFile(file) {
     console.error(error)
     setPortabilityStatus(`Import failed: ${error.message}`, true)
   } finally {
-    elements.importBackupFile.value = ''
   }
 }
 
@@ -3450,30 +3370,12 @@ document.querySelector('#close-properties').addEventListener('click', () => setP
 document.querySelector('#top-properties').addEventListener('click', () => {
   if (elements.properties.classList.contains('open')) void loadOptional().then(() => { if (!aiSettings) return; plugins.instances().forEach((plugin) => plugin.onSettingsOpen?.()); void aiSettings.refresh() })
 })
-document.querySelector('#download-backup').addEventListener('click', () => {
-  void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
-})
-document.querySelector('#export-markdown').addEventListener('click', () => {
-  void downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip')
-})
-document.querySelector('#import-backup').addEventListener('click', () => elements.importBackupFile.click())
-elements.importBackupFile.addEventListener('change', () => {
-  void importWorkspaceFile(elements.importBackupFile.files?.[0])
-})
 document.querySelector('#close-print').addEventListener('click', closePrintPreview)
 document.querySelector('#print-note').addEventListener('click', printNote)
 document.querySelectorAll('[data-font-family]').forEach((button) => {
   button.addEventListener('click', () => applyTypography('fontFamily', button.dataset.fontFamily))
 })
 elements.fontSize.addEventListener('input', () => applyTypography('fontSize', Number(elements.fontSize.value)))
-document.querySelectorAll('[data-default-font-family]').forEach((button) => {
-  button.addEventListener('click', () => {
-    state.fontFamily = button.dataset.defaultFontFamily
-    savePreferences()
-    syncDefaultTypographySettings()
-    syncTypographyControls()
-  })
-})
 // Speed meter: a corner pill, created on first use. The frame loop only runs while it is visible.
 let speedMeterPill = null
 const speedMeter = createSpeedMeter({
@@ -3495,7 +3397,6 @@ window.addEventListener('pywebviewready', renderSpeedMeterWhere)
 
 function setSpeedMeter(visible) {
   state.speedMeter = visible
-  elements.settingsSpeedMeter.checked = visible
   if (visible) {
     if (!speedMeterPill) {
       speedMeterPill = document.createElement('div')
@@ -3535,17 +3436,6 @@ function applyRenderMode(name, document = null) {
   })
   return renderModeQueue
 }
-elements.settingsRenderMode.value = state.renderMode
-elements.settingsRenderMode.addEventListener('change', () => {
-  state.renderMode = elements.settingsRenderMode.value
-  savePreferences()
-  void applyRenderMode(state.renderMode)
-})
-
-elements.settingsSpeedMeter.addEventListener('change', () => {
-  setSpeedMeter(elements.settingsSpeedMeter.checked)
-  savePreferences()
-})
 if (state.speedMeter) setSpeedMeter(true)
 
 // The speed test (F-034): Settings, the View menu of the desktop app, or the page opened with ?speedtest=1. The code is loaded when it runs.
@@ -3621,14 +3511,6 @@ async function startSpeedTest() {
     console.error('Speed test failed to start', error)
   } finally { speedTestRunning = false }
 }
-document.querySelector('#settings-speed-test')?.addEventListener('click', () => void startSpeedTest())
-
-elements.settingsFontSize.addEventListener('input', () => {
-  state.fontSize = Number(elements.settingsFontSize.value)
-  savePreferences()
-  syncDefaultTypographySettings()
-  syncTypographyControls()
-})
 elements.notebookPicker.addEventListener('click', () => {
   const willOpen = elements.notebookPickerMenu.hidden
   elements.notebookPickerMenu.hidden = !willOpen
@@ -4268,7 +4150,8 @@ function loadPanels() {
     const skins = startSkins()
     const settingsWindow = panels.mountSettingsWindow(elements.properties, {
       createIcons, plugins, skins: { list: SKINS, current: () => skins.current, select: (id) => { skins.select(id); skinSwitcher.sync() } },
-      defaults: () => ({ fontFamily: state.fontFamily, fontSize: state.fontSize }),
+      state, api, save: savePreferences, typography: syncTypographyControls, speedMeter: setSpeedMeter, speedTest: startSpeedTest, exportTo: downloadWorkspaceExport, importFile: importWorkspaceFile,
+      renderMode: (mode) => { state.renderMode = mode; savePreferences(); void applyRenderMode(mode) },
       close: () => setPropertiesOpen(false), openNoteProps: () => { setPropertiesOpen(false); setNotePropsOpen(true) },
     })
     aiSettings = panels.mountAISettings(document.querySelector('#ai-settings'), api)
@@ -4341,9 +4224,7 @@ async function initialize() {
   refreshPageColors()
   resizePaper()
   resetCanvasView()
-  syncDefaultTypographySettings()
   syncTypographyControls()
-  loadCapabilitySettings()
   // F-098: everything the first screen needs is asked for at once, not one after another: the plugin choice, the lists, and the locking of secure notes.
   const pluginChoice = api('/plugins').catch(() => ({}))
   const lists = Promise.all([api('/notebooks'), api('/notes')])
