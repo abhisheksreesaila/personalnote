@@ -230,6 +230,7 @@ export class MindMapRenderer {
       createSvg('rect', { class: 'map-node-selection', x: -width / 2 - 7, y: -height / 2 - 7, width: width + 14, height: height + 14, rx: 24 }),
       label,
     )
+    if (node.vote) this.renderVote(group, node, width / 2 - 4, -height / 2)
   }
 
   renderLabel(group, node) {
@@ -301,7 +302,9 @@ export class MindMapRenderer {
     group.append(createSvg('circle', { class: 'map-collapse-badge', cx: x, cy: 18, r: 11, stroke: node.color }), text)
   }
 
-  bounds(nodes = visibleNodes(this.document, this.focusId)) {
+  bounds(shown = visibleNodes(this.document, this.focusId)) {
+    const ids = new Set(shown.map((node) => node.id))
+    const nodes = [...shown, ...ghostNodes(this.document).filter((ghost) => ids.has(ghost.parentId))] // (the suggestions waiting count: the view must show them)
     if (!nodes.length) return { minX: -100, minY: -100, maxX: 100, maxY: 100 }
     return nodes.reduce((box, node) => ({
       minX: Math.min(box.minX, node.x - 120),

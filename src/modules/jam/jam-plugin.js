@@ -10,6 +10,7 @@ const NEW_JAM = 'New jam'
 
 export async function activateJam(shell) {
   const { api, island, elements } = shell
+  const mic = [document.querySelector('#voice-divider'), document.querySelector('#voice-button')]
   let session = null
   let editor = null
 
@@ -27,6 +28,7 @@ export async function activateJam(shell) {
     editor = null
     shell.voiceSink = null
     elements.shell.classList.remove('jam-active')
+    elements.dockCanvas.append(...mic) // (the mic goes home to the canvas tools)
     island.model.jam(null)
   }
 
@@ -46,6 +48,7 @@ export async function activateJam(shell) {
     })
     shell.voiceSink = { heard: (text, options) => session.heard(text, options), listening: (on) => session.listening(on) } // the mic's words come here, not into a text box
     elements.shell.classList.add('jam-active') // (shows the mic on a map)
+    elements.mindmapRailActions.append(...mic) // (a map has no canvas tools: the mic joins the map's own, at the bottom of the island)
     session.start()
   }
 
@@ -57,7 +60,7 @@ export async function activateJam(shell) {
     attach(made)
   }
 
-  const removeEntry = shell.addEntry({ id: 'new-jam', label: NEW_JAM, icon: 'sparkles', keywords: 'brainstorm talk mind map claude', run: () => void newJam() })
+  const removeEntry = shell.addEntry({ id: 'new-jam', label: NEW_JAM, icon: 'sparkles', keywords: 'brainstorm talk mind map claude', run: () => newJam() })
   attach(shell.mindmapEditor())
 
   return {

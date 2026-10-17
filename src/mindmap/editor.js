@@ -710,7 +710,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     },
     isJam: () => mindmap.jam === true,
     ghosts: () => ghostNodes(mindmap).map(({ id, text, why }) => ({ id, text, why })),
-    applyJam(edits) { mutate(() => applyJamEdits(mindmap, edits)); fitMap(true) }, // one brain turn is one undo step
+    applyJam(edits) { focusId = null; mutate(() => applyJamEdits(mindmap, edits)); fitMap(true) }, // one brain turn is one undo step, and the whole map is shown again (a phone may have zoomed into one branch)
     answerGhost,
     setTitle: (title) => { mindmap.title = title || 'Untitled mind map' },
     runAction,
