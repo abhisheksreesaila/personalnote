@@ -1,7 +1,7 @@
 // The page note editor (F-040): Markdown in CodeMirror 6 on a sheet of paper that grows as you write. Loaded only when a page note
 // opens (src/modules/page.js). The text layer is the Markdown itself; the ink layer (marks, drawings) is added by ink.js.
-import { EditorState, Transaction } from '@codemirror/state'
-import { EditorView, keymap, drawSelection } from '@codemirror/view'
+import { EditorState, RangeSetBuilder, StateEffect, Transaction } from '@codemirror/state'
+import { Decoration, EditorView, ViewPlugin, keymap, drawSelection } from '@codemirror/view'
 import { history, historyKeymap, defaultKeymap, indentWithTab, undo, redo } from '@codemirror/commands'
 import { Language, defineLanguageFacet, syntaxHighlighting, HighlightStyle } from '@codemirror/language'
 import { parser as markdownParser, GFM } from '@lezer/markdown'
@@ -11,6 +11,7 @@ import { installPageStyle } from './page-style.js'
 import { mergeText } from './merge.js'
 import { inkState, readInk, setMarks, setDrawings, agentEdit } from './ink-state.js'
 import { isInkTransaction, mountInkLayer } from './ink.js'
+import { NOTE_LINK, loadNoteLinks, onNoteLinks, peekNoteLink } from '../core/note-links.js'
 
 // Markdown with GitHub's tables, task lists and strike-through. Built from the Lezer parser directly: @codemirror/lang-markdown would
 // also pull in the HTML, CSS and JavaScript parsers for embedded code, which a notes page doesn't need.
@@ -41,9 +42,68 @@ const pageTheme = EditorView.theme({
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { background: 'var(--page-selection) !important' },
 })
 
+// A link to another note (F-095), `[Title](personal-note://note/<id>)`: only its title shows (the address appears while the caret is in it), it opens
+// that note when clicked, and one whose note was removed is struck through and says so.
+const linksChanged = StateEffect.define()
+const noteRefs = (text) => [...text.matchAll(NOTE_LINK)].map((match) => match[2])
+function noteLinkDecorations(view) {
+  const builder = new RangeSetBuilder()
+  const hidden = new RangeSetBuilder() // the parts that are hidden: the cursor jumps over them
+  const { from: caretFrom, to: caretTo } = view.state.selection.main
+  for (const range of view.visibleRanges) {
+    for (const match of view.state.sliceDoc(range.from, range.to).matchAll(NOTE_LINK)) {
+      const from = range.from + match.index
+      const to = from + match[0].length
+      const titleEnd = from + 1 + match[1].length
+      if (titleEnd === from + 1) continue
+      const info = peekNoteLink(match[2])
+      const mark = Decoration.mark({ class: `page-note-link${info === null ? ' gone' : ''}`, attributes: { 'data-note-ref': match[2], title: info === null ? 'Note removed' : 'Open this note' } })
+      if (caretFrom < to && caretTo > from) builder.add(from, to, mark) // the caret is in it: all of it shows, to edit
+      else {
+        const hide = Decoration.replace({})
+        builder.add(from, from + 1, hide)
+        builder.add(from + 1, titleEnd, mark)
+        builder.add(titleEnd, to, hide)
+        hidden.add(from, from + 1, hide)
+        hidden.add(titleEnd, to, hide)
+      }
+    }
+  }
+  return { shown: builder.finish(), hidden: hidden.finish() }
+}
+const noteLinks = (onOpenNote) => {
+  const plugin = ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.built = noteLinkDecorations(view)
+      this.decorations = this.built.shown
+      this.off = onNoteLinks(() => view.dispatch({ effects: linksChanged.of(null) }))
+      void loadNoteLinks(noteRefs(view.state.doc.toString()), { fresh: true })
+    }
+    update(update) {
+      if (update.docChanged || update.viewportChanged || update.selectionSet || update.transactions.some((tr) => tr.effects.some((effect) => effect.is(linksChanged)))) {
+        this.built = noteLinkDecorations(update.view)
+        this.decorations = this.built.shown
+      }
+    }
+    destroy() { this.off() }
+  }, { decorations: (instance) => instance.decorations })
+  return [
+    plugin,
+    EditorView.atomicRanges.of((view) => view.plugin(plugin)?.built.hidden ?? Decoration.none),
+    EditorView.domEventHandlers({
+      click(event, view) {
+        const link = event.target instanceof Element ? event.target.closest('[data-note-ref]') : null
+        if (!link || !view.state.selection.main.empty) return false
+        onOpenNote(link.dataset.noteRef)
+        return true
+      },
+    }),
+  ]
+}
+
 export const PAGE_SHEET_HEIGHT = 1080
 
-export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
+export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote = () => {} } = {}) {
   installPageStyle()
   const initial = normalizePageDocument(documentValue)
   host.innerHTML = `
@@ -75,6 +135,7 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
         EditorView.contentAttributes.of({ 'aria-label': 'Page text', spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences' }),
         pageTheme,
         inkState(initial.ink),
+        noteLinks(onOpenNote),
         EditorView.updateListener.of((update) => {
           if (silent) return
           if (update.docChanged || update.transactions.some(isInkTransaction)) onChange()
@@ -132,6 +193,17 @@ export function mountPage(host, { documentValue, onChange = () => {} } = {}) {
       return 1
     },
     setTitle() {},
+    // A note dropped or picked into this page (F-095): the link goes in at the window point `at` (a drop) or at the caret, with a space on either
+    // side where it would touch a word.
+    insertNoteLink(markdown, at) {
+      const pos = (at && view.posAtCoords({ x: at.clientX, y: at.clientY })) ?? view.state.selection.main.head
+      const before = view.state.sliceDoc(Math.max(0, pos - 1), pos)
+      const after = view.state.sliceDoc(pos, pos + 1)
+      const text = `${before && !/\s/.test(before) ? ' ' : ''}${markdown}${after && !/\s/.test(after) ? ' ' : ''}`
+      view.dispatch({ changes: { from: pos, insert: text }, selection: { anchor: pos + text.length }, scrollIntoView: true, userEvent: 'input.drop' })
+      view.focus()
+      return true
+    },
     // The dock's and the menu's Undo/Redo: one history for text and ink.
     history(direction) { (direction < 0 ? undo : redo)(view) },
     // Clear all: one undoable step. False when there was nothing to clear.

@@ -110,6 +110,14 @@ const CSS = `
 }
 .page-link-word.open { background: color-mix(in srgb, var(--page-link) 14%, transparent); }
 .page-link-word.open::after { transform: rotate(90deg); }
+.page-note-link {
+  color: var(--page-link); background: color-mix(in srgb, var(--page-link) 8%, transparent); border-radius: 6px; padding: 1px 6px 1px 4px; cursor: pointer;
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--page-link) 45%, transparent);
+}
+.page-note-link::before { content: "\\2197"; font-size: .8em; margin-right: 4px; }
+.page-note-link:hover { background: color-mix(in srgb, var(--page-link) 16%, transparent); }
+.page-note-link.gone { color: var(--page-muted); background: none; box-shadow: none; text-decoration: line-through; cursor: default; }
+.page-note-link.gone::after { content: " (note removed)"; display: inline-block; font-size: .8em; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) { .page-drawing, .page-drawing-art, .page-drawing-items, .page-link-word::after { transition: none; } }
 @media (max-width: 900px) {
   .app-shell .page-host { inset: 0; border: 0; border-radius: 0; }

@@ -126,8 +126,9 @@ export function mountShelves(root, options) {
     drag = note
       ? { kind: 'note', id: Number(note.dataset.noteId), el: note }
       : { kind: 'notebook', id: Number(notebook.dataset.notebookDrag), el: notebook.closest('.nav-row') || notebook }
-    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.effectAllowed = note ? 'copyMove' : 'move' // (a note can be filed in a notebook or dropped into the open note)
     event.dataTransfer.setData('text/plain', String(drag.id)) // some engines refuse to start a drag with no data
+    if (note) event.dataTransfer.setData('application/x-personal-note', String(drag.id)) // F-095: the open note takes it as a link
     try { event.dataTransfer.setDragImage(image, 0, 0) } catch {}
     ghost = (note || notebook).cloneNode(true)
     ghost.querySelectorAll('.notebook-count, .nav-edit').forEach((node) => node.remove())

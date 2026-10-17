@@ -139,6 +139,7 @@ document.querySelector('#app').innerHTML = `
             <div class="isl-meta"><div class="save-state" id="save-state"><span></span>Saved on this device</div><span id="island-notebook"></span></div>
             <div class="isl-grid">
               <button id="share-focus" class="isl-wide" data-keeps-text-editing title="Focus mode"><i data-lucide="focus"></i><span>Focus</span><kbd id="focus-top-kbd">Ctrl .</kbd></button>
+              <button id="share-link" title="Link to a note…" aria-label="Link to a note…"><i data-lucide="link"></i><span>Link note</span></button>
               <button id="share-print" title="Print preview"><i data-lucide="printer"></i><span>Print</span></button>
               <button id="share-png" title="Note as picture (PNG)"><i data-lucide="image-down"></i><span>Picture</span></button>
               <button id="share-backup" title="Download backup"><i data-lucide="archive"></i><span>Backup</span></button>
@@ -582,7 +583,7 @@ async function mountActivePage(documentValue) {
   pageEditor?.destroy()
   pageEditor = null
   const ticket = ++pageMountTicket
-  const editor = await mountPageModule(elements.pageHost, { documentValue, onChange: () => queueSave() })
+  const editor = await mountPageModule(elements.pageHost, { documentValue, onChange: () => queueSave(), onOpenNote: openLinkedNote })
   if (ticket !== pageMountTicket || state.activeNoteType !== 'page') { editor.destroy(); return }
   pageEditor = editor
 }
@@ -975,13 +976,32 @@ function renderNoteList() {
   shelves?.afterRender()
 }
 
+// F-095: a bookmark from X that is still to do (in the X notebook, not archived) gets a Done button; its code loads when one is opened.
+let xDone = null
+let xDoneShown = null
+function syncXDone(note, notebook) {
+  const id = note && notebook?.icon === 'brand:x' && notebook.category !== 'archive' ? note.id : null
+  if (id === xDoneShown) return
+  xDoneShown = id
+  void import('./modules/x/x-done.js').then((module) => {
+    xDone ??= module.mountXDone({
+      api, state, parent: document.querySelector('.topbar-actions'), refreshIcons: () => createIcons({ icons }), toast: showToast, moveNote,
+      settle: async () => { flushPendingEdits('done'); await saveSettled },
+      refresh: refreshWorkspaceLists,
+    })
+    xDone.show(xDoneShown)
+  })
+}
+
 function renderNotebookPicker() {
   const activeNote = state.notes.find((note) => note.id === state.activeNoteId)
   if (!activeNote) {
     elements.notebookPicker.innerHTML = ''
+    syncXDone(null)
     return
   }
   const notebook = state.notebooks.find((item) => item.id === activeNote.notebookId) // none: the note is in the Inbox
+  syncXDone(activeNote, notebook)
   elements.notebookPicker.innerHTML = `
     ${notebook ? `<span class="picker-dot" style="--notebook-color:${notebook.color}"></span>` : '<i data-lucide="inbox"></i>'}
     <span>${escapeHtml(notebook ? notebook.name : 'Inbox')}</span><i data-lucide="chevron-down"></i>
@@ -1802,6 +1822,9 @@ function mountLeaferCanvas() {
     onEnd: () => leaferEdits.end(),
     // A drag, a resize or a turn brought an object near an edge: the page grid grows in every direction.
     onPages: ({ columns, rows, shiftX, shiftY }) => { state.pages = { ...state.pages, columns, rows }; resizePaper(shiftX, shiftY) },
+    // F-095: a click on a note link card opens its note (the pen, eraser, sticky and shape tools keep their own presses).
+    onOpenNote: (ref) => { if (['select', 'text', 'hand'].includes(state.tool)) openLinkedNote(ref) },
+    onCanvasPress: (event) => event.target === inputSurface || leaferHost.contains(event.target),
     onTextEvent: (type) => {
       if (type === 'escape') setTool('select')
       if (type === 'link') updateSelectionBar()
@@ -1950,6 +1973,12 @@ let selectSequence = 0
 // From the moment a switch to another note starts until it has landed, the old note takes no more input on the Leafer canvas: an edit
 // made then would land on a note that is being left (and be dropped).
 let leaferSwitching = 0
+// A note link (F-095) opens its note; one whose note was removed says so.
+function openLinkedNote(ref) {
+  const note = state.notes.find((item) => item.resourceId === ref)
+  if (note) void selectNote(note.id)
+  else showToast('That note was removed')
+}
 async function selectNote(id, { reload = false } = {}) {
   if (id === state.activeNoteId && !reload) return
   if (focusActive) { focus.leave(); clearTimeout(focusRestore?.timer); focusRestore = null } // (the other note opens in its own view)
@@ -2596,6 +2625,7 @@ function omniActions() {
     { id: 'quick-note', title: 'Quick note', icon: 'zap', top: true, keycap: quickNoteKeycap(navigator.platform), keywords: 'inbox capture', run: () => createNote() },
   ]
   for (const entry of pluginEntries.values()) actions.push({ id: entry.id, title: entry.label, icon: entry.icon, top: true, keywords: entry.keywords, run: entry.run })
+  actions.push({ id: 'link-note', title: 'Link to a note…', icon: 'link', top: true, keywords: 'drop put note into this note card reference', run: () => startNoteLinking() })
   actions.push({ id: 'focus', title: 'Focus mode', icon: 'focus', top: true, keycap: `${modifierLabel(navigator.platform)}.`, keywords: 'write quiet distraction full screen words only', run: () => { closeSearch(); toggleFocus() } })
   if (note) actions.push({ id: 'make-secure', title: note.secure ? 'Make this note ordinary' : 'Make this note secure', icon: note.secure ? 'lock-open' : 'lock', top: true, keywords: 'lock private password', run: () => toggleSecureActiveNote() })
   const current = startSkins().current
@@ -2603,6 +2633,16 @@ function omniActions() {
     actions.push({ id: `skin-${skin.id}`, title: `Skin: ${skin.name}`, icon: 'palette', hint: skin.id === current ? 'Current' : '', keywords: 'switch skin theme appearance look', run: () => { startSkins().select(skin.id); skinSwitcher.sync() } })
   }
   return actions
+}
+
+// F-095: "Link to a note…" is the omnibar again, asking which note; the pick becomes a card at the middle of the view, or a link at the caret.
+function startNoteLinking() {
+  if (state.noteLocked || !['canvas', 'page'].includes(state.activeNoteType)) { showToast('Notes can be linked into canvas and page notes'); return }
+  openSearch()
+  omni.pick = (noteId) => void withNoteLinks((module) => module.linkNote(linkHost(), noteId))
+  omni.filter = 'Notes'
+  elements.searchInput.placeholder = 'Link to which note?'
+  renderOmni()
 }
 
 function omniRowHtml(item, index, tokens) {
@@ -2634,10 +2674,11 @@ function renderOmni() {
   const keep = omniKey(omni.items[omni.sel]) // the selection stays on the same item when more results land
   const query = elements.searchInput.value.trim()
   const tokens = queryTokens(query)
-  const notes = state.notes.filter((note) => note.id !== pendingDelete?.note.id)
-  const wordHits = omni.wordHits.filter((hit) => hit.id !== pendingDelete?.note.id)
+  const skip = omni.pick ? state.activeNoteId : pendingDelete?.note.id // (asking for a note to link: not this one)
+  const notes = state.notes.filter((note) => note.id !== skip)
+  const wordHits = omni.wordHits.filter((hit) => hit.id !== skip)
   const searchesNotes = omni.filter === 'All' || omni.filter === 'Notes'
-  omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: state.notebooks, actions: omniActions(), wordHits, meaningHits: omni.meaningHits, wordsPending: omni.pending })
+  omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: omni.pick ? [] : state.notebooks, actions: omni.pick ? [] : omniActions(), wordHits, meaningHits: omni.meaningHits, wordsPending: omni.pending })
   omni.items = flatten(omni.groups)
   const kept = omni.items.findIndex((item) => omniKey(item) === keep)
   if (kept >= 0) omni.sel = kept
@@ -2672,6 +2713,7 @@ function setOmniSelection(index, { scroll = true } = {}) {
 }
 
 let openFrame = 0
+const SEARCH_PLACEHOLDER = elements.searchInput.placeholder
 function openSearch() {
   const bar = elements.searchButton.getBoundingClientRect()
   const panel = elements.searchBackdrop.firstElementChild
@@ -2691,6 +2733,7 @@ function openSearch() {
 
 function closeSearch() {
   cancelAnimationFrame(openFrame) // (closed before it had finished opening: it stays closed)
+  if (omni.pick) { omni.pick = null; elements.searchInput.placeholder = SEARCH_PLACEHOLDER }
   omni.open = false
   omni.pending = false
   searchSequence += 1
@@ -2735,8 +2778,11 @@ function queueSearch() {
 
 function runOmniItem(item) {
   if (!item) return
+  const pick = omni.pick
+  if (pick && !['note', 'words', 'meaning'].includes(item.kind)) return
   closeSearch()
-  if (item.kind === 'note' || item.kind === 'words' || item.kind === 'meaning') void selectNote(item.id)
+  if (pick) pick(item.id)
+  else if (item.kind === 'note' || item.kind === 'words' || item.kind === 'meaning') void selectNote(item.id)
   else if (item.kind === 'notebook') {
     revealNotebook(item.id)
     state.selectedNotebookId = item.id
@@ -3080,7 +3126,7 @@ inputSurface.addEventListener('pointerdown', (event) => {
   else if (state.tool === 'shape') placeShape(leaferCanvas.pageAt(event.clientX, event.clientY))
   else if (state.tool === 'text') {
     const at = leaferCanvas.pageAt(event.clientX, event.clientY)
-    if (leaferCanvas.toggleFoldAt(at)) return // F-051: a teal word folds or opens what is linked to it, with any tool that writes or picks
+    if (leaferCanvas.noteLinkAt(at) || leaferCanvas.toggleFoldAt(at)) return // F-051: a teal word folds or opens what is linked to it, with any tool that writes or picks
     setTimeout(() => { if (!leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false }) }, 0)
   }
 })
@@ -3098,7 +3144,7 @@ window.addEventListener('pointerup', (event) => {
   const at = leaferCanvas.pageAt(event.clientX, event.clientY)
   if (state.tool === 'sticky') placeSticky(at, { now: true })
   else if (state.tool === 'shape') placeShape(at)
-  else if (state.tool === 'text' && !leaferCanvas.toggleFoldAt(at) && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
+  else if (state.tool === 'text' && !leaferCanvas.noteLinkAt(at) && !leaferCanvas.toggleFoldAt(at) && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
 }, true)
 
 
@@ -3151,6 +3197,25 @@ elements.workspace.addEventListener('drop', (event) => {
   if (state.activeNoteType !== 'canvas' || !hasFiles(event)) return
   event.preventDefault()
   placeImageFiles(event.dataTransfer.files, leaferCanvas.pageAt(event.clientX, event.clientY))
+})
+// F-095: a note's row dragged from the notes panel onto the open note lands there as a link card (canvas) or a link (page).
+const NOTE_DRAG = 'application/x-personal-note'
+const dragsNote = (event) => !state.noteLocked && ['canvas', 'page'].includes(state.activeNoteType) && [...(event.dataTransfer?.types || [])].includes(NOTE_DRAG)
+const withNoteLinks = (use) => import('./modules/links/note-links-ui.js').then(use)
+const linkHost = () => ({ state, canvas: leaferCanvas, page: pageEditor, center: viewCenterPoint(), toast: showToast, pickTool: () => setTool('select') })
+elements.workspace.addEventListener('dragover', (event) => {
+  if (!dragsNote(event)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+  elements.workspace.classList.add('is-drop-target')
+})
+elements.workspace.addEventListener('drop', (event) => {
+  elements.workspace.classList.remove('is-drop-target')
+  if (!dragsNote(event)) return
+  event.preventDefault()
+  const { clientX, clientY } = event
+  const noteId = Number(event.dataTransfer.getData(NOTE_DRAG))
+  void withNoteLinks((module) => module.linkNote(linkHost(), noteId, { clientX, clientY }))
 })
 // A picture on the clipboard (a screenshot, a copied image) is pasted where the view is centred; words keep pasting into whatever is typed in.
 document.addEventListener('paste', (event) => {
@@ -3334,6 +3399,7 @@ elements.shareMenu.addEventListener('click', (event) => {
   if (!item || item.disabled) return
   setShareMenuOpen(false)
   if (item.id === 'share-focus') tryFocus()
+  else if (item.id === 'share-link') startNoteLinking()
   else if (item.id === 'share-print') openPrintPreview()
   else if (item.id === 'share-png') void downloadNotePicture()
   else if (item.id === 'share-backup') void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')

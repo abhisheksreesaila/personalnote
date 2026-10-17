@@ -31,6 +31,8 @@ import { followLinks, linkRanges, linkWord } from './text-links.js'
 import { ERASER_RADIUS, samplePath } from './ink-model.js'
 import { fitGeometry, newShape, newSticky, newText, nextZ, objectAt, planPrettify, planSetContent, planSetShapeFill, planSetStyle, toLocal, marginRoom, writingBox } from './text-ops.js'
 import { prettifySelection } from '../editor/prettify.js'
+import { loadNoteLinks, onNoteLinks, peekNoteLink } from '../../core/note-links.js'
+import { CARD_SIZE, newNoteLink, noteLinkFace } from './note-link.js'
 
 // What Fabric assumes for a text field a saved note leaves out (the model is sparse and does not write defaults).
 const TEXT_DEFAULTS = { fontFamily: 'Times New Roman', fontSize: 40, fontWeight: 'normal', fontStyle: 'normal', lineHeight: 1.16, textAlign: 'left', color: 'rgb(0,0,0)' }
@@ -144,6 +146,28 @@ function markdownNodes(layout, marks) {
   return group
 }
 
+// A note link card (F-095), drawn again whenever the card is resized or the server's answer about its note arrives: the badge on the notebook's
+// colour, the title and the first lines. Plain text only (a title is never read as HTML); a removed note's card is dashed.
+const CARD_INK = '#26262b'
+const CARD_MUTED = '#6b6b72'
+function paintNoteLink(holder, object, info) {
+  const face = noteLinkFace(object, info)
+  const w = holder.width
+  const h = holder.height
+  const d = Math.max(24, Math.min(44, h - 28))
+  const left = 14 + d + 12
+  const inner = Math.max(20, w - left - 14)
+  holder.clear()
+  holder.add(new Rect({ width: w, height: h, fill: '#ffffff', cornerRadius: 14, stroke: face.badge.color, strokeWidth: 2, dashPattern: face.state === 'removed' ? [7, 5] : undefined, hittable: false }))
+  holder.add(new Ellipse({ x: 14, y: (h - d) / 2, width: d, height: d, fill: face.badge.color, hittable: false }))
+  holder.add(new Text({ text: face.badge.glyph, x: 14, y: (h - d) / 2, width: d, height: d, textAlign: 'center', verticalAlign: 'middle', fontSize: Math.round(d * 0.46), fontFamily: LABEL_FONT_FAMILY, fill: '#ffffff', textWrap: 'none', hittable: false }))
+  const family = { fontFamily: LABEL_FONT_FAMILY, hittable: false, textOverflow: '…' }
+  if (face.detail) {
+    holder.add(new Text({ ...family, text: face.title, x: left, y: 12, width: inner, height: 26, fontSize: 17, fontWeight: 'bold', fill: face.state === 'removed' ? CARD_MUTED : CARD_INK, verticalAlign: 'middle', textWrap: 'none' }))
+    holder.add(new Text({ ...family, text: face.detail, x: left, y: 40, width: inner, height: Math.max(18, h - 52), fontSize: 13.5, lineHeight: 18, fill: CARD_MUTED, textWrap: 'normal' }))
+  } else holder.add(new Text({ ...family, text: face.title, x: left, y: 0, width: inner, height: h, fontSize: 17, fontWeight: 'bold', fill: CARD_INK, verticalAlign: 'middle', textWrap: 'normal' }))
+}
+
 const MARK_NAME = 'text-mark' // (checks find a text's marks by this, not by their place among its children)
 // A mark is drawn like the ink it was made from, at (x, y) in the text's frame.
 function markNode(mark) {
@@ -166,7 +190,7 @@ const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y
 // into it); `onTextEvent(type)` hears 'start', 'end' and 'escape' of a text edit.
 // F-032: `onPages({ columns, rows, shiftX, shiftY })` hears that the page grid grew while an object was being dragged, resized or turned (the
 // host sets its page state and moves the view by the shift so nothing seems to move); an edit's own page change travels in the op instead.
-export function createScene({ host, width, height, onOperation = () => null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, defaults = {} }) {
+export function createScene({ host, width, height, onOperation = () => null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, onOpenNote = () => {}, onCanvasPress = () => true, defaults = {} }) {
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
   const perf = readPerf()
   let pixelRatio = pixelRatioFor(globalThis.devicePixelRatio, perf)
@@ -216,6 +240,22 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     })
   }
   const inputKey = () => { lastInput = performance.now() }
+  // A click on a note link card opens its note (F-095): a press and a release close together, in time and place, on the canvas (the host decides
+  // whether the tool allows it); a drag moves the card and Shift-click only selects it.
+  let cardPress = null
+  const cardDown = (event) => {
+    cardPress = null
+    if (event.button !== 0 || event.shiftKey || !event.isPrimary || !onCanvasPress(event)) return
+    const ref = api.noteLinkAt(api.pageAt(event.clientX, event.clientY))
+    if (ref) cardPress = { ref, id: event.pointerId, x: event.clientX, y: event.clientY, time: performance.now() }
+  }
+  const cardUp = (event) => {
+    const press = cardPress
+    cardPress = null
+    if (press && press.id === event.pointerId && !event.shiftKey && performance.now() - press.time < 700 && Math.hypot(event.clientX - press.x, event.clientY - press.y) < 6) onOpenNote(press.ref)
+  }
+  globalThis.addEventListener?.('pointerdown', cardDown, true)
+  globalThis.addEventListener?.('pointerup', cardUp, true)
   globalThis.addEventListener?.('pointermove', inputMove, true)
   globalThis.addEventListener?.('pointerdown', inputDown, true)
   globalThis.addEventListener?.('pointerup', inputUp, true)
@@ -408,6 +448,14 @@ export function createScene({ host, width, height, onOperation = () => null, onB
           shadowImage?.set({ width: holder.width + shadow.margin * 2, height: holder.height + shadow.margin * 2 })
         }
         return { node: holder, text, size: { width: w, height: h }, sized: true, relayout }
+      }
+      case 'notelink': {
+        const w = g.width ?? CARD_SIZE.width
+        const h = g.height ?? CARD_SIZE.height
+        const holder = new Box({ ...base, width: w, height: h, hitFill: 'all', hitChildren: false })
+        const relayout = () => paintNoteLink(holder, object, peekNoteLink(object.noteRef))
+        relayout()
+        return { node: holder, size: { width: w, height: h }, sized: true, relayout }
       }
       case 'shape': {
         const fill = isColor(object.fill) ? object.fill : SHAPE_DEFAULT_FILL
@@ -1464,6 +1512,30 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       if (ids.length) editing.select([entries.get(ids.at(-1)).node])
       return ids
     },
+    // A note link card (F-095) centred on a page point: one undo step, selected. False when it could not be placed.
+    addNoteLink(point, { ref, title }) {
+      const object = newNoteLink({ id: newId(), z: nextZ(doc), point, ref, title })
+      if (overlay.isOpen) overlay.commit()
+      onBegin('Add note link')
+      try {
+        commit({ label: 'Add note link', changes: [{ id: object.id, before: null, after: object }] }, { selection: { before: [], after: [object.id] } })
+        addObject(world, doc.objects.find((candidate) => candidate?.id === object.id) ?? object, boxes)
+        const entry = entries.get(object.id)
+        if (entry) editing.select([entry.node])
+        void loadNoteLinks([ref])
+        return Boolean(entry)
+      } finally { onEnd() }
+    },
+    // The note a card at a page point opens (its resource id), or null.
+    noteLinkAt(point) {
+      for (const object of [...stacking(doc ?? { objects: [] })].reverse()) {
+        const entry = object?.type === 'notelink' ? entries.get(object.id) : null
+        if (!entry || isLocked(object)) continue
+        const local = toLocal(object.geometry, entry.size, point)
+        if (local && local.x >= 0 && local.x <= entry.size.width && local.y >= 0 && local.y <= entry.size.height) return object.noteRef
+      }
+      return null
+    },
     // A point in client (window) pixels -> the page point under it.
     pageAt(clientX, clientY) {
       const rect = host.getBoundingClientRect()
@@ -1501,6 +1573,14 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     } finally { sheet.destroy() }
   }
 
+  // The server's answer about a card's note arrived: those cards are drawn again in place.
+  const offNoteLinks = onNoteLinks((refs) => {
+    for (const entry of entries.values()) {
+      if (entry.object.type !== 'notelink' || !refs.includes(entry.object.noteRef)) continue
+      entry.built.relayout()
+      lod.invalidate(touchedRects([entry.object]))
+    }
+  })
   const api = {
     leafer,
     ...textApi,
@@ -1530,6 +1610,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       for (const object of stacking(doc)) addObject(world, object, boxes)
       pages = { columns: doc.page?.columns ?? 1, rows: doc.page?.rows ?? 1 }
       drawChrome()
+      const cards = doc.objects.filter((object) => object?.type === 'notelink').map((object) => object.noteRef)
+      if (cards.length) void loadNoteLinks(cards, { fresh: true }) // (the cards show the live title and lines when the answer comes)
     },
     // True while the scene is handing its own edit to the host (so the host does not draw it a second time).
     isCommitting: () => committing,
@@ -2011,7 +2093,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
     lodBuildAll: () => lod.buildAll(),
     lodForceSlow: () => lod.forceSlow(),
     lodTest: lod.test,
-    destroy() { for (const [type, fn] of [['pointermove', inputMove], ['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); editorLayer.remove(); app.destroy() },
+    destroy() { offNoteLinks(); for (const [type, fn] of [['pointerdown', cardDown], ['pointerup', cardUp], ['pointermove', inputMove], ['pointerdown', inputDown], ['pointerup', inputUp], ['pointercancel', inputUp], ['keydown', inputKey]]) globalThis.removeEventListener?.(type, fn, true); gesture.destroy(); lod.destroy(); overlay.cancel(); editing.destroy(); overlays.destroy(); editorLayer.remove(); app.destroy() },
   }
   return api
 }
