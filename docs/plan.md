@@ -587,10 +587,11 @@ Reviewed: PASS (key in the keychain only, never in responses/file/DB/exports/DOM
 - [x] Settings has an AI section: provider (Claude Code on this machine / Azure OpenAI / OpenAI-compatible), endpoint or base URL, deployment or model, API version (Azure), API key; Save; "Test" runs one tiny real call and shows the answer time or the plain error
 - [x] the key is kept in the system keychain (0600 file on Linux), never in SQLite, backup, export, logs or the page; the page only learns "a key is saved" and can replace or remove it
 - [x] jam_brain builds its brain from these settings, the key read from secret_store (F-086 reads only the env var; env vars still override for scripts)
-## F-094 Check scripts refuse a busy port [todo]
+## F-094 Check scripts refuse a busy port [done]
 Brief: none (Encode Lessons in Structure: "never kill a process you didn't start" was broken twice, 2026-10-02 and 2026-10-16) · Needs: none
-- [ ] every scripts/verify-*.mjs and benchmark that starts a server checks its port first and fails with "port N is busy: set PORT/… to another" instead of reusing or killing whatever is there
-- [ ] one shared helper, one test; the lessons line points to it
+Reviewed: PASS (36 scripts guarded; the real bug was a stale uvicorn on UI+1 silently reused). Follow-ups done: 3137 refused for every checked port, tested.
+- [x] every scripts/verify-*.mjs and benchmark that starts a server checks its port first and fails with "port N is busy: set PORT/… to another" instead of reusing or killing whatever is there
+- [x] one shared helper, one test; the lessons line points to it
 ## F-095 Drop a note into a note [todo]
 Brief: docs/briefs/x-bookmarks.md ("drag onto any note … lands as a link card"); captain: "I can just move around and drop it into a note and it will be there" · Needs: F-088
 - [ ] drag a note's row from the notes panel onto an open canvas or page note: it lands as a link card (title, first lines, icon) that opens that note; works for X bookmark notes and any other note
