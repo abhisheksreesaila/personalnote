@@ -12,9 +12,6 @@ const budgets = {
   // the two editors and the CodeMirror chunk they share.
   pageEditorGzip: 150 * KIB,
   cssGzip: 17.6 * KIB, // 17.1 until F-072/F-073 (omnibar and focus mode; the old search panel CSS is removed); before that 16 until F-058 (secure notes: about 1 KiB gzip) then 16.75; the PARA sidebar (shelves, drag, naming) adds about 0.3 KiB, trimmed first
-  // Built-in plugins that are fetched only while they are switched on (F-091: Voice, Search by meaning, and the Settings row they share).
-  // They are not in the first load, so they do not count against the app's budget; they have their own, so they cannot grow unseen.
-  pluginsGzip: 10 * KIB,
   largestJavascriptRaw: 850 * KIB,
 }
 
@@ -43,9 +40,7 @@ const assets = await Promise.all(files.map(async (path) => {
 }))
 
 const isPageEditor = (asset) => /(^|\/)(page-editor|markdown-editor|codemirror)-[^/]*\.js$/.test(asset.path)
-const isPlugin = (asset) => /(^|\/)(voice-plugin|meaning-plugin|setup-row)-[^/]*\.js$/.test(asset.path)
-const javascript = assets.filter((asset) => asset.extension === '.js' && !isPageEditor(asset) && !isPlugin(asset))
-const pluginsGzip = assets.filter(isPlugin).reduce((total, asset) => total + asset.gzip, 0)
+const javascript = assets.filter((asset) => asset.extension === '.js' && !isPageEditor(asset))
 const pageEditorGzip = assets.filter(isPageEditor).reduce((total, asset) => total + asset.gzip, 0)
 const css = assets.filter((asset) => asset.extension === '.css')
 const javascriptGzip = javascript.reduce((total, asset) => total + asset.gzip, 0)
@@ -53,8 +48,7 @@ const cssGzip = css.reduce((total, asset) => total + asset.gzip, 0)
 const largestJavascript = javascript.reduce((largest, asset) => asset.raw > largest.raw ? asset : largest, javascript[0])
 
 const checks = [
-  ['JavaScript gzip (app, without the editors and plugins loaded on demand)', javascriptGzip, budgets.javascriptGzip],
-  ['Plugins gzip (Voice and Search by meaning: fetched only while switched on)', pluginsGzip, budgets.pluginsGzip],
+  ['JavaScript gzip (app, without the editors loaded on demand)', javascriptGzip, budgets.javascriptGzip],
   ['Editors gzip (CodeMirror, fetched after the first paint: on idle once a canvas opens, or with a page note)', pageEditorGzip, budgets.pageEditorGzip],
   ['CSS gzip', cssGzip, budgets.cssGzip],
   ['Largest JavaScript chunk', largestJavascript.raw, budgets.largestJavascriptRaw],
