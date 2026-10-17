@@ -190,7 +190,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   // Page bitmaps for a view that is moving while zoomed out (tiles.js); `pages` and `size` are declared just below.
   const lod = createTileLod({ leafer, world, perf, pageW: PAGE.width, pageH: PAGE.height, pixelRatio, getPages: () => pages, getSize: () => size,
     onExit: () => { for (const entry of uniformStrokes) entry.node.strokeWidth = entry.width * view.scale; restoreHover() }, // (not done while the bitmaps showed)
-    pending: () => { for (const entry of entries.values()) if (entry.object.type === 'image' && entry.node.ready === false) return true; return false },
+    pending: () => { for (const entry of entries.values()) if ((entry.object.type === 'image' && entry.node.ready === false) || (entry.built.shadowImage && !entry.built.shadowImage.ready)) return true; return false }, // (a sticky's baked shadow is a picture too: a bitmap made before it loads has no shadow)
     busy: () => live.active || committing || Boolean(textEdit) || pointerHeld || performance.now() - lastInput < (drawingTool ? 1500 : 150), // no idle work (page bitmaps made again) under a drag, a stroke, a commit or typing
   })
   // Input anywhere (the pen's surface is over the note, not in it): the page bitmaps are not made again while a button or a finger is down or a key was just pressed.
@@ -405,7 +405,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
           text.width = holder.width - STICKY_PADDING * 2
           shadowImage?.set({ width: holder.width + shadow.margin * 2, height: holder.height + shadow.margin * 2 })
         }
-        return { node: holder, text, size: { width: w, height: h }, sized: true, relayout }
+        return { node: holder, text, size: { width: w, height: h }, sized: true, relayout, shadowImage }
       }
       case 'shape': {
         const fill = isColor(object.fill) ? object.fill : SHAPE_DEFAULT_FILL

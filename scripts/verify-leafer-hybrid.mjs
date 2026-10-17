@@ -84,6 +84,8 @@ const compare = (page, a, b) => page.evaluate(async ([one, two]) => {
   const pixels = first.data.length / 4
   return { mean: total / pixels, strong: strong / pixels, any: any / pixels, box }
 }, [a.toString('base64'), b.toString('base64')])
+// Until every sticky's baked shadow (a picture) is loaded: a view made before that has no shadows, which is not what is being compared.
+const picturesReady = (page) => page.waitForFunction(() => { const w = window.__personalNote.leaferCanvas().leafer.children.find((n) => n.children?.length > 500); return !w || w.children.every((n) => (n.children || []).every((c) => c.tag !== 'Image' || c.ready)) }, null, { timeout: 30000 })
 const MB = (bytes) => (bytes / 1048576).toFixed(1)
 const PLAIN = { hybrid: false, dragCrowd: 0, gestureTransform: false, pageBitmaps: 'off' }
 
@@ -353,25 +355,36 @@ try {
     const rebuildAll = () => scene((s) => s.lodBuildAll())
     // the picture of a pan right after an edit (bitmaps if they may show, else vectors) against the vector picture of the same view
     const panVersusVectors = async (label) => {
+      await picturesReady(page)
+      await scene((s) => s.clearSelection()) // (the selection frame of the edited object is drawn on the vectors, not on the bitmaps: not what a stale page looks like)
+      await scene((s) => { const v = s.view(); s.setView({ ...v, x: Math.round(v.x), y: Math.round(v.y) }) }) // (a whole-pixel view: a bitmap on a fractional offset is resampled, which the blur check below measures on its own)
       await wheel(page, 3, 30)
       const panned = await shot(page)
       const state = await lod(page)
       await scene((s) => s.lodExit())
+      await picturesReady(page)
       await rafs(page, 3)
       const vector = await shot(page)
       const d = await compare(page, panned, vector)
-      return { d, state }
+      // The same view with every page made fresh: how far a bitmap is from the vectors for this content when nothing is stale (the amount of text and
+      // edges in the view sets that, so it is measured here, not carried over from another view).
+      await rebuildAll()
+      await scene((s) => s.setView({ ...s.view() }))
+      await rafs(page, 3)
+      const own = await compare(page, vector, await shot(page))
+      await scene((s) => s.lodExit())
+      return { d, state, own }
     }
     await rebuildAll()
     const control = await panVersusVectors('control')
     info(`control (no edit): the pan shows bitmaps ${control.state.active}, mean ${control.d.mean.toFixed(3)}, ${(control.d.strong * 100).toFixed(3)}% far off`)
-    const tolerance = (d) => d.mean <= control.d.mean + 0.5 && d.strong <= control.d.strong + 0.0015
+    const tolerance = (d, own) => d.mean <= own.mean + 0.5 && d.strong <= own.strong + 0.0015
     const scenario = async (name, action) => {
       await rebuildAll()
       await action()
-      const { d, state } = await panVersusVectors(name)
+      const { d, state, own } = await panVersusVectors(name)
       info(`${name}: pan right after it ${state.active ? 'shows bitmaps' : 'shows vectors'}, mean ${d.mean.toFixed(3)}, ${(d.strong * 100).toFixed(3)}% far off`)
-      check(`${name}: the next pan matches the vector render (a stale bitmap would show the old note)`, tolerance(d), JSON.stringify([d, control.d]))
+      check(`${name}: the next pan matches the vector render (a stale bitmap would show the old note)`, tolerance(d, own), JSON.stringify([d, own]))
       return state
     }
     await scenario('a move across a page boundary', () => scene((s, e, a) => { s.select([a.id]); s.nudge(300, 160) }, near))
@@ -402,11 +415,12 @@ try {
     await page.waitForTimeout(300)
     await rebuildAll()
     await scene((s) => s.lodExit())
-    const stickyNow = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const near = window.__personalNote.leaferEdits.doc.objects.filter((x) => x.type === 'sticky').map((x) => ({ id: x.id, b: s.screenBox(x.id) })).filter((x) => x.b).sort((p, q) => Math.hypot(p.b.x - 400, p.b.y - 300) - Math.hypot(q.b.x - 400, q.b.y - 300)); return { id: near[0].id } })
-    await scene((s, e, a) => { s.select([a.id]); s.nudge(20, 12) }, stickyNow)
+    const stickyNow = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const near = window.__personalNote.leaferEdits.doc.objects.filter((x) => x.type === 'sticky').filter((x) => { const g = x.geometry; const px = g.x - Math.floor(g.x / 860) * 860; const py = g.y - Math.floor(g.y / 1080) * 1080; return px > 120 && px + g.width < 740 && py > 120 && py + g.height < 960 }).map((x) => ({ id: x.id, b: s.screenBox(x.id) })).filter((x) => x.b).sort((p, q) => Math.hypot(p.b.x - 400, p.b.y - 300) - Math.hypot(q.b.x - 400, q.b.y - 300)); return { id: near[0].id } })
     const before = await lod(page)
     await page.evaluate(() => { window.__gaps = []; let last = performance.now(); const tick = (t) => { window.__gaps.push(t - last); last = t; window.__raf = requestAnimationFrame(tick) }; window.__raf = requestAnimationFrame(tick) })
-    await wheel(page, 1, 30)
+    // The edit and the first step of the pan in one task: the idle build of the touched pages (it starts 120 ms after an edit) cannot get in between, which on a
+    // busy machine it did, so the pages were no longer lacking when the pan began.
+    await scene((s, e, a) => { s.select([a.id]); s.nudge(20, 12); const v = s.view(); s.setView({ ...v, y: v.y - 30 }) }, stickyNow)
     const mixed = await lod(page)
     await wheel(page, 30, 30)
     const gaps = await page.evaluate(() => { cancelAnimationFrame(window.__raf); return window.__gaps.slice(1).sort((x, y) => x - y) })
