@@ -579,10 +579,11 @@ Reviewed: PASS after one round (read-only maps never save, shared port guard, ba
 Brief: docs/briefs/plugins.md · Needs: F-090
 Reviewed: PASS after one round (switch-off off the event loop, indexer restart after a timed-out stop, voice engine can't start after a switch-off, hand-edited plugins.json honoured). Budget check unchanged (a proposed plugin-chunk category was rejected); JS 239.26/240.
 - [x] each off: no mic / no meaning group, nothing started or downloaded, data kept; on: as today; both listed in Settings → Plugins with what they need
-## F-092 Jam sessions in a mind map [todo]
+## F-092 Jam sessions in a mind map [done]
 Brief: docs/briefs/jam-sessions.md · Design: docs/design/jam-sessions.md, option A (captain 2026-10-16: "on the map is more intuitive, I can see where I'm seeing and just suggest, as opposed to looking up all the time") · Budget: JS raised to 260 KiB by the captain · Needs: F-086, F-090
-- [ ] New jam; hold mic, live line, Jam button → brain edits applied as one undo step; ghosts accepted by click or "yes"; Settings → Jam picks the brain
-- [ ] branch text and emoji rendered as plain text (never HTML); AGENTS.md invariant 8 updated and an ADR for the opt-in generative worker (Claude Code or OpenAI-compatible)
+Reviewed: PASS first round; should-fixes done (server also needs Voice, pills act on release not on a pan, palette colours, no double-sent words, note switch mid-turn proven in the app). Jam plugin is off by default (it sends the map and words to a model). Real claude -p turn 4.3 s. Azure, real Nemotron hearing "jam" and the Mac await the captain.
+- [x] New jam; hold mic, live line, Jam button → brain edits applied as one undo step; ghosts accepted by click or "yes"; Settings → Jam picks the brain
+- [x] branch text and emoji rendered as plain text (never HTML); AGENTS.md invariant 8 updated and an ADR for the opt-in generative worker (Claude Code or OpenAI-compatible)
 ## F-093 Settings → AI: pick the model once for every AI feature [done]
 Brief: docs/briefs/jam-sessions.md ("the brain is your choice"); captain 2026-10-16: "give me … the config menu … so I can put my base URL, API key and deployment name, save it … settings for future AI stuff" · Needs: F-086, F-087 (secret_store.py)
 Reviewed: PASS (key in the keychain only, never in responses/file/DB/exports/DOM; /api/ai/test uses saved settings only). Should-fixes done: a key is dropped when the provider or host changes; deployment names refuse / and ... Real Claude Code Test 2.1 s; Azure and the Mac keychain await the captain.
