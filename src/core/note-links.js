@@ -21,7 +21,7 @@ export async function loadNoteLinks(refs, { fresh = false } = {}) {
   if (!wanted.length) return
   let found
   try { // (plain fetch: a read needs none of api.js, which would then be a chunk of its own in the first load)
-    const response = await fetch(`/api/note-links?refs=${wanted.join(',')}`, { signal: AbortSignal.timeout?.(15000) })
+    const response = await fetch(`/api/note-links?refs=${encodeURIComponent(wanted.join(','))}`, { signal: AbortSignal.timeout?.(15000) })
     if (!response.ok) return
     found = await response.json()
   } catch { return } // offline: the cards keep what they show

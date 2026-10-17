@@ -90,6 +90,8 @@ const noteLinks = () => {
   return [
     plugin,
     EditorView.atomicRanges.of((view) => view.plugin(plugin)?.built.hidden ?? Decoration.none),
+    // A note's row dragged here also carries its id as plain text: the editor must not paste that. The shell links the note at the drop point.
+    EditorView.domEventHandlers({ drop: (event) => [...(event.dataTransfer?.types ?? [])].includes('application/x-personal-note') }),
   ]
 }
 

@@ -154,7 +154,8 @@ try {
   const readingSaved = await full('Reading list')
   const md = readingSaved.content.markdown
   const linkMd = `[Lisbon trip](personal-note://note/${lisbon.resourceId})`
-  check('dropped on a page it becomes a Markdown link at the drop point (inside the second line)', md.includes(linkMd) && md.indexOf(linkMd) > md.indexOf('First line') && md.indexOf(linkMd) < md.indexOf('Third line'), JSON.stringify(md))
+  const expected = `First line of the reading list.\n\n${linkMd} Second line, where a link can go.\n\nThird line.` // (dropped in the middle of "Second": at the word's start; nothing else is written, not even the dragged id)
+  check('dropped on a page it becomes exactly the Markdown link at the word edge, and nothing else is added to the words', md === expected, JSON.stringify(md))
   await page.waitForSelector('.page-note-link')
   const shown = await pn(() => { const el = document.querySelector('.page-note-link'); return { text: el.textContent, content: document.querySelector('.page-host .cm-content').textContent } })
   check('only the title shows in the page (the address is hidden until the caret is in it)', shown.text === 'Lisbon trip' && !shown.content.includes('personal-note://'), JSON.stringify(shown))

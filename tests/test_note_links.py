@@ -173,6 +173,21 @@ class NoteLinkApiTests(unittest.TestCase):
         self.assertEqual(service.get_note(note["id"])["notebookId"], done["notebookId"])
         self.assertNotEqual(done["notebookId"], notebook["id"])
 
+    def test_after_a_restore_new_bookmarks_never_go_to_the_done_archive(self):
+        service = NoteService(Path(self.folder.name) / "adopt.db")
+        done = service.create_notebook({"name": "X bookmarks done", "category": "archive", "icon": "brand:x"})  # restored first: the lower id
+        todo = service.create_notebook({"name": "X bookmarks", "category": "resources", "icon": "brand:x"})
+        post = {"id": "8001", "url": "https://x.com/ada/status/8001", "author_handle": "ada", "text": "old one"}
+        from x_bookmarks import x_post_note
+        title, markdown = x_post_note(post)
+        note = service.create_note({"title": title, "noteType": "page", "notebookId": todo["id"]})
+        service.update_note(note["id"], {"title": title, "revision": note["revision"], "content": {"version": 1, "markdown": markdown, "ink": {"marks": [], "drawings": []}}})
+        service.adopt_x_posts_from_notes()
+        service.import_x_bookmarks([{"id": "8002", "url": "https://x.com/bob/status/8002", "author_handle": "bob", "text": "new one"}])
+        fresh = next(n for n in service.list_notes() if "new one" in n["title"])
+        self.assertEqual(fresh["notebookId"], todo["id"])
+        self.assertNotEqual(fresh["notebookId"], done["id"])
+
     def test_done_refuses_a_note_that_is_not_an_x_bookmark(self):
         plain = self.make_page("Plain", "x")
         response = self.client.post(f"/api/notes/{plain['id']}/x-done", headers={"x-personal-note": "1"})

@@ -1811,7 +1811,7 @@ class NoteService:
                 if found:
                     connection.execute("INSERT OR IGNORE INTO x_posts (post_id, note_id) VALUES (?, ?)", (found[-1], row["id"]))
             if connection.execute("SELECT COUNT(*) FROM x_posts").fetchone()[0]:
-                notebook = connection.execute("SELECT id FROM notebooks WHERE icon = 'brand:x' ORDER BY id LIMIT 1").fetchone()
+                notebook = connection.execute("SELECT id FROM notebooks WHERE icon = 'brand:x' AND category != 'archive' ORDER BY id LIMIT 1").fetchone()  # (not the Done archive, which has the X icon too)
                 if notebook:
                     connection.execute("INSERT OR IGNORE INTO x_notebook (id, notebook_id) VALUES (1, ?)", (notebook[0],))
                     connection.execute("UPDATE x_notebook SET notebook_id = ? WHERE id = 1 AND notebook_id IS NULL", (notebook[0],))
@@ -1832,7 +1832,7 @@ class NoteService:
             if not fresh:
                 return 0
             row = connection.execute(
-                "SELECT notebook_id FROM x_notebook JOIN notebooks ON notebooks.id = x_notebook.notebook_id WHERE x_notebook.id = 1"
+                "SELECT notebook_id FROM x_notebook JOIN notebooks ON notebooks.id = x_notebook.notebook_id WHERE x_notebook.id = 1 AND notebooks.category != 'archive'"
             ).fetchone()
             notebook_id = row[0] if row else None
         if notebook_id is None:
