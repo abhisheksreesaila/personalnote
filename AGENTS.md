@@ -24,6 +24,7 @@ Design language: web=Personal Note skins (Crayon, Paper, Night in `src/skins.css
 - `search_runtime.py` owns the optional search-by-meaning download and its loopback embedding engine; it never blocks startup or saves (F-080 searches). `meaning_index.py` is the background thread that fills `note_embeddings` (derived, never in backup or export; owned by `NoteService`).
 - Jam sessions (`src/modules/jam/`, plugin `jam`, needs Mind maps + Voice) put a live line and Jam on the island for a map made by New jam; `src/mindmap/jam.js` applies a turn's edits (ghosts, thumbs, emoji are map data, ghosts are never saved); the mic reaches it through `shell.voiceSink`.
 - `ai_settings.py` + `src/modules/ai/` own Settings → AI: the model choice every AI feature shares (`AISettings.brain()`); choices in `ai-settings.json` in the app-data folder, the API key only in `SecretStore` (never SQLite, backup, export, logs or the page).
+- A note's emoji icon (F-100): `note_icon.py` holds the guess from the title, the type defaults and the tint rule, and `NoteService` sends every note with its icon resolved (`icon: {emoji, tint, chosen}`), so the browser guesses nothing. The picker (`src/modules/library/note-icon-picker.js`) and the notebook picker carry their own CSS as strings and load on first use: the first load has no room for either (`npm run benchmark:bundle`).
 - `src/modules/voice/` owns voice transcript and capture adapters. It must never persist audio.
 
 These are internal contracts, not a public plugin SDK.
