@@ -632,13 +632,14 @@ Design: docs/design/polish.md (1) · Needs: none
 - [x] first-load budget unchanged (91 KiB); all budgets green
 Reviewed: reviewer PASS (round 2) — secure-note CLI refusal tested, 44 px phone targets, icon change waits for the text save (it lost a title edit before). No backup version bump (optional decoration, like notebook icons). Phone snippet line dropped from scope.
 
-## F-101 Prettier search results [todo]
+## F-101 Prettier search results [done]
 Design: docs/design/polish.md (2) · Needs: F-100 (emoji per note)
-- [ ] the omnibar opens centred and wider on desktop; a full sheet on phone
-- [ ] each note result shows its emoji tile, title and one snippet line with the match marked, notebook chip and relative time; meaning-only matches say "by meaning"
-- [ ] desktop shows a preview of the selected result on the right; arrow keys move it
-- [ ] filter pills show counts; empty and no-result states as in the design
-- [ ] typing, keys and early-typing behaviour (verify-first-screen) unchanged; budgets green
+- [x] the omnibar opens centred and wider on desktop; a full sheet on phone
+- [x] each note result shows its emoji tile, title and one snippet line with the match marked, notebook chip and relative time; meaning-only matches say "by meaning"
+- [x] desktop shows a preview of the selected result on the right; arrow keys move it
+- [x] filter pills show counts; empty and no-result states as in the design
+- [x] typing, keys and early-typing behaviour (verify-first-screen) unchanged; budgets green
+Reviewed: reviewer PASS (round 2) — secure notes show no snippet or preview, matches escaped before marking, omnibar CSS rides in its lazy chunk. Fixed on the way: a title typed in an empty notebook before its first note opened was lost (the title now starts read-only; verify-first-screen covers it). spatial-docs.html is out of the build (file kept).
 
 ## F-102 Settings as its own monochrome window [todo]
 Design: docs/design/polish.md (3) · Needs: none
