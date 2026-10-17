@@ -19,6 +19,7 @@ export function createAgentSyncController({ host, ui }) {
     } else {
       await host.reload(note)
     }
+    host.agentEdited?.(note) // (the agent's version is on screen: the host asks whether that was an agent's edit, and offers Show and Undo)
   }
 
   async function onUpdate(update) {

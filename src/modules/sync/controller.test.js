@@ -84,3 +84,13 @@ test('a locked secure note is never reloaded or merged from the empty locked vie
   await controller.onUpdate({ changes: [change(4)], agents: [] })
   assert.deepEqual(names(calls).filter((n) => n !== 'presence' && n !== 'flag'), ['lists'])
 })
+
+test("once the agent's version is on screen, the host is told which note and revision it was", async () => {
+  const told = []
+  const ui = { setPresence() {}, setFlag() {}, showNotice() {} }
+  const base = { api: async () => ({ id: 1, revision: 4 }), getActive: () => ({ id: 1, resourceId: 'res_a', revision: 3, noteType: 'canvas' }), refreshLists: async () => {}, agentEdited: (note) => told.push([note.id, note.revision]) }
+  await createAgentSyncController({ host: { ...base, hasUnsavedEdits: () => false, reload: async () => {}, merge: async () => 0 }, ui }).onUpdate({ changes: [change(4)], agents: [] })
+  assert.deepEqual(told, [[1, 4]])
+  await createAgentSyncController({ host: { ...base, hasUnsavedEdits: () => true, reload: async () => {}, merge: async () => 1 }, ui }).onUpdate({ changes: [change(4)], agents: [] })
+  assert.deepEqual(told, [[1, 4], [1, 4]]) // (merged into unsaved words: told too, after the merge)
+})

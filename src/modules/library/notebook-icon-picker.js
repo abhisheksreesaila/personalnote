@@ -1,26 +1,7 @@
-// The notebook icon in the notes panel and the small picker that opens from it (F-089).
-// main.js owns the data: it draws the button with iconButtonHtml, and passes openIconPicker what to change and how to save it.
-import '../../notebook-icon.css'
+// The small picker that opens from a notebook's icon button (F-089). Fetched the first time one is opened (F-096 took it out of the first load);
+// main.js owns the data and passes openIconPicker what to change and how to save it. The button itself is notebook-icon-button.js.
 import { createIcons, icons } from '../../icons.js'
-import { ICON_NAMES, NOTEBOOK_COLORS, iconOf, normalizeEmoji } from './notebook-icon.js'
-
-const X_LOGO = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>'
-
-const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])
-
-/** The inside of an icon: a Lucide icon (drawn by createIcons), the X logo, an emoji, or the first letter on the notebook colour. */
-export function glyphHtml(notebook) {
-  const { kind, value } = iconOf(notebook)
-  if (kind === 'lucide') return `<i data-lucide="${value}"></i>`
-  if (kind === 'brand') return X_LOGO
-  return `<span class="${kind === 'emoji' ? 'nbi-e' : 'nbi-l'}">${escapeHtml(value)}</span>`
-}
-
-/** The button in a notebook's row (the row's name sits beside it); click opens the picker. */
-export function iconButtonHtml(notebook) {
-  const label = `Icon and colour of ${escapeHtml(notebook.name)}`
-  return `<button class="nbi" type="button" style="--notebook-color:${notebook.color}" data-icon-notebook="${notebook.id}" title="${label}" aria-label="${label}" aria-haspopup="dialog">${glyphHtml(notebook)}</button>`
-}
+import { ICON_NAMES, NOTEBOOK_COLORS, normalizeEmoji } from './notebook-icon.js'
 
 let open = null // { close } while a picker is showing
 
@@ -30,7 +11,7 @@ let open = null // { close } while a picker is showing
  *  getAnchor()       the notebook's icon button (looked up again on close, because the list is re-rendered when something changes)
  *  onChange(patch)   { icon } or { color }; the picker stays open after a colour so both can be chosen
  */
-export function openIconPicker({ notebook, getAnchor, onChange }) {
+export function openIconPicker({ notebook, getAnchor, onChange, xLogo }) {
   open?.close()
   const current = { ...notebook }
   const picker = document.createElement('div')
@@ -42,7 +23,7 @@ export function openIconPicker({ notebook, getAnchor, onChange }) {
     <input class="nbi-in" maxlength="16" placeholder="Type or paste an emoji, then Enter" aria-label="Emoji" autocomplete="off" spellcheck="false" />
     <div class="nbi-grid" role="group" aria-label="Icons">
       ${ICON_NAMES.map((name) => `<button type="button" data-icon="lucide:${name}" aria-label="${name.replace(/-/g, ' ')}"><i data-lucide="${name}"></i></button>`).join('')}
-      <button type="button" data-icon="brand:x" aria-label="X">${X_LOGO}</button>
+      <button type="button" data-icon="brand:x" aria-label="X">${xLogo}</button>
     </div>
     <button class="nbi-auto" type="button" data-icon="">Choose for me from the name</button>`
   document.body.append(picker)

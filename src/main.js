@@ -34,7 +34,7 @@ import { EDGE_OVERFLOW, shiftedDocument } from './modules/canvas-leafer/pages.js
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, NOTEBOOK_FOLD_KEY, readFolded, writeFolded } from './modules/library/outline.js'
 import { mountShelves } from './modules/library/shelves.js'
-import { iconButtonHtml, openIconPicker } from './modules/library/notebook-icon-picker.js'
+import { X_LOGO, iconButtonHtml } from './modules/library/notebook-icon-button.js'
 import { NOTEBOOK_COLORS, displayName, iconOf } from './modules/library/notebook-icon.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
@@ -1013,6 +1013,7 @@ const island = mountIsland(document.querySelector('#island'), {
   onRetry: () => void saveActiveNote(),
   onStop: () => void plugins.get('voice')?.toggle(),
   onJam: (action) => plugins.get('jam')?.onIslandAction(action),
+  onAgent: (action) => void withAgentEdit((edit) => edit.act(linkHost, action)),
 })
 // A font that arrives late changes the title's width: the pill takes the new width at once (a correction, not a change of face, so it does not glide).
 function remeasureIsland() {
@@ -2328,7 +2329,7 @@ function openNotebookIconPicker(id) {
       try { notebook.revision = (await api('/notebooks')).find((item) => item.id === id)?.revision ?? notebook.revision } catch {}
     }
   }
-  openIconPicker({ notebook, getAnchor: anchor, onChange: (patch) => { notebookLookSaves = notebookLookSaves.then(() => save(patch)) } })
+  void import('./modules/library/notebook-icon-picker.js').then(({ openIconPicker }) => openIconPicker({ xLogo: X_LOGO, notebook, getAnchor: anchor, onChange: (patch) => { notebookLookSaves = notebookLookSaves.then(() => save(patch)) } }))
 }
 
 async function saveNotebook() {
@@ -3235,8 +3236,14 @@ const linkHost = {
   pickTool: () => setTool('select'),
   refresh: refreshWorkspaceLists,
   settle: async () => { flushPendingEdits('done'); await saveSettled },
+  api,
+  island: island.model, // F-096: Show and Undo on an agent's edit
+  sync: () => agentSync.syncActiveNote(),
+  canvasGeometry: () => ({ objects: leaferEdits.doc?.objects ?? [], size: viewSize, view: leaferCanvas.view(), base: state.displayScale, origin: leaferHost.getBoundingClientRect() }),
+  glide: (view) => { const at = clampedViewOffset(view.x, view.y, false, view.scale); glideViewTo({ x: at.x, y: at.y, scale: view.scale }) },
 }
 const withNoteLinks = (use) => import('./modules/links/note-links-ui.js').then(use)
+const withAgentEdit = (use) => import('./modules/agent-edit/agent-edit.js').then(use)
 const restoredSidebar = () => !mobileLayout.matches && loadPanelOpen(safeStorage())
 elements.sidebarToggle.addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open'), true))
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false, true))
@@ -4337,6 +4344,7 @@ async function initialize() {
       reload: applyRemoteNote,
       merge: mergeRemoteNote,
       refreshLists: refreshWorkspaceLists,
+      agentEdited: (note) => void withAgentEdit((edit) => edit.announce(linkHost, note)),
     })
   } catch (error) {
     console.error(error)

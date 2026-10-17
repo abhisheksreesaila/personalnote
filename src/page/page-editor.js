@@ -200,6 +200,19 @@ export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote
       base = next.markdown
       return 1
     },
+    // Show on an agent's edit (F-096): scroll the lines from..to (UTF-16 offsets in the Markdown) to the middle of the window, then where they
+    // are on screen as {left, top, width, height}, or null when the page has changed so much they are gone.
+    async revealRange(from, to) {
+      const length = view.state.doc.length
+      const start = Math.min(from, length)
+      view.dispatch({ effects: EditorView.scrollIntoView(start, { y: 'center' }) })
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const top = view.coordsAtPos(start, 1)
+      const bottom = view.coordsAtPos(Math.min(Math.max(to, start), length), -1) ?? top
+      if (!top || !bottom) return null
+      const bounds = view.contentDOM.getBoundingClientRect()
+      return { left: bounds.left, top: top.top, width: bounds.width, height: Math.max(bottom.bottom, top.bottom) - top.top }
+    },
     setTitle() {},
     // A note dropped or picked into this page (F-095): the link goes in at the window point `at` (a drop) or at the caret, with a space on either
     // side where it would touch a word.
