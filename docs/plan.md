@@ -607,3 +607,8 @@ Brief: docs/design/dynamic-island.md (agent moment) · Needs: F-084
 Brief: docs/briefs/plugins.md ("no plugin code in the first load"); captain 2026-10-16: "speed is important … boom very fast and then load everything behind the scenes" · Needs: F-091
 - [ ] plugin code (Mind maps, Voice, Search by meaning, Jam, AI and X settings) is fetched after the first paint (idle), never in the first load; a click on a plugin's button before it's loaded waits for it and still works
 - [ ] the budget script measures the first load separately and its JS number goes down, not up; the 260 KiB total stays; time to first paint measured before and after on the speed test
+## F-098 Split the 200 KiB first load so the first screen paints sooner [todo]
+Brief: docs/briefs/plugins.md; captain 2026-10-16: "boom very fast and then load everything behind the scenes" · Needs: F-097
+F-097 measured it: the first load is ~204 KiB gzip, nearly all the app shell plus Leafer; plugins were only ~3 KiB, so time to first screen didn't move.
+- [ ] the notes panel and the open note's title paint before the canvas engine (Leafer) and the editors arrive (a light first frame, then the canvas fills in), with no flash or layout jump
+- [ ] first-load gzip goes down substantially (target under 120 KiB) and the first-load budget is tightened to the new number; median time to first screen (scripts/verify-first-screen.mjs, 11 interleaved runs, normal and 4x CPU) measurably better than before
