@@ -569,11 +569,12 @@ Brief: docs/briefs/notebook-icons.md · Needs: none
 Reviewed: PASS after one round (server emoji rule matches the browser, a leading emoji isn't shown twice, icon/colour changes don't reorder, CLI --icon validated). Phone bottom sheet left for the phone layout. CSS now 17.45/17.60 KiB.
 - [x] a notebook gets an icon guessed from its name (word list), a leading emoji wins, otherwise its first letter on its colour; shown in the notes panel
 - [x] click the icon: ~40 icons, any emoji, 8 colours; saved with the notebook (revision-checked), in backup and restored on import; older backups still import
-## F-090 Plugins: the host and Mind maps as the first plugin [todo]
+## F-090 Plugins: the host and Mind maps as the first plugin [done]
 Brief: docs/briefs/plugins.md · Needs: F-084
-- [ ] Settings → Plugins lists Mind maps with what it needs and a switch; the choice is remembered (Voice and Search by meaning rows arrive with their switches in F-091)
-- [ ] Mind maps off: no new-mind-map entry, no mind-map code loaded, existing maps open read-only with "turn on Mind maps to edit"; on again without restart
-- [ ] a small host contract (note types, settings rows; buttons and omnibar actions arrive with their first plugin that needs them) in docs/MODULE-CONTRACTS.md; ADR for built-in plugins
+Reviewed: PASS after one round (read-only maps never save, shared port guard, backup import while off tested, 48px row). Riskiest assumption held: ~84 lines in main.js, no rewrite. JS budget headroom ~2.8 KiB (237.22/240): F-091 must make room.
+- [x] Settings → Plugins lists Mind maps with what it needs and a switch; the choice is remembered (Voice and Search by meaning rows arrive with their switches in F-091)
+- [x] Mind maps off: no new-mind-map entry, no mind-map code loaded, existing maps open read-only with "turn on Mind maps to edit"; on again without restart
+- [x] a small host contract (note types, settings rows; buttons and omnibar actions arrive with their first plugin that needs them) in docs/MODULE-CONTRACTS.md; ADR for built-in plugins
 ## F-091 Voice and Search by meaning become plugins [todo]
 Brief: docs/briefs/plugins.md · Needs: F-090
 - [ ] each off: no mic / no meaning group, nothing started or downloaded, data kept; on: as today; both listed in Settings → Plugins with what they need
