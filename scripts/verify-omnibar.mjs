@@ -239,6 +239,7 @@ try {
   await shot('6-none')
   await page.keyboard.press('Enter')
   await page.waitForFunction(() => window.__personalNote.state.notes.some((n) => n.title === 'zzqx nothing'), null, { timeout: 15000 })
+  await page.waitForFunction(() => { const st = window.__personalNote.state; return st.notes.find((n) => n.id === st.activeNoteId)?.title === 'zzqx nothing' }, null, { timeout: 15000 }) // (the old note is set aside first, then the new one opens)
   check('Enter on it creates a note with that title', await pn(() => { const st = window.__personalNote.state; return st.notes.filter((n) => n.title === 'zzqx nothing').length === 1 && st.notes.find((n) => n.id === st.activeNoteId)?.title === 'zzqx nothing' }))
   await page.waitForFunction(() => !window.__personalNote.state.loading && !window.__personalNote.state.creatingNote, null, { timeout: 15000 })
   await page.waitForTimeout(700)

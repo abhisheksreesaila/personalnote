@@ -2129,7 +2129,6 @@ async function createNote(notebookId, noteType = 'canvas', title) {
     })
     state.notes.unshift(note)
     state.selectedNotebookId = note.notebookId
-    state.activeNoteId = null
     await selectNote(note.id)
     if (mobileLayout.matches) setSidebarOpen(false)
   } finally {
