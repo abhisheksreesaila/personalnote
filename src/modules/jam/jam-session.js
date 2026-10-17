@@ -9,6 +9,7 @@ const SET_UP = 'Set up a model in Settings → AI.'
 export function createJamSession({ getMap, getGhosts, requestTurn, applyEdits, answerGhost, onFace }) {
   let said = [] // finished sentences not yet sent
   let partial = '' // the sentence still being heard
+  let sentPartial = '' // words of an unfinished sentence a turn already took: the finished sentence must not send them again
   let mic = false
   let fault = null // { phase: 'error' | 'setup', message } until the next turn
   let inFlight = null
@@ -23,6 +24,7 @@ export function createJamSession({ getMap, getGhosts, requestTurn, applyEdits, a
 
   async function turn() {
     const sent = said.length
+    const sentWords = partial
     const request = { map: getMap(), transcript: transcript(), ghosts: getGhosts().map((ghost) => ghost.text) }
     fault = null
     try {
@@ -31,6 +33,7 @@ export function createJamSession({ getMap, getGhosts, requestTurn, applyEdits, a
       applyEdits(edits)
       said = said.slice(sent)
       partial = ''
+      sentPartial = sentWords
     } catch (error) {
       if (closed) return
       fault = error.setup ? { phase: 'setup', message: SET_UP } : { phase: 'error', message: error.message }
@@ -43,9 +46,12 @@ export function createJamSession({ getMap, getGhosts, requestTurn, applyEdits, a
     listening(on) { mic = on; show() },
 
     heard(text, { final }) {
-      const words = text.trim()
+      let words = text.trim()
+      if (sentPartial && words.startsWith(sentPartial)) words = words.slice(sentPartial.length).trim() // (what a turn already took is not said again)
+      if (final) sentPartial = ''
       if (!final) { partial = words; show(); return }
       partial = ''
+      if (!words) { show(); return }
       const ghosts = getGhosts()
       if (YES.test(words) && ghosts.length) { answerGhost(ghosts.at(-1).id, true); show(); return }
       const ending = JAM_AT_END.exec(words)

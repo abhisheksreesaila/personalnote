@@ -502,11 +502,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
 
   svg.addEventListener('pointerdown', (event) => {
     const pill = event.target.closest('[data-ghost-action]')
-    if (pill) {
-      event.preventDefault()
-      answerGhost(pill.dataset.ghostId, pill.dataset.ghostAction === 'yes')
-      return
-    }
+    pillPress = pill ? { id: pill.dataset.ghostId, yes: pill.dataset.ghostAction === 'yes', x: event.clientX, y: event.clientY } : null // (answered on release, if the finger did not travel: a pan may start on a pill)
     const thumb = event.target.closest('[data-reason]')
     if (thumb) toast(thumb.dataset.reason) // (hovering shows it as a tooltip; a finger has no hover)
     if (event.pointerType === 'touch') {
@@ -622,7 +618,11 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     renderer.render(mindmap, selectedId, focusId)
   }, { signal })
 
+  let pillPress = null
   const finishGesture = (event, cancelled = false) => {
+    const press = pillPress
+    pillPress = null
+    if (press && !cancelled && Math.hypot(event.clientX - press.x, event.clientY - press.y) < 8) setTimeout(() => answerGhost(press.id, press.yes), 0)
     const wasPinching = Boolean(pinchGesture)
     if (event.pointerType === 'touch') touchPointers.delete(event.pointerId)
     if (wasPinching) {

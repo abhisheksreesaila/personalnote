@@ -129,3 +129,38 @@ test('a turn that comes back after the map was closed changes nothing', async ()
   await pending
   assert.deepEqual(log.applied, [])
 })
+
+test('pressing Jam mid-sentence sends the unfinished words once: the finished sentence only adds what is new', async () => {
+  const { session, log, face } = harness()
+  session.start()
+  session.heard('we sell food', { final: true })
+  session.heard('for big dogs in', { final: false })
+  await session.jam()
+  assert.equal(log.asked[0].transcript, 'we sell food for big dogs in')
+  session.heard('for big dogs in', { final: false }) // the same words keep coming as the sentence goes on
+  assert.equal(face().line, '')
+  session.heard('for big dogs in flats', { final: false })
+  assert.equal(face().line, 'flats')
+  session.heard('for big dogs in flats', { final: true })
+  assert.equal(session.transcript(), 'flats')
+  await session.jam()
+  assert.equal(log.asked[1].transcript, 'flats')
+})
+
+test('a finished sentence that is only what was already sent adds nothing', async () => {
+  const { session } = harness()
+  session.start()
+  session.heard('for big dogs', { final: false })
+  await session.jam()
+  session.heard('for big dogs', { final: true })
+  assert.equal(session.transcript(), '')
+})
+
+test('if the turn failed, the unfinished words are still waiting and nothing is skipped later', async () => {
+  const { session } = harness({ turn: async () => { throw new Error('down') } })
+  session.start()
+  session.heard('for big dogs', { final: false })
+  await session.jam()
+  session.heard('for big dogs in flats', { final: true })
+  assert.equal(session.transcript(), 'for big dogs in flats')
+})

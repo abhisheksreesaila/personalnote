@@ -366,6 +366,7 @@ def create_app(
         try:
             app.state.plugins.require("jam")
             app.state.plugins.require("mindmap")
+            app.state.plugins.require("voice")  # ADR 0007: Jam needs Mind maps and Voice
         except PluginSettingsError as error:
             return JSONResponse({"error": str(error)}, status_code=409)
         try:

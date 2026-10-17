@@ -157,6 +157,24 @@ try {
     }
     const pressJam = () => page.locator('#island .isl-face:not([hidden]) [data-island-action="jam"]').click()
 
+    // The map can be wider than a phone: pan it with a real drag on the empty canvas until the pill is on screen, then tap it as a finger would.
+    const reveal = async (action, text) => {
+      const target = page.locator(`.map-ghost:has(text:text-is("${text}")) [data-ghost-action="${action}"]`)
+      for (let i = 0; i < 4; i += 1) {
+        const box = await target.boundingBox()
+        if (box.x >= 0 && box.y >= 70 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height - 90) break
+        const dx = Math.max(-170, Math.min(170, viewport.width / 2 - (box.x + box.width / 2)))
+        const dy = Math.max(-170, Math.min(170, viewport.height / 2 - (box.y + box.height / 2)))
+        await page.mouse.move(viewport.width / 2 - dx / 2, 150 - dy / 2)
+        await page.mouse.down()
+        await page.mouse.move(viewport.width / 2 + dx / 2, 150 + dy / 2, { steps: 6 })
+        await page.mouse.up()
+        await page.waitForTimeout(150)
+      }
+      return target
+    }
+    const tap = async (action, text) => { await (await reveal(action, text)).click(); await page.waitForTimeout(150) } // (a pill answers when the finger lifts)
+
     // ---- Jam is off until it is switched on
     await open(seededId)
     check(`${label}: Jam sessions starts off (a Settings row, no New jam entry)`, !(await page.evaluate(async () => (await (await fetch('/api/plugins')).json()).plugins.jam)))
@@ -243,23 +261,18 @@ try {
     await page.evaluate(() => document.querySelector('[data-map-action="redo"]').click())
     check(`${label}: redo brings the turn back`, (await nodes()).length === beforeUndo && (await ghosts()).length === 2)
 
+    // ---- a drag that starts on a pill is a pan, not an answer
+    const yesBox = await (await reveal('yes', 'Delivery')).boundingBox()
+    const startX = yesBox.x + yesBox.width / 2
+    const startY = yesBox.y + yesBox.height / 2
+    await page.mouse.move(startX, startY)
+    await page.mouse.down()
+    await page.mouse.move(startX - 30, startY - 30, { steps: 6 })
+    await page.mouse.up()
+    await page.waitForTimeout(400)
+    check(`${label}: a drag starting on a Yes pill does not accept the ghost`, !(await hasNode('Delivery')) && (await ghosts()).some((g) => g.text === 'Delivery') && (await ghosts()).length === 2, JSON.stringify(await ghosts()))
+
     // ---- Yes and No on ghosts
-    // The map can be wider than a phone: pan it with a real drag on the empty canvas until the pill is on screen, then tap it as a finger would.
-    const tap = async (action, text) => {
-      const target = page.locator(`.map-ghost:has(text:text-is("${text}")) [data-ghost-action="${action}"]`)
-      for (let i = 0; i < 4; i += 1) {
-        const box = await target.boundingBox()
-        if (box.x >= 0 && box.y >= 70 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height - 90) break
-        const dx = Math.max(-170, Math.min(170, viewport.width / 2 - (box.x + box.width / 2)))
-        const dy = Math.max(-170, Math.min(170, viewport.height / 2 - (box.y + box.height / 2)))
-        await page.mouse.move(viewport.width / 2 - dx / 2, 150 - dy / 2)
-        await page.mouse.down()
-        await page.mouse.move(viewport.width / 2 + dx / 2, 150 + dy / 2, { steps: 6 })
-        await page.mouse.up()
-        await page.waitForTimeout(150)
-      }
-      await target.click()
-    }
     await tap('yes', 'Delivery')
     check(`${label}: Yes makes the ghost a real branch`, (await hasNode('Delivery')) && !(await ghosts()).some((g) => g.text === 'Delivery'))
     await page.evaluate(() => document.querySelector('[data-map-action="undo"]').click())
@@ -319,6 +332,21 @@ try {
     await page.waitForSelector('g.map-node')
     check(`${label}: reopened, it is the same map and still a jam`, (await hasNode('Customers')) && (await islandIs((f) => f.face === 'jam')))
     await shot('7-reopened')
+
+    // ---- the answer to a turn lands nowhere if you have moved to another note
+    const calmBefore = (await saved(seededId)).content.nodes.map((n) => n.text).join('|')
+    const jamBefore = (await saved(noteId)).content.nodes.map((n) => n.text).join('|')
+    setScript([{ answer: { edits: [{ op: 'add_branch', parent_id: 'root', text: 'Lands nowhere', emoji: '', id: 'z1' }] }, delay: 2.5 }])
+    await talk(['', 'a last thought'])
+    await stopTalking()
+    await pressJam()
+    check(`${label}: Jam shows Thinking… before the note is switched`, await islandIs((f) => f.face === 'jam' && f.text.includes('Thinking…'), 1500))
+    await pick(seededId)
+    await wait(4000) // (the brain answers while the other note is open)
+    const here = (await nodes()).map((n) => n.text).join('|')
+    check(`${label}: the late answer changed neither the note left nor the note opened`, !here.includes('Lands nowhere') && (await ghosts()).length === 0 && (await saved(seededId)).content.nodes.map((n) => n.text).join('|') === calmBefore && (await saved(noteId)).content.nodes.map((n) => n.text).join('|') === jamBefore && !(await call('GET', `/notes/${noteId}`)).body.content.nodes.some((n) => n.text === 'Lands nowhere'), here)
+    await pick(noteId)
+    check(`${label}: and back on the first note it is not there either`, !(await hasNode('Lands nowhere')))
 
     // ---- off again
     await switchJam(false)

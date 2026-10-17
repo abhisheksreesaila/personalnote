@@ -94,6 +94,13 @@ class GuardTests(Base):
         self.assertEqual(self.turn().status_code, 409)
         self.assertEqual(self.brain.seen, [])
 
+    def test_voice_off_means_no_jam(self):
+        self.plugins.set_enabled("voice", False)
+        response = self.turn()
+        self.assertEqual((response.status_code, response.json()),
+                         (409, {"error": "Voice is switched off. Turn it on in Settings → Plugins."}))
+        self.assertEqual(self.brain.seen, [])
+
     def test_bad_requests_are_400_and_never_reach_the_brain(self):
         for body in ({"map": "x", "transcript": "hi"}, {"map": {"nodes": "x"}, "transcript": "hi"},
                      {"map": MAP, "transcript": 5}, {"map": MAP, "transcript": "   "},

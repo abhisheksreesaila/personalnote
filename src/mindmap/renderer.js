@@ -1,6 +1,6 @@
 import { branchGeometry as computeBranch, cubicAt, PORT_VECTORS, ribbonPath } from './geometry.js'
 import { ghostNodes } from './jam.js'
-import { descendantsOf, displayText, getDepth, nodeById, visibleNodes } from './model.js'
+import { BRANCH_COLORS, descendantsOf, displayText, getDepth, nodeById, visibleNodes } from './model.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const createSvg = (name, attributes = {}) => {
@@ -132,9 +132,9 @@ export class MindMapRenderer {
     )
     ;[['yes', 'Yes', -1], ['no', 'No', 1]].forEach(([action, words, side]) => {
       const pill = createSvg('g', { 'data-ghost-id': ghost.id, 'data-ghost-action': action, transform: `translate(${side * (width / 2 + 4 * unit)} ${frame.height / 2 + 6 * unit + height / 2})`, role: 'button', tabindex: 0, 'aria-label': `${words}, ${action === 'yes' ? 'add' : 'drop'} ${ghost.text}`, style: 'cursor:pointer' })
-      const caption = createSvg('text', { x: 0, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: action === 'yes' ? '#fff' : '#292a25', style: `font:700 ${size}px "IBM Plex Sans",sans-serif` })
+      const caption = createSvg('text', { x: 0, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: action === 'yes' ? '#fff' : BRANCH_COLORS[7], style: `font:700 ${size}px "IBM Plex Sans",sans-serif` })
       caption.textContent = words
-      pill.append(createSvg('rect', { x: -width / 2, y: -height / 2, width, height, rx: height / 2, fill: action === 'yes' ? ghost.color : '#fffefa', stroke: action === 'yes' ? ghost.color : '#8a8f87', 'stroke-width': 1.5 * unit }), caption)
+      pill.append(createSvg('rect', { x: -width / 2, y: -height / 2, width, height, rx: height / 2, fill: action === 'yes' ? ghost.color : '#fffefa', stroke: action === 'yes' ? ghost.color : BRANCH_COLORS[7], 'stroke-width': 1.5 * unit }), caption)
       group.append(pill)
     })
     this.nodeLayer.append(group)
