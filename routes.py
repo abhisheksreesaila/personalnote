@@ -188,6 +188,7 @@ def create_app(
     app = FastHTML(sess_cls=None, key_fname=str(data_path.with_name(".sesskey")))
     app.state.note_service = service
     app.state.voice = voice or default_voice_runtime()
+    app.state.voice.enabled = lambda: app.state.plugins.enabled("voice")
     app.state.search = search
     app.state.ai = ai or AISettings()
     app.state.plugins = plugins or PluginSettings()
