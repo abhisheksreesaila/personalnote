@@ -6,6 +6,21 @@ function normalizeBranchPorts(value) {
   return { source: value.source, target: value.target }
 }
 
+// Jam sessions (F-092): an emoji on a branch, a thumb with its reason, and ghosts (suggestions that wait beside the map). All of it is plain text.
+const EMOJI = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\u200d|\ufe0f){1,8}$/u
+const text = (value, limit) => (typeof value === 'string' ? value.trim().slice(0, limit) : '')
+
+export const displayText = (node) => (node.emoji ? `${node.emoji} ${node.text}` : node.text)
+
+function normalizeGhosts(ghosts, nodes) {
+  if (!Array.isArray(ghosts)) return []
+  const ids = new Set(nodes.map((node) => node.id))
+  return ghosts
+    .filter((ghost) => ghost && typeof ghost === 'object' && text(ghost.id, 60) && text(ghost.text, 40) && ids.has(String(ghost.parentId)))
+    .slice(-3)
+    .map((ghost) => ({ id: text(ghost.id, 60), parentId: String(ghost.parentId), text: text(ghost.text, 40), why: text(ghost.why, 80) }))
+}
+
 export function normalizeDocument(value) {
   if (!value || !Array.isArray(value.nodes) || !value.nodes.length) {
     throw new Error('This file does not contain a mind map.')
@@ -32,15 +47,20 @@ export function normalizeDocument(value) {
     branchPorts: normalizeBranchPorts(node.branchPorts),
     collapsed: Boolean(node.collapsed),
     image: node.image || null,
+    ...(typeof node.emoji === 'string' && EMOJI.test(node.emoji) ? { emoji: node.emoji } : {}),
+    ...(node.vote === 'up' || node.vote === 'down' ? { vote: node.vote, reason: text(node.reason, 120) } : {}),
   }))
   const root = nodes.find((node) => node.parentId === null) || nodes[0]
   root.parentId = null
+  const ghosts = normalizeGhosts(value.ghosts, nodes)
   return {
     version: 1,
     title: String(value.title || 'Untitled map'),
     rootId: root.id,
     defaultPresentation: value.defaultPresentation === 'branch' ? 'branch' : 'box',
     nodes,
+    ...(value.jam === true ? { jam: true } : {}),
+    ...(ghosts.length ? { ghosts } : {}),
     updatedAt: value.updatedAt || new Date().toISOString(),
   }
 }
