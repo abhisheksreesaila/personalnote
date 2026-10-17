@@ -272,13 +272,28 @@ try {
   // --- the search circle
   const circle = await rect('#search-button')
   check('the search circle is 44px, round, at the top right', circle.w === 44 && circle.h === 44 && circle.r === 1264 && circle.y === 16 && (await pn(() => getComputedStyle(document.querySelector('#search-button')).borderRadius)) === '50%', JSON.stringify(circle))
+  // The grow is a CSS transition. Frame sampling races the machine's load (under load the first sample can already be the end), so take the
+  // transition itself at the moment it starts, pause it, and read the box at its start, middle and end.
+  await pn(() => {
+    window.__grow = new Promise((resolve) => setTimeout(() => resolve(null), 3000)) // (no transition started in 3 s: the check below fails, it does not wait forever)
+    window.__grow = Promise.race([window.__grow, new Promise((resolve) => document.addEventListener('transitionrun', function once(event) {
+      if (event.propertyName !== 'width' || !event.target.classList?.contains('spotlight')) return
+      document.removeEventListener('transitionrun', once)
+      const box = event.target
+      const animation = box.getAnimations().find((item) => item.transitionProperty === 'width')
+      animation.pause()
+      const at = (time) => { animation.currentTime = time; return Math.round(box.getBoundingClientRect().width) }
+      const total = animation.effect.getComputedTiming().duration
+      resolve({ total, grow: [at(0), at(total / 2), at(total)] })
+      animation.currentTime = 0
+      animation.play()
+    }))])
+  })
   await page.click('#search-button')
-  await pn(() => 0)
-  const grow = []
-  for (let i = 0; i < 8; i += 1) { grow.push(Math.round((await rect('.spotlight')).w)); await wait(25) }
+  const { total, grow } = (await pn(() => window.__grow)) ?? { total: 0, grow: [] }
   await searchSettled()
   const open = await rect('.spotlight')
-  check('it grows out of the circle (44px at first, then wider), anchored at the same top right corner', grow[0] <= 200 && open.w >= 370 && Math.abs(open.r - circle.r) <= 1 && Math.abs(open.y - circle.y) <= 1 && grow.some((w, i) => i && w > grow[i - 1]), JSON.stringify({ grow, open, circle }))
+  check('it grows out of the circle (44px at first, then wider), anchored at the same top right corner', grow[0] === 44 && grow[1] > 44 && grow[1] < grow[2] && grow[2] >= 370 && total > 0 && open.w >= 370 && Math.abs(open.r - circle.r) <= 1 && Math.abs(open.y - circle.y) <= 1, JSON.stringify({ grow, total, open, circle }))
   check('the field is focused and results are below it', await pn(() => document.activeElement.id === 'search-input' && document.querySelectorAll('.omni-row').length > 0))
   await shot('search-open')
   const closedBy = async (how, run) => {

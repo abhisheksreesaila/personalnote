@@ -4,7 +4,7 @@
 // selection and transform layer) and overlay.js (the ghost page, the connector halo, the connect tool's outlines) and nowhere else. An edit is
 // a document-model operation (operations.js); the nodes follow the model. F-032: every edit goes through pages.js finalizeOp, so the connectors
 // that follow what moved and the pages that grow or fold back are part of the same undo step.
-import { App, Box, Group, Ellipse, Image, Leafer, MatrixHelper, Path, Rect, Text } from 'leafer-ui'
+import { App, Box, Group, Ellipse, Image, ImageEvent, Leafer, MatrixHelper, Path, Rect, Text } from 'leafer-ui'
 import { PAGE } from '../../core/document/index.js'
 import { applyChanges, isLocked, planLock, planMove, planRemove, planReorder, planSetGeometry, stacking } from '../../core/document/operations.js'
 import { connectorEndpoints } from '../editor/connectors.js'
@@ -395,6 +395,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         const shadowImage = perf.bakedShadow ? new Image({ url: shadow.url, x: -shadow.margin, y: -shadow.margin, width: shadow.width, height: shadow.height, hittable: false }) : null
         const paper = new Rect({ width: w, height: h, fill: isColor(object.color) ? object.color : '#ffd60a', cornerRadius: STICKY_CORNERS, hittable: false, ...(perf.bakedShadow ? {} : { shadow: liveStickyShadow() }) })
         if (shadowImage) holder.add(shadowImage)
+        // A page bitmap made before the shadow picture has loaded has no shadow: when it loads, the pages under this sticky are out of date.
+        shadowImage?.once(ImageEvent.LOADED, () => lod.invalidate(touchedRects([entries.get(object.id)?.object ?? object])))
         holder.add(paper)
         const text = new Text(textProps(object, { width: w - STICKY_PADDING * 2, padding: STICKY_PADDING }))
         textNodes.push(text)
