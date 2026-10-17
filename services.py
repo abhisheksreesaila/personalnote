@@ -1606,6 +1606,7 @@ class NoteService:
         imported_note_ids: list[int] = []
         # Every note gets its new resource id first, so a link between two notes of the backup can point at the copy it is imported as.
         new_ids = {note["resourceId"]: self.new_resource_id() for note in notes if isinstance(note.get("resourceId"), str)}
+        claimed: set[str] = set()  # (a hand-edited backup may name one resource id twice: only the first note takes the mapped id)
         with self.connection() as connection:
             local_key_rows = connection.execute("SELECT key_id, kind, wrapped FROM secure_keys").fetchall()
             backup_keys = self.check_secure_import(snapshot, notes, {row["key_id"] for row in local_key_rows})
@@ -1654,7 +1655,8 @@ class NoteService:
                         raise WorkspaceImportError(f"A note in the backup cannot be read: {error}") from error
                     reserved_ids.update(o["id"] for o in document["objects"] if isinstance(o, dict) and isinstance(o.get("id"), str))
                 title = str(note.get("title") or "Untitled note")[:180]
-                resource_id = new_ids.get(note.get("resourceId")) or self.new_resource_id()
+                resource_id = new_ids[note["resourceId"]] if note.get("resourceId") in new_ids and note["resourceId"] not in claimed else self.new_resource_id()
+                claimed.add(note.get("resourceId"))
                 cursor = connection.execute(
                     """
                     INSERT INTO notes

@@ -1611,7 +1611,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       pages = { columns: doc.page?.columns ?? 1, rows: doc.page?.rows ?? 1 }
       drawChrome()
       const cards = doc.objects.filter((object) => object?.type === 'notelink').map((object) => object.noteRef)
-      if (cards.length) void loadNoteLinks(cards, { fresh: true }) // (the cards show the live title and lines when the answer comes)
+      if (cards.length) void loadNoteLinks(cards, { fresh: 'resolveMedia' in options }) // (asked again only when a note is opened, not on every undo; the cards show the live title and lines when the answer comes)
     },
     // True while the scene is handing its own edit to the host (so the host does not draw it a second time).
     isCommitting: () => committing,
