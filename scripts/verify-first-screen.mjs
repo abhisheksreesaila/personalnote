@@ -263,7 +263,7 @@ try {
     await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
     const rects = () => page.evaluate(() => [...document.querySelectorAll('.sidebar, #notebook-navigator, #notebook-navigator *, .island, #island-title, .topbar, .topbar *')].map((e) => { const r = e.getBoundingClientRect(); return `${e.id || e.className || e.tagName}:${r.x.toFixed(1)},${r.y.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}` }))
     // (this check is about the engine arriving: the web font has its own check below, so let it settle first)
-    await page.waitForFunction(() => document.fonts.status === 'loaded' && [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Geist' && f.status === 'loaded'), null, { timeout: 5000 }).catch(() => {})
+    await page.waitForFunction(() => document.fonts.status === 'loaded' && [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Geist' && f.status === 'loaded'), null, { timeout: 5000 }).catch(() => console.log('note  the web font had not loaded after 5 s: a late font swap, not the engine, may move the layout below'))
     await page.waitForTimeout(400)
     const first = await rects()
     await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 25000 })

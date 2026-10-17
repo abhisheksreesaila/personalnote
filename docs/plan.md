@@ -615,7 +615,8 @@ Reviewed: PASS after one round (an early press belongs to its note pick; sticky/
 F-097 measured it: the first load is ~204 KiB gzip, nearly all the app shell plus Leafer; plugins were only ~3 KiB, so time to first screen didn't move.
 - [x] the notes panel and the open note's title paint before the canvas engine (Leafer) and the editors arrive (a light first frame, then the canvas fills in), with no flash or layout jump
 - [x] first-load gzip goes down substantially (target under 120 KiB) and the first-load budget is tightened to the new number; median time to first screen (scripts/verify-first-screen.mjs, 11 interleaved runs, normal and 4x CPU) measurably better than before
-## F-099 Notes panel doesn't shift when the web font arrives [todo]
+## F-099 Notes panel doesn't shift when the web font arrives [done]
 Brief: none (F-098 follow-up) · Needs: F-098
+Reviewed: PASS (a metric-matched "Geist Fallback" face; .brand-name line-height pinned). New font-swap check: y and height exact, x and width within 2 px (a different face can't be the same width); the engine-arrival check stays exact, measured after the font settles and says so if it didn't. Display fonts (Bricolage, Instrument Serif) still fall back to system-ui unmatched.
 verify-first-screen's layout check failed 1 of 2 runs on main after F-077 merged: notebook names and the inbox badge move 1–2 px (height 15 → 17) when the web font replaces the fallback.
-- [ ] the panel's text uses metrics that match the fallback (size-adjust / ascent-override on the @font-face, or a fixed line-height), so the layout check passes 5 runs in a row; the check is not loosened
+- [x] the panel's text uses metrics that match the fallback (size-adjust / ascent-override on the @font-face, or a fixed line-height), so the layout check passes 5 runs in a row; the check is not loosened
