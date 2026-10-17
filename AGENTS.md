@@ -19,6 +19,7 @@ Design language: web=Personal Note skins (Crayon, Paper, Night in `src/skins.css
 - `services.py::NoteService` is the only owner of canonical SQLite reads and writes.
 - `portability.py` projects storage into backup and readable export formats.
 - Optional features are built-in plugins (ADR 0006): `src/core/plugins.js` is the registry the shell asks, `src/modules/plugins/builtin.js` lists them, `plugin_settings.py` keeps the per-machine on/off. Off = hidden, not loaded, data kept.
+- Voice (`src/modules/voice/voice-plugin.js`) and Search by meaning (`src/modules/search/meaning-plugin.js`) are plugins too (F-091): the host imports them only while on (`plugins.sync`), `dispose()` takes their UI away, and the server follows the switch (`routes.py::follow_plugin`: indexer thread, engines, 409 on install/start while off).
 - `src/modules/mindmap.js` lazy-loads `src/mindmap/` only when a mind-map note opens and the Mind maps plugin is on.
 - `search_runtime.py` owns the optional search-by-meaning download and its loopback embedding engine; it never blocks startup or saves (F-080 searches). `meaning_index.py` is the background thread that fills `note_embeddings` (derived, never in backup or export; owned by `NoteService`).
 - `ai_settings.py` + `src/modules/ai/` own Settings → AI: the model choice every AI feature shares (`AISettings.brain()`); choices in `ai-settings.json` in the app-data folder, the API key only in `SecretStore` (never SQLite, backup, export, logs or the page).
@@ -46,7 +47,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run dev
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_secret_store tests.test_x_bookmarks tests.test_download_tls tests.test_meaning_index tests.test_meaning_search tests.test_meaning_rank tests.test_plugin_settings tests.test_jam_brain tests.test_ai_settings -v
+python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_secret_store tests.test_x_bookmarks tests.test_download_tls tests.test_meaning_index tests.test_meaning_search tests.test_meaning_rank tests.test_plugin_settings tests.test_plugin_voice_meaning tests.test_jam_brain tests.test_ai_settings -v
 npm run benchmark:bundle
 ```
 

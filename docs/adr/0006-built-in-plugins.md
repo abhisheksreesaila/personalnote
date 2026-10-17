@@ -16,4 +16,4 @@ The notebook (canvas and page notes, word search, backup and export, the islands
 - A map opened while Mind maps is off is an outline with "Turn on Mind maps to edit" and a button; its title is read-only, and it is saved back exactly as loaded if anything triggers a save.
 - Turning a plugin on or off works without a restart: the open note of that plugin is reopened the right way.
 - "Not downloaded at all" (the brief's second half) needs the plugin's code split out of the first install; that is a packaging step for later, the registry already has the seam (`mountEditor`).
-- Voice and Search by meaning join the registry in F-091.
+- Voice and Search by meaning joined the registry in F-091, both on by default. They use `activate(shell)`: their UI code is fetched only while on, `dispose()` removes it, and the switch also stops what the server started (indexer thread, engines, a running download) while keeping the downloaded models and `note_embeddings`. Their chunks are measured by a bundle budget of their own (`pluginsGzip`, like the editors), not the first load's.
