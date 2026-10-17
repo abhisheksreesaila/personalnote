@@ -15,6 +15,9 @@ function h(tag, className, text) {
 }
 const icon = (name, className) => { const node = h('i', className); node.dataset.lucide = name; return node }
 
+// The live line shows the latest words, not the first.
+const jamLine = (f) => (f.line ? (f.line.length > 44 ? `…${f.line.slice(-43)}` : f.line) : f.phase === 'listening' ? 'Listening…' : 'Hold the mic and talk')
+
 /** Builds the island's moment faces (everything but the title, the card and the focus strip). */
 const MOMENTS = {
   saving: () => [h('span', 'saving-spinner'), h('span', 'isl-muted', 'Saving')],
@@ -32,6 +35,14 @@ const MOMENTS = {
     if (f.retry) { const retry = h('button', 'isl-chip', 'Try again'); retry.dataset.islandAction = 'retry'; nodes.push(retry) }
     return nodes
   },
+  // A jam on the open map (F-092): the live line and Jam; Thinking while the brain works; a plain error with Try again; a pointer to Settings → AI.
+  jam: (f) => {
+    const chip = (action, label) => { const button = h('button', 'isl-chip', label); button.dataset.islandAction = action; return button }
+    if (f.phase === 'thinking') return [h('span', 'saving-spinner'), h('span', 'isl-label', 'Thinking…')]
+    if (f.phase === 'error') return [icon('triangle-alert', 'isl-bad'), h('span', 'isl-bad isl-label', f.message), chip('jam', 'Try again')]
+    if (f.phase === 'setup') return [icon('settings'), h('span', 'isl-label', f.message), chip('jam-setup', 'Open Settings')]
+    return [f.phase === 'listening' ? h('span', 'isl-rec') : icon('sparkles'), h('span', 'isl-label isl-line', jamLine(f)), chip('jam', 'Jam')]
+  },
   recording: (f) => {
     const wave = h('span', 'isl-wave')
     for (let i = 0; i < BARS; i += 1) wave.append(h('i'))
@@ -41,12 +52,13 @@ const MOMENTS = {
   },
 }
 
-export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onOpen = () => {} } = {}) {
+export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onOpen = () => {}, onJam = () => {} } = {}) {
   const faceBox = (name) => island.querySelector(`:scope > [data-face="${name}"]`)
   const boxes = { rest: faceBox('rest'), card: faceBox('card'), moment: faceBox('moment'), focus: faceBox('focus') }
   let current = boxes.rest
   let clockTimer = 0
   let levels = []
+  let jamShown = null
   const title = island.querySelector('#island-title')
 
   function measure(box) {
@@ -76,6 +88,12 @@ export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onO
       island.dataset.face = face.kind
       clearInterval(clockTimer)
       if (patch && face.kind === 'download') { patchFace(face); return } // (a bar moving: no new measure)
+      if (patch && face.kind === 'jam' && jamShown?.phase === face.phase && jamShown.message === face.message) { // (the live line moving: only its words change)
+        jamShown = face
+        boxes.moment.querySelector('.isl-line').textContent = jamLine(face)
+        return
+      }
+      jamShown = face.kind === 'jam' ? face : null
       let box = boxes[face.kind]
       if (!box) {
         box = boxes.moment
@@ -109,6 +127,7 @@ export function mountIsland(island, { onRetry = () => {}, onStop = () => {}, onO
     if (action === 'retry') onRetry()
     else if (action === 'stop') onStop()
     else if (action === 'open') onOpen(event.detail === 0)
+    else if (action === 'jam' || action === 'jam-setup') onJam(action)
   })
 
   return {

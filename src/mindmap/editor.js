@@ -1,3 +1,4 @@
+import { acceptGhost, applyJamEdits, dismissGhost, ghostNodes } from './jam.js'
 import { BRANCH_COLORS, childrenOf, cleanLayout, descendantsOf, makeNode, nodeById, normalizeDocument } from './model.js'
 import { MindMapRenderer } from './renderer.js'
 
@@ -75,6 +76,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
 
   const selectedNode = () => nodeById(mindmap, selectedId)
   const snapshot = () => JSON.stringify(mindmap)
+  const persisted = () => { const { ghosts, ...saved } = structuredClone(mindmap); return saved } // suggestions still waiting are not part of the note
   const updateHistoryButtons = () => {
     query('[data-map-action="undo"]').disabled = !history.length
     query('[data-map-action="redo"]').disabled = !future.length
@@ -89,7 +91,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     clearTimeout(changeTimer)
     changeTimer = setTimeout(() => {
       mindmap.updatedAt = new Date().toISOString()
-      onChange(structuredClone(mindmap))
+      onChange(persisted())
     }, 180)
   }
   const mutate = (action) => {
@@ -386,7 +388,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     else if (action === 'focus') { focusId = focusId === selectedId ? null : selectedId; fitMap(window.matchMedia('(max-width: 800px)').matches) }
     else if (action === 'image') query('[data-map-image]').click()
     else if (action === 'import') query('[data-map-file]').click()
-    else if (action === 'export-json') download(JSON.stringify(mindmap, null, 2), 'application/json', 'json')
+    else if (action === 'export-json') download(JSON.stringify(persisted(), null, 2), 'application/json', 'json')
     else if (action === 'export-png') exportPng()
   }
 
@@ -479,7 +481,34 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     return true
   }
 
+  // Jam sessions (F-092). A ghost's Yes makes it a real branch, its No fades it; each is one undo step. Claude's edits arrive as one step.
+  function answerGhost(id, yes) {
+    const ghost = ghostNodes(mindmap).find((item) => item.id === id)
+    if (!ghost) return
+    if (yes) {
+      mutate(() => { selectedId = acceptGhost(mindmap, id).id })
+      return
+    }
+    const group = svg.querySelector(`.map-ghost[data-ghost-id="${CSS.escape(id)}"]`)
+    const gone = () => mutate(() => dismissGhost(mindmap, id))
+    if (group?.animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) group.animate({ opacity: [1, 0] }, { duration: 200, fill: 'forwards' }).onfinish = gone
+    else gone()
+  }
+
+  svg.addEventListener('keydown', (event) => {
+    const pill = event.target.closest?.('[data-ghost-action]')
+    if (pill && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); answerGhost(pill.dataset.ghostId, pill.dataset.ghostAction === 'yes') }
+  }, { signal })
+
   svg.addEventListener('pointerdown', (event) => {
+    const pill = event.target.closest('[data-ghost-action]')
+    if (pill) {
+      event.preventDefault()
+      answerGhost(pill.dataset.ghostId, pill.dataset.ghostAction === 'yes')
+      return
+    }
+    const thumb = event.target.closest('[data-reason]')
+    if (thumb) toast(thumb.dataset.reason) // (hovering shows it as a tooltip; a finger has no hover)
     if (event.pointerType === 'touch') {
       touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (touchPointers.size === 2) {
@@ -671,7 +700,18 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
   requestAnimationFrame(fitMap)
 
   return {
-    getDocument: () => structuredClone(mindmap),
+    getDocument: persisted,
+    // ---- jam sessions (F-092) ----
+    startJam(title) { // this map is a jam: the centre idea is the title
+      mindmap.jam = true
+      nodeById(mindmap, mindmap.rootId).text = title || 'Jam'
+      render()
+      scheduleChange()
+    },
+    isJam: () => mindmap.jam === true,
+    ghosts: () => ghostNodes(mindmap).map(({ id, text, why }) => ({ id, text, why })),
+    applyJam(edits) { mutate(() => applyJamEdits(mindmap, edits)); fitMap(true) }, // one brain turn is one undo step
+    answerGhost,
     setTitle: (title) => { mindmap.title = title || 'Untitled mind map' },
     runAction,
     undo,
