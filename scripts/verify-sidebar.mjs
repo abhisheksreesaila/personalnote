@@ -49,7 +49,7 @@ try {
   }
   const settle = (ms = 250) => page.waitForTimeout(ms)
   const inboxCount = () => page.evaluate(() => Number(document.querySelector('#inbox-badge')?.textContent))
-  const inboxTitles = () => page.evaluate(() => [...document.querySelectorAll('[aria-label="Inbox"] .note-list-item')].map((row) => row.textContent.trim()))
+  const inboxTitles = () => page.evaluate(() => [...document.querySelectorAll('[aria-label="Inbox"] .note-list-item')].map((row) => row.querySelector('span').textContent.trim()))
 
   // ---- F-064: a real Inbox ----
   await open()

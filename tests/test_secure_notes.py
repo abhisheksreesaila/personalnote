@@ -696,6 +696,13 @@ class ReviewFixTests(SecureCase):
         self.assertEqual(code, 2)
         self.assertEqual(self.service.get_note(self.note["id"])["id"], self.note["id"])
 
+    def test_the_cli_will_not_change_a_secure_notes_icon(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = cli_main(["--database", str(self.database_path), "notes", "update", str(self.note["id"]), "--icon", "🍋"])
+        self.assertEqual(code, 2)
+        self.assertFalse(self.service.get_note(self.note["id"])["icon"]["chosen"])
+
     # extras
     def test_a_save_without_words_cannot_wipe_a_secure_note(self):
         opened = self.service.get_note(self.note["id"])

@@ -15,7 +15,7 @@ Chosen (captain, 2026-10-17): Claude's note icons, Claude's search, Claude's Set
 - Every note row in the notes panel shows its emoji in a tinted tile; the type glyph (page, canvas, map) moves to the right of the row, muted.
 - A note with no chosen icon shows a guessed one (from the title, like notebook icons), else a type default (📄 page, 🎨 canvas, 🧠 mind map). Guessing must not grow the first load (the 91 KiB budget has ~0.5 KiB free): guess on the server or in a lazy chunk.
 - The open page/canvas/map shows the emoji at 64 px above the title (page notes) or in the title island (canvas, map). Click either → picker popover: search, Recent, ~24 common emoji, five tints, "Guess from title", "Remove". Phone: the picker is a bottom sheet.
-- Phone rows are 52 px: tile, title, one-line snippet, type glyph.
+- Phone rows are 48 px: tile, title, type glyph (no snippet: the list carries no text). On a phone a tap on the tile opens the note; the picker is on the island emoji and the Icon menu item.
 
 ## 2 · Search (F-101)
 - Desktop: the omnibar opens centred near the top, 760 px wide, over a soft dim. Rows: 40 px emoji tile, title and one snippet line with matches marked, notebook chip (dot + name) and relative time on the right; "by meaning" tag on meaning-only matches. The selected note previews on the right (250 px: emoji, title, notebook chip, first lines, type/edited/created). Filter pills show counts. Footer key caps unchanged.

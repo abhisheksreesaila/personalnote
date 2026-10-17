@@ -28,6 +28,9 @@ BACKUP_FORMAT = "personal-note-workspace"
 # file is self-contained. Version 1 (Fabric JSON canvases) is still accepted on import.
 # Version 3 (F-064): a note may have no notebook (`notebookResourceId` null = Inbox). An older build reads only versions 1 and 2, so it
 # refuses a version 3 file with "Unsupported Personal Note backup format" instead of misfiling those notes.
+# F-100 (a note's emoji, `icon` and `iconTint`, only when one was chosen) did not bump the version, like notebook icons (F-089): they are optional
+# decoration, an older build reads the backup whole and only leaves the emoji out (it never misplaces or drops a note); a bump would make
+# every new backup unreadable to it, which loses more than it protects.
 BACKUP_VERSION = 3
 SUPPORTED_BACKUP_VERSIONS = (1, 2, 3)
 _DATA_URL = re.compile(
@@ -212,7 +215,7 @@ def markdown_archive(service) -> bytes:
                 target = paths.get(ref)
                 return f"[{title}]({posixpath.relpath(target, posixpath.dirname(here))})" if target else f"{title} (note removed)"
             lines = [
-                f"# {note.get('title') or 'Untitled note'}",
+                f"# {note['icon'] + ' ' if note.get('icon') else ''}{note.get('title') or 'Untitled note'}",
                 "",
                 f"- Type: {note.get('noteType', 'canvas')}",
                 f"- Notebook: {notebook.get('name', 'Notebook')}",

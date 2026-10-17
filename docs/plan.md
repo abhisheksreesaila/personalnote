@@ -623,13 +623,14 @@ Reviewed: PASS (a metric-matched "Geist Fallback" face; .brand-name line-height 
 verify-first-screen's layout check failed 1 of 2 runs on main after F-077 merged: notebook names and the inbox badge move 1–2 px (height 15 → 17) when the web font replaces the fallback.
 - [x] the panel's text uses metrics that match the fallback (size-adjust / ascent-override on the @font-face, or a fixed line-height), so the layout check passes 5 runs in a row; the check is not loosened
 
-## F-100 Notes get a colourful emoji icon, like Notion pages [todo]
+## F-100 Notes get a colourful emoji icon, like Notion pages [done]
 Design: docs/design/polish.md (1) · Needs: none
-- [ ] a note can hold an icon (one emoji plus a tint, or none); it survives reload, backup/import (lossless) and the CLI (`notes update --icon`); Markdown export puts it before the title
-- [ ] every note row in the notes panel (desktop and phone) shows its emoji in a tinted tile; a note without one shows a guess from its title, else a type default
-- [ ] the open note shows its emoji above the title (page) or in the title island (canvas, map); clicking it or the list tile opens a picker (search, recent, common, five tints, Guess, Remove); phone uses a sheet
-- [ ] the tints follow the skin (Paper, Crayon, Night)
-- [ ] first-load budget unchanged (91 KiB); all budgets green
+- [x] a note can hold an icon (one emoji plus a tint, or none); it survives reload, backup/import (lossless) and the CLI (`notes update --icon`); Markdown export puts it before the title
+- [x] every note row in the notes panel (desktop and phone) shows its emoji in a tinted tile; a note without one shows a guess from its title, else a type default
+- [x] the open note shows its emoji above the title (page) or in the title island (canvas, map); clicking it or the list tile opens a picker (search, recent, common, five tints, Guess, Remove); phone uses a sheet
+- [x] the tints follow the skin (Paper, Crayon, Night)
+- [x] first-load budget unchanged (91 KiB); all budgets green
+Reviewed: reviewer PASS (round 2) — secure-note CLI refusal tested, 44 px phone targets, icon change waits for the text save (it lost a title edit before). No backup version bump (optional decoration, like notebook icons). Phone snippet line dropped from scope.
 
 ## F-101 Prettier search results [todo]
 Design: docs/design/polish.md (2) · Needs: F-100 (emoji per note)

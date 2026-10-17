@@ -5,6 +5,26 @@ import { ICON_NAMES, NOTEBOOK_COLORS, normalizeEmoji } from './notebook-icon.js'
 
 let open = null // { close } while a picker is showing
 
+// Its look lives here, not in a stylesheet: the picker is fetched when first opened, and so is this (the first load's CSS has no room for it).
+const CSS = `@media screen {
+  .nbi-pop :focus-visible { outline: 2px solid var(--sk-accent); outline-offset: 1px }
+  .nbi-pop { position: fixed; z-index: 80; width: 296px; max-width: calc(100vw - 16px); display: grid; gap: 8px; padding: 10px; border: 1px solid var(--sk-edge); border-radius: 14px; background: var(--sk-panel); color: var(--sk-ink); box-shadow: 0 12px 36px rgba(0, 0, 0, .22) }
+  .nbi-pop button, .nbi-in { height: 32px; border: 0; border-radius: 8px; background: none; color: inherit; font: 12px var(--ui-font); cursor: pointer }
+  .nbi-pop button:hover { background: var(--hover) }
+  .nbi-pop button[aria-pressed="true"] { background: var(--sk-accent-soft) }
+  .nbi-colors, .nbi-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px }
+  .nbi-colors button::before { content: ""; display: block; width: 18px; height: 18px; margin: auto; border-radius: 50%; background: var(--notebook-color) }
+  .nbi-in { box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid var(--sk-edge); background: var(--sk-desk); cursor: text }
+  .nbi-in[aria-invalid] { border-color: var(--sk-danger) }
+  .nbi-grid svg { margin: auto }
+  @media (max-width: 800px) {
+    .nbi-pop button, .nbi-in { height: 44px }
+    .nbi-pop { width: 312px }
+    .nbi-colors { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+    .nbi-grid { grid-template-columns: repeat(6, minmax(0, 1fr)) }
+  }
+}`
+
 /**
  * @param {object} options
  *  notebook          { id, name, color, icon }: what is shown now
@@ -13,6 +33,7 @@ let open = null // { close } while a picker is showing
  */
 export function openIconPicker({ notebook, getAnchor, onChange, xLogo }) {
   open?.close()
+  if (!document.querySelector('#nbi-style')) document.head.append(Object.assign(document.createElement('style'), { id: 'nbi-style', textContent: CSS }))
   const current = { ...notebook }
   const picker = document.createElement('div')
   picker.className = 'nbi-pop'
