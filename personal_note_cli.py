@@ -20,6 +20,7 @@ from app_paths import DATABASE_FILENAME, LEGACY_DATABASE, app_data_dir, default_
 from startup import check_existing_server, probe_host
 from migration import MigrationError, migrate_legacy_database
 from plugin_manifest import PluginManifestError, parse_plugin_manifest
+from plugin_settings import PluginSettings, PluginSettingsError
 from portability import PortabilityError, import_workspace_backup, markdown_archive, workspace_backup
 from note_text import note_plain_text
 from search_runtime import SearchError, SearchRuntime, default_search_runtime, reap_dead_cli_engines
@@ -286,6 +287,8 @@ def command_notes_write(service: NoteService, args: argparse.Namespace) -> dict:
 
 
 def command_notes_create(service: NoteService, args: argparse.Namespace) -> dict:
+    if args.note_type == "mindmap":
+        PluginSettings().require("mindmap")
     if args.note_type == "mindmap" and args.text is not None:
         raise CliError("--text is only supported for canvas notes")
     payload: dict[str, Any] = {"title": args.title, "noteType": args.note_type}
@@ -445,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
         if result is not None:
             emit(result)
         return 0
-    except (CliError, SecureError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, InvalidNoteContentError, PortabilityError, PortabilityVaultError, WorkspaceImportError, PluginManifestError, MigrationError) as error:
+    except (CliError, SecureError, NotFoundError, ConflictError, UnsupportedNoteTypeError, AppendTextError, InvalidNoteContentError, PortabilityError, PortabilityVaultError, WorkspaceImportError, PluginManifestError, PluginSettingsError, MigrationError) as error:
         emit({"ok": False, "error": str(error)})
         return 2
     except Exception:
