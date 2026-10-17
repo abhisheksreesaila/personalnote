@@ -128,7 +128,8 @@ test('between them the fixtures use every document object type', () => {
   const seen = new Set()
   const visit = (objects) => objects.forEach((object) => { seen.add(object.type); if (object.children) visit(object.children) })
   fixtures.forEach((entry) => visit(fromFabric(entry.content, entry.pageState).objects))
-  for (const type of OBJECT_TYPES) assert.ok(seen.has(type), `no fixture contains a ${type}`)
+  // (a note link card, F-095, is new: no Fabric note holds one; note-link.test.js covers it)
+  for (const type of OBJECT_TYPES.filter((name) => name !== 'notelink')) assert.ok(seen.has(type), `no fixture contains a ${type}`)
 })
 
 // Not every fixture has ids everywhere: the benchmark note was written by hand before ids were enforced, and edge-ids and edge-unknown are damaged on purpose.
