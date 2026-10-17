@@ -6,7 +6,9 @@ import { gzipSync } from 'node:zlib'
 const DIST_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url))
 const KIB = 1024
 const budgets = {
-  javascriptGzip: 240 * KIB,
+  // 240 until F-092: the captain raised it to 260 on 2026-10-16 for jam sessions and the plugins after them ("two hundred sixty KB is fine");
+  // F-097 then moves optional plugins out of the first load so the first screen stays fast.
+  javascriptGzip: 260 * KIB,
   // The editors built on CodeMirror are not in the first load: the page editor comes when a page note opens (F-040), the Markdown text
   // editor is fetched once a canvas has opened and the window is idle (F-049). They have their own budget instead of eating the app's:
   // the two editors and the CodeMirror chunk they share.

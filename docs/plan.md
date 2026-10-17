@@ -579,9 +579,8 @@ Reviewed: PASS after one round (read-only maps never save, shared port guard, ba
 Brief: docs/briefs/plugins.md · Needs: F-090
 Reviewed: PASS after one round (switch-off off the event loop, indexer restart after a timed-out stop, voice engine can't start after a switch-off, hand-edited plugins.json honoured). Budget check unchanged (a proposed plugin-chunk category was rejected); JS 239.26/240.
 - [x] each off: no mic / no meaning group, nothing started or downloaded, data kept; on: as today; both listed in Settings → Plugins with what they need
-## F-092 Jam sessions in a mind map [blocked]
-Blocked: pick jam design A or B (docs/design/jam-sessions.md), and decide on JS budget room (239.26/240 KiB: the jam UI won't fit without trimming or a budget decision only the captain can make).
-Brief: docs/briefs/jam-sessions.md · Design: to do (Stitch: ghost branches, 👍/👎, live line) · Needs: F-086, F-090
+## F-092 Jam sessions in a mind map [todo]
+Brief: docs/briefs/jam-sessions.md · Design: docs/design/jam-sessions.md, option A (captain 2026-10-16: "on the map is more intuitive, I can see where I'm seeing and just suggest, as opposed to looking up all the time") · Budget: JS raised to 260 KiB by the captain · Needs: F-086, F-090
 - [ ] New jam; hold mic, live line, Jam button → brain edits applied as one undo step; ghosts accepted by click or "yes"; Settings → Jam picks the brain
 - [ ] branch text and emoji rendered as plain text (never HTML); AGENTS.md invariant 8 updated and an ADR for the opt-in generative worker (Claude Code or OpenAI-compatible)
 ## F-093 Settings → AI: pick the model once for every AI feature [done]
@@ -603,3 +602,7 @@ Brief: docs/briefs/x-bookmarks.md ("drag onto any note … lands as a link card"
 ## F-096 Show and Undo on "Claude edited this note" [todo]
 Brief: docs/design/dynamic-island.md (agent moment) · Needs: F-084
 - [ ] the island's agent face offers Show (scrolls to and briefly marks what the agent changed) and Undo (reverts the agent's revision as one step, revision-checked, never losing the person's later edits)
+## F-097 First screen first: optional plugins load after it [todo]
+Brief: docs/briefs/plugins.md ("no plugin code in the first load"); captain 2026-10-16: "speed is important … boom very fast and then load everything behind the scenes" · Needs: F-091
+- [ ] plugin code (Mind maps, Voice, Search by meaning, Jam, AI and X settings) is fetched after the first paint (idle), never in the first load; a click on a plugin's button before it's loaded waits for it and still works
+- [ ] the budget script measures the first load separately and its JS number goes down, not up; the 260 KiB total stays; time to first paint measured before and after on the speed test
