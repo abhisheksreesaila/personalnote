@@ -29,7 +29,12 @@ export const createRowHtml = (index, query, sel) => `<button class="omni-row${se
 export const noneHtml = (query) => `<div class="omni-none"><strong>${query ? `Nothing matches “${esc(query)}”` : 'Nothing here yet'}</strong><span>Secure notes match by title only.</span></div>`
 
 /** The pane beside the list: the selected note's emoji, title, notebook, first lines (`text`, once fetched) and type, edited, created. A secure note shows no words. */
-export function previewHtml(item, { tokens, now, text }) {
+export function previewHtml(item, { tokens, now, text, glyph }) {
+  if (item.kind === 'notebook') {
+    const section = item.category ? item.category[0].toUpperCase() + item.category.slice(1) : ''
+    return `<span class="omni-pv-e">${tile('', esc(item.color || 'var(--sk-accent)'), glyph(item))}</span><h3>${esc(item.name)}</h3><p class="omni-pv-text">${section}</p><dl><dt>Notes</dt><dd>${item.noteCount}</dd></dl>`
+  }
+  if (!isNote(item)) return `<span class="omni-pv-e">${tile(' omni-act', '', `<i data-lucide="${item.icon ?? 'plus'}"></i>`)}</span><h3>${esc(item.title ?? 'New note')}</h3><p class="omni-pv-text">Press Enter to run it.</p>`
   const emoji = item.secure ? '🔒' : item.icon?.emoji ?? ''
   const body = item.secure ? 'Secure note. Its words stay locked.' : highlight(text ?? '', tokens)
   return `<span class="omni-pv-e">${emoji}</span><h3>${esc(item.title)}</h3>${chip(item)}<p class="omni-pv-text">${body}</p>

@@ -120,6 +120,8 @@ try {
   await page.fill('#search-input', 'travel')
   await page.waitForSelector('.omni-group[aria-label="Notebooks"]')
   check('and a notebook by name', (await groups()).includes('Notebooks') && (await page.locator('.omni-group[aria-label="Notebooks"] .omni-title').first().textContent()) === 'Travel')
+  check('a selected notebook previews as a card: name, section and note count', (await page.locator('#omni-preview h3').textContent()) === 'Travel' && /Projects/.test(await page.locator('#omni-preview').innerText()) && (await page.locator('#omni-preview dd').textContent()) === '2')
+  await shot('3b-notebook')
   await page.fill('#search-input', 'switch skin')
   await page.waitForSelector('.omni-group[aria-label="Actions"]')
   check('and actions ("switch skin" lists the three skins)', (await titles()).join() === 'Skin: Crayon,Skin: Paper,Skin: Night', (await titles()).join())

@@ -68,7 +68,7 @@ function noteItem(note, notebooks, extra = {}) {
     notebookName: notebook?.name || note.notebookName || 'Inbox', notebookColor: notebook?.color || note.notebookColor || '', ...extra,
   }
 }
-const notebookItem = (notebook) => ({ kind: 'notebook', id: notebook.id, name: notebook.name, color: notebook.color, icon: notebook.icon, noteCount: notebook.noteCount ?? 0 })
+const notebookItem = (notebook) => ({ kind: 'notebook', id: notebook.id, name: notebook.name, color: notebook.color, icon: notebook.icon, category: notebook.category, noteCount: notebook.noteCount ?? 0 })
 const actionItem = (action) => ({ kind: 'action', ...action })
 
 /**

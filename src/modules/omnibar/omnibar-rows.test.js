@@ -63,3 +63,17 @@ test('the preview of a secure note shows no words', () => {
   assert.doesNotMatch(html, /ZEBRA|4111/)
   assert.match(html, /Secure note/)
 })
+
+test('the preview of a notebook is a small card: icon, name, section and note count', () => {
+  const html = previewHtml({ kind: 'notebook', id: 1, name: 'Travel', color: '#2f9d8f', category: 'areas', noteCount: 3 }, { tokens: [], now: NOW, glyph: () => '<span class="nbi-e">🧳</span>' })
+  assert.match(html, /🧳/)
+  assert.match(html, /<h3>Travel<\/h3>/)
+  assert.match(html, /Areas/)
+  assert.match(html, /<dt>Notes<\/dt><dd>3<\/dd>/)
+})
+
+test('the preview of an action names it and says Enter runs it', () => {
+  const html = previewHtml({ kind: 'action', id: 'focus', title: 'Focus mode', icon: 'focus' }, { tokens: [], now: NOW })
+  assert.match(html, /<h3>Focus mode<\/h3>/)
+  assert.match(html, /Press Enter to run it/)
+})

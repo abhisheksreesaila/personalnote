@@ -1,7 +1,7 @@
 // The omnibar's results, filter pills and preview pane drawn into the page (F-101). main.js fetches this the first time the omnibar opens, so none of it is in the
 // first load; until it arrives the typed text and the word search carry on and the list fills in when it does.
 // `host`: { omni (the state main.js owns), state, elements, api, actions(), skip(), glyph(notebook), hint, refreshIcons() }
-import './omnibar.css'
+import css from './omnibar.css?inline' // (rides in this chunk, not in the first-load CSS)
 import { FILTERS, buildGroups, filterCounts, flatten, moveSelection, queryTokens } from './omnibar.js'
 import { createRowHtml, isNote, noneHtml, previewHtml, rowHtml } from './omnibar-rows.js'
 
@@ -9,6 +9,7 @@ const itemKey = (item) => (item ? `${item.kind === 'words' ? 'note' : item.kind}
 const PREVIEW_DELAY = 90 // arrowing down the list asks for the first lines only of the note it rests on
 
 export function mountOmniView(host) {
+  document.head.append(Object.assign(document.createElement('style'), { textContent: css }))
   const { omni, state, elements, api } = host
   const chips = document.querySelector('#omni-chips')
   const pane = document.querySelector('#omni-preview')
@@ -18,10 +19,11 @@ export function mountOmniView(host) {
   function showPreview() {
     clearTimeout(previewTimer)
     const item = omni.items[omni.sel]
-    if (!item || !isNote(item)) { pane.innerHTML = ''; return }
+    if (!item) { pane.innerHTML = ''; return }
     const key = `${item.resourceId}@${item.updatedAt}`
     const tokens = queryTokens(elements.searchInput.value)
-    pane.innerHTML = previewHtml(item, { tokens, now: Date.now(), text: firstLines.get(key) })
+    pane.innerHTML = previewHtml(item, { tokens, now: Date.now(), text: firstLines.get(key), glyph: host.glyph })
+    if (!isNote(item)) return host.refreshIcons()
     if (item.secure || firstLines.has(key) || !pane.offsetParent) return // (a secure note's words are never asked for; a phone has no pane)
     previewTimer = setTimeout(async () => {
       try { firstLines.set(key, (await api(`/note-links?refs=${item.resourceId}`))[item.resourceId]?.excerpt ?? '') } catch { return }
