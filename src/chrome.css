@@ -477,60 +477,38 @@
   }
 
 
-  /* ---------- Omnibar panel (F-072, F-084): the search circle grows leftward into the field, the results below it. No dim. It sits outside .app-shell. ---------- */
-  .search-backdrop { position: fixed; inset: 0; z-index: 100; }
+  /* ---------- Omnibar (F-072, F-101): centred over a soft dim; the rows, pills and preview are in modules/omnibar/omnibar.css, fetched when it first opens. It sits outside .app-shell. ---------- */
+  .search-backdrop { position: fixed; inset: 0; z-index: 100; background: transparent; transition: background-color 160ms ease; }
+  .search-backdrop.open { background: color-mix(in srgb, var(--sk-ink) 28%, transparent); }
   .spotlight {
-    position: absolute; top: var(--omni-top, 16px); right: var(--omni-right, 16px); width: 44px; max-height: 44px;
-    display: flex; flex-direction: column; overflow: hidden; border-radius: 22px; border: 1px solid var(--glass-border); background: var(--sk-panel); color: var(--sk-ink);
+    width: min(760px, calc(100vw - 32px)); max-height: min(640px, calc(100dvh - 24px)); margin: min(11vh, 96px) auto 0;
+    display: flex; flex-direction: column; overflow: hidden; border-radius: 20px; border: 1px solid var(--glass-border); background: var(--sk-panel); color: var(--sk-ink);
     box-shadow: 0 2px 4px color-mix(in srgb, var(--sk-ink) 8%, transparent), 0 24px 60px -16px color-mix(in srgb, var(--sk-ink) 38%, transparent);
-    transition: width 180ms ease-out, max-height 180ms ease-out, border-radius 180ms ease-out;
+    opacity: 0; transform: translateY(-8px) scale(.985); transition: opacity 140ms ease, transform 160ms ease;
   }
-  .search-backdrop.open .spotlight { width: min(380px, calc(100vw - 32px)); max-height: min(440px, calc(100dvh - 24px)); border-radius: 20px; }
-  .spotlight > * { width: min(378px, calc(100vw - 34px)); } /* (laid out at full width from the start: the circle shows its left end and the box only opens) */
-  .spotlight-input-row { flex: none; display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 12px 0 11px; }
+  .search-backdrop.open .spotlight { opacity: 1; transform: none; }
+  .spotlight-input-row { flex: none; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px 0 18px; }
   .spotlight-input-row > svg { width: 20px; height: 20px; flex: none; color: var(--ink-soft); }
-  .spotlight-input-row input { min-width: 0; flex: 1; height: 26px; border: 0; outline: 0; background: none; color: var(--sk-ink); font: 400 15px var(--ui-font); }
+  .spotlight-input-row input { min-width: 0; flex: 1; height: 32px; border: 0; outline: 0; background: none; color: var(--sk-ink); font: 400 17px var(--ui-font); }
   .spotlight-input-row input::placeholder { color: var(--ui-muted); }
   .search-close, .omni-row kbd, .search-footer kbd { padding: 1px 6px; border: 1px solid var(--glass-border); border-radius: 6px; background: none; color: var(--ui-muted); font: 400 11px/1.4 var(--sk-mono); }
   .search-close { cursor: pointer; }
   .search-close .k-cancel { display: none; }
-  .omni-chips { flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 14px 8px; }
-  .omni-chip { padding: 4px 10px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--sk-panel); color: var(--ink-soft); font: 500 12px var(--ui-font); cursor: pointer; }
-  .omni-chip[aria-pressed="true"] { background: var(--sk-ink); color: var(--sk-panel); border-color: var(--sk-ink); }
-  .omni-chip:focus-visible, .search-close:focus-visible { outline: none; box-shadow: var(--ring); }
-  .search-results { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 6px; border-top: 1px solid var(--sk-line); }
-  .omni-group h4 { margin: 10px 8px 4px; color: var(--ui-muted); font: 600 11px var(--ui-font); letter-spacing: .07em; text-transform: uppercase; }
-  .omni-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 11px; background: none; color: var(--sk-ink); text-align: left; cursor: pointer; }
-  .omni-row.sel { background: var(--sk-accent-soft); }
-  .omni-ic { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--hover); color: var(--ink-soft); }
-  .omni-ic svg { width: 15px; height: 15px; }
-  .omni-row.sel .omni-ic { background: var(--sk-accent); color: var(--sk-accent-ink); }
-  .omni-row.is-secure .omni-ic { background: var(--sk-secure-soft); color: var(--sk-secure); }
-  .omni-row.is-secure .omni-sub { color: var(--sk-secure); }
-  .omni-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
-  .omni-copy { min-width: 0; flex: 1; display: grid; gap: 1px; }
-  .omni-title, .omni-sub, .omni-meta, .omni-none strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .omni-title { font: 500 14px/1.3 var(--ui-font); }
-  .omni-sub { color: var(--ui-muted); font-size: 12.5px; }
-  .omni-meta { max-width: 120px; flex: none; color: var(--ui-muted); font-size: 11.5px; }
-  .omni-row mark { padding: 0 1px; border-radius: 3px; background: color-mix(in srgb, var(--sk-accent) 26%, transparent); color: inherit; }
-  .omni-ret { width: 14px; height: 14px; flex: none; opacity: 0; color: var(--ui-muted); }
-  .omni-row.sel .omni-ret { opacity: 1; }
-  .omni-none { display: grid; gap: 4px; justify-items: center; padding: 24px 16px 8px; color: var(--ui-muted); font-size: 12.5px; text-align: center; }
-  .omni-none strong { max-width: 100%; color: var(--sk-ink); font: 600 15px var(--ui-font); }
-  .omni-note { margin: 8px 10px 4px; color: var(--ui-muted); font-size: 12px; }
+  .search-close:focus-visible { outline: none; box-shadow: var(--ring); }
+  .omni-chips { flex: none; display: flex; flex-wrap: wrap; gap: 6px; min-height: 40px; padding: 0 14px 8px; border-top: 1px solid var(--sk-line); padding-top: 8px; }
+  .omni-body { flex: 1; min-height: 320px; display: flex; border-top: 1px solid var(--sk-line); }
+  .search-results { flex: 1; min-width: 0; overflow-y: auto; padding: 0 8px 6px; }
   .search-footer { flex: none; display: flex; gap: 14px; padding: 8px 16px; border-top: 1px solid var(--sk-line); color: var(--ui-muted); font-size: 11.5px; }
   .search-footer span { display: flex; align-items: center; gap: 4px; }
-  @media (max-width: 800px) {
-    .spotlight { inset: 0; width: auto; max-height: none; border: 0; border-radius: 0; opacity: 0; transition: opacity 120ms ease; }
-    .search-backdrop.open .spotlight { width: auto; max-height: none; border-radius: 0; opacity: 1; }
-    .spotlight > * { width: auto; }
-    .spotlight-input-row { height: auto; padding: 14px 14px 8px; }
-    .spotlight-input-row input { height: 36px; font-size: 17px; }
-    .search-close { border: 0; padding: 6px; color: var(--sk-accent); font: 500 15px var(--ui-font); }
+  @media (max-width: 640px) {
+    .search-backdrop, .search-backdrop.open { background: var(--sk-panel); }
+    .spotlight { position: fixed; inset: 0; width: auto; max-height: none; margin: 0; border: 0; border-radius: 0; transform: none; transition: opacity 120ms ease; }
+    .spotlight-input-row { height: auto; padding: calc(12px + env(safe-area-inset-top)) 14px 8px; }
+    .spotlight-input-row > svg { display: none; }
+    .spotlight-input-row input { height: 40px; padding: 0 14px; border-radius: 12px; background: var(--hover); font-size: 17px; }
+    .search-close { border: 0; padding: 6px; color: var(--sk-ink); font: 600 15px var(--ui-font); }
     .search-close .k-esc, .search-footer { display: none; }
     .search-close .k-cancel { display: inline; }
-    .omni-row.is-meaning { min-height: 48px; }
   }
   @media (prefers-reduced-motion: reduce) { .spotlight, .island { transition: none; } }
 
