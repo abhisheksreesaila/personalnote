@@ -13,7 +13,7 @@ Design language: web=Personal Note skins (Crayon, Paper, Night in `src/skins.css
 
 ## Core boundaries
 
-- `src/main.js` owns the browser shell and hosts the Leafer canvas (view, input, save, note lifecycle). `src/modules/canvas-leafer/` is the engine adapter and the only code that imports `leafer-ui`.
+- `src/main.js` owns the browser shell and hosts the Leafer canvas (view, input, save, note lifecycle). The engine is a separate chunk (F-098): the shell holds `leaferCanvas` as `lazyCanvas` (`canvas-leafer/lazy.js`) and draws the notes panel and title before the engine arrives; keep `leafer-ui` and `scene.js` out of what main.js imports statically (the first-load budget fails if they come back). `src/modules/canvas-leafer/` is the engine adapter and the only code that imports `leafer-ui`.
 - `src/core/api.js` is the browser API boundary.
 - `routes.py` owns core HTTP routes.
 - `services.py::NoteService` is the only owner of canonical SQLite reads and writes.

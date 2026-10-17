@@ -21,7 +21,8 @@ import { pickFlagBlock } from './modules/sync/changes.js'
 import { dockIcon } from './modules/editor/dock-icons.js'
 import { imageFiles, objectPalette, stickyDefaults } from './modules/editor/objects.js'
 import { readPreferences, writePreferences } from './preferences.js'
-import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
+import { lazyCanvas } from './modules/canvas-leafer/lazy.js'
+import { createEarlyPress } from './modules/canvas-leafer/early-press.js'
 import { RENDER_MODES } from './modules/canvas-leafer/perf.js'
 import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
 import { mergeDocuments } from './core/document/merge.js'
@@ -131,7 +132,7 @@ document.querySelector('#app').innerHTML = `
         </div>
       </header>
       <div class="island-slot">
-        <div class="island" id="island" data-face="rest">
+        <div class="island booting" id="island" data-face="rest">
           <div class="isl-face" data-face="rest"><button class="isl-open" id="share-button" data-keeps-text-editing title="Note actions" aria-haspopup="dialog" aria-expanded="false" aria-controls="share-menu"><span id="island-title">Untitled note</span></button></div>
           <div class="isl-face isl-card" data-face="card" id="share-menu" role="dialog" aria-label="Note actions" hidden>
             <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
@@ -1004,13 +1005,25 @@ const island = mountIsland(document.querySelector('#island'), {
   onStop: () => void plugins.get('voice')?.toggle(),
   onJam: (action) => plugins.get('jam')?.onIslandAction(action),
 })
-document.fonts.ready.then(() => island.remeasure())
-document.fonts.addEventListener('loadingdone', () => island.remeasure()) // (a font that arrives late changes the title's width)
+// A font that arrives late changes the title's width: the pill takes the new width at once (a correction, not a change of face, so it does not glide).
+function remeasureIsland() {
+  const pill = document.querySelector('#island')
+  pill.style.transition = 'none'
+  island.remeasure()
+  void pill.offsetWidth
+  pill.style.transition = ''
+}
+document.fonts.ready.then(remeasureIsland)
+document.fonts.addEventListener('loadingdone', remeasureIsland)
 // Focus goes back to the island's visible button: the title at rest, or the whole face while a moment shows.
 function focusIsland() { document.querySelector('#island .isl-face:not([hidden]) :is(#share-button, .isl-hit)')?.focus() }
 function setNoteTitle(text = '') {
   elements.title.value = text
+  const pill = document.querySelector('#island')
+  const first = pill.classList.contains('booting') // F-098: the pill is hidden until its first title is known, and takes that size at once (no shrink from the placeholder's width)
+  if (first) pill.style.transition = 'none'
   island.setTitle(elements.title.value.trim() || 'Untitled note')
+  if (first) { void pill.offsetWidth; pill.classList.remove('booting'); pill.style.transition = '' }
 }
 
 const SAVED_LABEL = `Saved on this ${/mac|iphone|ipad/i.test(navigator.platform) ? 'Mac' : 'device'}`
@@ -1234,6 +1247,7 @@ function writingViewFor(text) {
 // The caret goes into the writing as the note opens: at the end of its topmost text, or in a new text at the top of the first page.
 // `sequence`: the note pick this belongs to (a later pick, or the person having clicked into something else meanwhile, wins).
 async function startWriting(sequence) {
+  if (replayEarlyPress(sequence)) return
   const writing = writingTarget()
   if (!writing) return
   const focusedBefore = document.activeElement
@@ -1451,6 +1465,8 @@ async function placeLeaferPictures(files, point) {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   if (noteId !== state.activeNoteId || leaferSwitching) return dropMade() // the note was left while the pictures were being prepared
+  await leaferCanvas.ready // (the engine: the pictures are already stored, they are placed as soon as it is there)
+  if (noteId !== state.activeNoteId || leaferSwitching) return dropMade()
   setTool('select')
   return leaferCanvas.addImages(made, point).length
 }
@@ -1465,6 +1481,7 @@ window.addEventListener('keydown', () => { lastKeyAt = performance.now() }, true
 async function placeImageFiles(files, point = viewCenterPoint()) {
   const pictures = imageFiles(files)
   if (!pictures.length || state.activeNoteType !== 'canvas') return 0
+  if (!state.activeNoteId || state.loading) { showToast('The note is still opening. Drop the picture again in a moment.'); return 0 } // (F-098: said, not dropped silently)
   return placeLeaferPictures(pictures, point)
 }
 
@@ -1733,7 +1750,13 @@ let leaferShowFixed = false
 async function showLeaferNote(note, { openView = true } = {}) {
   // The stored JSON Canvas is read straight into the document model; the note's own content is kept to save back until it is edited.
   const showing = ++leaferShowSequence
-  const decoded = await decodeNoteDocument(note)
+  let decoded
+  try { [decoded] = await Promise.all([decodeNoteDocument(note), leaferCanvas.ready]) } catch (error) { // the engine and the web fonts (F-098): the notes panel and the title are on screen before this waits
+    // A chunk that does not arrive (gone after an update, the server away) is said in plain words; a reload is the retry that works everywhere. (Said here,
+    // not when the chunk fails: opening a note clears the toast.)
+    showToast('The canvas did not load.', 'Reload', () => location.reload())
+    throw error
+  }
   if (showing !== leaferShowSequence || note.id !== state.activeNoteId) return false
   leaferInk?.documentChanged() // the document is replaced: an erase pass planned on the old one is dropped
   leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.doc.page }
@@ -1766,12 +1789,15 @@ function setPageZoomLocked(locked) {
   meta.setAttribute('content', locked ? `${base}, maximum-scale=1.0` : base)
 }
 
+// F-098: the host is in the page at once (so nothing moves when the engine arrives); the engine (Leafer and the scene) is its own chunk, fetched
+// from the first line of initialize() and made once the web fonts are in (text is measured with them). `leaferCanvas` answers meanwhile as a
+// canvas with nothing on it (modules/canvas-leafer/lazy.js).
 function mountLeaferCanvas() {
   const host = document.createElement('div')
   leaferHost = host
   host.id = 'leafer-host'
   elements.paper.prepend(host)
-  leaferCanvas = createLeaferCanvas({ host, width: viewSize.width, height: viewSize.height, onOperation: (op, options) => leaferEdits.record(op, options),
+  const engineOptions = { host, width: viewSize.width, height: viewSize.height, onOperation: (op, options) => leaferEdits.record(op, options),
     onBegin: (label) => leaferEdits.begin(label),
     onEnd: () => leaferEdits.end(),
     // A drag, a resize or a turn brought an object near an edge: the page grid grows in every direction.
@@ -1795,9 +1821,35 @@ function mountLeaferCanvas() {
         return { fill, ink, style: { fontFamily, fontSize, fontWeight, lineHeight } }
       },
     },
-  })
+  }
+  return engineOptions
 }
-mountLeaferCanvas()
+const leaferOptions = mountLeaferCanvas()
+let engineStarted = null
+function startEngine() {
+  engineStarted ??= Promise.all([import('./modules/canvas-leafer/index.js'), prepareCanvasFonts()]).then(([engine]) => {
+    syncCanvasSize() // the window may have been resized while the engine was on its way
+    return engine.createLeaferCanvas({ ...leaferOptions, width: viewSize.width, height: viewSize.height })
+  })
+  return engineStarted
+}
+leaferCanvas = lazyCanvas(() => startEngine())
+elements.shell.classList.add('engine-loading') // the pen and connect surfaces take no input until the engine is there (a press to place words is held: earlyPress)
+leaferCanvas.ready.then(() => elements.shell.classList.remove('engine-loading'), () => {})
+// A press on the page to place words, a sticky or a shape that comes before the engine does is not lost and not placed anywhere else: it is held for
+// the note being opened and placed at the same spot on screen once that note is drawn (replayEarlyPress, from startWriting); another note picked
+// meanwhile drops it (early-press.js). A tool picked before the engine arrived is what the press places, though opening a note then selects Text.
+const earlyPress = createEarlyPress()
+function replayEarlyPress(sequence) {
+  const press = earlyPress.take(sequence)
+  if (!press) return false
+  const at = leaferCanvas.pageAt(press.x, press.y)
+  if (press.tool === 'sticky') placeSticky(at, { now: press.now })
+  else if (press.tool === 'shape') placeShape(at)
+  else if (!leaferCanvas.toggleFoldAt(at) && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
+  return true
+}
+const holdEarlyPress = (event, extra) => { if (['sticky', 'shape', 'text'].includes(state.tool)) earlyPress.hold({ x: event.clientX, y: event.clientY, tool: state.tool, ...extra }, selectSequence) }
 
 // The pen, highlighter and eraser (F-031). The stroke is a model object recorded as one undo step; a page grows when the pen
 // goes past the right or bottom edge.
@@ -1914,6 +1966,7 @@ async function selectNote(id, { reload = false } = {}) {
 async function selectNoteNow(id, { reload = false } = {}) {
   hideToast()
   const sequence = ++selectSequence
+  earlyPress.pick(sequence)
   // Stay on the current note rather than drop its edits when they cannot be saved in time.
   if (!(await settleOutgoingNote())) return
   if (sequence !== selectSequence || (id === state.activeNoteId && !reload)) return
@@ -1956,7 +2009,7 @@ async function selectNoteNow(id, { reload = false } = {}) {
     revealNotebook(note.notebookId)
     setNoteTitle(note.title)
     state.noteLocked = Boolean(note.locked)
-    elements.title.readOnly = state.noteLocked
+    elements.title.readOnly = true // until the note is drawn (below, in finally): words typed in the title while the engine is awaited would be overwritten, and their save is held while loading
     if (state.noteLocked) { // a locked secure note: an empty page and the cover, never its words
       setActiveNoteType('canvas')
       if (!(await showLeaferNote({ id: note.id, noteType: 'canvas', content: null, pageState: null })) || sequence !== selectSequence) return
@@ -1990,7 +2043,7 @@ async function selectNoteNow(id, { reload = false } = {}) {
     console.error(error)
     setSaveState('Could not load', true)
   } finally {
-    if (sequence === selectSequence) state.loading = false
+    if (sequence === selectSequence) { state.loading = false; elements.title.readOnly = state.noteLocked || (state.activeNoteType === 'mindmap' && !plugins.isEnabled('mindmap')) }
   }
 }
 
@@ -2818,12 +2871,19 @@ function isOutsidePages(event) {
 
 // Touch pinch and pan and the middle-button pan work from every layer that takes the pointer: the input surface (the hand, Space, text,
 // sticky), Leafer's own (the select tool), the words being typed and the ink surface.
+const editorLayerInput = [] // F-098: the words' layer is made by the engine; what was registered before it came is put on it when it does
 function onCanvasInput(type, handler, options) {
   inputSurface.addEventListener(type, handler, options)
   leaferHost.addEventListener(type, handler, options)
-  elements.paper.querySelector('.leafer-editor-layer')?.addEventListener(type, handler, options)
+  const layer = elements.paper.querySelector('.leafer-editor-layer')
+  if (layer) layer.addEventListener(type, handler, options)
+  else editorLayerInput.push([type, handler, options])
   leaferInk?.surface.addEventListener(type, handler, options)
 }
+leaferCanvas.ready.then(() => {
+  const layer = elements.paper.querySelector('.leafer-editor-layer')
+  for (const [type, handler, options] of editorLayerInput.splice(0)) layer?.addEventListener(type, handler, options)
+}, () => {})
 const canvasTouchPointers = new Map()
 let canvasPinchGesture = null
 let canvasPanGesture = null
@@ -3016,6 +3076,7 @@ for (const type of ['mousedown', 'mouseup', 'auxclick']) window.addEventListener
 // are not relied on.
 inputSurface.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 || event.pointerType !== 'mouse') return
+  if (!leaferCanvas.isReady()) { holdEarlyPress(event); return }
   if (state.tool === 'sticky') placeSticky(leaferCanvas.pageAt(event.clientX, event.clientY))
   else if (state.tool === 'shape') placeShape(leaferCanvas.pageAt(event.clientX, event.clientY))
   else if (state.tool === 'text') {
@@ -3034,6 +3095,7 @@ window.addEventListener('pointerup', (event) => {
   tapStart = null
   if (!start || start.id !== event.pointerId || state.activeNoteType !== 'canvas' || canvasPinchGesture) return
   if (performance.now() - start.time > 600 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) return
+  if (!leaferCanvas.isReady()) { holdEarlyPress(event, { now: true }); return }
   const at = leaferCanvas.pageAt(event.clientX, event.clientY)
   if (state.tool === 'sticky') placeSticky(at, { now: true })
   else if (state.tool === 'shape') placeShape(at)
@@ -4177,25 +4239,34 @@ function showMicEarly() {
 }
 
 async function initialize() {
-  await prepareCanvasFonts()
   refreshPageColors()
   resizePaper()
   resetCanvasView()
   syncDefaultTypographySettings()
   syncTypographyControls()
   loadCapabilitySettings()
-  plugins.apply((await api('/plugins').catch(() => ({}))).plugins) // the machine's choice; unreachable: every plugin keeps its default
+  // F-098: everything the first screen needs is asked for at once, not one after another: the plugin choice, the lists, and the locking of secure notes.
+  const pluginChoice = api('/plugins').catch(() => ({}))
+  const lists = Promise.all([api('/notebooks'), api('/notes')])
+  // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server;
+  // and the window may be shared again (a Mac window an earlier page left hidden). The note itself is asked for after this.
+  const locked = (async () => { await api('/secure/lock', { method: 'POST' }).catch(() => {}); await secure.resetCapture() })()
+  lists.catch(() => {}); locked.catch(() => {}) // (awaited below, inside the try)
+  plugins.apply((await pluginChoice).plugins) // the machine's choice; unreachable: every plugin keeps its default
   syncNoteCreateMenu()
   showMicEarly()
   try {
-    // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server.
-    await api('/secure/lock', { method: 'POST' }).catch(() => {})
-    await secure.resetCapture() // and the window may be shared again (a Mac window an earlier page left hidden)
-    ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
+    ;[state.notebooks, state.notes] = await lists
     pruneOpenNotebooks()
     state.selectedNotebookId = state.notes[0]?.notebookId ?? null
+    // The notes panel and the open note's title are drawn now, from the lists: the note's words and the canvas follow (the engine is on its way).
+    const first = state.notes[0]
+    // It is drawn as it will be once the note is open (its notebook revealed, its row current), so nothing in the panel moves when the canvas arrives.
+    const drawn = Boolean(first && !first.secure)
+    if (drawn) { revealNotebook(first.notebookId); state.activeNoteId = first.id; state.loading = true; renderNoteList(); elements.title.readOnly = true; setNoteTitle(first.title) }
+    await locked
     if (!state.notes.length) await createNote()
-    else await selectNote(state.notes[0].id)
+    else await selectNote(state.notes[0].id, { reload: drawn }) // (reload: the note is already the current one here; nothing of an earlier note is open to leave)
     requestAnimationFrame(() => requestAnimationFrame(() => { // the first screen is on the glass: now the optional code
       performance.mark('pn-first-screen')
       whenIdle(() => void loadOptional())
@@ -4231,6 +4302,8 @@ async function initialize() {
     })
   } catch (error) {
     console.error(error)
+    state.loading = false
+    document.querySelector('#island').classList.remove('booting')
     setSaveState('Database offline', true)
   }
 }
