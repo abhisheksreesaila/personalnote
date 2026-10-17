@@ -53,6 +53,24 @@ CREATE TABLE IF NOT EXISTS agent_activity (
     action TEXT NOT NULL CHECK (action IN ('reading', 'writing')),
     at REAL NOT NULL
 );
+-- F-096: what a local agent's write replaced, so the app can show it and take it back. Not in backup or export.
+CREATE TABLE IF NOT EXISTS agent_edits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    agent TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'applied' CHECK (state IN ('applied', 'undone')),
+    after_revision INTEGER NOT NULL,
+    live_revision INTEGER NOT NULL,
+    changed TEXT NOT NULL,
+    before_content TEXT NOT NULL,
+    before_format TEXT NOT NULL,
+    before_page_state TEXT NOT NULL,
+    after_content TEXT NOT NULL,
+    after_format TEXT NOT NULL,
+    after_page_state TEXT NOT NULL,
+    at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS agent_edits_note ON agent_edits (note_id, after_revision);
 CREATE TABLE IF NOT EXISTS secure_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key_id TEXT NOT NULL,

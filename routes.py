@@ -577,6 +577,33 @@ def create_app(
         except Exception as error:
             return json_error(error)
 
+    @app.get("/api/notes/{note_id}/agent-edit")
+    def agent_edit(request, note_id: int):
+        # The agent write that made this revision of the note (F-096): {edit: {id, agent, state, changed, ...} | null}.
+        try:
+            revision = int(request.query_params.get("revision"))
+        except (TypeError, ValueError):
+            revision = 0
+        return JSONResponse({"edit": service.agent_edit_at(note_id, revision)})
+
+    @app.post("/api/agent-edits/{edit_id}/undo")
+    def undo_agent_edit(request, edit_id: int):
+        if not from_this_app(request):
+            return forbidden()
+        try:
+            return JSONResponse(service.undo_agent_edit(edit_id))
+        except Exception as error:
+            return json_error(error)
+
+    @app.post("/api/agent-edits/{edit_id}/redo")
+    def redo_agent_edit(request, edit_id: int):
+        if not from_this_app(request):
+            return forbidden()
+        try:
+            return JSONResponse(service.redo_agent_edit(edit_id))
+        except Exception as error:
+            return json_error(error)
+
     @app.get("/api/notes/{note_id}")
     def get_note(request, note_id: int):
         try:

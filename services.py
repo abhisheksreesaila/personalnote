@@ -15,6 +15,7 @@ from pathlib import Path
 import secure_crypto as sc
 import secure_platform as default_secure_platform
 from app_schema import initialize_schema
+from agent_edit import changed_lines, changed_object_ids, merge_canvas, merge_markdown
 from document_model import DocumentError, empty_document, from_fabric, plain_text
 from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
 from media_store import MediaStore, data_url_of
@@ -78,6 +79,7 @@ APPEND_PADDING = 8
 APPEND_MAX_LENGTH = 100_000
 AGENT_ACTIVITY_WINDOW = 10.0
 AGENT_ACTIONS = {"reading", "writing"}
+AGENT_EDITS_KEPT = 10  # per note: older ones are forgotten
 CHANGES_LIMIT = 500
 
 
@@ -103,6 +105,10 @@ class AppendTextError(ValueError):
 
 class InvalidNoteContentError(ValueError):
     """A canvas note's content is not a document this version can read."""
+
+
+class AgentEditConflict(ConflictError):
+    """Undo or Redo would overwrite what the person changed since (or the edit is already in that state): said plainly, nothing changed."""
 
 
 class SecureError(Exception):
@@ -141,6 +147,7 @@ class NoteService:
     ):
         # Search by meaning (F-079/F-080): anything with `.embed(texts, kind)`; None means the feature is not wired in.
         self.embedder = embedder
+        self.acting_agent: str | None = None  # set by `as_agent` (the command line): its note writes are kept as agent edits (F-096)
         # Secure notes (F-057): the platform seam (Touch ID + keychain on a Mac), the key cost for passphrases, and the keys held while unlocked.
         self.secure_platform = secure_platform if secure_platform is not None else default_secure_platform
         self.scrypt_cost = scrypt_cost
@@ -841,6 +848,8 @@ class NoteService:
                 )
             self.index_note(connection, note_id, title, stored_content, note_type, content_format, body=body)
             self.record_change(connection, "note", current["resource_id"], revision, "updated")
+            if self.acting_agent and data_key is None and note_type in ("canvas", "page"):
+                self.remember_agent_edit(connection, current, (stored_content, content_format, stored_page_state), revision)
             connection.commit()
         return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
 
@@ -1756,6 +1765,95 @@ class NoteService:
             }
             for row in rows
         ]
+
+    # ---- Show and Undo on an agent's edit (F-096) ---------------------------------------------------------------------------
+
+    @contextmanager
+    def as_agent(self, name: str):
+        """While it runs, this service's note writes are an agent's: each is kept (before and after) so it can be shown and undone."""
+        self.acting_agent = str(name or "").strip()[:80] or "Agent"
+        try:
+            yield
+        finally:
+            self.acting_agent = None
+
+    def snapshot_document(self, note_type: str, content: str, content_format: str, page_state: str) -> dict:
+        """A stored snapshot as the document a merge works on: a canvas's model, or a page's {markdown, ink}."""
+        stored = self.parse_json(content, DEFAULT_CONTENT)
+        if note_type == "page":
+            return normalize_page_document(stored)
+        return self.document_of(stored, content_format, self.parse_json(page_state, DEFAULT_PAGE_STATE))
+
+    def remember_agent_edit(self, connection, before, after: tuple[str, str, str], revision: int) -> None:
+        """Keep the note as it was (`before`, the row) and as the agent left it (`after`: content, format, page state), in the write's own transaction."""
+        note_type = before["note_type"]
+        was = self.snapshot_document(note_type, before["content"], self.format_of(before), before["page_state"])
+        now = self.snapshot_document(note_type, *after)
+        changed = {"kind": "page", **changed_lines(was["markdown"], now["markdown"])} if note_type == "page" else {"kind": "canvas", "ids": changed_object_ids(was, now)}
+        connection.execute(
+            """
+            INSERT INTO agent_edits (note_id, agent, after_revision, live_revision, changed, before_content, before_format, before_page_state,
+                                     after_content, after_format, after_page_state, at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (before["id"], self.acting_agent, revision, revision, json.dumps(changed), before["content"], self.format_of(before), before["page_state"], *after, time.time()),
+        )
+        connection.execute(
+            "DELETE FROM agent_edits WHERE note_id = ? AND id NOT IN (SELECT id FROM agent_edits WHERE note_id = ? ORDER BY id DESC LIMIT ?)",
+            (before["id"], before["id"], AGENT_EDITS_KEPT),
+        )
+
+    def agent_edit_at(self, note_id: int, revision: int) -> dict | None:
+        """The agent write that made this revision of the note, or None (the person's own saves are not agent edits)."""
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT id, agent, state, after_revision, changed, at FROM agent_edits WHERE note_id = ? AND after_revision = ? ORDER BY id DESC LIMIT 1",
+                (note_id, revision),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"id": row["id"], "agent": row["agent"], "state": row["state"], "revision": row["after_revision"], "changed": json.loads(row["changed"]), "at": row["at"]}
+
+    def undo_agent_edit(self, edit_id: int) -> dict:
+        """The note as it was before the agent's write, as one new revision. The agent's version stays kept, so Redo brings it back."""
+        return self.turn_agent_edit(edit_id, undo=True)
+
+    def redo_agent_edit(self, edit_id: int) -> dict:
+        return self.turn_agent_edit(edit_id, undo=False)
+
+    def turn_agent_edit(self, edit_id: int, undo: bool) -> dict:
+        """Undo or redo over whatever is stored now. The person's later edits stay unless they touched the very thing the agent did (then nothing
+        changes and the answer says so). The write is revision-checked like any other, so a save landing meanwhile is a plain conflict."""
+        with self.connection() as connection:
+            edit = connection.execute("SELECT * FROM agent_edits WHERE id = ?", (edit_id,)).fetchone()
+            if edit is None:
+                raise NotFoundError("That edit is no longer kept")
+            note = connection.execute("SELECT * FROM notes WHERE id = ?", (edit["note_id"],)).fetchone()
+        if edit["state"] != ("applied" if undo else "undone"):
+            raise AgentEditConflict("This edit is already undone." if undo else "This edit is not undone.")
+        now, goal = ("after", "before") if undo else ("before", "after")  # (the version the note should be at, the one to take it to)
+        note_type = note["note_type"]
+        snapshot = lambda side: self.snapshot_document(note_type, edit[f"{side}_content"], edit[f"{side}_format"], edit[f"{side}_page_state"])
+        if note["revision"] == edit["live_revision"]:  # nothing since: exactly the other version
+            document, page_state = snapshot(goal), edit[f"{goal}_page_state"]
+        else:
+            ours = self.snapshot_document(note_type, note["content"], self.format_of(note), note["page_state"])
+            if note_type == "page":
+                markdown = merge_markdown(snapshot(now)["markdown"], ours["markdown"], snapshot(goal)["markdown"])
+                document = None if markdown is None else {**ours, "markdown": markdown, "ink": ours["ink"] if markdown == ours["markdown"] else reanchor_ink(ours["ink"], markdown)}
+            else:
+                document = merge_canvas(snapshot(now), ours, snapshot(goal))
+            if document is None:
+                raise AgentEditConflict(f"You changed {edit['agent']}’s words after it wrote them, so {'Undo' if undo else 'Redo'} would overwrite your edit. Nothing was changed.")
+            page_state = json.dumps(document.get("page") or DEFAULT_PAGE_STATE)
+        saved = self.update_note(note["id"], {
+            "title": note["title"], "notebookId": note["notebook_id"], "revision": note["revision"], "pageState": self.parse_json(page_state, DEFAULT_PAGE_STATE),
+            "content": document if note_type == "page" else to_json_canvas(document, media=self.media),
+        })
+        with self.connection() as connection:
+            connection.execute("UPDATE agent_edits SET state = ?, live_revision = ? WHERE id = ?", ("undone" if undo else "applied", saved["revision"], edit_id))
+            connection.commit()
+        return saved
 
     def changes_since(self, since: int | None) -> dict:
         """Cheap change feed: the current sequence plus changes after `since`."""
