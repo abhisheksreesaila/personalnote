@@ -603,10 +603,11 @@ Brief: docs/briefs/x-bookmarks.md ("drag onto any note … lands as a link card"
 ## F-096 Show and Undo on "Claude edited this note" [todo]
 Brief: docs/design/dynamic-island.md (agent moment) · Needs: F-084
 - [ ] the island's agent face offers Show (scrolls to and briefly marks what the agent changed) and Undo (reverts the agent's revision as one step, revision-checked, never losing the person's later edits)
-## F-097 First screen first: optional plugins load after it [todo]
+## F-097 First screen first: optional plugins load after it [done]
 Brief: docs/briefs/plugins.md ("no plugin code in the first load"); captain 2026-10-16: "speed is important … boom very fast and then load everything behind the scenes" · Needs: F-091
-- [ ] plugin code (Mind maps, Voice, Search by meaning, Jam, AI and X settings) is fetched after the first paint (idle), never in the first load; a click on a plugin's button before it's loaded waits for it and still works
-- [ ] the budget script measures the first load separately and its JS number goes down, not up; the 260 KiB total stays; time to first paint measured before and after on the speed test
+Reviewed: PASS after one round (a failed load shows a toast with Reload instead of a dead mic; tap vs hold by 450 ms; budget walker fails loudly). First load 207.05 → 204.21 KiB, budget tightened to 205. Time to first screen unchanged within noise (scripts/verify-first-screen.mjs, accepted as the measurement): the real win is F-098.
+- [x] plugin code (Mind maps, Voice, Search by meaning, Jam, AI and X settings) is fetched after the first paint (idle), never in the first load; a click on a plugin's button before it's loaded waits for it and still works
+- [x] the budget script measures the first load separately and its JS number goes down, not up; the 260 KiB total stays; time to first paint measured before and after on the speed test
 ## F-098 Split the 200 KiB first load so the first screen paints sooner [todo]
 Brief: docs/briefs/plugins.md; captain 2026-10-16: "boom very fast and then load everything behind the scenes" · Needs: F-097
 F-097 measured it: the first load is ~204 KiB gzip, nearly all the app shell plus Leafer; plugins were only ~3 KiB, so time to first screen didn't move.
