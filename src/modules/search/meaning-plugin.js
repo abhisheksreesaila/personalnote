@@ -4,7 +4,6 @@
 //
 // `shell`: { api, island, omni (the omnibar's state; this fills omni.meaningHits / meaningReady / meaningPending), renderOmni(), refreshIcons() }
 
-import { createIslandDownload, createSetupSection, renderSetupRow } from '../plugins/setup-row.js'
 import { createMeaningClient, describeMeaning, indexIsCatchingUp } from './meaning-setup.js'
 
 const DEBOUNCE_MS = 250
@@ -17,6 +16,7 @@ const WAIT_MS = 6000
 export async function activateMeaning(shell) {
   const { api, omni } = shell
   const client = createMeaningClient(api)
+  const { createIslandDownload, createSetupSection, renderSetupRow } = shell.setup
   const islandDownload = createIslandDownload(shell.island)
   let controller = null // one request at a time: a new one aborts the one before, and `current()` says whether this one is still the newest
   const request = {

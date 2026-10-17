@@ -3,9 +3,8 @@
 // starts the voice engine by itself: pressing the mic does, as before. Audio is never kept (AGENTS.md invariant 4).
 //
 // `shell` (what the page gives every plugin that needs it): { api, state, elements, island, canvas(), edits, pageWidth, inAppWindow(),
-// setPropertiesOpen(open), refreshIcons(), countWords(text), contentBounds(objects, sizeOf) }. `state.listening` stays on the shared state: the check scripts read it.
+// setPropertiesOpen(open), refreshIcons(), countWords(text), contentBounds(objects, sizeOf), setup: { createSetupSection, renderSetupRow, createIslandDownload } }. `state.listening` stays on the shared state: the check scripts read it.
 
-import { createIslandDownload, createSetupSection, renderSetupRow } from '../plugins/setup-row.js'
 import { createMobileHoldController } from './mobile-hold-controller.js'
 import { createPressToTalk } from './press-to-talk.js'
 import { DictationSession } from './transcript-session.js'
@@ -27,6 +26,7 @@ export async function activateVoice(shell) {
   const voiceDivider = document.querySelector('#voice-divider')
   const dictationSession = new DictationSession()
   const client = createVoiceClient(api)
+  const { createIslandDownload, createSetupSection, renderSetupRow } = shell.setup
   const islandDownload = createIslandDownload(island)
   const listeners = new AbortController()
   const on = (target, type, handler) => target.addEventListener(type, handler, { signal: listeners.signal })

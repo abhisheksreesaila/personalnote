@@ -156,7 +156,7 @@ try {
     await page.context().close()
   }
   // ---- F-091: Voice and Search by meaning. The mic, the "By meaning" group and their Settings rows follow the switches; off loads and asks nothing.
-  const voiceCode = /\/(voice-plugin|setup-row)[-.]|\/src\/modules\/voice\/voice-plugin\.js|\/src\/modules\/plugins\/setup-row\.js/
+  const voiceCode = /\/voice-plugin[-.]|\/src\/modules\/voice\/voice-plugin\.js/
   const meaningCode = /\/meaning-plugin[-.]|\/src\/modules\/search\/meaning-plugin\.js/
   const featureApi = /\/api\/(voice|search-meaning|search\/meaning)/
   for (const [label, viewport] of [['phone', { width: 390, height: 780 }], ['desktop', { width: 1360, height: 900 }]]) {

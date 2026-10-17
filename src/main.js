@@ -16,6 +16,7 @@ import { mountAISettings } from './modules/ai/ai-settings.js'
 import { mountXSettings } from './modules/x/x-settings.js'
 import { createPluginRegistry } from './core/plugins.js'
 import { BUILTIN_PLUGINS } from './modules/plugins/builtin.js'
+import { createIslandDownload, createSetupSection, renderSetupRow } from './modules/plugins/setup-row.js'
 import { mountPluginSettings } from './modules/plugins/plugins-settings.js'
 import { mountPageModule } from './modules/page.js'
 import { mountAgentSync } from './modules/sync/index.js'
@@ -2521,7 +2522,7 @@ const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], i
 
 // What a plugin that puts things in the page is given (docs/MODULE-CONTRACTS.md, "Plugin host contract"). Plugins are imported only while on.
 const pluginShell = {
-  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds,
+  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, setup: { createSetupSection, renderSetupRow, createIslandDownload },
   canvas: () => leaferCanvas,
   renderOmni: () => renderOmni(),
   refreshIcons: () => createIcons({ icons }),
