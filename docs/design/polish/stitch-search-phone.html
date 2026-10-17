@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal Note — Search Sheet</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            desk: '#e9e4da',
+            paper: '#fbfaf5',
+            'panel-bg': '#fffdf8',
+            ink: '#1f1b16',
+            'soft-ink': '#4a443b',
+            muted: '#6b6357',
+            hairline: '#e2dbcd',
+            'accent-soft': '#ece6da',
+          },
+          fontFamily: {
+            display: ['"Bricolage Grotesque"', 'sans-serif'],
+            serif: ['"Newsreader"', 'serif'],
+            sans: ['"Geist"', 'sans-serif'],
+            mono: ['"Geist Mono"', 'monospace'],
+          },
+          boxShadow: {
+            island: '0 1px 0 rgba(31,27,22,.04), 0 12px 32px -12px rgba(60,40,10,.22)',
+            sheet: '0 20px 48px -10px rgba(60,40,10,.28), 0 2px 8px rgba(31,27,22,.06)',
+            subtle: '0 1px 2px rgba(31,27,22,.05)',
+            paper: '0 2px 14px -4px rgba(60,40,10,.14), 0 1px 3px rgba(31,27,22,.05)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .desk-pattern {
+      background-color: #e9e4da;
+      background-image: radial-gradient(rgba(60,45,20,0.11) 1.2px, transparent 1.2px);
+      background-size: 20px 20px;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #e2dbcd;
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #cfc7b7;
+    }
+    .highlight-pill {
+      background-color: #ffe082;
+      color: #1f1b16;
+      padding: 0.1rem 0.25rem;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="desk-pattern text-ink font-sans min-h-screen w-full relative overflow-hidden select-none">
+
+  <!-- BACKGROUND: The Spatial Desk and Note Page (Dimmed slightly behind the search modal) -->
+  <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40 filter blur-[0.6px] transition-all">
+    <!-- Active Note Document (Background paper on desk) -->
+    <div class="w-[820px] h-[780px] bg-paper rounded-[4px] shadow-paper border border-hairline/80 p-12 flex flex-col justify-between mt-16 relative">
+      <div>
+        <div class="flex items-center gap-2 text-xs font-mono tracking-wider text-muted mb-4 uppercase">
+          <span>WORKSPACE // EXPEDITIONS</span>
+          <span>•</span>
+          <span>UPDATED YESTERDAY</span>
+        </div>
+        <h1 class="font-display font-bold text-4xl text-ink tracking-tight mb-4 flex items-center gap-3">
+          <span>✈️</span> Lisbon trip
+        </h1>
+        <p class="font-serif text-[22px] leading-relaxed text-soft-ink mb-6">
+          Exploring the sunlit alleys of Alfama and evening jazz bars along the Tagus. Packing light, bringing physical Moleskine notes, and charting local bakeries.
+        </p>
+        <div class="space-y-3 font-serif text-[18px] text-muted">
+          <div class="flex items-center gap-3">
+            <span class="w-4 h-4 rounded border border-hairline inline-block bg-white/70"></span>
+            <span>Reserve tram ride early morning near Miradouro de Santa Luzia</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-4 h-4 rounded border border-hairline inline-block bg-white/70"></span>
+            <span>Check out the ceramics studio in Príncipe Real</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex justify-between items-center text-xs font-mono text-muted border-t border-hairline pt-4">
+        <span>320 words • Local offline cache</span>
+        <span>Paper Sheet #104</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOATING CHROME: Background Left Sidebar Tool Island (Inset 14px) -->
+  <div class="fixed left-[14px] top-1/2 -translate-y-1/2 z-10 flex flex-col items-center gap-2 p-2 bg-panel-bg rounded-[14px] border border-hairline shadow-island opacity-50 pointer-events-none">
+    <button class="w-10 h-10 rounded-[8px] bg-ink text-panel-bg flex items-center justify-center">
+      <span class="material-symbols-outlined text-[20px]">near_me</span>
+    </button>
+    <button class="w-10 h-10 rounded-[8px] text-soft-ink flex items-center justify-center">
+      <span class="material-symbols-outlined text-[20px]">title</span>
+    </button>
+    <button class="w-10 h-10 rounded-[8px] text-soft-ink flex items-center justify-center">
+      <span class="material-symbols-outlined text-[20px]">edit</span>
+    </button>
+    <button class="w-10 h-10 rounded-[8px] text-soft-ink flex items-center justify-center">
+      <span class="material-symbols-outlined text-[20px]">sticky_note_2</span>
+    </button>
+  </div>
+
+  <!-- FLOATING CHROME: Background Zoom readout (Inset 14px bottom right) -->
+  <div class="fixed right-[14px] bottom-[14px] z-10 flex items-center gap-2 px-3 py-1.5 bg-panel-bg rounded-[14px] border border-hairline shadow-island opacity-50 pointer-events-none font-mono text-xs text-muted">
+    <span>−</span>
+    <span class="font-medium text-ink">100%</span>
+    <span>+</span>
+  </div>
+
+  <!-- BACKDROP OVERLAY FOR FULL SHEET -->
+  <div class="fixed inset-0 bg-[#3c2d14]/15 backdrop-blur-[2px] z-30 transition-opacity"></div>
+
+  <!-- FULL SHEET FROM THE TOP (Inset 14px on sides and top, max-w-4xl centered) -->
+  <div class="fixed inset-x-0 top-[14px] mx-auto w-[calc(100%-28px)] max-w-3xl z-40 flex flex-col max-h-[calc(100vh-28px)] bg-panel-bg rounded-[18px] border border-hairline shadow-sheet overflow-hidden animate-in fade-in slide-in-from-top-6 duration-200">
+    
+    <!-- TOP SEARCH BAR HEADER -->
+    <div class="px-5 pt-4 pb-3 border-b border-hairline/80 bg-panel-bg">
+      <div class="flex items-center gap-3">
+        <!-- Rounded Search Field -->
+        <div class="flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-paper border border-hairline shadow-subtle focus-within:border-ink transition-all">
+          <span class="material-symbols-outlined text-muted text-[20px]">search</span>
+          <div class="flex-1 flex items-center font-sans text-[15px] leading-none">
+            <span class="text-ink font-medium">trip</span>
+            <span class="w-[1.5px] h-4 bg-ink ml-0.5 animate-pulse"></span>
+          </div>
+          <!-- Clear / Query action button -->
+          <button class="w-5 h-5 rounded-full bg-accent-soft text-muted hover:text-ink flex items-center justify-center text-xs transition-colors" title="Clear query">
+            <span class="material-symbols-outlined text-[14px]">close</span>
+          </button>
+          <!-- Shortcut Pill -->
+          <div class="hidden sm:flex items-center px-2 py-0.5 rounded-[4px] border border-hairline text-[11px] font-mono text-muted bg-white/70">
+            Esc
+          </div>
+        </div>
+
+        <!-- Cancel / Dismiss Action Button -->
+        <button class="px-3.5 py-2 rounded-full text-[14px] font-sans font-medium text-muted hover:text-ink hover:bg-accent-soft active:scale-95 transition-all">
+          Cancel
+        </button>
+      </div>
+
+      <!-- FILTER CHIPS BAR (Below Search Field) -->
+      <div class="flex items-center gap-2 mt-3.5 overflow-x-auto pb-0.5 no-scrollbar text-xs">
+        <span class="text-muted font-mono uppercase tracking-wider text-[10px] pl-1 mr-1">In:</span>
+        
+        <!-- Active Filter: All -->
+        <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-ink text-panel-bg font-sans font-medium shadow-subtle active:scale-95 transition-all">
+          <span>All Results</span>
+          <span class="w-1.5 h-1.5 rounded-full bg-[#ffe082]"></span>
+        </button>
+
+        <!-- Filter Chip: Notes with emoji icon -->
+        <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-paper hover:bg-accent-soft border border-hairline text-soft-ink font-sans font-medium active:scale-95 transition-all">
+          <span class="text-[12px]">📝</span>
+          <span>Notes</span>
+          <span class="text-[11px] font-mono text-muted ml-0.5">3</span>
+        </button>
+
+        <!-- Filter Chip: Notebooks -->
+        <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-paper hover:bg-accent-soft border border-hairline text-soft-ink font-sans font-medium active:scale-95 transition-all">
+          <span class="text-[12px]">📁</span>
+          <span>Notebooks</span>
+          <span class="text-[11px] font-mono text-muted ml-0.5">1</span>
+        </button>
+
+        <!-- Filter Chip: Tag / Action -->
+        <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-paper hover:bg-accent-soft border border-hairline text-soft-ink font-sans font-medium active:scale-95 transition-all">
+          <span class="material-symbols-outlined text-[14px] text-muted">bolt</span>
+          <span>Actions</span>
+          <span class="text-[11px] font-mono text-muted ml-0.5">2</span>
+        </button>
+
+        <!-- Filter Chip: In Canvas / Spatial -->
+        <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-paper hover:bg-accent-soft border border-hairline text-soft-ink font-sans font-medium active:scale-95 transition-all">
+          <span class="material-symbols-outlined text-[14px] text-muted">space_dashboard</span>
+          <span>On Canvas</span>
+        </button>
+
+        <!-- Date Range Filter -->
+        <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-paper hover:bg-accent-soft border border-hairline text-muted font-sans font-medium active:scale-95 transition-all">
+          <span class="material-symbols-outlined text-[14px]">calendar_today</span>
+          <span>Recent</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- SEARCH RESULTS SCROLLABLE CONTAINER -->
+    <div class="flex-1 overflow-y-auto custom-scrollbar px-3 py-3 space-y-6">
+
+      <!-- SECTION 1: NOTES (Primary Results) -->
+      <div>
+        <div class="flex items-center justify-between px-3 mb-2">
+          <div class="flex items-center gap-2">
+            <span class="font-display font-bold text-[13px] tracking-wide uppercase text-ink">Notes</span>
+            <span class="text-xs font-mono text-muted px-1.5 py-0.2 rounded-full bg-accent-soft border border-hairline">3</span>
+          </div>
+          <span class="text-[11px] font-mono text-muted">Ranked by relevance</span>
+        </div>
+
+        <div class="space-y-1">
+          <!-- Large Touch Row 1: Lisbon trip (Selected / Focused) -->
+          <div class="group relative flex items-center gap-3.5 px-3 h-[64px] rounded-[12px] bg-paper border border-hairline/90 shadow-subtle hover:border-ink/40 hover:bg-white transition-all cursor-pointer">
+            <!-- Left pastel emoji tile (40px) -->
+            <div class="w-10 h-10 rounded-[10px] bg-[#dbeafe] border border-[#bfdbfe] flex items-center justify-center shrink-0 text-[19px] shadow-sm">
+              ✈️
+            </div>
+
+            <!-- Content Area (Title + Snippet) -->
+            <div class="flex-1 min-w-0 pr-2">
+              <div class="flex items-center gap-2">
+                <span class="font-display font-semibold text-[15px] text-ink truncate">
+                  Lisbon <span class="highlight-pill">trip</span> planning & packing list
+                </span>
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block shrink-0" title="Active on canvas"></span>
+              </div>
+              <p class="font-sans text-[12px] text-muted truncate mt-0.5">
+                Flight to LIS lands at 14:20. Hotel in Chiado booked. Review day <span class="highlight-pill">trip</span> to Sintra castles...
+              </p>
+            </div>
+
+            <!-- Trailing Metadata: Notebook Chip + Time -->
+            <div class="flex items-center gap-2.5 shrink-0 pl-1">
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-sans font-medium text-soft-ink bg-accent-soft border border-hairline">
+                <span class="w-1.5 h-1.5 rounded-full bg-[#e08a2e]"></span>
+                Travel 2024
+              </span>
+              <span class="font-mono text-[11px] text-muted whitespace-nowrap">
+                2h ago
+              </span>
+              <span class="material-symbols-outlined text-muted text-[18px] opacity-0 group-hover:opacity-100 transition-opacity">
+                arrow_forward
+              </span>
+            </div>
+          </div>
+
+          <!-- Large Touch Row 2: Road trip playlists & car gear -->
+          <div class="group relative flex items-center gap-3.5 px-3 h-[64px] rounded-[12px] bg-panel-bg hover:bg-paper border border-transparent hover:border-hairline hover:shadow-subtle transition-all cursor-pointer">
+            <!-- Left pastel emoji tile (40px) -->
+            <div class="w-10 h-10 rounded-[10px] bg-[#fef3c7] border border-[#fde68a] flex items-center justify-center shrink-0 text-[19px]">
+              🚗
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 min-w-0 pr-2">
+              <div class="flex items-center gap-2">
+                <span class="font-display font-semibold text-[15px] text-ink truncate">
+                  Pacific Coast road <span class="highlight-pill">trip</span> essentials
+                </span>
+              </div>
+              <p class="font-sans text-[12px] text-muted truncate mt-0.5">
+                Emergency tire inflator, wool throw, analog camera rolls, offline maps for Big Sur segment...
+              </p>
+            </div>
+
+            <!-- Trailing Metadata -->
+            <div class="flex items-center gap-2.5 shrink-0 pl-1">
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-sans font-medium text-soft-ink bg-paper border border-hairline">
+                <span class="w-1.5 h-1.5 rounded-full bg-[#3c7d55]"></span>
+                Adventures
+              </span>
+              <span class="font-mono text-[11px] text-muted whitespace-nowrap">
+                Oct 18
+              </span>
+              <span class="material-symbols-outlined text-muted text-[18px] opacity-0 group-hover:opacity-100 transition-opacity">
+                arrow_forward
+              </span>
+            </div>
+          </div>
+
+          <!-- Large Touch Row 3: Tokyo coffee trip guide -->
+          <div class="group relative flex items-center gap-3.5 px-3 h-[64px] rounded-[12px] bg-panel-bg hover:bg-paper border border-transparent hover:border-hairline hover:shadow-subtle transition-all cursor-pointer">
+            <!-- Left pastel emoji tile (40px) -->
+            <div class="w-10 h-10 rounded-[10px] bg-[#fce7f3] border border-[#fbcfe8] flex items-center justify-center shrink-0 text-[19px]">
+              ☕
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 min-w-0 pr-2">
+              <div class="flex items-center gap-2">
+                <span class="font-display font-semibold text-[15px] text-ink truncate">
+                  Tokyo kissaten & specialty espresso <span class="highlight-pill">trip</span>
+                </span>
+              </div>
+              <p class="font-sans text-[12px] text-muted truncate mt-0.5">
+                Koffee Mameya Kakeru omakase tasting, Chatei Hatou hand pour, Daikanyama bookstore walk...
+              </p>
+            </div>
+
+            <!-- Trailing Metadata -->
+            <div class="flex items-center gap-2.5 shrink-0 pl-1">
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-sans font-medium text-soft-ink bg-paper border border-hairline">
+                <span class="w-1.5 h-1.5 rounded-full bg-[#b86b4b]"></span>
+                Culinary
+              </span>
+              <span class="font-mono text-[11px] text-muted whitespace-nowrap">
+                Sep 29
+              </span>
+              <span class="material-symbols-outlined text-muted text-[18px] opacity-0 group-hover:opacity-100 transition-opacity">
+                arrow_forward
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 2: NOTEBOOKS (Collections) -->
+      <div>
+        <div class="flex items-center justify-between px-3 mb-2">
+          <div class="flex items-center gap-2">
+            <span class="font-display font-bold text-[13px] tracking-wide uppercase text-ink">Notebooks</span>
+            <span class="text-xs font-mono text-muted px-1.5 py-0.2 rounded-full bg-accent-soft border border-hairline">1</span>
+          </div>
+          <span class="text-[11px] font-mono text-muted">Folders matching title</span>
+        </div>
+
+        <div class="space-y-1">
+          <!-- Large Touch Row: Notebook -->
+          <div class="group relative flex items-center gap-3.5 px-3 h-[64px] rounded-[12px] bg-panel-bg hover:bg-paper border border-transparent hover:border-hairline hover:shadow-subtle transition-all cursor-pointer">
+            <!-- Left pastel emoji tile (40px) -->
+            <div class="w-10 h-10 rounded-[10px] bg-[#ede9fe] border border-[#ddd6fe] flex items-center justify-center shrink-0 text-[19px]">
+              🧳
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 min-w-0 pr-2">
+              <div class="flex items-center gap-2">
+                <span class="font-display font-semibold text-[15px] text-ink truncate">
+                  Summer <span class="highlight-pill">Trip</span>s & Sabbatical 2024
+                </span>
+                <span class="text-[11px] font-mono text-muted bg-white/80 px-2 py-0.5 rounded border border-hairline">
+                  4 notes
+                </span>
+              </div>
+              <p class="font-sans text-[12px] text-muted truncate mt-0.5">
+                Contains Lisbon, Kyoto, Dolomites trekking, and flight booking confirmations.
+              </p>
+            </div>
+
+            <!-- Trailing Metadata -->
+            <div class="flex items-center gap-2.5 shrink-0 pl-1">
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-sans font-medium text-soft-ink bg-paper border border-hairline">
+                <span class="material-symbols-outlined text-[13px]">folder_open</span>
+                Notebook
+              </span>
+              <span class="font-mono text-[11px] text-muted whitespace-nowrap">
+                Aug 14
+              </span>
+              <span class="material-symbols-outlined text-muted text-[18px] opacity-0 group-hover:opacity-100 transition-opacity">
+                arrow_forward
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 3: ACTIONS & QUICK COMMANDS -->
+      <div>
+        <div class="flex items-center justify-between px-3 mb-2">
+          <div class="flex items-center gap-2">
+            <span class="font-display font-bold text-[13px] tracking-wide uppercase text-ink">Actions</span>
+            <span class="text-xs font-mono text-muted px-1.5 py-0.2 rounded-full bg-accent-soft border border-hairline">2</span>
+          </div>
+          <span class="text-[11px] font-mono text-muted">Create or execute</span>
+        </div>
+
+        <div class="space-y-1">
+          <!-- Action Row 1: Create Note titled 'trip' -->
+          <div class="group relative flex items-center gap-3.5 px-3 h-[64px] rounded-[12px] bg-panel-bg hover:bg-paper border border-transparent hover:border-hairline hover:shadow-subtle transition-all cursor-pointer">
+            <!-- Left pastel emoji tile (40px) -->
+            <div class="w-10 h-10 rounded-[10px] bg-[#dcfce7] border border-[#bbf7d0] flex items-center justify-center shrink-0 text-ink">
+              <span class="material-symbols-outlined text-[20px] text-emerald-800">note_add</span>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 min-w-0 pr-2">
+              <div class="flex items-center gap-2">
+                <span class="font-display font-semibold text-[15px] text-ink truncate">
+                  Create new note: &ldquo;<span class="text-emerald-800 font-bold">trip</span>&rdquo;
+                </span>
+              </div>
+              <p class="font-sans text-[12px] text-muted truncate mt-0.5">
+                Drop a blank paper page onto the spatial desk right here
+              </p>
+            </div>
+
+            <!-- Trailing Metadata -->
+            <div class="flex items-center gap-2.5 shrink-0 pl-1">
+              <div class="flex items-center gap-1 font-mono text-[11px] text-muted bg-white px-2 py-1 rounded-[6px] border border-hairline shadow-subtle">
+                <span>↵</span>
+                <span>Enter</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Row 2: Search in full text archives -->
+          <div class="group relative flex items-center gap-3.5 px-3 h-[64px] rounded-[12px] bg-panel-bg hover:bg-paper border border-transparent hover:border-hairline hover:shadow-subtle transition-all cursor-pointer">
+            <!-- Left pastel emoji tile (40px) -->
+            <div class="w-10 h-10 rounded-[10px] bg-[#ffedd5] border border-[#fed7aa] flex items-center justify-center shrink-0 text-amber-900">
+              <span class="material-symbols-outlined text-[20px]">manage_search</span>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 min-w-0 pr-2">
+              <div class="flex items-center gap-2">
+                <span class="font-display font-semibold text-[15px] text-ink truncate">
+                  Deep search local text archives for &ldquo;<span class="font-bold">trip</span>&rdquo;
+                </span>
+              </div>
+              <p class="font-sans text-[12px] text-muted truncate mt-0.5">
+                Scan markdown files, checklist archives, and audio voice transcripts
+              </p>
+            </div>
+
+            <!-- Trailing Metadata -->
+            <div class="flex items-center gap-2.5 shrink-0 pl-1">
+              <div class="flex items-center gap-1 font-mono text-[11px] text-muted bg-white px-2 py-1 rounded-[6px] border border-hairline shadow-subtle">
+                <span>⌘</span>
+                <span>Shift</span>
+                <span>F</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUGGESTED RECENT NOTES (Notion-style pastel emoji showcase) -->
+      <div class="pt-2 border-t border-hairline/60">
+        <div class="flex items-center justify-between px-3 mb-2.5">
+          <span class="font-display font-bold text-[12px] tracking-wide uppercase text-muted">Other Recent Notes</span>
+          <span class="text-[11px] font-mono text-muted">Pastel icon system</span>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 px-1">
+          <!-- Mini tile 1 -->
+          <div class="flex items-center gap-2.5 p-2 rounded-[10px] bg-paper/60 hover:bg-paper border border-hairline hover:border-ink/20 cursor-pointer transition-all">
+            <span class="w-7 h-7 rounded-[7px] bg-[#fef9c3] border border-[#fef08a] flex items-center justify-center text-[14px]">🍋</span>
+            <div class="min-w-0 flex-1">
+              <p class="text-[13px] font-medium text-ink truncate">Grocery ideas</p>
+              <p class="text-[10px] font-mono text-muted">Personal</p>
+            </div>
+          </div>
+
+          <!-- Mini tile 2 -->
+          <div class="flex items-center gap-2.5 p-2 rounded-[10px] bg-paper/60 hover:bg-paper border border-hairline hover:border-ink/20 cursor-pointer transition-all">
+            <span class="w-7 h-7 rounded-[7px] bg-[#e0f2fe] border border-[#bae6fd] flex items-center justify-center text-[14px]">📚</span>
+            <div class="min-w-0 flex-1">
+              <p class="text-[13px] font-medium text-ink truncate">Reading list</p>
+              <p class="text-[10px] font-mono text-muted">Books</p>
+            </div>
+          </div>
+
+          <!-- Mini tile 3 -->
+          <div class="flex items-center gap-2.5 p-2 rounded-[10px] bg-paper/60 hover:bg-paper border border-hairline hover:border-ink/20 cursor-pointer transition-all">
+            <span class="w-7 h-7 rounded-[7px] bg-[#fce7f3] border border-[#fbcfe8] flex items-center justify-center text-[14px]">🚀</span>
+            <div class="min-w-0 flex-1">
+              <p class="text-[13px] font-medium text-ink truncate">Startup pitch</p>
+              <p class="text-[10px] font-mono text-muted">Work</p>
+            </div>
+          </div>
+
+          <!-- Mini tile 4 -->
+          <div class="flex items-center gap-2.5 p-2 rounded-[10px] bg-paper/60 hover:bg-paper border border-hairline hover:border-ink/20 cursor-pointer transition-all">
+            <span class="w-7 h-7 rounded-[7px] bg-[#ffedd5] border border-[#fed7aa] flex items-center justify-center text-[14px]">💡</span>
+            <div class="min-w-0 flex-1">
+              <p class="text-[13px] font-medium text-ink truncate">Product ideas</p>
+              <p class="text-[10px] font-mono text-muted">Lab</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- BOTTOM SHEET FOOTER WITH KEYBOARD HINTS & DESK LOCAL STATUS -->
+    <div class="px-5 py-2.5 bg-paper border-t border-hairline flex items-center justify-between text-xs text-muted">
+      <div class="flex items-center gap-4">
+        <span class="flex items-center gap-1.5 font-mono text-[11px]">
+          <span class="px-1.5 py-0.5 rounded bg-white border border-hairline font-bold">↑</span>
+          <span class="px-1.5 py-0.5 rounded bg-white border border-hairline font-bold">↓</span>
+          <span>to navigate</span>
+        </span>
+        <span class="flex items-center gap-1.5 font-mono text-[11px]">
+          <span class="px-1.5 py-0.5 rounded bg-white border border-hairline font-bold">↵</span>
+          <span>to open</span>
+        </span>
+        <span class="flex items-center gap-1.5 font-mono text-[11px] hidden sm:inline-flex">
+          <span class="px-1.5 py-0.5 rounded bg-white border border-hairline font-bold">⌘↵</span>
+          <span>to pin onto desk</span>
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2 font-mono text-[11px]">
+        <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+        <span>Local instant index (0.4ms)</span>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

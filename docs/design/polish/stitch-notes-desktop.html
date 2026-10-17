@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Personal Note — Spatial Workspace</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;700;800&amp;family=Geist+Mono:wght@400;500;600&amp;family=Geist:wght@400;500;600;700&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS with custom configuration -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-fixed-dim": "#c8c5cb",
+            "on-secondary-fixed-variant": "#49473e",
+            "surface-container-low": "#f8f3e9",
+            "tertiary-container": "#1b1b1f",
+            "ink": "#1f1b16",
+            "desk": "#e9e4da",
+            "draw-orange": "#e08a2e",
+            "on-surface-variant": "#4c463f",
+            "outline-variant": "#cec5bc",
+            "surface-container-highest": "#e7e2d8",
+            "inverse-on-surface": "#f5f0e6",
+            "draw-red": "#d64a3b",
+            "paper": "#fbfaf5",
+            "primary": "#000000",
+            "dot-terracotta": "#b86b4b",
+            "secure-bg": "#efe9fb",
+            "on-error-container": "#93000a",
+            "surface-bright": "#fef9ee",
+            "on-error": "#ffffff",
+            "on-primary-fixed": "#1f1b16",
+            "surface-container": "#f2ede3",
+            "primary-container": "#1f1b16",
+            "primary-fixed": "#eae1d8",
+            "secondary-container": "#e8e2d6",
+            "on-tertiary-fixed": "#1b1b1f",
+            "hairline": "#e2dbcd",
+            "surface-dim": "#dedad0",
+            "surface-container-high": "#ede8de",
+            "panel": "#fffdf8",
+            "error": "#ba1a1a",
+            "background": "#fef9ee",
+            "on-surface": "#1d1c16",
+            "accent-soft": "#ece6da",
+            "outline": "#7d766e",
+            "on-tertiary": "#ffffff",
+            "on-tertiary-container": "#848388",
+            "on-secondary-fixed": "#1d1c14",
+            "draw-green": "#3c7d55",
+            "inverse-primary": "#cec5bd",
+            "on-primary": "#ffffff",
+            "surface-container-lowest": "#ffffff",
+            "soft-ink": "#4a443b",
+            "on-background": "#1d1c16",
+            "secondary-fixed-dim": "#cbc6bb",
+            "secure": "#6a46c9",
+            "surface-tint": "#635d57",
+            "secondary-fixed": "#e8e2d6",
+            "on-secondary-container": "#68645b",
+            "on-primary-container": "#8a837c",
+            "tertiary": "#000000",
+            "inverse-surface": "#32302a",
+            "secondary": "#625e55",
+            "muted": "#6b6357",
+            "error-container": "#ffdad6",
+            "on-secondary": "#ffffff",
+            "draw-black": "#1f1b16",
+            "surface-variant": "#e7e2d8",
+            "tertiary-fixed": "#e4e1e7",
+            "danger": "#b93a27",
+            "on-tertiary-fixed-variant": "#47464b",
+            "draw-blue": "#2f73b5",
+            "on-primary-fixed-variant": "#4b4640",
+            "primary-fixed-dim": "#cec5bd",
+            "surface": "#fef9ee"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "margin": "1rem",
+            "gutter": "1rem",
+            "space-xs": "0.25rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "space-md": "1rem",
+            "space-lg": "1.5rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Newsreader", "serif"],
+            "label": ["Geist", "sans-serif"],
+            "display-lg": ["Bricolage Grotesque", "sans-serif"],
+            "headline-md": ["Bricolage Grotesque", "sans-serif"],
+            "body-sm": ["Geist", "sans-serif"],
+            "mono-shortcut": ["Geist Mono", "monospace"],
+            "display-lg-mobile": ["Bricolage Grotesque", "sans-serif"]
+          },
+          "fontSize": {
+            "body-lg": ["22px", { "lineHeight": "34px", "fontWeight": "400" }],
+            "label": ["13px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "display-lg": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-md": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "mono-shortcut": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+            "display-lg-mobile": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    /* Desk dot-grid texture */
+    .desk-pattern {
+      background-color: #e9e4da;
+      background-image: radial-gradient(rgba(60, 45, 20, 0.12) 1.2px, transparent 1.2px);
+      background-size: 24px 24px;
+    }
+    
+    /* Tactile Floating Island Shadow */
+    .island-shadow {
+      box-shadow: 0 1px 1px rgba(31, 27, 22, 0.05), 0 12px 32px -8px rgba(60, 40, 10, 0.16);
+    }
+
+    /* Paper note sheet elevation */
+    .paper-shadow {
+      box-shadow: 0 2px 5px rgba(31, 27, 22, 0.04), 0 18px 40px -10px rgba(50, 36, 12, 0.14);
+    }
+
+    /* Custom subtle scrollbar */
+    .thin-scroll::-webkit-scrollbar {
+      width: 5px;
+    }
+    .thin-scroll::-webkit-scrollbar-thumb {
+      background-color: rgba(60, 45, 20, 0.15);
+      border-radius: 9999px;
+    }
+    .thin-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    /* Sticky note tape styling */
+    .washi-tape {
+      background: rgba(255, 255, 255, 0.55);
+      backdrop-filter: blur(2px);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+  </style>
+</head>
+<body class="h-full w-full overflow-hidden desk-pattern select-none text-ink font-body-sm relative">
+<!-- ========================================================================= -->
+<!-- 1. LEFT FLOATING NOTES PANEL (Shared SideNav island)                       -->
+<!-- ========================================================================= -->
+<aside class="fixed top-[14px] left-[14px] bottom-[14px] w-[300px] bg-panel rounded-[14px] border border-hairline island-shadow z-30 flex flex-col justify-between overflow-hidden">
+<!-- Top Island Header & Brand -->
+<div class="p-space-md pb-space-xs border-b border-hairline/60">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center border border-hairline text-ink font-headline-md font-bold text-label">
+            PN
+          </div>
+<div>
+<h1 class="font-headline-md text-body-sm font-bold text-ink tracking-tight leading-none">Personal Note</h1>
+<p class="font-label text-mono-shortcut text-muted mt-0.5">Spatial Workspace</p>
+</div>
+</div>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container text-muted font-mono-shortcut text-mono-shortcut border border-hairline">
+          v2.4
+        </span>
+</div>
+<!-- Search Bar -->
+<div class="mt-space-md relative flex items-center">
+<span class="material-symbols-outlined absolute left-2.5 text-muted text-[17px] pointer-events-none" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border border-hairline/80 rounded-lg pl-8 pr-12 py-1.5 text-body-sm font-body-sm text-ink placeholder:text-muted/70 focus:outline-none focus:ring-1 focus:ring-ink focus:border-ink transition-all" placeholder="Search notes... (Ctrl K)" type="text"/>
+<kbd class="absolute right-2 font-mono-shortcut text-mono-shortcut text-muted bg-panel px-1.5 py-0.5 rounded border border-hairline shadow-xs">⌘K</kbd>
+</div>
+<!-- Quick Note Primary Action Button -->
+<button class="mt-space-sm w-full bg-primary-container text-panel rounded-full py-2 px-space-md flex items-center justify-between hover:bg-ink/90 active:scale-[0.98] transition-all shadow-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]" data-icon="edit_note">edit_note</span>
+<span class="font-label text-label font-semibold">Quick note</span>
+</div>
+<kbd class="font-mono-shortcut text-mono-shortcut bg-soft-ink/40 text-surface-bright px-1.5 py-0.5 rounded border border-white/20">Alt N</kbd>
+</button>
+</div>
+<!-- Navigation / Notebook Tree -->
+<div class="flex-1 overflow-y-auto thin-scroll px-space-md py-space-sm space-y-space-md">
+<!-- Top Level Sections -->
+<div class="space-y-0.5">
+<button class="w-full flex items-center justify-between px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-label">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-muted" data-icon="inbox">inbox</span>
+<span>Inbox</span>
+</div>
+<span class="font-mono-shortcut text-mono-shortcut px-1.5 py-0.2 rounded-full bg-surface-container text-muted">4</span>
+</button>
+<button class="w-full flex items-center justify-between px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-label">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-muted" data-icon="folder">folder</span>
+<span>Projects</span>
+</div>
+<span class="material-symbols-outlined text-[16px] text-muted" data-icon="expand_more">expand_more</span>
+</button>
+<button class="w-full flex items-center justify-between px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-label">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-muted" data-icon="grid_view">grid_view</span>
+<span>Areas</span>
+</div>
+</button>
+<button class="w-full flex items-center justify-between px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-label">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-muted" data-icon="menu_book">menu_book</span>
+<span>Resources</span>
+</div>
+</button>
+<button class="w-full flex items-center justify-between px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-label">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-muted" data-icon="archive">archive</span>
+<span>Archive</span>
+</div>
+</button>
+</div>
+<!-- Open Notebook 'My Notes' Subtree -->
+<div class="pt-space-xs border-t border-hairline/60">
+<div class="flex items-center justify-between px-space-sm py-1 text-muted font-label text-mono-shortcut uppercase tracking-wider">
+<span>My Notes (Expanded)</span>
+<span class="material-symbols-outlined text-[14px]" data-icon="unfold_less">unfold_less</span>
+</div>
+<div class="mt-1 space-y-1">
+<!-- Active Item: Grocery ideas -->
+<button class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-surface-container-highest/60 text-ink border border-hairline/90 shadow-2xs transition-all font-label text-body-sm group">
+<div class="flex items-center gap-2.5 truncate">
+<span class="w-6 h-6 rounded flex items-center justify-center text-sm shadow-xs border border-yellow-200/60" style="background-color: rgba(254, 240, 138, 0.45);">🍋</span>
+<span class="font-semibold text-ink truncate">Grocery ideas</span>
+</div>
+<div class="w-1.5 h-1.5 rounded-full bg-dot-terracotta"></div>
+</button>
+<!-- Other items in notebook -->
+<button class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-body-sm">
+<div class="flex items-center gap-2.5 truncate">
+<span class="w-6 h-6 rounded flex items-center justify-center text-sm border border-amber-200/60" style="background-color: rgba(254, 215, 170, 0.45);">💡</span>
+<span class="truncate">Product ideas</span>
+</div>
+</button>
+<button class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-body-sm">
+<div class="flex items-center gap-2.5 truncate">
+<span class="w-6 h-6 rounded flex items-center justify-center text-sm border border-purple-200/60" style="background-color: rgba(233, 213, 255, 0.45);">🚀</span>
+<span class="truncate">Startup pitch</span>
+</div>
+</button>
+<button class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-body-sm">
+<div class="flex items-center gap-2.5 truncate">
+<span class="w-6 h-6 rounded flex items-center justify-center text-sm border border-sky-200/60" style="background-color: rgba(186, 230, 253, 0.45);">🗓️</span>
+<span class="truncate">Weekly review</span>
+</div>
+</button>
+<button class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-body-sm">
+<div class="flex items-center gap-2.5 truncate">
+<span class="w-6 h-6 rounded flex items-center justify-center text-sm border border-emerald-200/60" style="background-color: rgba(187, 247, 208, 0.45);">📚</span>
+<span class="truncate">Reading list</span>
+</div>
+</button>
+<button class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-soft-ink hover:bg-surface-container-low hover:text-ink transition-colors font-label text-body-sm">
+<div class="flex items-center gap-2.5 truncate">
+<span class="w-6 h-6 rounded flex items-center justify-center text-sm border border-rose-200/60" style="background-color: rgba(251, 207, 232, 0.45);">✈️</span>
+<span class="truncate">Lisbon trip</span>
+</div>
+</button>
+</div>
+</div>
+</div>
+<!-- Island Footer -->
+<div class="p-space-md border-t border-hairline/60 bg-surface-container-low/40 flex items-center justify-between text-muted font-mono-shortcut text-mono-shortcut">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-draw-green"></span>
+<span>Local vault • 24 notes</span>
+</div>
+<div class="flex items-center gap-1.5">
+<button class="w-3.5 h-3.5 rounded-full bg-[#fbfaf5] border border-hairline shadow-2xs" title="Paper Warm Palette"></button>
+<button class="w-3.5 h-3.5 rounded-full bg-[#e9e4da] border border-outline-variant shadow-2xs" title="Parchment Desk Palette"></button>
+<button class="w-3.5 h-3.5 rounded-full bg-[#1f1b16] border border-outline-variant shadow-2xs" title="Slate Night Palette"></button>
+</div>
+</div>
+</aside>
+<!-- ========================================================================= -->
+<!-- 2. TOP FLOATING NAVIGATION ISLAND (TopAppBar)                              -->
+<!-- ========================================================================= -->
+<header class="fixed top-[14px] left-[328px] right-[14px] h-14 bg-panel rounded-[14px] border border-hairline island-shadow z-30 flex items-center justify-between px-space-md">
+<!-- Breadcrumb with icon -->
+<div class="flex items-center gap-2 text-body-sm font-label">
+<button class="text-muted hover:text-ink transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="folder_open">folder_open</span>
+<span>Projects</span>
+</button>
+<span class="text-hairline">/</span>
+<button class="text-muted hover:text-ink transition-colors">My Notes</button>
+<span class="text-hairline">/</span>
+<div class="flex items-center gap-1.5 text-ink font-semibold">
+<span class="text-xs">🍋</span>
+<span>Grocery ideas</span>
+</div>
+</div>
+<!-- Central spatial mode indicator -->
+<div class="hidden lg:flex items-center gap-1 bg-surface-container-low p-1 rounded-lg border border-hairline">
+<button class="px-2.5 py-1 text-ink bg-panel rounded-md shadow-xs font-label text-label flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px]" data-icon="note">note</span>
+<span>Document</span>
+</button>
+<button class="px-2.5 py-1 text-muted hover:text-ink rounded-md font-label text-label flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[15px]" data-icon="dashboard">dashboard</span>
+<span>Spatial Canvas</span>
+</button>
+<button class="px-2.5 py-1 text-muted hover:text-ink rounded-md font-label text-label flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[15px]" data-icon="calendar_today">calendar_today</span>
+<span>Daily Log</span>
+</button>
+</div>
+<!-- Trailing Action Controls -->
+<div class="flex items-center gap-2">
+<!-- Sync Status -->
+<div class="hidden sm:flex items-center gap-1 text-muted font-mono-shortcut text-mono-shortcut px-2 py-1 rounded bg-surface-container-low border border-hairline">
+<span class="material-symbols-outlined text-[14px] text-draw-green" data-icon="cloud_done">cloud_done</span>
+<span>Synced</span>
+</div>
+<!-- Share Action -->
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-hairline bg-surface-container-low hover:bg-surface-container text-ink font-label text-label transition-colors">
+<span class="material-symbols-outlined text-[16px]" data-icon="share">share</span>
+<span>Share</span>
+</button>
+<!-- Overflow Menu -->
+<button class="w-8 h-8 rounded-lg border border-hairline flex items-center justify-center text-soft-ink hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]" data-icon="more_horiz">more_horiz</span>
+</button>
+<!-- Monogram Profile Seal -->
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-hairline flex items-center justify-center font-mono-shortcut text-mono-shortcut font-semibold text-soft-ink" title="User profile seal">
+        JS
+      </div>
+</div>
+</header>
+<!-- ========================================================================= -->
+<!-- 3. MAIN DESK CANVAS & PAPER NOTE SHEET                                    -->
+<!-- ========================================================================= -->
+<main class="w-full h-full pt-[82px] pl-[328px] pr-[70px] pb-[70px] overflow-auto flex justify-center items-start">
+<!-- Centered Tactile Paper Note -->
+<article class="relative w-full max-w-[760px] bg-paper rounded-[4px] paper-shadow border border-hairline my-6 p-10 md:p-14 transition-all">
+<!-- Pinned Yellow Warm Sticky Note in Right Margin (overlapping slightly) -->
+<aside class="absolute -top-4 -right-8 w-56 p-4 rounded-sm bg-[#fff8c5] border border-[#f3e58c] shadow-md transform rotate-2 z-20 text-soft-ink font-body-sm text-[13px] leading-snug">
+<!-- Clear frosted tape piece -->
+<div class="washi-tape absolute -top-2.5 left-1/2 transform -translate-x-1/2 w-16 h-5 rounded-xs border border-white/40 rotate-[-2deg]"></div>
+<div class="flex items-center gap-1.5 font-label text-mono-shortcut text-amber-900 font-semibold mb-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="push_pin">push_pin</span>
+<span>MEMO FOR SATURDAY</span>
+</div>
+<p class="font-body-sm text-soft-ink">
+          Dinner party on Saturday with <strong class="text-ink">Lucas &amp; Maya</strong> — double the citrus &amp; grab extra burrata!
+        </p>
+</aside>
+<!-- Top Notion-Style Hero Emoji Header -->
+<div class="mb-4">
+<div class="inline-flex items-center justify-center w-14 h-14 rounded-xl hover:bg-surface-container/60 cursor-pointer text-3xl transition-transform active:scale-95" title="Change note emoji icon">
+          🍋
+        </div>
+</div>
+<!-- Note Title -->
+<h1 class="font-display-lg text-display-lg text-ink font-bold tracking-tight">
+        Grocery ideas
+      </h1>
+<!-- Note Metadata Bar -->
+<div class="mt-3 pb-6 border-b border-hairline flex flex-wrap items-center gap-3 text-muted font-label text-label">
+<span class="inline-flex items-center gap-1 bg-surface-container px-2 py-0.5 rounded text-soft-ink">
+<span class="material-symbols-outlined text-[14px]" data-icon="person">person</span>
+          Personal
+        </span>
+<span>•</span>
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span>
+          Edited 10m ago
+        </span>
+<span>•</span>
+<span>14 items</span>
+<span>•</span>
+<span class="inline-flex items-center gap-1 text-draw-green">
+<span class="w-1.5 h-1.5 rounded-full bg-draw-green"></span>
+          Dinner Prep
+        </span>
+</div>
+<!-- Note Content Body -->
+<div class="mt-8 space-y-8">
+<!-- Section 1: Produce & Fresh Herbs -->
+<section class="space-y-3">
+<div class="flex items-center justify-between pb-1 border-b border-hairline/60">
+<h2 class="font-headline-md text-headline-md text-ink font-bold flex items-center gap-2">
+<span class="text-draw-green text-lg">🌿</span>
+<span>Produce &amp; Fresh Herbs</span>
+</h2>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">4 items</span>
+</div>
+<div class="space-y-2 pt-1 font-body-sm">
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input checked="" class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1">
+<span class="text-muted line-through">Organic lemons from farmer's market (6x)</span>
+<span class="ml-2 font-mono-shortcut text-mono-shortcut text-muted/70 bg-surface-container px-1 py-0.2 rounded">Meyer lemon preference</span>
+</div>
+</label>
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Heirloom tomatoes (mix of red &amp; green zebra)</span>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">1.5 kg</span>
+</div>
+</label>
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Fresh sweet basil (2 potted bunches)</span>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">Potted</span>
+</div>
+</label>
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Hass avocados (ripe for Saturday evening)</span>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">3x</span>
+</div>
+</label>
+</div>
+</section>
+<!-- Section 2: Artisanal Pantry -->
+<section class="space-y-3">
+<div class="flex items-center justify-between pb-1 border-b border-hairline/60">
+<h2 class="font-headline-md text-headline-md text-ink font-bold flex items-center gap-2">
+<span class="text-draw-orange text-lg">🥖</span>
+<span>Artisanal Pantry</span>
+</h2>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">4 items</span>
+</div>
+<div class="space-y-2 pt-1 font-body-sm">
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input checked="" class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1">
+<span class="text-muted line-through">Country sourdough loaf from local baker</span>
+<span class="ml-2 font-mono-shortcut text-mono-shortcut text-draw-green bg-surface-container px-1 py-0.2 rounded">Picked up 9 AM</span>
+</div>
+</label>
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Maldon smoked sea salt flakes</span>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">Pantry refuel</span>
+</div>
+</label>
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Cold-pressed extra virgin olive oil (Sicilian early harvest)</span>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">750 ml</span>
+</div>
+</label>
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Matcha green tea (Uji ceremonial grade)</span>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">Tin 40g</span>
+</div>
+</label>
+</div>
+</section>
+<!-- Section 3: Deli & Cheeses -->
+<section class="space-y-3">
+<div class="flex items-center justify-between pb-1 border-b border-hairline/60">
+<h2 class="font-headline-md text-headline-md text-ink font-bold flex items-center gap-2">
+<span class="text-draw-red text-lg">🧀</span>
+<span>Deli &amp; Cheeses</span>
+</h2>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">3 items</span>
+</div>
+<div class="space-y-2 pt-1 font-body-sm">
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Aged Manchego (12-month curd)</span>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">250g wedge</span>
+</div>
+</label>
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Fresh Pugliese burrata balls</span>
+<span class="font-mono-shortcut text-mono-shortcut text-draw-orange font-semibold">2 containers</span>
+</div>
+</label>
+<label class="flex items-start gap-3 p-1.5 rounded-md hover:bg-surface-container-low/50 cursor-pointer group transition-colors">
+<input class="mt-1 w-4 h-4 rounded border-hairline text-ink focus:ring-0 focus:ring-offset-0 cursor-pointer" type="checkbox"/>
+<div class="flex-1 flex items-center justify-between">
+<span class="text-ink">Marinated Castelvetrano olives (orange peel &amp; chili)</span>
+<span class="font-mono-shortcut text-mono-shortcut text-muted">Deli tub</span>
+</div>
+</label>
+</div>
+</section>
+<!-- New Item Placeholder Input Line -->
+<div class="pt-2 flex items-center gap-3 text-muted hover:text-ink cursor-text">
+<span class="material-symbols-outlined text-[18px]" data-icon="add">add</span>
+<span class="font-body-sm italic">Type '/' for commands or add an item...</span>
+</div>
+</div>
+<!-- Footnote stamp of authenticity -->
+<footer class="mt-14 pt-6 border-t border-hairline/60 flex items-center justify-between text-muted font-mono-shortcut text-mono-shortcut">
+<span>LOCALLY SAVED • ENCRYPTED AT REST</span>
+<span>SPATIAL DESK V2</span>
+</footer>
+</article>
+</main>
+<!-- ========================================================================= -->
+<!-- 4. RIGHT FLOATING VERTICAL TOOL DOCK                                      -->
+<!-- ========================================================================= -->
+<aside class="fixed right-[14px] top-1/2 -translate-y-1/2 bg-panel rounded-[14px] border border-hairline island-shadow z-30 p-1.5 flex flex-col gap-1.5">
+<button class="w-10 h-10 rounded-lg bg-surface-container text-ink flex items-center justify-center hover:bg-surface-container-highest transition-colors" title="Select Pointer">
+<span class="material-symbols-outlined text-[20px]" data-icon="near_me">near_me</span>
+</button>
+<button class="w-10 h-10 rounded-lg text-soft-ink hover:bg-surface-container flex items-center justify-center transition-colors" title="Text Block">
+<span class="material-symbols-outlined text-[20px]" data-icon="title">title</span>
+</button>
+<button class="w-10 h-10 rounded-lg text-soft-ink hover:bg-surface-container flex items-center justify-center transition-colors" title="Pen Tool">
+<span class="material-symbols-outlined text-[20px]" data-icon="draw">draw</span>
+</button>
+<button class="w-10 h-10 rounded-lg text-soft-ink hover:bg-surface-container flex items-center justify-center transition-colors relative" title="Add Sticky Note">
+<span class="material-symbols-outlined text-[20px]" data-icon="sticky_note_2">sticky_note_2</span>
+<span class="w-2 h-2 rounded-full bg-draw-orange absolute top-1.5 right-1.5"></span>
+</button>
+<button class="w-10 h-10 rounded-lg text-soft-ink hover:bg-surface-container flex items-center justify-center transition-colors" title="Audio Dictation">
+<span class="material-symbols-outlined text-[20px]" data-icon="mic">mic</span>
+</button>
+<div class="w-full h-px bg-hairline my-0.5"></div>
+<button class="w-10 h-10 rounded-lg text-soft-ink hover:bg-surface-container flex items-center justify-center transition-colors" title="Stationery Color Swatches">
+<span class="material-symbols-outlined text-[20px]" data-icon="palette">palette</span>
+</button>
+</aside>
+<!-- ========================================================================= -->
+<!-- 5. BOTTOM-RIGHT FLOATING ZOOM ISLAND                                      -->
+<!-- ========================================================================= -->
+<div class="fixed bottom-[14px] right-[14px] bg-panel rounded-[14px] border border-hairline island-shadow z-30 px-2 py-1.5 flex items-center gap-1 font-mono-shortcut text-mono-shortcut text-ink">
+<button class="w-7 h-7 rounded-lg hover:bg-surface-container flex items-center justify-center text-muted hover:text-ink transition-colors" title="Zoom Out">
+      −
+    </button>
+<span class="px-1.5 font-semibold">100%</span>
+<button class="w-7 h-7 rounded-lg hover:bg-surface-container flex items-center justify-center text-muted hover:text-ink transition-colors" title="Zoom In">
+      +
+    </button>
+<div class="w-px h-4 bg-hairline mx-0.5"></div>
+<button class="w-7 h-7 rounded-lg hover:bg-surface-container flex items-center justify-center text-muted hover:text-ink transition-colors" title="Center Canvas">
+<span class="material-symbols-outlined text-[16px]" data-icon="filter_center_focus">filter_center_focus</span>
+</button>
+</div>
+</body></html>

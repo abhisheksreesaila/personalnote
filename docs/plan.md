@@ -622,3 +622,26 @@ Brief: none (F-098 follow-up) · Needs: F-098
 Reviewed: PASS (a metric-matched "Geist Fallback" face; .brand-name line-height pinned). New font-swap check: y and height exact, x and width within 2 px (a different face can't be the same width); the engine-arrival check stays exact, measured after the font settles and says so if it didn't. Display fonts (Bricolage, Instrument Serif) still fall back to system-ui unmatched.
 verify-first-screen's layout check failed 1 of 2 runs on main after F-077 merged: notebook names and the inbox badge move 1–2 px (height 15 → 17) when the web font replaces the fallback.
 - [x] the panel's text uses metrics that match the fallback (size-adjust / ascent-override on the @font-face, or a fixed line-height), so the layout check passes 5 runs in a row; the check is not loosened
+
+## F-100 Notes get a colourful emoji icon, like Notion pages [todo]
+Design: docs/design/polish.md (1) · Needs: none
+- [ ] a note can hold an icon (one emoji plus a tint, or none); it survives reload, backup/import (lossless) and the CLI (`notes update --icon`); Markdown export puts it before the title
+- [ ] every note row in the notes panel (desktop and phone) shows its emoji in a tinted tile; a note without one shows a guess from its title, else a type default
+- [ ] the open note shows its emoji above the title (page) or in the title island (canvas, map); clicking it or the list tile opens a picker (search, recent, common, five tints, Guess, Remove); phone uses a sheet
+- [ ] the tints follow the skin (Paper, Crayon, Night)
+- [ ] first-load budget unchanged (91 KiB); all budgets green
+
+## F-101 Prettier search results [todo]
+Design: docs/design/polish.md (2) · Needs: F-100 (emoji per note)
+- [ ] the omnibar opens centred and wider on desktop; a full sheet on phone
+- [ ] each note result shows its emoji tile, title and one snippet line with the match marked, notebook chip and relative time; meaning-only matches say "by meaning"
+- [ ] desktop shows a preview of the selected result on the right; arrow keys move it
+- [ ] filter pills show counts; empty and no-result states as in the design
+- [ ] typing, keys and early-typing behaviour (verify-first-screen) unchanged; budgets green
+
+## F-102 Settings as its own monochrome window [todo]
+Design: docs/design/polish.md (3) · Needs: none
+- [ ] Settings opens as a centred window with a section list (monochrome tiles) and a "Search settings" box that filters sections and rows; phone: a grouped list sheet that drills in
+- [ ] every setting that exists today is still reachable and works (AI, plugins, voice, search by meaning, X, locked notes, writing defaults, speed meter, advanced); switches replace checkboxes
+- [ ] the open note's properties move to a popover from the title island
+- [ ] Paper, Crayon and Night all look right; budgets green; verify-first-screen still passes

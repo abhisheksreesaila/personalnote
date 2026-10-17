@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Personal Note — Spatial Workspace</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;500;600;700&amp;family=Geist:wght@300;400;500;600&amp;family=Geist+Mono:wght@400;500&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface": "#1d1c16",
+            "tertiary-container": "#1b1b1f",
+            "surface-container": "#f2ede3",
+            "surface-dim": "#dedad0",
+            "error-container": "#ffdad6",
+            "secondary": "#625e55",
+            "surface-container-high": "#ede8de",
+            "secure-bg": "#efe9fb",
+            "dot-terracotta": "#b86b4b",
+            "on-error-container": "#93000a",
+            "on-primary-container": "#8a837c",
+            "draw-red": "#d64a3b",
+            "on-secondary-fixed-variant": "#49473e",
+            "outline": "#7d766e",
+            "on-tertiary-fixed": "#1b1b1f",
+            "draw-orange": "#e08a2e",
+            "desk": "#e9e4da",
+            "ink": "#1f1b16",
+            "primary-container": "#1f1b16",
+            "secondary-fixed-dim": "#cbc6bb",
+            "secondary-container": "#e8e2d6",
+            "draw-black": "#1f1b16",
+            "on-tertiary-fixed-variant": "#47464b",
+            "tertiary-fixed": "#e4e1e7",
+            "surface-container-highest": "#e7e2d8",
+            "primary-fixed": "#eae1d8",
+            "surface-tint": "#635d57",
+            "tertiary": "#000000",
+            "error": "#ba1a1a",
+            "outline-variant": "#cec5bc",
+            "on-secondary-fixed": "#1d1c14",
+            "draw-blue": "#2f73b5",
+            "inverse-on-surface": "#f5f0e6",
+            "surface-variant": "#e7e2d8",
+            "on-secondary": "#ffffff",
+            "on-primary": "#ffffff",
+            "tertiary-fixed-dim": "#c8c5cb",
+            "surface-bright": "#fef9ee",
+            "on-surface-variant": "#4c463f",
+            "on-tertiary-container": "#848388",
+            "soft-ink": "#4a443b",
+            "hairline": "#e2dbcd",
+            "surface-container-lowest": "#ffffff",
+            "primary": "#000000",
+            "inverse-primary": "#cec5bd",
+            "draw-green": "#3c7d55",
+            "on-secondary-container": "#68645b",
+            "on-tertiary": "#ffffff",
+            "muted": "#6b6357",
+            "primary-fixed-dim": "#cec5bd",
+            "paper": "#fbfaf5",
+            "accent-soft": "#ece6da",
+            "secondary-fixed": "#e8e2d6",
+            "on-primary-fixed": "#1f1b16",
+            "panel": "#fffdf8",
+            "surface-container-low": "#f8f3e9",
+            "on-error": "#ffffff",
+            "on-primary-fixed-variant": "#4b4640",
+            "background": "#fef9ee",
+            "surface": "#fef9ee",
+            "danger": "#b93a27",
+            "secure": "#6a46c9",
+            "on-background": "#1d1c16",
+            "inverse-surface": "#32302a"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-md": "1rem",
+            "space-xs": "0.25rem",
+            "space-xl": "2rem",
+            "gutter": "1rem",
+            "space-sm": "0.5rem",
+            "margin": "1rem",
+            "space-lg": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-md": ["Bricolage Grotesque"],
+            "mono-shortcut": ["Geist Mono"],
+            "label": ["Geist"],
+            "display-lg-mobile": ["Bricolage Grotesque"],
+            "display-lg": ["Bricolage Grotesque"],
+            "body-sm": ["Geist"],
+            "body-lg": ["Newsreader"]
+          },
+          "fontSize": {
+            "headline-md": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "mono-shortcut": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+            "label": ["13px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "display-lg-mobile": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "display-lg": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "body-lg": ["22px", { "lineHeight": "34px", "fontWeight": "400" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    /* Desk dot-grid texture */
+    .bg-desk-dots {
+      background-color: #e9e4da;
+      background-image: radial-gradient(rgba(60, 45, 20, 0.11) 1.2px, transparent 1.2px);
+      background-size: 20px 20px;
+    }
+    
+    /* Smooth custom scrollbars for stationary panel */
+    .stationery-scroll::-webkit-scrollbar {
+      width: 5px;
+    }
+    .stationery-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .stationery-scroll::-webkit-scrollbar-thumb {
+      background: #e2dbcd;
+      border-radius: 9999px;
+    }
+    .stationery-scroll::-webkit-scrollbar-thumb:hover {
+      background: #cec5bc;
+    }
+
+    /* Subtle paper ruled lines */
+    .paper-rules {
+      background-image: repeating-linear-gradient(transparent, transparent 33px, #ede8de 33px, #ede8de 34px);
+    }
+  </style>
+</head>
+<body class="bg-desk-dots text-on-surface h-full w-full overflow-hidden select-none font-body-sm text-body-sm antialiased flex">
+<!-- ========================================================
+       SHARED COMPONENT 1: SideNavBar (Notes Panel Sheet)
+       Exact shape: fixed top-4 left-4 h-[calc(100vh-32px)] w-[350px]
+       ======================================================== -->
+<aside class="fixed top-[14px] left-[14px] bottom-[14px] w-[356px] rounded-xl border border-hairline bg-panel shadow-sm flex flex-col justify-between p-space-md z-40">
+<!-- TOP SECTION: Identity, Quick Actions, Search, Categories -->
+<div class="flex flex-col gap-3">
+<!-- Brand & Workspace Meta -->
+<div class="flex items-center justify-between pb-1 border-b border-hairline/60">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center border border-hairline text-ink">
+<span class="material-symbols-outlined text-[18px]">edit_note</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-md text-headline-md tracking-tight text-ink">Personal Note</span>
+<span class="w-2 h-2 rounded-full bg-draw-green" title="Local-first offline storage ready"></span>
+</div>
+<span class="font-mono-shortcut text-mono-shortcut text-muted tracking-tight">Spatial Workspace · Local 100%</span>
+</div>
+</div>
+<button class="w-7 h-7 rounded-lg border border-hairline flex items-center justify-center text-secondary hover:bg-accent-soft transition-colors duration-150" title="Collapse sidebar">
+<span class="material-symbols-outlined text-[18px]">left_panel_close</span>
+</button>
+</div>
+<!-- Quick note CTA Pill & Search -->
+<div class="flex flex-col gap-2 pt-1">
+<button class="w-full h-10 px-4 rounded-full bg-primary-container text-panel flex items-center justify-between hover:bg-ink/90 active:scale-[0.99] transition-all duration-150 shadow-sm group">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+<span class="font-label text-label font-semibold text-paper">New note</span>
+</div>
+<span class="font-mono-shortcut text-[10px] px-1.5 py-0.5 rounded bg-white/20 text-paper tracking-wider">Alt N</span>
+</button>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-2.5 text-muted text-[17px] pointer-events-none">search</span>
+<input class="w-full h-8 pl-8 pr-12 rounded-lg bg-surface-container-low border border-hairline text-[13px] text-ink placeholder:text-muted/70 focus:outline-none focus:border-ink/40 focus:ring-1 focus:ring-ink/20 transition-all" placeholder="Search notes, tags, ideas..." type="text"/>
+<kbd class="absolute right-2 px-1.5 py-0.5 rounded bg-surface-container border border-hairline font-mono-shortcut text-[10px] text-muted">⌘K</kbd>
+</div>
+</div>
+<!-- Section folders from JSON tabs: All Notes, Projects, Areas, Reading list, Archive -->
+<nav class="flex flex-col gap-0.5 pt-1">
+<!-- Tab: Inbox / All Notes -->
+<a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-accent-soft transition-colors duration-150 text-[13px] group" href="#">
+<span class="material-symbols-outlined text-[17px] text-muted group-hover:text-ink">inbox</span>
+<span class="font-label text-label flex-1">Inbox</span>
+<span class="font-mono-shortcut text-[11px] px-1.5 py-0.2 rounded-full bg-surface-container text-muted">18</span>
+</a>
+<!-- Tab: Projects (ACTIVE) -->
+<a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-lg bg-surface-container text-ink font-semibold border border-hairline/80 shadow-xs text-[13px]" href="#">
+<span class="material-symbols-outlined text-[17px] text-ink">folder</span>
+<span class="font-label text-label flex-1">Projects</span>
+<span class="font-mono-shortcut text-[11px] px-1.5 py-0.2 rounded-full bg-ink text-paper font-medium">6</span>
+</a>
+<!-- Tab: Areas -->
+<a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-accent-soft transition-colors duration-150 text-[13px]" href="#">
+<span class="material-symbols-outlined text-[17px] text-muted">category</span>
+<span class="font-label text-label flex-1">Areas</span>
+<span class="font-mono-shortcut text-[11px] px-1.5 py-0.2 rounded-full bg-surface-container text-muted">4</span>
+</a>
+<!-- Tab: Reading list -->
+<a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-accent-soft transition-colors duration-150 text-[13px]" href="#">
+<span class="material-symbols-outlined text-[17px] text-muted">book</span>
+<span class="font-label text-label flex-1">Reading list</span>
+<span class="font-mono-shortcut text-[11px] px-1.5 py-0.2 rounded-full bg-surface-container text-muted">12</span>
+</a>
+<!-- Tab: Archive -->
+<a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-lg text-soft-ink hover:bg-accent-soft transition-colors duration-150 text-[13px]" href="#">
+<span class="material-symbols-outlined text-[17px] text-muted">archive</span>
+<span class="font-label text-label flex-1">Archive</span>
+</a>
+</nav>
+</div>
+<!-- MIDDLE SECTION: Expanded Notes List with Notion-Style Pastel Tiles & Mode Glyphs -->
+<div class="flex-1 flex flex-col min-h-0 pt-3 border-t border-hairline mt-2">
+<div class="flex items-center justify-between pb-1.5 px-1">
+<span class="font-mono-shortcut text-[11px] uppercase tracking-wider text-muted font-medium">Recent Sheets</span>
+<button class="text-muted hover:text-ink transition-colors" title="Sort notes">
+<span class="material-symbols-outlined text-[16px]">swap_vert</span>
+</button>
+</div>
+<div class="stationery-scroll overflow-y-auto space-y-1 pr-1 flex-1">
+<!-- Note Item 1: Q4 launch board (CURRENTLY ACTIVE HERO NOTE) -->
+<div class="h-[52px] px-2 rounded-lg bg-surface-container border border-hairline/90 flex items-center justify-between cursor-pointer group transition-all duration-150 shadow-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<!-- 32px rounded pastel tile -->
+<div class="w-8 h-8 rounded-lg bg-[#fdece8] border border-hairline/70 flex items-center justify-center text-sm shrink-0">
+              🚀
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-md text-[14px] leading-tight text-ink font-semibold truncate">Q4 launch board</span>
+<span class="font-mono-shortcut text-[11px] text-muted leading-none mt-1">Edited 2h ago · Launch</span>
+</div>
+</div>
+<!-- Mode glyph: Canvas / Board -->
+<div class="flex items-center gap-1.5 text-muted shrink-0" title="Canvas Board mode">
+<span class="w-1.5 h-1.5 rounded-full bg-draw-orange"></span>
+<span class="material-symbols-outlined text-[16px] text-soft-ink">dashboard</span>
+</div>
+</div>
+<!-- Note Item 2: Grocery ideas -->
+<div class="h-[52px] px-2 rounded-lg hover:bg-accent-soft/70 border border-transparent hover:border-hairline/60 flex items-center justify-between cursor-pointer group transition-all duration-150">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-[#fef8d8] border border-hairline/70 flex items-center justify-center text-sm shrink-0">
+              🍋
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-[13.5px] font-medium text-ink leading-tight truncate">Grocery ideas</span>
+<span class="font-mono-shortcut text-[11px] text-muted leading-none mt-1">Today 10:14 AM</span>
+</div>
+</div>
+<!-- Mode glyph: Classic document lines -->
+<span class="material-symbols-outlined text-[16px] text-muted group-hover:text-soft-ink" title="Document page">article</span>
+</div>
+<!-- Note Item 3: Lisbon trip -->
+<div class="h-[52px] px-2 rounded-lg hover:bg-accent-soft/70 border border-transparent hover:border-hairline/60 flex items-center justify-between cursor-pointer group transition-all duration-150">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-[#e3f2fd] border border-hairline/70 flex items-center justify-center text-sm shrink-0">
+              ✈️
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-[13.5px] font-medium text-ink leading-tight truncate">Lisbon trip</span>
+<span class="font-mono-shortcut text-[11px] text-muted leading-none mt-1">Yesterday · Travel</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-[16px] text-muted group-hover:text-soft-ink" title="Mind map node">account_tree</span>
+</div>
+<!-- Note Item 4: Reading list -->
+<div class="h-[52px] px-2 rounded-lg hover:bg-accent-soft/70 border border-transparent hover:border-hairline/60 flex items-center justify-between cursor-pointer group transition-all duration-150">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-[#f0ebfa] border border-hairline/70 flex items-center justify-center text-sm shrink-0">
+              📚
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-[13.5px] font-medium text-ink leading-tight truncate">Reading list</span>
+<span class="font-mono-shortcut text-[11px] text-muted leading-none mt-1">Oct 12 · 9 books</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-[16px] text-muted group-hover:text-soft-ink" title="Document page">article</span>
+</div>
+<!-- Note Item 5: Product ideas -->
+<div class="h-[52px] px-2 rounded-lg hover:bg-accent-soft/70 border border-transparent hover:border-hairline/60 flex items-center justify-between cursor-pointer group transition-all duration-150">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-[#e8f5e9] border border-hairline/70 flex items-center justify-center text-sm shrink-0">
+              💡
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-[13.5px] font-medium text-ink leading-tight truncate">Product ideas</span>
+<span class="font-mono-shortcut text-[11px] text-muted leading-none mt-1">Oct 08 · V2 concepts</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-[16px] text-muted group-hover:text-soft-ink" title="Canvas Board">dashboard</span>
+</div>
+<!-- Note Item 6: Weekly review -->
+<div class="h-[52px] px-2 rounded-lg hover:bg-accent-soft/70 border border-transparent hover:border-hairline/60 flex items-center justify-between cursor-pointer group transition-all duration-150">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-[#fbe9e7] border border-hairline/70 flex items-center justify-center text-sm shrink-0">
+              🗓️
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-[13.5px] font-medium text-ink leading-tight truncate">Weekly review</span>
+<span class="font-mono-shortcut text-[11px] text-muted leading-none mt-1">Sunday · Reflection</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-[16px] text-muted group-hover:text-soft-ink" title="Document page">article</span>
+</div>
+<!-- Note Item 7: Dog food delivery -->
+<div class="h-[52px] px-2 rounded-lg hover:bg-accent-soft/70 border border-transparent hover:border-hairline/60 flex items-center justify-between cursor-pointer group transition-all duration-150">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-[#fff3e0] border border-hairline/70 flex items-center justify-center text-sm shrink-0">
+              🐕
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-[13.5px] font-medium text-ink leading-tight truncate">Dog food delivery</span>
+<span class="font-mono-shortcut text-[11px] text-muted leading-none mt-1">Sep 28 · Recurring</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-[16px] text-muted group-hover:text-soft-ink" title="Document page">article</span>
+</div>
+</div>
+</div>
+<!-- BOTTOM FOOTER: Skin Swatches & Local Storage Status -->
+<div class="pt-3 border-t border-hairline flex flex-col gap-2.5">
+<!-- Theme Switcher & Skin Swatches -->
+<div class="flex items-center justify-between px-1">
+<span class="font-mono-shortcut text-[11px] text-muted">Desk Skin</span>
+<div class="flex items-center gap-1.5 p-1 rounded-full bg-surface-container border border-hairline">
+<!-- Swatch: Paper -->
+<button class="w-4 h-4 rounded-full bg-paper border-2 border-ink shadow-xs transition-transform hover:scale-110" title="Paper theme"></button>
+<!-- Swatch: Sand / Desk -->
+<button class="w-4 h-4 rounded-full bg-desk border border-hairline hover:scale-110 transition-transform" title="Sand Desk theme"></button>
+<!-- Swatch: Terracotta -->
+<button class="w-4 h-4 rounded-full bg-dot-terracotta border border-hairline hover:scale-110 transition-transform" title="Terracotta Gouache theme"></button>
+<!-- Swatch: Obsidian Dark -->
+<button class="w-4 h-4 rounded-full bg-ink border border-hairline hover:scale-110 transition-transform" title="Obsidian theme"></button>
+</div>
+</div>
+<!-- Sync Info & Status -->
+<div class="flex items-center justify-between text-muted px-1">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-draw-green">verified_user</span>
+<span class="font-mono-shortcut text-[11px]">Local storage · 0 cloud sync</span>
+</div>
+<span class="font-mono-shortcut text-[10px] text-secondary">v2.4.1</span>
+</div>
+</div>
+</aside>
+<!-- ========================================================
+       SHARED COMPONENT 2: TopNavBar (Floating Top Island)
+       Shape: fixed top-[14px] left-[384px] right-[14px] h-12 rounded-xl
+       ======================================================== -->
+<header class="fixed top-[14px] left-[384px] right-[14px] h-12 rounded-xl border border-hairline bg-panel shadow-sm flex items-center justify-between px-space-md z-30">
+<!-- Left: Breadcrumbs -->
+<div class="flex items-center gap-2 text-soft-ink">
+<span class="font-label text-label text-muted hover:text-ink cursor-pointer transition-colors">Projects</span>
+<span class="material-symbols-outlined text-[14px] text-muted">chevron_right</span>
+<span class="font-label text-label text-muted hover:text-ink cursor-pointer transition-colors">Launch plan</span>
+<span class="material-symbols-outlined text-[14px] text-muted">chevron_right</span>
+<div class="flex items-center gap-1.5">
+<span class="font-label text-label text-ink font-semibold">Q4 launch board</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container font-mono-shortcut text-[10px] text-soft-ink border border-hairline">Live Canvas</span>
+</div>
+</div>
+<!-- Right: Actions, History, Share -->
+<div class="flex items-center gap-2">
+<!-- Undo / Redo controls -->
+<div class="flex items-center border-r border-hairline pr-2 mr-1 gap-1">
+<button class="w-7 h-7 rounded-lg border border-hairline flex items-center justify-center text-muted hover:text-ink hover:bg-accent-soft active:scale-[0.98] transition-all" title="Undo (⌘Z)">
+<span class="material-symbols-outlined text-[17px]">undo</span>
+</button>
+<button class="w-7 h-7 rounded-lg border border-hairline flex items-center justify-center text-muted hover:text-ink hover:bg-accent-soft active:scale-[0.98] transition-all" title="Redo (⌘⇧Z)">
+<span class="material-symbols-outlined text-[17px]">redo</span>
+</button>
+</div>
+<!-- Freehand Stationery Swatches -->
+<div class="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-full bg-surface-container-low border border-hairline mr-2">
+<span class="w-3 h-3 rounded-full bg-draw-black cursor-pointer hover:scale-125 transition-transform" title="Ink Black"></span>
+<span class="w-3 h-3 rounded-full bg-draw-red cursor-pointer hover:scale-125 transition-transform" title="Gouache Red"></span>
+<span class="w-3 h-3 rounded-full bg-draw-blue cursor-pointer hover:scale-125 transition-transform" title="Cobalt Blue"></span>
+<span class="w-3 h-3 rounded-full bg-draw-green cursor-pointer hover:scale-125 transition-transform" title="Sage Green"></span>
+</div>
+<!-- Share CTA -->
+<button class="h-8 px-3 rounded-full bg-surface-container border border-hairline text-ink hover:bg-accent-soft text-label font-label flex items-center gap-1.5 active:scale-[0.98] transition-all">
+<span class="material-symbols-outlined text-[16px]">ios_share</span>
+<span>Share</span>
+</button>
+<!-- More options -->
+<button class="w-8 h-8 rounded-lg border border-hairline flex items-center justify-center text-secondary hover:bg-accent-soft transition-colors" title="More options">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+<!-- Avatar -->
+<div class="w-8 h-8 rounded-full border border-hairline overflow-hidden ml-1 ring-2 ring-panel">
+<img class="w-full h-full object-cover" data-alt="Editorial profile portrait of a creative design lead with soft warm rim lighting, neutral studio beige background, focused aesthetic matching a modern tactile paper stationery application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCzY1KnYKyKM7tT8InmtEbzomD6t2J5W4_oGjZiSUxsPRfc01ETfPArKRNSSYJIL_kaCcfEzIZYc0cm2MP0--YYeTmjf9FbRJuhKoiqwcqXC7yMp5aCmlnuyXTc2G_7cI6oTiMEu2rWrxrV0scMCZ9eI-CrDMt6aP9nCGR3Wkv7DAioNkQAFv-O0UgX8AbzVvkHCCvhn1aTx3jA9sEFawUiwgQ-KxV8Ac71-I4OzDIXDmPfzdVdlqxUatF7O1-fEc1VV2nq4Ta3aDo"/>
+</div>
+</div>
+</header>
+<!-- ========================================================
+       MAIN SPATIAL CANVAS: The Open Desk with Centered Paper Sheet
+       Positioned with left margin so panel does not overlap
+       ======================================================== -->
+<main class="ml-[384px] pt-20 pb-8 pr-[14px] w-[calc(100%-384px)] h-full overflow-y-auto stationery-scroll flex justify-center">
+<!-- Physical Paper Document Sheet -->
+<div class="relative w-full max-w-[860px] min-h-[920px] bg-paper rounded-xl border border-hairline shadow-md p-10 flex flex-col justify-between my-auto">
+<!-- Top Paper Header & Pins -->
+<div>
+<!-- Sticky Note pinned at top-right corner of document -->
+<div class="absolute -top-3 -right-3 w-48 p-4 bg-[#fef8ba] rounded-lg shadow-sm border border-[#e8df8b] rotate-2 transform hover:rotate-0 transition-transform duration-200 z-10">
+<div class="flex items-center justify-between pb-1 text-[#8c8230] border-b border-[#ebd76d]">
+<span class="font-mono-shortcut text-[10px] uppercase font-bold tracking-wider">Memo</span>
+<span class="material-symbols-outlined text-[14px]">push_pin</span>
+</div>
+<p class="font-label text-[12px] leading-relaxed text-[#544a0e] pt-2">
+            Verify iOS spatial transitions before Thursday demo. Keep desk margins clean!
+          </p>
+</div>
+<!-- Document Tags & Metadata -->
+<div class="flex items-center gap-2 pb-4">
+<span class="px-2 py-0.5 rounded bg-surface-container border border-hairline font-mono-shortcut text-[11px] text-secondary">PROJECTS / Q4</span>
+<span class="text-muted text-[12px]">•</span>
+<span class="font-mono-shortcut text-[11px] text-muted">Created Oct 14, 2024</span>
+<span class="text-muted text-[12px]">•</span>
+<span class="font-mono-shortcut text-[11px] text-muted">Word count: 482</span>
+</div>
+<!-- Note Document Title -->
+<h1 class="font-display-lg text-display-lg text-ink tracking-tight mb-4">
+          Q4 launch board
+        </h1>
+<!-- Editorial Subhead -->
+<p class="font-body-lg text-body-lg text-secondary italic mb-8 leading-relaxed max-w-2xl">
+          "Spatial clarity leads to intellectual calm. We are building a notebook that mimics the density and warmth of genuine bookmaking."
+        </p>
+<!-- Bento / Multi-column Note Cards -->
+<div class="grid grid-cols-2 gap-5 mb-8">
+<!-- Column 1: Objectives & Progress -->
+<div class="p-5 rounded-lg bg-surface-container-low border border-hairline flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between mb-3">
+<span class="font-headline-md text-[16px] text-ink">Key Milestones</span>
+<span class="font-mono-shortcut text-[11px] px-2 py-0.5 rounded-full bg-accent-soft text-soft-ink">4 of 5 done</span>
+</div>
+<ul class="space-y-2.5">
+<li class="flex items-start gap-2.5">
+<input checked="" class="mt-1 rounded text-ink focus:ring-0 border-hairline bg-paper" type="checkbox"/>
+<span class="font-body-sm text-ink line-through text-muted text-[13.5px]">Finalize tactile desk dot-grid proportions</span>
+</li>
+<li class="flex items-start gap-2.5">
+<input checked="" class="mt-1 rounded text-ink focus:ring-0 border-hairline bg-paper" type="checkbox"/>
+<span class="font-body-sm text-ink line-through text-muted text-[13.5px]">Extract 7 pastel stationery tiles</span>
+</li>
+<li class="flex items-start gap-2.5">
+<input checked="" class="mt-1 rounded text-ink focus:ring-0 border-hairline bg-paper" type="checkbox"/>
+<span class="font-body-sm text-ink line-through text-muted text-[13.5px]">Integrate local SQLite offline replication</span>
+</li>
+<li class="flex items-start gap-2.5">
+<input checked="" class="mt-1 rounded text-ink focus:ring-0 border-hairline bg-paper" type="checkbox"/>
+<span class="font-body-sm text-ink line-through text-muted text-[13.5px]">Spatial inset margins 14px calibrated</span>
+</li>
+<li class="flex items-start gap-2.5">
+<input class="mt-1 rounded text-ink focus:ring-0 border-hairline bg-paper" type="checkbox"/>
+<span class="font-body-sm text-ink font-medium text-[13.5px]">Release v2.5 spatial canvas preview</span>
+</li>
+</ul>
+</div>
+<div class="mt-4 pt-3 border-t border-hairline/60 flex items-center justify-between text-muted font-mono-shortcut text-[11px]">
+<span>Sprint: Horizon Alpha</span>
+<span class="text-draw-green font-medium">On track</span>
+</div>
+</div>
+<!-- Column 2: Visual Artifact / Spatial Board Spec -->
+<div class="p-5 rounded-lg bg-surface-container-low border border-hairline flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between mb-3">
+<span class="font-headline-md text-[16px] text-ink">Design Tokens &amp; Palette</span>
+<span class="material-symbols-outlined text-[18px] text-muted">palette</span>
+</div>
+<p class="font-body-sm text-[13px] text-secondary leading-relaxed mb-4">
+                Natural fibers, warm gouache pigments, and tactile letterpress boundaries. Chrome panels hover 8px above the work surface.
+              </p>
+<!-- Color Chip Grid -->
+<div class="grid grid-cols-4 gap-2">
+<div class="p-2 rounded bg-paper border border-hairline flex flex-col items-center">
+<span class="w-5 h-5 rounded-full bg-paper border border-hairline mb-1"></span>
+<span class="font-mono-shortcut text-[9px] text-muted">Paper</span>
+</div>
+<div class="p-2 rounded bg-surface-container border border-hairline flex flex-col items-center">
+<span class="w-5 h-5 rounded-full bg-desk border border-hairline mb-1"></span>
+<span class="font-mono-shortcut text-[9px] text-muted">Desk</span>
+</div>
+<div class="p-2 rounded bg-surface-container border border-hairline flex flex-col items-center">
+<span class="w-5 h-5 rounded-full bg-dot-terracotta mb-1"></span>
+<span class="font-mono-shortcut text-[9px] text-muted">Rust</span>
+</div>
+<div class="p-2 rounded bg-surface-container border border-hairline flex flex-col items-center">
+<span class="w-5 h-5 rounded-full bg-ink mb-1"></span>
+<span class="font-mono-shortcut text-[9px] text-muted">Ink</span>
+</div>
+</div>
+</div>
+<div class="mt-4 pt-3 border-t border-hairline/60 flex items-center justify-between text-muted font-mono-shortcut text-[11px]">
+<span>Typography: Bricolage + Geist</span>
+<span class="text-soft-ink">4 weights</span>
+</div>
+</div>
+</div>
+<!-- Ruled Notes section for thoughtful freehand writing -->
+<div class="space-y-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-ink">format_quote</span>
+<h2 class="font-headline-md text-[18px] text-ink">Core Principles for 2025</h2>
+</div>
+<div class="p-4 rounded-lg bg-surface-container-lowest border border-hairline space-y-3 font-body-sm text-[14px] leading-relaxed text-soft-ink">
+<p>
+              1. <strong>Local by Default:</strong> Users should never experience sync spinners or waiting screens when recording an ephemeral idea. The file is saved directly into local durable storage in under 4ms.
+            </p>
+<p>
+              2. <strong>Paper Metaphor over Digital Abstraction:</strong> Instead of multi-nested infinite hierarchies, we lean heavily into spatial sheet metaphors—tangible dimensions, natural shadows, and hand-tuned letterpress borders.
+            </p>
+</div>
+</div>
+</div>
+<!-- Paper Footer / Page Numbering -->
+<div class="pt-8 mt-12 border-t border-hairline/80 flex items-center justify-between text-muted">
+<div class="flex items-center gap-3">
+<span class="font-mono-shortcut text-[11px]">Personal Note / Spatial Release Canvas</span>
+<span class="text-hairline">•</span>
+<span class="font-mono-shortcut text-[11px]">Sheet ID: #984-Q4</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-mono-shortcut text-[11px]">Page 01 of 03</span>
+<div class="flex items-center gap-1 ml-2">
+<button class="w-6 h-6 rounded border border-hairline flex items-center justify-center hover:bg-surface-container text-muted">
+<span class="material-symbols-outlined text-[14px]">arrow_back</span>
+</button>
+<button class="w-6 h-6 rounded border border-hairline flex items-center justify-center hover:bg-surface-container text-ink">
+<span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Keyboard shortcut tooltip hint overlay (stationery flair) -->
+<div class="fixed bottom-4 right-4 z-20 pointer-events-none">
+<div class="px-3 py-1.5 rounded-lg bg-ink/90 text-paper font-mono-shortcut text-[11px] backdrop-blur-sm border border-white/10 shadow-lg flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-draw-green animate-pulse"></span>
+<span>Spatial Mode · Drag freely with ⌥ Space</span>
+</div>
+</div>
+</body></html>

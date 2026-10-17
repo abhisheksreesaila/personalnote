@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Personal Note — Search Omnibar</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=Geist+Mono:wght@400..700&amp;family=Geist:wght@300..700&amp;family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS with configuration -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "outline-variant": "#cec5bc",
+            "surface": "#fef9ee",
+            "inverse-surface": "#32302a",
+            "surface-container-high": "#ede8de",
+            "on-background": "#1d1c16",
+            "surface-variant": "#e7e2d8",
+            "primary-container": "#1f1b16",
+            "on-error-container": "#93000a",
+            "surface-container-low": "#f8f3e9",
+            "draw-black": "#1f1b16",
+            "draw-orange": "#e08a2e",
+            "primary-fixed": "#eae1d8",
+            "on-secondary-container": "#68645b",
+            "on-tertiary-container": "#848388",
+            "on-secondary-fixed-variant": "#49473e",
+            "background": "#fef9ee",
+            "on-error": "#ffffff",
+            "inverse-on-surface": "#f5f0e6",
+            "primary-fixed-dim": "#cec5bd",
+            "secure": "#6a46c9",
+            "error": "#ba1a1a",
+            "secondary-container": "#e8e2d6",
+            "error-container": "#ffdad6",
+            "draw-red": "#d64a3b",
+            "tertiary-fixed-dim": "#c8c5cb",
+            "panel": "#fffdf8",
+            "muted": "#6b6357",
+            "hairline": "#e2dbcd",
+            "ink": "#1f1b16",
+            "draw-blue": "#2f73b5",
+            "tertiary-container": "#1b1b1f",
+            "secondary-fixed": "#e8e2d6",
+            "desk": "#e9e4da",
+            "on-secondary-fixed": "#1d1c14",
+            "draw-green": "#3c7d55",
+            "soft-ink": "#4a443b",
+            "tertiary-fixed": "#e4e1e7",
+            "on-primary-fixed-variant": "#4b4640",
+            "on-primary-fixed": "#1f1b16",
+            "on-tertiary-fixed": "#1b1b1f",
+            "on-tertiary-fixed-variant": "#47464b",
+            "surface-bright": "#fef9ee",
+            "tertiary": "#000000",
+            "secondary": "#625e55",
+            "secure-bg": "#efe9fb",
+            "on-surface-variant": "#4c463f",
+            "secondary-fixed-dim": "#cbc6bb",
+            "surface-container": "#f2ede3",
+            "inverse-primary": "#cec5bd",
+            "surface-container-highest": "#e7e2d8",
+            "surface-container-lowest": "#ffffff",
+            "on-primary-container": "#8a837c",
+            "primary": "#000000",
+            "accent-soft": "#ece6da",
+            "outline": "#7d766e",
+            "danger": "#b93a27",
+            "on-secondary": "#ffffff",
+            "on-surface": "#1d1c16",
+            "surface-dim": "#dedad0",
+            "paper": "#fbfaf5",
+            "dot-terracotta": "#b86b4b",
+            "on-primary": "#ffffff",
+            "on-tertiary": "#ffffff",
+            "surface-tint": "#635d57"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "gutter": "1rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "space-lg": "1.5rem",
+            "margin": "1rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "mono-shortcut": ["Geist Mono", "monospace"],
+            "display-lg-mobile": ["Bricolage Grotesque", "sans-serif"],
+            "headline-md": ["Bricolage Grotesque", "sans-serif"],
+            "label": ["Geist", "sans-serif"],
+            "body-lg": ["Newsreader", "serif"],
+            "display-lg": ["Bricolage Grotesque", "sans-serif"],
+            "body-sm": ["Geist", "sans-serif"]
+          },
+          "fontSize": {
+            "mono-shortcut": [
+              "11px",
+              {
+                "lineHeight": "14px",
+                "fontWeight": "500"
+              }
+            ],
+            "display-lg-mobile": [
+              "28px",
+              {
+                "lineHeight": "34px",
+                "letterSpacing": "-0.02em",
+                "fontWeight": "700"
+              }
+            ],
+            "headline-md": [
+              "24px",
+              {
+                "lineHeight": "30px",
+                "letterSpacing": "-0.02em",
+                "fontWeight": "700"
+              }
+            ],
+            "label": [
+              "13px",
+              {
+                "lineHeight": "18px",
+                "fontWeight": "600"
+              }
+            ],
+            "body-lg": [
+              "22px",
+              {
+                "lineHeight": "34px",
+                "fontWeight": "400"
+              }
+            ],
+            "display-lg": [
+              "36px",
+              {
+                "lineHeight": "42px",
+                "letterSpacing": "-0.02em",
+                "fontWeight": "700"
+              }
+            ],
+            "body-sm": [
+              "14px",
+              {
+                "lineHeight": "20px",
+                "fontWeight": "500"
+              }
+            ]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .dot-pattern {
+      background-image: radial-gradient(rgba(60, 45, 20, 0.12) 1.25px, transparent 1.25px);
+      background-size: 20px 20px;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    .caret-blink {
+      animation: blink 1s infinite;
+    }
+    /* Custom subtle scrollbar */
+    .custom-scroll::-webkit-scrollbar {
+      width: 5px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #e2dbcd;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="bg-desk text-ink font-body-sm text-body-sm antialiased h-full overflow-hidden select-none">
+<!-- ========================================================================= -->
+<!-- LAYER 1: BASE SPATIAL DESK & BACKGROUND NOTE WORKSPACE                    -->
+<!-- ========================================================================= -->
+<div class="fixed inset-0 dot-pattern overflow-hidden pointer-events-none">
+<!-- Top Floating Header Bar (TopNavBar - Shared Component Anchor) -->
+<header class="fixed top-3.5 left-3.5 right-3.5 z-40 rounded-xl bg-panel/90 backdrop-blur-md text-ink border border-hairline shadow-[0_4px_20px_-4px_rgba(31,27,22,0.06)] flex items-center justify-between px-4 py-2.5 max-w-full mx-auto">
+<div class="flex items-center gap-6">
+<span class="font-headline-md text-headline-md font-bold text-ink tracking-tight">Notebook</span>
+<div class="flex items-center bg-surface-container/60 border border-hairline rounded-lg px-2.5 py-1 text-muted gap-2 w-52">
+<span class="material-symbols-outlined text-[18px]">search</span>
+<span class="font-body-sm text-body-sm">Search notes...</span>
+<span class="ml-auto font-mono-shortcut text-mono-shortcut bg-panel border border-hairline px-1.5 py-0.5 rounded text-muted">⌘K</span>
+</div>
+<nav class="hidden md:flex items-center gap-5 text-body-sm">
+<a class="text-ink font-semibold border-b-2 border-ink pb-0.5" href="#">Notes</a>
+<a class="text-muted hover:text-ink transition-colors" href="#">Notebooks</a>
+<a class="text-muted hover:text-ink transition-colors" href="#">Spatial Canvas</a>
+<a class="text-muted hover:text-ink transition-colors" href="#">Tags</a>
+<a class="text-muted hover:text-ink transition-colors" href="#">Trash</a>
+</nav>
+</div>
+<div class="flex items-center gap-2">
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-hairline text-soft-ink hover:bg-surface-container font-body-sm text-body-sm transition-all duration-150">
+<span class="material-symbols-outlined text-[18px]">travel_explore</span>
+<span>Quick Find</span>
+</button>
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary-container text-panel font-body-sm text-body-sm hover:opacity-95 transition-all">
+<span class="material-symbols-outlined text-[16px]">add</span>
+<span>New Note</span>
+</button>
+<div class="w-px h-5 bg-hairline mx-1"></div>
+<button class="p-1.5 rounded-lg text-muted hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[20px]">draw</span>
+</button>
+<button class="p-1.5 rounded-lg text-muted hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[20px]">palette</span>
+</button>
+<button class="p-1.5 rounded-lg text-muted hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+<div class="w-7 h-7 rounded-full bg-surface-container-high border border-hairline flex items-center justify-center font-bold text-xs ml-1">
+          L
+        </div>
+</div>
+</header>
+<!-- SideNavBar (Shared Component Anchor) -->
+<aside class="fixed top-[4.5rem] bottom-3.5 left-3.5 w-60 z-30 rounded-xl bg-panel/95 backdrop-blur-sm text-ink border border-hairline shadow-[0_8px_24px_-4px_rgba(31,27,22,0.05)] flex flex-col justify-between h-[calc(100vh-5.5rem)] p-3">
+<div>
+<div class="flex items-center gap-2.5 px-2 py-2 mb-2">
+<div class="w-8 h-8 rounded-lg bg-surface-container border border-hairline flex items-center justify-center font-headline-md font-bold text-ink">
+            W
+          </div>
+<div>
+<div class="font-headline-md text-[15px] font-bold text-ink leading-tight">Workspace</div>
+<div class="font-body-sm text-xs text-muted">Local Storage · 142 notes</div>
+</div>
+</div>
+<nav class="space-y-0.5 mt-3">
+<a class="bg-accent-soft/80 text-ink font-semibold rounded-lg px-3 py-2 flex items-center gap-2.5" href="#">
+<span class="material-symbols-outlined text-[18px]">description</span>
+<span class="font-label text-label">All Notes</span>
+</a>
+<a class="text-muted hover:text-ink rounded-lg px-3 py-2 flex items-center gap-2.5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">book</span>
+<span class="font-label text-label">Journal</span>
+</a>
+<a class="text-muted hover:text-ink rounded-lg px-3 py-2 flex items-center gap-2.5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">folder</span>
+<span class="font-label text-label">Projects</span>
+</a>
+<a class="text-muted hover:text-ink rounded-lg px-3 py-2 flex items-center gap-2.5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">flight</span>
+<span class="font-label text-label">Places &amp; Travel</span>
+</a>
+<a class="text-muted hover:text-ink rounded-lg px-3 py-2 flex items-center gap-2.5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">archive</span>
+<span class="font-label text-label">Archive</span>
+</a>
+</nav>
+</div>
+<div>
+<button class="w-full mb-3 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-hairline bg-surface-container-low text-soft-ink font-label text-label hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[16px]">add</span>
+<span>Create Space</span>
+</button>
+<div class="pt-2 border-t border-hairline space-y-0.5">
+<a class="text-muted hover:text-ink rounded-lg px-3 py-1.5 flex items-center gap-2.5 text-xs transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px]">settings</span>
+<span>Desk Settings</span>
+</a>
+<a class="text-muted hover:text-ink rounded-lg px-3 py-1.5 flex items-center gap-2.5 text-xs transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+<span>Trash Bin</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Underlying Central Paper Note (Background Subject) -->
+<main class="fixed inset-0 left-64 right-12 top-20 bottom-10 flex items-start justify-center pt-8 overflow-hidden pointer-events-none">
+<div class="w-[820px] min-h-[920px] bg-paper rounded-2xl border border-hairline shadow-[0_12px_36px_-8px_rgba(40,30,15,0.08)] p-14 relative text-ink">
+<div class="flex items-center gap-3 text-muted text-xs mb-6">
+<span class="flex items-center gap-1 text-soft-ink font-medium"><span class="w-2 h-2 rounded-full bg-draw-green"></span> Places &amp; Travel</span>
+<span>/</span>
+<span>Europe 2025</span>
+<span class="ml-auto font-mono-shortcut text-mono-shortcut">Autosaved 14:22</span>
+</div>
+<h1 class="font-headline-md text-headline-md font-bold text-ink mb-6 tracking-tight">Lisbon Departure &amp; Coast Exploration</h1>
+<div class="font-body-lg text-body-lg text-soft-ink leading-relaxed space-y-6">
+<p>
+            Morning light sweeping over the Tagus river. We planned to catch the early train towards Cascais right after grabbing bica and pastel de nata along the steep stone alleys of Alfama.
+          </p>
+<div class="p-5 rounded-xl bg-surface-container-low border border-hairline font-body-sm text-body-sm flex gap-4 text-ink">
+<span class="material-symbols-outlined text-draw-blue text-[24px]">info</span>
+<div>
+<div class="font-semibold text-ink">Terminal 2 Connection Note</div>
+<div class="text-muted mt-0.5">Checked online: flight connection to Lisbon booked with carry-on luggage only. Boarding gate opens 45 mins prior to scheduled departure.</div>
+</div>
+</div>
+<p>
+            Key stops to document: Miradouro de Santa Luzia for early photography, Praça do Comércio for spatial recording, and Sintra forest tracks for the weekend hike.
+          </p>
+</div>
+</div>
+</main>
+<!-- Bottom Right Floating Spatial Dock (Zoom / Canvas tools) -->
+<div class="fixed bottom-3.5 right-3.5 z-30 flex items-center gap-1.5 bg-panel/95 backdrop-blur-sm border border-hairline rounded-xl p-1.5 shadow-[0_4px_16px_-2px_rgba(31,27,22,0.08)]">
+<button class="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]">remove</span>
+</button>
+<span class="font-mono-shortcut text-mono-shortcut px-2 text-soft-ink">100%</span>
+<button class="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]">add</span>
+</button>
+<div class="w-px h-4 bg-hairline mx-1"></div>
+<button class="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]">fit_screen</span>
+</button>
+</div>
+</div>
+<!-- ========================================================================= -->
+<!-- LAYER 2: SCRIM & THE HERO SEARCH OMNIBAR PALETTE                         -->
+<!-- ========================================================================= -->
+<!-- Atmospheric Warm Tinted Scrim Backdrop -->
+<div class="fixed inset-0 z-50 bg-[#1f1b16]/20 backdrop-blur-[4px] flex justify-center items-start pt-[84px] px-4 animate-[fadeIn_0.15s_ease-out]">
+<!-- Hero Omnibar Modal Palette (Fixed 640px wide, rich stationery tactile depth) -->
+<div class="w-full max-w-[640px] bg-panel rounded-[18px] border border-hairline shadow-[0_24px_56px_-12px_rgba(60,40,10,0.28),0_2px_8px_rgba(31,27,22,0.06)] overflow-hidden flex flex-col max-h-[870px]">
+<!-- Top Search Input Header -->
+<div class="px-5 pt-4 pb-3 flex items-center gap-3.5 border-b border-hairline">
+<span class="material-symbols-outlined text-muted text-[22px] flex-shrink-0">search</span>
+<div class="flex-1 flex items-center text-[18px] leading-6 font-medium text-ink tracking-tight font-label">
+<span>trip</span>
+<span class="w-[2px] h-5 bg-ink ml-0.5 caret-blink"></span>
+</div>
+<div class="flex items-center gap-2">
+<button class="w-6 h-6 rounded-full flex items-center justify-center text-muted hover:text-ink hover:bg-surface-container transition-colors" title="Clear query">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+<span class="font-mono-shortcut text-[10px] tracking-wide font-medium bg-surface-container border border-hairline text-muted px-1.5 py-0.5 rounded shadow-sm">
+            ESC
+          </span>
+</div>
+</div>
+<!-- Filter Pills Row -->
+<div class="px-5 py-2.5 bg-surface-container-low/60 border-b border-hairline flex items-center gap-2 overflow-x-auto">
+<!-- Selected Pill -->
+<button class="bg-primary-container text-panel text-xs font-semibold px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5">
+<span>All</span>
+<span class="text-[10px] opacity-75 font-mono-shortcut">8</span>
+</button>
+<!-- Unselected Pills -->
+<button class="bg-surface-container text-soft-ink hover:bg-secondary-container transition-colors text-xs font-medium px-3 py-1 rounded-full border border-hairline/80 flex items-center gap-1.5">
+<span>Notes</span>
+<span class="text-[10px] text-muted font-mono-shortcut">4</span>
+</button>
+<button class="bg-surface-container text-soft-ink hover:bg-secondary-container transition-colors text-xs font-medium px-3 py-1 rounded-full border border-hairline/80 flex items-center gap-1.5">
+<span>Notebooks</span>
+<span class="text-[10px] text-muted font-mono-shortcut">1</span>
+</button>
+<button class="bg-surface-container text-soft-ink hover:bg-secondary-container transition-colors text-xs font-medium px-3 py-1 rounded-full border border-hairline/80 flex items-center gap-1.5">
+<span>Actions</span>
+<span class="text-[10px] text-muted font-mono-shortcut">3</span>
+</button>
+</div>
+<!-- Grouped Results List Container -->
+<div class="p-3.5 space-y-3.5 overflow-y-auto custom-scroll flex-1">
+<!-- 1. GROUP: NOTES -->
+<div>
+<div class="text-[11px] uppercase tracking-wider font-semibold text-muted px-3 py-1 flex items-center justify-between">
+<span>Notes</span>
+<span class="font-mono-shortcut text-[10px] font-normal lowercase">3 matches</span>
+</div>
+<div class="space-y-1.5 mt-1">
+<!-- Row 1: SELECTED STATE -->
+<div class="bg-[#f4eee3] border border-hairline rounded-xl p-3 flex items-center gap-3.5 shadow-sm transition-all cursor-pointer group">
+<!-- Left Pastel Tile -->
+<div class="w-9 h-9 rounded-lg bg-[#dbeafe] border border-[#bfdbfe] flex items-center justify-center flex-shrink-0 text-draw-blue">
+<span class="material-symbols-outlined text-[20px]">flight</span>
+</div>
+<!-- Title & Snippet -->
+<div class="flex-1 min-w-0">
+<div class="flex items-center gap-2">
+<div class="text-[14px] font-semibold text-ink truncate leading-tight font-label">
+                    Lisbon <mark class="bg-[#fef08a] text-ink px-1 rounded-sm">trip</mark> itinerary &amp; flight booking
+                  </div>
+</div>
+<div class="text-[12px] text-muted truncate mt-0.5">
+                  Check terminal 2 departure for the early morning <mark class="bg-[#fef08a] text-ink px-1 rounded-sm">trip</mark> connection...
+                </div>
+</div>
+<!-- Right Flank: Chip & Enter Key Cap -->
+<div class="flex items-center gap-2.5 flex-shrink-0">
+<div class="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container border border-hairline text-[11px] text-soft-ink">
+<span class="w-1.5 h-1.5 rounded-full bg-dot-terracotta"></span>
+<span>Travel</span>
+</div>
+<span class="text-[11px] text-muted font-mono-shortcut hidden sm:inline">2h ago</span>
+<div class="font-mono-shortcut text-mono-shortcut bg-panel border border-hairline text-ink px-2 py-1 rounded-md shadow-xs flex items-center gap-1 font-semibold">
+<span>↵</span>
+<span class="text-[10px]">Open</span>
+</div>
+</div>
+</div>
+<!-- Row 2: Unselected -->
+<div class="hover:bg-surface-container-low border border-transparent hover:border-hairline/70 rounded-xl p-3 flex items-center gap-3.5 transition-all cursor-pointer group">
+<!-- Left Pastel Tile -->
+<div class="w-9 h-9 rounded-lg bg-[#eaf5ea] border border-[#d2edd2] flex items-center justify-center flex-shrink-0 text-draw-green">
+<span class="material-symbols-outlined text-[20px]">luggage</span>
+</div>
+<!-- Title & Snippet -->
+<div class="flex-1 min-w-0">
+<div class="text-[14px] font-medium text-ink truncate leading-tight font-label">
+                  Road <mark class="bg-[#fef08a] text-ink px-1 rounded-sm">trip</mark> checklist (Summer 2025)
+                </div>
+<div class="text-[12px] text-muted truncate mt-0.5">
+                  Tire pressure check, offline maps, camping gear, cold brew supplies...
+                </div>
+</div>
+<!-- Right Flank -->
+<div class="flex items-center gap-2.5 flex-shrink-0">
+<div class="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container border border-hairline text-[11px] text-soft-ink">
+<span class="w-1.5 h-1.5 rounded-full bg-draw-green"></span>
+<span>Personal</span>
+</div>
+<span class="text-[11px] text-muted font-mono-shortcut">yesterday</span>
+</div>
+</div>
+<!-- Row 3: Unselected -->
+<div class="hover:bg-surface-container-low border border-transparent hover:border-hairline/70 rounded-xl p-3 flex items-center gap-3.5 transition-all cursor-pointer group">
+<!-- Left Pastel Tile -->
+<div class="w-9 h-9 rounded-lg bg-[#fef3e2] border border-[#fde4c4] flex items-center justify-center flex-shrink-0 text-draw-orange">
+<span class="material-symbols-outlined text-[20px]">payments</span>
+</div>
+<!-- Title & Snippet -->
+<div class="flex-1 min-w-0">
+<div class="text-[14px] font-medium text-ink truncate leading-tight font-label">
+                  Round-<mark class="bg-[#fef08a] text-ink px-1 rounded-sm">trip</mark> ticket price tracker
+                </div>
+<div class="text-[12px] text-muted truncate mt-0.5">
+                  Price alert for return flights between SFO and LIS departing mid-May...
+                </div>
+</div>
+<!-- Right Flank -->
+<div class="flex items-center gap-2.5 flex-shrink-0">
+<div class="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container border border-hairline text-[11px] text-soft-ink">
+<span class="w-1.5 h-1.5 rounded-full bg-draw-orange"></span>
+<span>Finance</span>
+</div>
+<span class="text-[11px] text-muted font-mono-shortcut">Oct 18</span>
+</div>
+</div>
+</div>
+</div>
+<!-- 2. GROUP: NOTEBOOKS -->
+<div class="pt-1">
+<div class="text-[11px] uppercase tracking-wider font-semibold text-muted px-3 py-1 flex items-center justify-between">
+<span>Notebooks</span>
+<span class="font-mono-shortcut text-[10px] font-normal lowercase">1 space</span>
+</div>
+<div class="space-y-1.5 mt-1">
+<div class="hover:bg-surface-container-low border border-transparent hover:border-hairline/70 rounded-xl p-3 flex items-center gap-3.5 transition-all cursor-pointer group">
+<div class="w-9 h-9 rounded-lg bg-[#e0f2fe] border border-[#bae6fd] flex items-center justify-center flex-shrink-0 text-draw-blue">
+<span class="material-symbols-outlined text-[20px]">folder_special</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="text-[14px] font-medium text-ink truncate leading-tight font-label">
+                  Travel &amp; Expeditions
+                </div>
+<div class="text-[12px] text-muted truncate mt-0.5">
+                  14 notes · 3 shared boards · tagged with #<mark class="bg-[#fef08a] text-ink px-1 rounded-sm">trip</mark>
+</div>
+</div>
+<div class="flex items-center gap-2 flex-shrink-0">
+<span class="px-2 py-0.5 rounded bg-surface-container border border-hairline text-[11px] text-soft-ink">Notebook</span>
+<span class="material-symbols-outlined text-muted text-[18px] group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</div>
+</div>
+</div>
+</div>
+<!-- 3. GROUP: ACTIONS -->
+<div class="pt-1">
+<div class="text-[11px] uppercase tracking-wider font-semibold text-muted px-3 py-1 flex items-center justify-between">
+<span>Actions</span>
+<span class="font-mono-shortcut text-[10px] font-normal lowercase">Quick commands</span>
+</div>
+<div class="space-y-1 mt-1">
+<!-- Row A -->
+<div class="hover:bg-surface-container-low border border-transparent hover:border-hairline/70 rounded-xl px-3 py-2.5 flex items-center gap-3 transition-all cursor-pointer group">
+<div class="w-7 h-7 rounded-md bg-[#f2eee6] border border-hairline flex items-center justify-center flex-shrink-0 text-soft-ink">
+<span class="material-symbols-outlined text-[16px]">edit_note</span>
+</div>
+<div class="text-[13px] font-medium text-ink flex-1 truncate font-label">
+                New note with "<span class="font-semibold text-ink">trip</span>"
+              </div>
+<div class="font-mono-shortcut text-[11px] bg-panel border border-hairline text-muted px-2 py-0.5 rounded shadow-2xs">
+                Ctrl N
+              </div>
+</div>
+<!-- Row B -->
+<div class="hover:bg-surface-container-low border border-transparent hover:border-hairline/70 rounded-xl px-3 py-2.5 flex items-center gap-3 transition-all cursor-pointer group">
+<div class="w-7 h-7 rounded-md bg-[#f3e8ff] border border-[#e9d5ff] flex items-center justify-center flex-shrink-0 text-secure">
+<span class="material-symbols-outlined text-[16px]">auto_awesome</span>
+</div>
+<div class="text-[13px] font-medium text-ink flex-1 truncate font-label">
+                New jam brainstorm on "trip"
+              </div>
+<div class="font-mono-shortcut text-[11px] bg-panel border border-hairline text-muted px-2 py-0.5 rounded shadow-2xs">
+                Ctrl J
+              </div>
+</div>
+<!-- Row C -->
+<div class="hover:bg-surface-container-low border border-transparent hover:border-hairline/70 rounded-xl px-3 py-2.5 flex items-center gap-3 transition-all cursor-pointer group">
+<div class="w-7 h-7 rounded-md bg-[#f2eee6] border border-hairline flex items-center justify-center flex-shrink-0 text-soft-ink">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+</div>
+<div class="text-[13px] font-medium text-ink flex-1 truncate font-label">
+                Open search preferences &amp; filters
+              </div>
+<div class="font-mono-shortcut text-[11px] bg-panel border border-hairline text-muted px-2 py-0.5 rounded shadow-2xs">
+                Ctrl ,
+              </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Omnibar Footer Bar (Stationery bottom bar) -->
+<footer class="border-t border-hairline bg-[#faf6ee] px-4 py-2.5 rounded-b-[18px] flex items-center justify-between text-xs text-muted">
+<!-- Navigation shortcuts -->
+<div class="flex items-center gap-3">
+<div class="flex items-center gap-1">
+<span class="font-mono-shortcut text-[10px] bg-panel border border-hairline px-1.5 py-0.5 rounded text-soft-ink shadow-2xs">↑</span>
+<span class="font-mono-shortcut text-[10px] bg-panel border border-hairline px-1.5 py-0.5 rounded text-soft-ink shadow-2xs">↓</span>
+<span class="ml-1 text-soft-ink">Navigate</span>
+</div>
+<div class="w-px h-3.5 bg-hairline"></div>
+<div class="flex items-center gap-1">
+<span class="font-mono-shortcut text-[10px] bg-panel border border-hairline px-1.5 py-0.5 rounded text-soft-ink shadow-2xs">↵</span>
+<span class="ml-1 text-soft-ink">Open</span>
+</div>
+<div class="w-px h-3.5 bg-hairline"></div>
+<div class="flex items-center gap-1">
+<span class="font-mono-shortcut text-[10px] bg-panel border border-hairline px-1.5 py-0.5 rounded text-soft-ink shadow-2xs">Esc</span>
+<span class="ml-1 text-soft-ink">Close</span>
+</div>
+</div>
+<!-- Result Stats -->
+<div class="font-mono-shortcut text-mono-shortcut text-muted">
+          4 notes · 1 notebook · 3 actions
+        </div>
+</footer>
+</div>
+</div>
+</body></html>
