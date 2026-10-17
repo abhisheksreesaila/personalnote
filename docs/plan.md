@@ -579,7 +579,8 @@ Reviewed: PASS after one round (read-only maps never save, shared port guard, ba
 Brief: docs/briefs/plugins.md · Needs: F-090
 Reviewed: PASS after one round (switch-off off the event loop, indexer restart after a timed-out stop, voice engine can't start after a switch-off, hand-edited plugins.json honoured). Budget check unchanged (a proposed plugin-chunk category was rejected); JS 239.26/240.
 - [x] each off: no mic / no meaning group, nothing started or downloaded, data kept; on: as today; both listed in Settings → Plugins with what they need
-## F-092 Jam sessions in a mind map [todo]
+## F-092 Jam sessions in a mind map [blocked]
+Blocked: pick jam design A or B (docs/design/jam-sessions.md), and decide on JS budget room (239.26/240 KiB: the jam UI won't fit without trimming or a budget decision only the captain can make).
 Brief: docs/briefs/jam-sessions.md · Design: to do (Stitch: ghost branches, 👍/👎, live line) · Needs: F-086, F-090
 - [ ] New jam; hold mic, live line, Jam button → brain edits applied as one undo step; ghosts accepted by click or "yes"; Settings → Jam picks the brain
 - [ ] branch text and emoji rendered as plain text (never HTML); AGENTS.md invariant 8 updated and an ADR for the opt-in generative worker (Claude Code or OpenAI-compatible)
