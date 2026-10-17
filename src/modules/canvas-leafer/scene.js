@@ -150,8 +150,8 @@ function markdownNodes(layout, marks) {
 // colour, the title and the first lines. Plain text only (a title is never read as HTML); a removed note's card is dashed.
 const CARD_INK = '#26262b'
 const CARD_MUTED = '#6b6b72'
-function paintNoteLink(holder, object, info) {
-  const face = noteLinkFace(object, info)
+function paintNoteLink(holder, object, info, iconOf) {
+  const face = noteLinkFace(object, info, iconOf)
   const w = holder.width
   const h = holder.height
   const d = Math.max(24, Math.min(44, h - 28))
@@ -190,7 +190,7 @@ const FOLD_PATH = (folds) => folds.map((f) => `M ${f.x1} ${f.y1} L ${f.x2} ${f.y
 // into it); `onTextEvent(type)` hears 'start', 'end' and 'escape' of a text edit.
 // F-032: `onPages({ columns, rows, shiftX, shiftY })` hears that the page grid grew while an object was being dragged, resized or turned (the
 // host sets its page state and moves the view by the shift so nothing seems to move); an edit's own page change travels in the op instead.
-export function createScene({ host, width, height, onOperation = () => null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, onOpenNote = () => {}, onCanvasPress = () => true, defaults = {} }) {
+export function createScene({ host, width, height, onOperation = () => null, onBegin = () => {}, onEnd = () => {}, onTextEvent = () => {}, onPages = () => {}, onOpenNote = () => {}, inputSurface = null, iconOf = () => ({ kind: 'letter' }), defaults = {} }) {
   // Two layers in one App: the note (tree) and, above it, the selection and its handles (sky), so a drag repaints only what moved.
   const perf = readPerf()
   let pixelRatio = pixelRatioFor(globalThis.devicePixelRatio, perf)
@@ -245,7 +245,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
   let cardPress = null
   const cardDown = (event) => {
     cardPress = null
-    if (event.button !== 0 || event.shiftKey || !event.isPrimary || !onCanvasPress(event)) return
+    if (event.button !== 0 || event.shiftKey || !event.isPrimary || !(event.target === inputSurface || host.contains(event.target))) return
     const ref = api.noteLinkAt(api.pageAt(event.clientX, event.clientY))
     if (ref) cardPress = { ref, id: event.pointerId, x: event.clientX, y: event.clientY, time: performance.now() }
   }
@@ -453,7 +453,7 @@ export function createScene({ host, width, height, onOperation = () => null, onB
         const w = g.width ?? CARD_SIZE.width
         const h = g.height ?? CARD_SIZE.height
         const holder = new Box({ ...base, width: w, height: h, hitFill: 'all', hitChildren: false })
-        const relayout = () => paintNoteLink(holder, object, peekNoteLink(object.noteRef))
+        const relayout = () => paintNoteLink(holder, object, peekNoteLink(object.noteRef), iconOf)
         relayout()
         return { node: holder, size: { width: w, height: h }, sized: true, relayout }
       }

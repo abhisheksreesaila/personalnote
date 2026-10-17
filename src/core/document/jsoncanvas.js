@@ -236,7 +236,7 @@ function objectFromNode(node, foreign) {
     return [object]
   }
   const valid = new Set(['text', 'sticky', 'shape', 'ink', 'image', 'group', 'notelink'])
-  if (!pn || !valid.has(kind) || (kind === 'notelink' && !(typeof node.url === 'string' && node.url.startsWith(NOTE_URL) && node.url.length > NOTE_URL.length))) return foreign ? foreign.objects(node) : [] // (a link another app pointed elsewhere is an ordinary web link)
+  if (!pn || !valid.has(kind) || (kind === 'notelink' && !(node.url?.length > NOTE_URL.length && node.url.startsWith(NOTE_URL)))) return foreign ? foreign.objects(node) : [] // (a link another app pointed elsewhere is an ordinary web link)
   const object = { ...clone(pn), id: node.id }
   delete object.noId
   delete object.origId

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CARD_SIZE, newNoteLink, noteLinkFace } from './note-link.js'
+import { iconOf } from '../library/notebook-icon.js'
+import { CARD_SIZE, newNoteLink, noteLinkFace as face } from './note-link.js'
+
+const noteLinkFace = (object, info) => face(object, info, iconOf)
 
 const card = { noteRef: 'res_x', title: 'Lisbon trip' }
 const notebook = { name: 'Travel', color: '#4D839C', icon: '' }

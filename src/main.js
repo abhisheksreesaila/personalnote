@@ -35,7 +35,7 @@ import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, NOTEBOOK_FOLD_KEY, readFolded, writeFolded } from './modules/library/outline.js'
 import { mountShelves } from './modules/library/shelves.js'
 import { iconButtonHtml, openIconPicker } from './modules/library/notebook-icon-picker.js'
-import { NOTEBOOK_COLORS, displayName } from './modules/library/notebook-icon.js'
+import { NOTEBOOK_COLORS, displayName, iconOf } from './modules/library/notebook-icon.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
 import { createTemporaryHand, toolShortcut } from './modules/editor/tool-switch.js'
@@ -139,7 +139,7 @@ document.querySelector('#app').innerHTML = `
             <div class="isl-meta"><div class="save-state" id="save-state"><span></span>Saved on this device</div><span id="island-notebook"></span></div>
             <div class="isl-grid">
               <button id="share-focus" class="isl-wide" data-keeps-text-editing title="Focus mode"><i data-lucide="focus"></i><span>Focus</span><kbd id="focus-top-kbd">Ctrl .</kbd></button>
-              <button id="share-link" title="Link to a note…" aria-label="Link to a note…"><i data-lucide="link"></i><span>Link note</span></button>
+              <button id="share-link" title="Link to a note…"><i data-lucide="link"></i><span>Link note</span></button>
               <button id="share-print" title="Print preview"><i data-lucide="printer"></i><span>Print</span></button>
               <button id="share-png" title="Note as picture (PNG)"><i data-lucide="image-down"></i><span>Picture</span></button>
               <button id="share-backup" title="Download backup"><i data-lucide="archive"></i><span>Backup</span></button>
@@ -978,19 +978,8 @@ function renderNoteList() {
 
 // F-095: a bookmark from X that is still to do (in the X notebook, not archived) gets a Done button; its code loads when one is opened.
 let xDone = null
-let xDoneShown = null
 function syncXDone(note, notebook) {
-  const id = note && notebook?.icon === 'brand:x' && notebook.category !== 'archive' ? note.id : null
-  if (id === xDoneShown) return
-  xDoneShown = id
-  void import('./modules/x/x-done.js').then((module) => {
-    xDone ??= module.mountXDone({
-      api, state, parent: document.querySelector('.topbar-actions'), refreshIcons: () => createIcons({ icons }), toast: showToast, moveNote,
-      settle: async () => { flushPendingEdits('done'); await saveSettled },
-      refresh: refreshWorkspaceLists,
-    })
-    xDone.show(xDoneShown)
-  })
+  if ((note && notebook?.icon === 'brand:x') || xDone) void import('./modules/x/x-done.js').then((module) => (xDone ??= module.mountXDone(linkHost, document.querySelector('.topbar-actions'))).show(note, notebook))
 }
 
 function renderNotebookPicker() {
@@ -1824,7 +1813,8 @@ function mountLeaferCanvas() {
     onPages: ({ columns, rows, shiftX, shiftY }) => { state.pages = { ...state.pages, columns, rows }; resizePaper(shiftX, shiftY) },
     // F-095: a click on a note link card opens its note (the pen, eraser, sticky and shape tools keep their own presses).
     onOpenNote: (ref) => { if (['select', 'text', 'hand'].includes(state.tool)) openLinkedNote(ref) },
-    onCanvasPress: (event) => event.target === inputSurface || leaferHost.contains(event.target),
+    inputSurface,
+    iconOf,
     onTextEvent: (type) => {
       if (type === 'escape') setTool('select')
       if (type === 'link') updateSelectionBar()
@@ -2614,7 +2604,6 @@ const pluginShell = {
   mindmapEditor: () => mindmapEditor,
   addEntry: (entry) => { pluginEntries.set(entry.id, entry); syncNoteCreateMenu(); return () => { pluginEntries.delete(entry.id); syncNoteCreateMenu() } }, // a "new ..." entry in the new-note menu and the omnibar
   renderOmni: () => renderOmni(),
-  refreshIcons: () => createIcons({ icons }),
   setPropertiesOpen: (open) => setPropertiesOpen(open),
   inAppWindow: () => hostFlag === 'desktop' || Boolean(window.pywebview),
 }
@@ -2625,7 +2614,7 @@ function omniActions() {
     { id: 'quick-note', title: 'Quick note', icon: 'zap', top: true, keycap: quickNoteKeycap(navigator.platform), keywords: 'inbox capture', run: () => createNote() },
   ]
   for (const entry of pluginEntries.values()) actions.push({ id: entry.id, title: entry.label, icon: entry.icon, top: true, keywords: entry.keywords, run: entry.run })
-  actions.push({ id: 'link-note', title: 'Link to a note…', icon: 'link', top: true, keywords: 'drop put note into this note card reference', run: () => startNoteLinking() })
+  actions.push({ id: 'link-note', title: 'Link to a note…', icon: 'link', top: true, keywords: 'drop card reference', run: () => withNoteLinks((module) => module.startLinking(linkHost)) })
   actions.push({ id: 'focus', title: 'Focus mode', icon: 'focus', top: true, keycap: `${modifierLabel(navigator.platform)}.`, keywords: 'write quiet distraction full screen words only', run: () => { closeSearch(); toggleFocus() } })
   if (note) actions.push({ id: 'make-secure', title: note.secure ? 'Make this note ordinary' : 'Make this note secure', icon: note.secure ? 'lock-open' : 'lock', top: true, keywords: 'lock private password', run: () => toggleSecureActiveNote() })
   const current = startSkins().current
@@ -2633,16 +2622,6 @@ function omniActions() {
     actions.push({ id: `skin-${skin.id}`, title: `Skin: ${skin.name}`, icon: 'palette', hint: skin.id === current ? 'Current' : '', keywords: 'switch skin theme appearance look', run: () => { startSkins().select(skin.id); skinSwitcher.sync() } })
   }
   return actions
-}
-
-// F-095: "Link to a note…" is the omnibar again, asking which note; the pick becomes a card at the middle of the view, or a link at the caret.
-function startNoteLinking() {
-  if (state.noteLocked || !['canvas', 'page'].includes(state.activeNoteType)) { showToast('Notes can be linked into canvas and page notes'); return }
-  openSearch()
-  omni.pick = (noteId) => void withNoteLinks((module) => module.linkNote(linkHost(), noteId))
-  omni.filter = 'Notes'
-  elements.searchInput.placeholder = 'Link to which note?'
-  renderOmni()
 }
 
 function omniRowHtml(item, index, tokens) {
@@ -2713,7 +2692,6 @@ function setOmniSelection(index, { scroll = true } = {}) {
 }
 
 let openFrame = 0
-const SEARCH_PLACEHOLDER = elements.searchInput.placeholder
 function openSearch() {
   const bar = elements.searchButton.getBoundingClientRect()
   const panel = elements.searchBackdrop.firstElementChild
@@ -2733,7 +2711,8 @@ function openSearch() {
 
 function closeSearch() {
   cancelAnimationFrame(openFrame) // (closed before it had finished opening: it stays closed)
-  if (omni.pick) { omni.pick = null; elements.searchInput.placeholder = SEARCH_PLACEHOLDER }
+  omni.pick?.reset()
+  omni.pick = null
   omni.open = false
   omni.pending = false
   searchSequence += 1
@@ -3198,25 +3177,6 @@ elements.workspace.addEventListener('drop', (event) => {
   event.preventDefault()
   placeImageFiles(event.dataTransfer.files, leaferCanvas.pageAt(event.clientX, event.clientY))
 })
-// F-095: a note's row dragged from the notes panel onto the open note lands there as a link card (canvas) or a link (page).
-const NOTE_DRAG = 'application/x-personal-note'
-const dragsNote = (event) => !state.noteLocked && ['canvas', 'page'].includes(state.activeNoteType) && [...(event.dataTransfer?.types || [])].includes(NOTE_DRAG)
-const withNoteLinks = (use) => import('./modules/links/note-links-ui.js').then(use)
-const linkHost = () => ({ state, canvas: leaferCanvas, page: pageEditor, center: viewCenterPoint(), toast: showToast, pickTool: () => setTool('select') })
-elements.workspace.addEventListener('dragover', (event) => {
-  if (!dragsNote(event)) return
-  event.preventDefault()
-  event.dataTransfer.dropEffect = 'copy'
-  elements.workspace.classList.add('is-drop-target')
-})
-elements.workspace.addEventListener('drop', (event) => {
-  elements.workspace.classList.remove('is-drop-target')
-  if (!dragsNote(event)) return
-  event.preventDefault()
-  const { clientX, clientY } = event
-  const noteId = Number(event.dataTransfer.getData(NOTE_DRAG))
-  void withNoteLinks((module) => module.linkNote(linkHost(), noteId, { clientX, clientY }))
-})
 // A picture on the clipboard (a screenshot, a copied image) is pasted where the view is centred; words keep pasting into whatever is typed in.
 document.addEventListener('paste', (event) => {
   if (state.activeNoteType !== 'canvas' || event.target.closest?.('input, textarea, select, [contenteditable]')) return
@@ -3265,11 +3225,18 @@ function setSidebarOpen(open, remember = false) {
   if (isOpen && !wasOpen) requestAnimationFrame(() => document.querySelector('#rail-new-note').focus())
 }
 
-// F-095: on a narrow window the panel covers the note, so a dragged note row slides it away once it leaves it: the note is under the finger to drop on.
-document.addEventListener('dragover', (event) => {
-  if (mobileLayout.matches && elements.sidebar.classList.contains('open') && !elements.sidebar.contains(event.target) && [...(event.dataTransfer?.types || [])].includes(NOTE_DRAG)) setSidebarOpen(false)
-})
-
+// F-095: what the lazy note-link and X-done modules are given (their code loads when first needed, never in the first load).
+const linkHost = {
+  state, omni, moveNote, openSearch, renderOmni, toast: showToast,
+  get canvas() { return leaferCanvas },
+  get page() { return pageEditor },
+  get center() { return viewCenterPoint() },
+  pickTool: () => setTool('select'),
+  refreshIcons: () => createIcons({ icons }),
+  refresh: refreshWorkspaceLists,
+  settle: async () => { flushPendingEdits('done'); await saveSettled },
+}
+const withNoteLinks = (use) => import('./modules/links/note-links-ui.js').then(use)
 const restoredSidebar = () => !mobileLayout.matches && loadPanelOpen(safeStorage())
 elements.sidebarToggle.addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open'), true))
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false, true))
@@ -3404,7 +3371,7 @@ elements.shareMenu.addEventListener('click', (event) => {
   if (!item || item.disabled) return
   setShareMenuOpen(false)
   if (item.id === 'share-focus') tryFocus()
-  else if (item.id === 'share-link') startNoteLinking()
+  else if (item.id === 'share-link') void withNoteLinks((module) => module.startLinking(linkHost))
   else if (item.id === 'share-print') openPrintPreview()
   else if (item.id === 'share-png') void downloadNotePicture()
   else if (item.id === 'share-backup') void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
@@ -3695,6 +3662,7 @@ shelves = mountShelves(elements.list, {
   noteNotebookId: (id) => state.notes.find((note) => note.id === id)?.notebookId ?? null,
   notebookCategory: (id) => state.notebooks.find((notebook) => notebook.id === id)?.category,
   createNotebook: createNotebookInline,
+  noteDragStart: () => void withNoteLinks((module) => module.watchDrops(linkHost)),
   openDialog: (category, name) => { openNotebookDialog(null, category); elements.notebookName.value = name },
 })
 
