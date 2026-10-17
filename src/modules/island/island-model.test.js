@@ -108,22 +108,22 @@ test('an agent notice shows for 4 seconds; agent presence stays while it is ther
 
 test('an agent notice can offer actions, lasts as long as it is told, and is dismissed at once by a click', () => {
   const { model, advance } = harness()
-  model.agentNotice('Claude edited this note', [['agent-show', 'Show'], ['agent-undo', 'Undo']])
-  assert.deepEqual(model.face(), { kind: 'agent', label: 'Claude edited this note', actions: [['agent-show', 'Show'], ['agent-undo', 'Undo']] })
+  model.agentNotice('Claude edited', { wide: ' this note', actions: [['agent-show', 'Show'], ['agent-undo', 'Undo']] })
+  assert.deepEqual(model.face(), { kind: 'agent', label: 'Claude edited', wide: ' this note', actions: [['agent-show', 'Show'], ['agent-undo', 'Undo']] })
   advance(3999)
   assert.equal(model.face().kind, 'agent')
   advance(1)
   assert.equal(model.face().kind, 'rest')
-  model.agentNotice('You changed this since', [], 6000)
+  model.agentNotice('You changed this since', { ms: 6000 })
   advance(5999)
   assert.equal(model.face().label, 'You changed this since')
   advance(1)
   assert.equal(model.face().kind, 'rest')
-  model.agentNotice('Claude edited this note', [['agent-undo', 'Undo']])
+  model.agentNotice('Claude edited this note', { actions: [['agent-undo', 'Undo']] })
   model.agentNotice(null) // a click on an action
   assert.equal(model.face().kind, 'rest')
   model.agentPresence('Claude Code is writing')
-  model.agentNotice('Claude edited this note', [['agent-undo', 'Undo']])
+  model.agentNotice('Claude edited this note', { actions: [['agent-undo', 'Undo']] })
   assert.equal(model.face().actions[0][0], 'agent-undo') // (the notice outranks presence)
 })
 

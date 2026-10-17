@@ -1792,11 +1792,11 @@ class NoteService:
         changed = {"kind": "page", **changed_lines(was["markdown"], now["markdown"])} if note_type == "page" else {"kind": "canvas", "ids": changed_object_ids(was, now)}
         connection.execute(
             """
-            INSERT INTO agent_edits (note_id, agent, after_revision, live_revision, changed, before_content, before_format, before_page_state,
+            INSERT INTO agent_edits (note_id, agent, after_revision, changed, before_content, before_format, before_page_state,
                                      after_content, after_format, after_page_state, at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (before["id"], self.acting_agent, revision, revision, json.dumps(changed), before["content"], self.format_of(before), before["page_state"], *after, time.time()),
+            (before["id"], self.acting_agent, revision, json.dumps(changed), before["content"], self.format_of(before), before["page_state"], *after, time.time()),
         )
         connection.execute(
             "DELETE FROM agent_edits WHERE note_id = ? AND id NOT IN (SELECT id FROM agent_edits WHERE note_id = ? ORDER BY id DESC LIMIT ?)",
@@ -1834,24 +1834,23 @@ class NoteService:
         now, goal = ("after", "before") if undo else ("before", "after")  # (the version the note should be at, the one to take it to)
         note_type = note["note_type"]
         snapshot = lambda side: self.snapshot_document(note_type, edit[f"{side}_content"], edit[f"{side}_format"], edit[f"{side}_page_state"])
-        if note["revision"] == edit["live_revision"]:  # nothing since: exactly the other version
-            document, page_state = snapshot(goal), edit[f"{goal}_page_state"]
+        # Always a merge into what is stored now, even when nothing came between: the app may have saved the note in a page frame of its own since,
+        # and the result must stay in that frame, not jump back to the one the agent wrote in.
+        ours = self.snapshot_document(note_type, note["content"], self.format_of(note), note["page_state"])
+        if note_type == "page":
+            markdown = merge_markdown(snapshot(now)["markdown"], ours["markdown"], snapshot(goal)["markdown"])
+            document = None if markdown is None else {**ours, "markdown": markdown, "ink": ours["ink"] if markdown == ours["markdown"] else reanchor_ink(ours["ink"], markdown)}
         else:
-            ours = self.snapshot_document(note_type, note["content"], self.format_of(note), note["page_state"])
-            if note_type == "page":
-                markdown = merge_markdown(snapshot(now)["markdown"], ours["markdown"], snapshot(goal)["markdown"])
-                document = None if markdown is None else {**ours, "markdown": markdown, "ink": ours["ink"] if markdown == ours["markdown"] else reanchor_ink(ours["ink"], markdown)}
-            else:
-                document = merge_canvas(snapshot(now), ours, snapshot(goal))
-            if document is None:
-                raise AgentEditConflict(f"You changed {edit['agent']}’s words after it wrote them, so {'Undo' if undo else 'Redo'} would overwrite your edit. Nothing was changed.")
-            page_state = json.dumps(document.get("page") or DEFAULT_PAGE_STATE)
+            document = merge_canvas(snapshot(now), ours, snapshot(goal))
+        if document is None:
+            raise AgentEditConflict(f"You changed {edit['agent']}’s words after it wrote them, so {'Undo' if undo else 'Redo'} would overwrite your edit. Nothing was changed.")
         saved = self.update_note(note["id"], {
-            "title": note["title"], "notebookId": note["notebook_id"], "revision": note["revision"], "pageState": self.parse_json(page_state, DEFAULT_PAGE_STATE),
+            "title": note["title"], "notebookId": note["notebook_id"], "revision": note["revision"],
+            "pageState": document.get("page") if note_type == "canvas" else None,
             "content": document if note_type == "page" else to_json_canvas(document, media=self.media),
         })
         with self.connection() as connection:
-            connection.execute("UPDATE agent_edits SET state = ?, live_revision = ? WHERE id = ?", ("undone" if undo else "applied", saved["revision"], edit_id))
+            connection.execute("UPDATE agent_edits SET state = ? WHERE id = ?", ("undone" if undo else "applied", edit_id))
             connection.commit()
         return saved
 

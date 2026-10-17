@@ -83,6 +83,13 @@ class RecordingTests(AgentEditCase):
         markdown = self.service.get_note(note["id"])["content"]["markdown"]
         self.assertEqual(markdown[edit["changed"]["from"]:edit["changed"]["to"]], "TWO and more")
 
+    def test_an_appended_paragraph_is_named_without_the_line_before_it(self):
+        note = self.page("My own page")
+        result = self.cli("notes", "append", str(note["id"]), "--text", "Agent paragraph")
+        edit = self.edit_of(note["id"], result["revision"])
+        markdown = self.service.get_note(note["id"])["content"]["markdown"]
+        self.assertEqual(markdown[edit["changed"]["from"]:edit["changed"]["to"]], "Agent paragraph")
+
     def test_the_people_saving_is_not_an_agent_edit(self):
         note = self.canvas()
         saved = self.person_saves_canvas(note["id"], lambda objects: None)
@@ -134,6 +141,26 @@ class UndoCanvasTests(AgentEditCase):
         self.person_saves_canvas(note["id"], person_adds_a_note)
         self.assertEqual(self.undo(edit["id"]).status_code, 200)
         self.assertEqual(self.texts(note["id"]), ["First thought, and my own addition"])
+
+    def test_undo_still_works_after_the_app_saved_the_note_in_a_shifted_page_frame(self):
+        # The app writes a note in its own page frame (everything moved by a page width when it grew pages to the left): that is not an edit.
+        note = self.canvas()
+        result = self.cli("notes", "append", str(note["id"]), "--text", "From the agent")
+        edit = self.edit_of(note["id"], result["revision"])
+
+        def app_moves_everything_right(objects):
+            for item in objects:
+                item["geometry"]["x"] += 860
+
+        self.person_saves_canvas(note["id"], app_moves_everything_right)
+        self.assertEqual(self.undo(edit["id"]).status_code, 200)
+        stored = [item for item in from_json_canvas(self.service.get_note(note["id"])["content"])["objects"] if item["type"] == "text"]
+        self.assertEqual([item["content"] for item in stored], ["First thought"])
+        self.assertGreaterEqual(stored[0]["geometry"]["x"], 860)  # (it stays where the app put it)
+        self.assertEqual(self.redo(edit["id"]).status_code, 200)
+        back = [item for item in from_json_canvas(self.service.get_note(note["id"])["content"])["objects"] if item["type"] == "text"]
+        self.assertEqual([item["content"] for item in back], ["First thought", "From the agent"])
+        self.assertEqual({item["geometry"]["x"] >= 860 for item in back}, {True})  # (the agent's words come back in the app's frame)
 
     def test_undo_refuses_when_the_person_edited_the_agents_own_words(self):
         note = self.canvas()

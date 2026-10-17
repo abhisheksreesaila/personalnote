@@ -60,7 +60,6 @@ CREATE TABLE IF NOT EXISTS agent_edits (
     agent TEXT NOT NULL,
     state TEXT NOT NULL DEFAULT 'applied' CHECK (state IN ('applied', 'undone')),
     after_revision INTEGER NOT NULL,
-    live_revision INTEGER NOT NULL,
     changed TEXT NOT NULL,
     before_content TEXT NOT NULL,
     before_format TEXT NOT NULL,

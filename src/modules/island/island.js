@@ -25,7 +25,11 @@ const MOMENTS = {
   saved: () => [icon('check', 'isl-ok'), h('span', '', 'Saved')],
   added: (f) => [icon('check'), h('span', '', `Added ${f.words} ${f.words === 1 ? 'word' : 'words'}`)],
   ready: (f) => [icon('check', 'isl-ok'), h('span', '', `${f.name} is ready`)],
-  agent: (f) => [icon('sparkles'), h('span', 'isl-label', f.label), ...(f.actions ?? []).map(([action, label]) => chip(action, label))], // (Show and Undo after an agent's edit)
+  agent: (f) => { // (Show and Undo after an agent's edit; a phone has no room for the wide words)
+    const label = h('span', 'isl-label', f.label)
+    if (f.wide) label.append(h('span', 'isl-wide-only', f.wide))
+    return [icon('sparkles'), label, ...(f.actions ?? []).map(([action, text]) => chip(action, text))]
+  },
   download: (f) => {
     const bar = h('span', 'isl-bar'); bar.append(h('i'))
     return [icon('download'), h('span', 'isl-wide-only', f.name), bar, h('span', 'isl-muted isl-pct', `${f.percent}%`)]

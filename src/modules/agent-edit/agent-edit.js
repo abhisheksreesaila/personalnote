@@ -34,7 +34,7 @@ export async function announce(host, note) {
   const { edit } = await host.api(`/notes/${note.id}/agent-edit?revision=${note.revision}`).catch(() => ({}))
   if (!edit || edit.state !== 'applied' || note.id !== host.state.activeNoteId) return
   current = { noteId: note.id, edit }
-  host.island.agentNotice(`${first(edit.agent)} edited this note`, [['agent-show', 'Show'], ['agent-undo', 'Undo']])
+  host.island.agentNotice(`${first(edit.agent)} edited`, { wide: ' this note', actions: [['agent-show', 'Show'], ['agent-undo', 'Undo']] })
 }
 
 async function show(host, { changed }) {
@@ -62,9 +62,11 @@ async function turn(host, direction) {
     await host.settle()
     await host.api(`/agent-edits/${edit.id}/${direction}`, { method: 'POST' })
     await host.sync()
-    host.island.agentNotice(direction === 'undo' ? `Undid ${first(edit.agent)}’s edit` : `Put ${first(edit.agent)}’s edit back`, [[direction === 'undo' ? 'agent-redo' : 'agent-undo', direction === 'undo' ? 'Redo' : 'Undo']])
+    const undid = direction === 'undo'
+    host.island.agentNotice(undid ? `Undid ${first(edit.agent)}’s edit` : `Put ${first(edit.agent)}’s edit back`, { actions: [undid ? ['agent-redo', 'Redo'] : ['agent-undo', 'Undo']] })
   } catch (error) {
-    host.island.agentNotice(error.status === 409 ? `Can’t ${direction}: you changed it since` : `Couldn’t ${direction}`, [], 6000)
+    // The island says it in a few words (it is small); the toast has the server's plain sentence.
+    host.island.agentNotice(error.status === 409 ? `Can’t ${direction}: you changed it since` : `Couldn’t ${direction}`, { ms: 6000 })
     host.toast(error.message)
   }
 }

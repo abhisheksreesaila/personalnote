@@ -11,8 +11,34 @@ CONTEXT = 24  # characters of surrounding text that pin down where a short chang
 
 
 def _plain(item: dict) -> dict:
-    """An object without its stacking (a renumber is not a change) and without an empty `extras`."""
-    return {key: value for key, value in item.items() if key != "z" and not (key == "extras" and not value)}
+    """An object without its stacking (a renumber is not a change), without an empty `extras`, and with its place rounded to a hundredth."""
+    plain = {key: value for key, value in item.items() if key != "z" and not (key == "extras" and not value)}
+    if isinstance(plain.get("geometry"), dict):
+        plain["geometry"] = {key: round(value, 2) if key in ("x", "y") and isinstance(value, (int, float)) else value for key, value in plain["geometry"].items()}
+    return plain
+
+
+def _moved(item: dict, dx: float, dy: float) -> dict:
+    geometry = item.get("geometry")
+    if not isinstance(geometry, dict):
+        return item
+    return {**item, "geometry": {**geometry, "x": geometry.get("x", 0) + dx, "y": geometry.get("y", 0) + dy}}
+
+
+def frame_shift(base: dict, ours: dict) -> tuple[float, float]:
+    """How far the app moved every object when it saved the note in its own page frame (it adds pages to the left or above, which moves the origin):
+    the move most objects of `base` made unchanged otherwise. Not a change by the person."""
+    now = _by_id(ours)
+    votes: dict[tuple[float, float], int] = {}
+    for id, item in _by_id(base).items():
+        other = now.get(id)
+        if other is None or not isinstance(item.get("geometry"), dict) or not isinstance(other.get("geometry"), dict):
+            continue
+        dx = round(other["geometry"].get("x", 0) - item["geometry"].get("x", 0), 2)
+        dy = round(other["geometry"].get("y", 0) - item["geometry"].get("y", 0), 2)
+        if _plain(_moved(item, dx, dy)) == _plain(other):
+            votes[(dx, dy)] = votes.get((dx, dy), 0) + 1
+    return max(votes, key=votes.get) if votes else (0.0, 0.0)
 
 
 def _by_id(document: dict) -> dict:
@@ -45,7 +71,10 @@ def changed_lines(before: str, after: str) -> dict:
     """The lines of `after` the write touched, as UTF-16 offsets {from, to} (what the page editor counts in)."""
     prefix, suffix = _trim(before, after)
     end = len(after) - suffix
-    start = after.rfind("\n", 0, prefix) + 1
+    first = prefix
+    while first < end and after[first] == "\n":  # (a paragraph added after a blank line: the line before it is not part of the change)
+        first += 1
+    start = after.rfind("\n", 0, first) + 1
     stop = after.find("\n", end)
     stop = len(after) if stop == -1 else stop
     return {"from": utf16(after[:start]), "to": utf16(after[:stop])}
@@ -72,7 +101,10 @@ def merge_markdown(base: str, ours: str, target: str) -> str | None:
 
 def merge_canvas(base: dict, ours: dict, target: dict) -> dict | None:
     """The objects of `target` laid over `ours`, object by object; None when the person changed an object the agent's write also touched."""
-    was, now, going = _by_id(base), _by_id(ours), _by_id(target)
+    dx, dy = frame_shift(base, ours)  # (base and target are in the frame the agent wrote in; the result is in the frame the app saved)
+    now = _by_id(ours)
+    was = {id: _moved(item, dx, dy) for id, item in _by_id(base).items()}
+    going = {id: _moved(item, dx, dy) for id, item in _by_id(target).items()}
     same = lambda a, b: _plain(a) == _plain(b)
     objects, restored = [], []
     for id in dict.fromkeys([*was, *now, *going]):
