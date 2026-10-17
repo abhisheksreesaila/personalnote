@@ -150,6 +150,7 @@ try {
   await browser?.close()
   await server.close()
   api.kill()
+  fs.rmSync(scratch, { recursive: true, force: true }) // the exact folder this run made
 }
 console.log(results.every(Boolean) ? `\nALL ${results.length} CHECKS PASSED` : `\n${results.filter((r) => !r).length} OF ${results.length} CHECKS FAILED`)
 process.exit(results.every(Boolean) ? 0 : 1)
