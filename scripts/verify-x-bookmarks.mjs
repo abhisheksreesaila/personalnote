@@ -12,6 +12,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium, webkit } from 'playwright'
+import { showSection } from './lib/settings.mjs'
 import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const UI_PORT = basePort(4920)
@@ -73,6 +74,7 @@ try {
   }
   const openSettings = async () => {
     if (!(await page.locator('#properties-panel.open').count())) { await page.click('#share-button'); await page.click('#top-properties') }
+    await showSection(page, 'x')
     await page.waitForFunction(() => document.querySelector('#x-headline')?.textContent !== 'Checking…', null, { timeout: 10000 })
     await page.waitForTimeout(500)
   }
@@ -173,7 +175,8 @@ try {
   await phone.click('#share-button')
   await phone.click('#top-properties')
   await phone.waitForSelector('#x-headline', { state: 'attached' })
-  await phone.waitForTimeout(800) // the panel slides in
+  await showSection(phone, 'x')
+  await phone.waitForTimeout(800) // the sheet slides in
   const box = await phone.locator('#settings-x-section').boundingBox()
   check('[phone] the X bookmarks section fits the width', box && box.x >= 0 && box.x + box.width <= 390, JSON.stringify(box))
 

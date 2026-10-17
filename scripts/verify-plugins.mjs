@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { assertPortsFree, basePort } from './lib/ports.mjs'
+import { closeSettings as closeSettingsFrom, showSection } from './lib/settings.mjs'
 
 const UI_PORT = basePort(4910)
 const API_PORT = UI_PORT + 1
@@ -63,6 +64,7 @@ try {
     const pick = async (id) => { await page.evaluate((n) => window.__personalNote.selectNote(n), id); await page.waitForFunction((n) => window.__personalNote.state.activeNoteId === n && !window.__personalNote.state.loading, id, { timeout: 15000 }) }
     const settings = async () => {
       if (!(await page.locator('#properties-panel').evaluate((e) => e.classList.contains('open')))) { if (!(await page.locator('#top-properties').isVisible())) await page.click('#share-button'); await page.click('#top-properties'); await page.waitForTimeout(500) }
+      await showSection(page, 'plugins')
       await page.locator('#plugin-mindmap').waitFor()
     }
     // What a long press (right click) on the sidebar's New note button offers: [] when the menu does not open.
@@ -128,6 +130,7 @@ try {
     const puts = []
     page.on('request', (request) => { if (request.method() === 'PUT' && request.url().includes(`/api/notes/${map.id}`)) puts.push(request.url()) })
     await settings()
+    await showSection(page, 'advanced')
     await page.click('#download-backup')
     await page.locator('#portability-status').filter({ hasText: 'Export downloaded' }).waitFor({ timeout: 15000 }).catch(() => {})
     await pick(plain.id)
@@ -179,9 +182,10 @@ try {
     }
     const settings = async () => {
       if (!(await page.locator('#properties-panel').evaluate((e) => e.classList.contains('open')))) { if (!(await page.locator('#top-properties').isVisible())) await page.click('#share-button'); await page.click('#top-properties'); await page.waitForTimeout(500) }
+      await showSection(page, 'plugins')
       await page.locator('#plugin-voice').waitFor()
     }
-    const closeSettings = async () => { await page.click('#close-properties'); await page.waitForTimeout(300) }
+    const closeSettings = async () => { await closeSettingsFrom(page); await page.waitForTimeout(300) }
     const micShown = () => page.locator(label === 'phone' ? '#mobile-speak' : '#voice-button').isVisible()
     const byMeaning = async () => {
       await page.click('#search-button')
@@ -239,7 +243,7 @@ try {
     await page.locator('#plugin-voice').check()
     await page.locator(label === 'phone' ? '#mobile-speak' : '#voice-button').waitFor({ state: 'visible', timeout: 15000 })
     await page.locator('#plugin-meaning').check()
-    await page.locator('#settings-meaning-section').waitFor({ timeout: 10000 })
+    await page.locator('#settings-meaning-section').waitFor({ state: 'attached', timeout: 10000 })
     await closeSettings()
     check(`[${label}] on again, no reload: the mic and the voice code are back`, await micShown() && code.some((name) => name.startsWith('voice-plugin')) && savedChoice()?.voice === true, code.join())
     check(`[${label}] on again: the "By meaning" group is back`, await byMeaning() === 1 && code.some((name) => name.startsWith('meaning-plugin')))

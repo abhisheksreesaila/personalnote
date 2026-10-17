@@ -1,6 +1,7 @@
 // Drives the real app (Vite dev server, in-memory mocked /api) through the F-015 speed meter checks.
 // node scripts/verify-speed-meter.mjs <shotsDir>
 import { createServer } from 'vite'
+import { showSection } from './lib/settings.mjs'
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -88,6 +89,7 @@ const rafOver = async (page, ms) => { const a = await page.evaluate(() => window
   await page.click('#share-button') // (Settings now sits in the ... menu)
   await page.click('#top-properties')
   await page.waitForTimeout(450)
+  await showSection(page, 'advanced')
   check('settings toggle reflects state', await page.locator('#settings-speed-meter').isChecked())
   await page.screenshot({ path: path.join(shots, 'meter-settings.png') })
   await page.locator('#settings-speed-meter').uncheck()

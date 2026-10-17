@@ -11,6 +11,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { showSection } from './lib/settings.mjs'
 import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const UI_PORT = basePort(4900)
@@ -63,8 +64,9 @@ try {
       await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
       await page.click('#share-button')
       await page.click('#top-properties')
-      await page.waitForTimeout(500) // the panel slides in
-      await page.locator('#ai-provider').waitFor()
+      await page.waitForTimeout(500) // the window opens
+      await showSection(page, 'ai')
+      await page.locator('#ai-provider').waitFor({ state: 'attached' })
     }
     const status = page.locator('#ai-status')
     await open()
@@ -82,8 +84,8 @@ try {
     await page.fill('#ai-deployment', 'gpt-4o')
     await page.fill('#ai-key', GOOD_KEY)
     if (label === 'phone') {
-      const heights = await page.evaluate(() => [...document.querySelectorAll('#ai-settings button, #ai-settings select, #ai-settings input')].filter((e) => e.offsetParent).map((e) => Math.round(e.getBoundingClientRect().height)))
-      check('[phone] every visible button, select and field in the section is at least 44px tall', heights.length === 7 && heights.every((h) => h >= 44), JSON.stringify(heights))
+      const heights = await page.evaluate(() => [...document.querySelectorAll('#ai-settings button, #ai-settings select, #ai-settings input')].filter((e) => e.offsetParent && !e.closest('.sw-sr')).map((e) => Math.round(e.getBoundingClientRect().height)))
+      check('[phone] every visible button, select and field in the section is at least 44px tall', heights.length === 9 && heights.every((h) => h >= 44), JSON.stringify(heights))
       const box = await page.locator('#ai-save').boundingBox()
       check('[phone] the buttons sit inside the panel', box.x >= 0 && box.x + box.width <= viewport.width)
     }

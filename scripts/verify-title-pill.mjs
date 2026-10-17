@@ -101,7 +101,7 @@ try {
   // --- the card: the title, the save state, Focus first and wide, every old action
   await openCard()
   const labels = await page.evaluate(() => [...document.querySelectorAll('#share-menu button:not([hidden])')].map((b) => b.querySelector('span')?.textContent.trim()))
-  check('the card lists Focus first, then print, picture, backup, Markdown, Obsidian, Link note, Settings and Clear all (Fold all only when it shows)', JSON.stringify(labels) === JSON.stringify(['Focus', 'Print', 'Picture', 'Backup', 'Markdown', 'Obsidian', 'Link note', 'Settings', 'Clear all']), JSON.stringify(labels))
+  check('the card lists Focus first, then print, picture, backup, Markdown, Obsidian, Link note, Properties, Settings and Clear all (Fold all only when it shows)', JSON.stringify(labels) === JSON.stringify(['Focus', 'Print', 'Picture', 'Backup', 'Markdown', 'Obsidian', 'Link note', 'Properties', 'Settings', 'Clear all']), JSON.stringify(labels))
   const tiles = await page.evaluate(() => { const w = (s) => document.querySelector(s).getBoundingClientRect(); return { focus: w('#share-focus'), print: w('#share-print'), focusKbd: /[.]/.test(document.querySelector('#focus-top-kbd').textContent), printTitle: document.querySelector('#share-print').title } })
   check('Focus is wide, above the others, and shows its key cap; Print\'s tooltip has its shortcut', tiles.focus.width > tiles.print.width * 3 && tiles.focus.bottom <= tiles.print.top && tiles.focusKbd && /[PK]|Ctrl|⌘/.test(tiles.printTitle) && /P\)$/.test(tiles.printTitle), JSON.stringify(tiles))
   const card = await rect('#island')

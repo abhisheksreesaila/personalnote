@@ -135,7 +135,8 @@ export function mountSettingsWindow(panel, host) {
   })
   head.querySelector('.sw-back').addEventListener('click', () => { searchBox.value = ''; filter(); showList() })
   head.querySelector('.sw-close').addEventListener('click', () => host.close())
-  panel.addEventListener('settings-show', (event) => { searchBox.value = ''; filter(); select(event.detail, true) })
+  // (asked for right after Settings opened: the opening resets a phone to its list in a microtask of its own, so this goes after it)
+  panel.addEventListener('settings-show', (event) => Promise.resolve().then(() => { searchBox.value = ''; filter(); select(event.detail, true) }))
 
   // search: sections and rows
   const searchBox = search.querySelector('input')

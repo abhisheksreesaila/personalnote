@@ -69,7 +69,7 @@ try {
   await select(cards.id)
   check('an ordinary note starts without the cover or the pill', (await cover().count()) === 0 && (await pill().count()) === 0)
   await page.click('#share-button') // (Settings now sits in the ... menu)
-  await page.click('#top-properties')
+  await page.click('#share-props')
   await page.waitForTimeout(300)
   check('the note menu offers "Make secure"', (await page.locator('#secure-note span').textContent()) === 'Make secure')
   await page.click('#secure-note')
@@ -242,7 +242,7 @@ try {
   // ---- back to ordinary ----
   await page.waitForSelector('.secure-pill')
   await page.click('#share-button') // (Settings now sits in the ... menu)
-  await page.click('#top-properties')
+  await page.click('#share-props')
   await page.waitForTimeout(300)
   check('Make ordinary is offered while it is open', (await page.locator('#secure-note span').textContent()) === 'Make ordinary')
   await page.click('#secure-note')

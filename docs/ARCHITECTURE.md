@@ -275,6 +275,7 @@ The first load is the shell only: the HTML entry, the app chunk and a few small 
 | `src/main.js` | Notebook shell and Leafer canvas host (view, input surface, save, note lifecycle) |
 | `src/core/api.js` | Browser API boundary |
 | `src/core/plugins.js`, `src/modules/plugins/` | Built-in plugin registry, the plugin list, Settings › Plugins, the read-only map view |
+| `src/modules/settings/` | Settings window (F-102): section model and search (`settings-model.js`, tested), the lazy window that lays the settings sections out as pages (`settings-window.js`, `.css`) |
 | `plugin_settings.py` | Which plugins are on, per machine |
 | `src/modules/mindmap.js` | Lazy mind-map boundary |
 | `src/mindmap/` | Built-in mind-map implementation |

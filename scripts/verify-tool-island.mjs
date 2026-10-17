@@ -404,19 +404,16 @@ try {
   await page.evaluate(() => { document.querySelector('#voice-caption').hidden = true })
   check('the mic is the foot of the island and is live', await page.evaluate(() => { const b = document.querySelector('#voice-button'); return !b.disabled && getComputedStyle(b).pointerEvents !== 'none' }))
 
-  // ================= the inspector panel would cover the right-hand islands: they stand clear of it
+  // ================= Settings is a centred window over a dim (F-102), not a side panel: the right-hand islands stay at the edge, and a tool can still be clicked
   await click('#share-button')
   await click('#top-properties')
   await page.waitForTimeout(500)
   const panelBox = await rect('#properties-panel')
-  const dockBesidePanel = await rect('.tool-dock')
-  const zoomBesidePanel = await rect('#zoom-control')
-  check('with the inspector open the tool island and zoom island sit left of it', dockBesidePanel.r <= panelBox.x - 8 && zoomBesidePanel.r <= panelBox.x - 8, JSON.stringify({ panelBox, dockBesidePanel, zoomBesidePanel }))
+  const dockWithSettings = await rect('.tool-dock')
+  const zoomWithSettings = await rect('#zoom-control')
+  check('with Settings open the window is centred and the tool island and zoom island stay at the edge', Math.abs(panelBox.x + panelBox.w / 2 - 640) <= 2 && Math.abs(dockWithSettings.r - 1264) <= 1 && zoomWithSettings.r > panelBox.x + panelBox.w, JSON.stringify({ panelBox, dockWithSettings, zoomWithSettings }))
   await click('[data-tool="select"]')
-  check('and a tool can still be clicked there', (await tool()) === 'select')
-  await click('#close-properties')
-  await page.waitForTimeout(500)
-  check('closing the inspector puts the islands back at the edge', Math.abs((await rect('.tool-dock')).r - 1264) <= 1)
+  check('and a tool can still be clicked there (the press also closes Settings)', (await tool()) === 'select' && await page.evaluate(() => !document.querySelector('#properties-panel').classList.contains('open')))
 
   // ================= focus mode
   await page.evaluate(() => window.__personalNote.setViewTo({ x: 200, y: 100, scale: 1 }))
