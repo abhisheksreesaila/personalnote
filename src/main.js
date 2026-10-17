@@ -134,7 +134,7 @@ document.querySelector('#app').innerHTML = `
         <div class="island booting" id="island" data-face="rest">
           <div class="isl-face" data-face="rest"><button class="nt isl-ico" id="island-icon" aria-label="Change icon"></button><button class="isl-open" id="share-button" data-keeps-text-editing title="Note actions" aria-haspopup="dialog" aria-expanded="false" aria-controls="share-menu"><span id="island-title">Untitled note</span></button></div>
           <div class="isl-face isl-card" data-face="card" id="share-menu" role="dialog" aria-label="Note actions" hidden>
-            <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
+            <input class="note-title" id="note-title" value="Untitled note" readonly aria-label="Note title" />
             <div class="isl-meta"><div class="save-state" id="save-state"><span></span>Saved on this device</div><span id="island-notebook"></span></div>
             <div class="isl-grid">
               <button id="share-focus" class="isl-wide" data-keeps-text-editing title="Focus mode"><i data-lucide="focus"></i><span>Focus</span><kbd id="focus-top-kbd">Ctrl .</kbd></button>

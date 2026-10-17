@@ -503,7 +503,7 @@
   @media (max-width: 640px) {
     .search-backdrop, .search-backdrop.open { background: var(--sk-panel); }
     .spotlight { position: fixed; inset: 0; width: auto; max-height: none; margin: 0; border: 0; border-radius: 0; transform: none; transition: opacity 120ms ease; }
-    .spotlight-input-row { height: auto; padding: 12px 14px 8px; }
+    .spotlight-input-row { height: auto; padding: calc(12px + env(safe-area-inset-top)) 14px 8px; }
     .spotlight-input-row > svg { display: none; }
     .spotlight-input-row input { height: 40px; padding: 0 14px; border-radius: 12px; background: var(--hover); font-size: 17px; }
     .search-close { border: 0; padding: 6px; color: var(--sk-ink); font: 600 15px var(--ui-font); }

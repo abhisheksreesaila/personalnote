@@ -2,6 +2,8 @@
 .omni-chip { padding: 4px 11px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--sk-panel); color: var(--ink-soft); font: 500 12.5px var(--ui-font); cursor: pointer; }
 .omni-chip b { font-weight: 500; opacity: .6; }
 .omni-chip[aria-pressed="true"] { background: var(--sk-ink); color: var(--sk-panel); border-color: var(--sk-ink); }
+.omni-chip { position: relative; }
+.omni-chip::after { content: ""; position: absolute; inset: -9px 0; } /* a phone thumb needs 44 px; the pill stays small */
 .omni-chip:focus-visible { outline: none; box-shadow: var(--ring); }
 .omni-group h4 { margin: 10px 8px 4px; color: var(--ui-muted); font: 600 11px var(--ui-font); letter-spacing: .07em; text-transform: uppercase; }
 .omni-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 12px; background: none; color: var(--sk-ink); text-align: left; cursor: pointer; }
@@ -20,7 +22,7 @@
 .omni-nb i { width: 7px; height: 7px; flex: none; border-radius: 50%; }
 .omni-tag { padding: 1px 7px; border-radius: 6px; background: color-mix(in srgb, var(--sk-c4) 32%, var(--sk-panel)); font: 700 10px/1.6 var(--ui-font); letter-spacing: .06em; text-transform: uppercase; }
 .omni-when { color: var(--ui-muted); font-size: 11.5px; white-space: nowrap; }
-.omni-row mark, .omni-pv-text mark { padding: 0 1px; border-radius: 2px; background: linear-gradient(transparent 18%, color-mix(in srgb, var(--sk-c1) 70%, transparent) 18% 88%, transparent 88%); color: #1b1b1b; }
+.omni-row mark, .omni-pv-text mark { padding: 0 1px; border-radius: 2px; background: linear-gradient(transparent 18%, color-mix(in srgb, var(--sk-c1) 70%, transparent) 18% 88%, transparent 88%); color: var(--sk-mark-ink); }
 .omni-none { display: grid; gap: 4px; justify-items: center; padding: 22px 16px 8px; color: var(--ui-muted); font-size: 12.5px; text-align: center; }
 .omni-none strong { max-width: 100%; color: var(--sk-ink); font: 600 15px var(--ui-font); }
 .omni-note { margin: 8px 10px 4px; color: var(--ui-muted); font-size: 12px; }
