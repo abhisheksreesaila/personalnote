@@ -51,7 +51,9 @@ class MeaningIndexer:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        if self._thread is None:
+        """Start the thread; after a stop() (the plugin was switched off) it starts a fresh one."""
+        if self._thread is None or not self._thread.is_alive():
+            self._stop.clear()
             self._thread = threading.Thread(target=self._loop, name="meaning-index", daemon=True)
             self._thread.start()
 

@@ -374,6 +374,8 @@ def meaning_matches(service: NoteService, query: str) -> list[dict]:
 
 
 def command_search(service: NoteService, args: argparse.Namespace) -> list[dict] | None:
+    if args.meaning:
+        PluginSettings().require("meaning")  # off: exit 2 with the reason, before any engine or app is asked
     matches = meaning_matches(service, args.query) if args.meaning else service.search(args.query)
     service.record_agent_activity(args.agent, None, "reading")
     if not args.as_text:

@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 ROOT = resource_root()
 
 
-def runtime_capabilities(mindmap_on: bool = True) -> dict:
+def runtime_capabilities(mindmap_on: bool = True, voice_on: bool = True) -> dict:
     """Return only capabilities that are part of the v1 notebook runtime."""
     return {
         "storage": {
@@ -63,7 +63,7 @@ def runtime_capabilities(mindmap_on: bool = True) -> dict:
             "mindmap": {"available": mindmap_on, "loading": "on-demand"},
             "page": {"available": True, "loading": "on-demand"},
             "voice": {
-                "available": True,
+                "available": voice_on,
                 "localServiceRequired": True,
                 "durableOutput": "transcript-text",
                 "audioRetention": "none",
@@ -194,7 +194,8 @@ def create_app(
     app.state.indexer = MeaningIndexer(service, search)
     app.state.x_sync = x_sync or XSync(service)  # started by main.py / desktop.py, not here: a test's app never reaches X
     if not speedtest_instance:
-        app.state.indexer.start()  # a quiet thread: it embeds only when the download is installed, never on a request
+        if app.state.plugins.enabled("meaning"):
+            app.state.indexer.start()  # a quiet thread: it embeds only when the download is installed, never on a request
         if getattr(search, 'root', None):  # an engine a command that died left behind (a Mac has no way to stop it with its parent): stopped off the main thread
             threading.Thread(target=reap_dead_cli_engines, args=(search.root,), name='reap-cli-engines', daemon=True).start()
     if bound_host is not None and host_name(bound_host) in LOOPBACK_NAMES:
@@ -229,13 +230,18 @@ def create_app(
 
     @app.get("/api/settings/capabilities")
     def settings_capabilities():
-        return JSONResponse(runtime_capabilities(app.state.plugins.enabled("mindmap")))
+        return JSONResponse(runtime_capabilities(app.state.plugins.enabled("mindmap"), app.state.plugins.enabled("voice")))
+
+    def plugin_response(plugin_id: str, call, error_class, status_code: int = 200) -> JSONResponse:
+        """Run `call` for a plugin's feature; while the plugin is off nothing starts and the reason is plain (409)."""
+        try:
+            app.state.plugins.require(plugin_id)
+            return JSONResponse(call(), status_code=status_code)
+        except (error_class, PluginSettingsError) as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
 
     def voice_response(call, status_code: int = 200) -> JSONResponse:
-        try:
-            return JSONResponse(call(), status_code=status_code)
-        except VoiceError as error:
-            return JSONResponse({"error": str(error)}, status_code=409)
+        return plugin_response("voice", call, VoiceError, status_code)
 
     def from_this_app(request) -> bool:
         # A custom header cannot be sent cross-site without a CORS preflight, which this server never allows,
@@ -265,19 +271,19 @@ def create_app(
     def voice_cancel(request):
         if not from_this_app(request):
             return forbidden()
-        return voice_response(lambda: app.state.voice.cancel_install())
+        return JSONResponse(app.state.voice.cancel_install())
 
     @app.delete("/api/voice")
     def voice_remove(request):
         if not from_this_app(request):
             return forbidden()
-        return voice_response(lambda: app.state.voice.remove())
+        try:
+            return JSONResponse(app.state.voice.remove())
+        except VoiceError as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
 
     def search_response(call, status_code: int = 200) -> JSONResponse:
-        try:
-            return JSONResponse(call(), status_code=status_code)
-        except SearchError as error:
-            return JSONResponse({"error": str(error)}, status_code=409)
+        return plugin_response("meaning", call, SearchError, status_code)
 
     @app.get("/api/search-meaning/status")
     def search_meaning_status():
@@ -293,7 +299,19 @@ def create_app(
     def search_meaning_cancel(request):
         if not from_this_app(request):
             return forbidden()
-        return search_response(lambda: app.state.search.cancel_install())
+        return JSONResponse(app.state.search.cancel_install())
+
+    def follow_plugin(plugin_id: str, on: bool) -> None:
+        """Off stops what the plugin started (the data and the downloads stay); on lets it start again, lazily as before."""
+        if plugin_id == "meaning" and not on:
+            app.state.indexer.stop()
+            app.state.search.cancel_install()
+            app.state.search.stop_engine()  # not shutdown(): switching on again must be able to start it
+        elif plugin_id == "meaning" and not speedtest_instance:
+            app.state.indexer.start()
+        elif plugin_id == "voice" and not on:
+            app.state.voice.cancel_install()
+            app.state.voice.stop_engine()
 
     @app.get("/api/plugins")
     def plugins_view():
@@ -304,9 +322,11 @@ def create_app(
         if not from_this_app(request):
             return forbidden()
         try:
-            return JSONResponse({"plugins": app.state.plugins.set_enabled(plugin_id, (await payload(request)).get("enabled"))})
+            state = app.state.plugins.set_enabled(plugin_id, (await payload(request)).get("enabled"))
         except PluginSettingsError as error:
             return JSONResponse({"error": str(error)}, status_code=400)
+        follow_plugin(plugin_id, state[plugin_id])
+        return JSONResponse({"plugins": state})
 
     @app.get("/api/ai/settings")
     def ai_settings_view():
@@ -466,6 +486,10 @@ def create_app(
             limit = max(1, min(int(request.query_params.get("limit", 5)), 20))
         except ValueError:
             limit = 5
+        try:
+            app.state.plugins.require("meaning")
+        except PluginSettingsError as error:  # off: nothing is asked of the engine
+            return JSONResponse({"error": str(error)}, status_code=409) if request.query_params.get("strict") else JSONResponse([])
         try:
             return JSONResponse(service.meaning_matches(request.query_params.get("q", ""), limit))
         except SearchError as error:
