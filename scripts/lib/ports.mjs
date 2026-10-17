@@ -20,15 +20,15 @@ export async function busyPorts(ports) {
 
 // Call before starting anything. Exits 1 on the first busy port; `env` names the variable that moves the whole script.
 export async function assertPortsFree(ports, env = 'PN_VERIFY_PORT') {
+  if (ports.includes(3137)) {
+    console.error(`port 3137 is the real app: never use it for a check script. Set ${env} to a free port.`)
+    process.exit(1)
+  }
   const [first] = await busyPorts(ports)
   if (first === undefined) return
   console.error(`port ${first} is busy (another session?): set ${env} to a free one. Nothing was started, killed or reused.`)
   process.exit(1)
 }
 
-// The base port of a script: PN_VERIFY_PORT when set, else its own default. Never 3137, the real app.
-export function basePort(fallback) {
-  const port = Number(process.env.PN_VERIFY_PORT || fallback)
-  if (port === 3137) throw new Error('never the real app port (3137)')
-  return port
-}
+// The base port of a script: PN_VERIFY_PORT when set, else its own default. (assertPortsFree refuses 3137, the real app.)
+export const basePort = (fallback) => Number(process.env.PN_VERIFY_PORT || fallback)

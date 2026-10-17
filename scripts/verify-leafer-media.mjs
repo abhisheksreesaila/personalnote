@@ -1,5 +1,5 @@
-// F-033 checks, in the real app: the real Python server on a temporary database and media folder (port 4790), the Vite dev server in
-// front of it (port 4791, /api proxied to that server), headless Chromium. Pictures dropped, pasted and picked on the Leafer canvas are
+// F-033 checks, in the real app: the real Python server on a temporary database and media folder (port 4791), the Vite dev server in
+// front of it (port 4790, /api proxied to that server), headless Chromium. Pictures dropped, pasted and picked on the Leafer canvas are
 // stored in the media library (a media reference in the saved JSON Canvas, never a data URL), reload to the same picture, undo and
 // redo, move and resize; transparent PNGs stay PNG; the print sheets carry the pictures at twice size on white paper and the note picture is those sheets side by side;
 // the print preview prints without app chrome; the vault, Markdown and backup exports carry the pictures; and a 12-megapixel drop

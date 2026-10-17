@@ -31,6 +31,13 @@ test('a script exits 1 naming the busy port and the variable to set, and leaves 
   } finally { await new Promise((r) => held.close(r)) }
 })
 
+test('the real app port 3137 is refused even when it is free, as a derived port too', () => {
+  const run = script(3137)
+  assert.equal(run.status, 1)
+  assert.equal(run.stdout, '')
+  assert.equal(run.stderr, 'port 3137 is the real app: never use it for a check script. Set PN_VERIFY_PORT to a free port.\n')
+})
+
 test('a free port passes through', async () => {
   const run = script(await free())
   assert.equal(run.status, 0)

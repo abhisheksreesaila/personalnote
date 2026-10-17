@@ -14,7 +14,6 @@ import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const PORT = basePort(4895)
 await assertPortsFree([PORT])
-if (PORT === 3137) throw new Error('never the real app port')
 const now = new Date().toISOString()
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
