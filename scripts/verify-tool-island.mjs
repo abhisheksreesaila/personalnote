@@ -405,6 +405,8 @@ try {
   check('the mic is the foot of the island and is live', await page.evaluate(() => { const b = document.querySelector('#voice-button'); return !b.disabled && getComputedStyle(b).pointerEvents !== 'none' }))
 
   // ================= Settings is a centred window over a dim (F-102), not a side panel: the right-hand islands stay at the edge, and a tool can still be clicked
+  await click('[data-tool="text"]')
+  check('(the tool is Text before Settings opens, so the click below has something to change)', (await tool()) === 'text')
   await click('#share-button')
   await click('#top-properties')
   await page.waitForTimeout(500)

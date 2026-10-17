@@ -2,15 +2,15 @@
 // No DOM here: settings-window.js draws it. The icons are Lucide names; every tile is monochrome (the design's rule), so a section has no colour.
 
 export const SECTIONS = [
-  { id: 'appearance', title: 'Appearance', icon: 'sun', group: 0, blurb: 'How Personal Note looks. A skin applies at once and is remembered on this computer.', words: 'skin theme look paper crayon night dark light color' },
-  { id: 'writing', title: 'Writing', icon: 'pencil', group: 0, blurb: 'How new text looks on a canvas. Text you already wrote does not change.', words: 'font size text serif sans monospace default type' },
-  { id: 'ai', title: 'AI', icon: 'sparkles', group: 1, blurb: 'One model for every AI feature. Nothing is sent anywhere until you press Jam.', words: 'model claude azure openai key jam test provider' },
-  { id: 'plugins', title: 'Plugins', icon: 'plug', group: 1, blurb: 'Optional features. Off hides a feature and keeps its notes.', words: 'mind maps jam voice switch on off feature' },
-  { id: 'voice', title: 'Voice', icon: 'mic', group: 1, blurb: 'Hold to talk. It runs on this computer and keeps only the words, never the audio.', words: 'dictation microphone transcript audio speech download' },
-  { id: 'meaning', title: 'Search by meaning', icon: 'brain', group: 1, blurb: 'Finds notes by idea, not just words. It runs on this computer.', words: 'semantic embedding find ideas download' },
-  { id: 'x', title: 'X bookmarks', icon: 'bookmark', group: 1, blurb: 'Bring your X bookmarks in as notes. Read-only: nothing is posted.', words: 'twitter sync client id connect saved posts' },
-  { id: 'locked', title: 'Locked notes', icon: 'lock', group: 2, blurb: 'Secure notes stay locked until you open one.', words: 'secure private password touch id lock' },
-  { id: 'advanced', title: 'Advanced', icon: 'gauge', group: 2, blurb: 'Speed, how the canvas is drawn, and your backups.', words: 'speed meter render mode performance backup export import storage database test' },
+  { id: 'appearance', title: 'Appearance', icon: 'sun', group: 0, blurb: 'How Personal Note looks. A skin applies at once.', words: 'skin theme paper crayon night dark light' },
+  { id: 'writing', title: 'Writing', icon: 'pencil', group: 0, blurb: 'How new text looks on a canvas.', words: 'font size serif sans monospace' },
+  { id: 'ai', title: 'AI', icon: 'sparkles', group: 1, blurb: 'One model for every AI feature. Nothing is sent until you press Jam.', words: 'model claude azure openai key jam' },
+  { id: 'plugins', title: 'Plugins', icon: 'layout-grid', group: 1, blurb: 'Optional features. Off hides a feature and keeps its notes.', words: 'mind maps jam voice switch' },
+  { id: 'voice', title: 'Voice', icon: 'mic', group: 1, blurb: 'Hold to talk. It runs here and keeps only the words.', words: 'dictation microphone transcript audio' },
+  { id: 'meaning', title: 'Search by meaning', icon: 'brain', group: 1, blurb: 'Finds notes by idea, not just words. It runs here.', words: 'semantic embedding' },
+  { id: 'x', title: 'X bookmarks', icon: 'bookmark', group: 1, blurb: 'Bring your X bookmarks in as notes. Read-only.', words: 'twitter sync client id' },
+  { id: 'locked', title: 'Locked notes', icon: 'lock', group: 2, blurb: 'Secure notes stay locked until you open one.', words: 'secure private password' },
+  { id: 'advanced', title: 'Advanced', icon: 'gauge', group: 2, blurb: 'Speed, drawing mode and your backups.', words: 'speed meter render performance backup export import storage' },
 ]
 
 const tokens = (query) => query.toLowerCase().split(/\s+/).filter(Boolean)

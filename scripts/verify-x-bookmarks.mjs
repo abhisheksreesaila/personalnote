@@ -12,7 +12,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium, webkit } from 'playwright'
-import { showSection } from './lib/settings.mjs'
+import { closeSettings, showSection } from './lib/settings.mjs'
 import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const UI_PORT = basePort(4920)
@@ -105,6 +105,7 @@ try {
   const stored = (await call('GET', '/notebooks')).find((item) => item.name === 'X bookmarks')
   check('the notebook stores icon brand:x with 5 notes', stored?.icon === 'brand:x' && stored?.noteCount === 5, JSON.stringify(stored))
 
+  await closeSettings(page) // (Settings is a dialog over the page now)
   await xRow.locator('[data-notebook-select]').click()
   await page.waitForSelector('.note-list-item')
   const titles = await page.locator('.nbk.open .note-list-item span').allTextContents()

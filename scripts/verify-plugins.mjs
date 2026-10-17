@@ -91,6 +91,7 @@ try {
       check('[phone] the switch row is at least 48px tall', row.height >= 48, JSON.stringify(row))
     }
     await shot('settings-on')
+    await closeSettingsFrom(page) // (Settings is a dialog over the page now)
     check(`[${label}] on: the new-note menu offers Mind map`, (await menuKinds()).join() === 'canvas,mindmap')
     await pick(map.id)
     await page.waitForSelector('.mindmap-host:not([hidden]) svg', { timeout: 15000 })

@@ -5,7 +5,7 @@
 @font-face { font-family: "Geist Fallback"; font-weight: 100 550; size-adjust: 106%; ascent-override: 95%; descent-override: 28%; line-gap-override: 0%; src: local(Arial), local("Liberation Sans"); }
 @font-face { font-family: "Geist Fallback"; font-weight: 551 900; size-adjust: 105%; ascent-override: 95.7%; descent-override: 28.1%; line-gap-override: 0%; src: local("Arial Bold"), local("Liberation Sans Bold"); }
 @media screen {
-  :root, :root[data-skin="crayon"] {
+  :root, :root[data-skin="crayon"], .pv-crayon {
     color-scheme: light;
     --sk-desk: #f2f2f7; --sk-desk-dot: rgba(0, 0, 40, .07);
     --sk-panel: #ffffff; --sk-edge: #e3e3ea;
@@ -20,7 +20,7 @@
     --sk-radius: 18px; --sk-radius-control: 10px;
     --sk-shadow: 0 1px 2px rgba(0, 0, 30, .05), 0 16px 40px -16px rgba(0, 0, 60, .22);
   }
-  :root[data-skin="paper"] {
+  :root[data-skin="paper"], .pv-paper {
     color-scheme: light;
     --sk-desk: #e9e4da; --sk-desk-dot: rgba(60, 45, 20, .10);
     --sk-panel: #fffdf8; --sk-edge: #e2dbcd;
@@ -35,7 +35,7 @@
     --sk-radius: 14px; --sk-radius-control: 8px;
     --sk-shadow: 0 1px 0 rgba(31, 27, 22, .04), 0 12px 32px -12px rgba(60, 40, 10, .22);
   }
-  :root[data-skin="night"] {
+  :root[data-skin="night"], .pv-night {
     color-scheme: dark;
     --sk-desk: #0d1015; --sk-desk-dot: rgba(160, 190, 255, .07);
     --sk-panel: #161b23; --sk-edge: #232a35;

@@ -108,6 +108,7 @@ const rafOver = async (page, ms) => { const a = await page.evaluate(() => window
   await page.waitForTimeout(200)
   check('shortcut ignored while typing', await pill(page).isVisible())
   await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape') // (and Settings, which is a dialog over the page now)
   await page.click('[data-tool="text"]')
   const c = await toClient(page, 200, 200)
   await page.mouse.click(c.x, c.y)

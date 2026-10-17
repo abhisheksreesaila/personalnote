@@ -250,7 +250,8 @@ document.querySelector('#app').innerHTML = `
       </section>
     </main>
 
-    <aside class="properties-panel" id="properties-panel" aria-label="Settings" aria-hidden="true" inert>
+    <div class="settings-dim" id="settings-dim"></div>
+    <aside class="properties-panel" id="properties-panel" role="dialog" aria-modal="true" aria-label="Settings" aria-hidden="true" inert>
       <div class="properties-heading"><h2>Settings</h2><button class="icon-button" id="close-properties" title="Close settings" aria-label="Close settings"><i data-lucide="x"></i></button></div>
       <section class="settings-section" data-sw="writing">
         <p class="settings-section-label">Writing</p>
@@ -471,6 +472,7 @@ const elements = {
   notebookName: document.querySelector('#notebook-name'),
   sidebarToggle: document.querySelector('#toggle-sidebar'),
   properties: document.querySelector('#properties-panel'),
+  settingsDim: document.querySelector('#settings-dim'),
   noteProps: document.querySelector('#note-popover'),
   canvasTypographyProperties: document.querySelector('#canvas-typography-properties'),
   noteSurfaceLabel: document.querySelector('#note-surface-label'),
@@ -2370,15 +2372,20 @@ async function deleteNotebook() {
   renderNoteList()
 }
 
-let settingsFromMenu = false // opened from the ... menu: closing it puts the focus back on the ... button
+let settingsOpener = null // where the focus was when Settings opened: closing it puts the focus back there (the island when that is gone)
 function setPropertiesOpen(open) {
   if (open) void loadOptional() // the panels it shows are optional code (F-097)
+  const was = elements.properties.classList.contains('open')
+  if (open && !was) settingsOpener = document.activeElement
   elements.properties.classList.toggle('open', open)
+  elements.settingsDim.classList.toggle('open', open)
   elements.properties.setAttribute('aria-hidden', String(!open))
   elements.properties.inert = !open
-  if (!open && settingsFromMenu) {
-    settingsFromMenu = false
-    if (!document.activeElement || document.activeElement === document.body) focusIsland()
+  if (open && !was) document.querySelector('#close-properties').focus()
+  if (!open && was) {
+    const back = settingsOpener
+    settingsOpener = null
+    if (elements.properties.contains(document.activeElement) || document.activeElement === document.body) back?.getClientRects().length ? back.focus() : focusIsland()
   }
   const trigger = document.querySelector('#top-properties')
   trigger.classList.toggle('active', open)
@@ -3410,9 +3417,7 @@ elements.shareMenu.addEventListener('keydown', (event) => {
 // Tabbing out of the card closes it, as leaving the menu did.
 elements.shareMenu.addEventListener('focusout', (event) => { if (event.relatedTarget && !event.relatedTarget.closest('#island')) setShareMenuOpen(false) })
 document.querySelector('#top-properties').addEventListener('click', () => {
-  const open = !elements.properties.classList.contains('open')
-  setPropertiesOpen(open)
-  settingsFromMenu = open
+  setPropertiesOpen(!elements.properties.classList.contains('open'))
 })
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#top-properties').addEventListener('click', () => {
@@ -4232,7 +4237,7 @@ function loadPanels() {
     pluginShell.setup = { createSetupSection: panels.createSetupSection, renderSetupRow: panels.renderSetupRow, createIslandDownload: panels.createIslandDownload }
     const skins = startSkins()
     const settingsWindow = panels.mountSettingsWindow(elements.properties, {
-      icons, createIcons, plugins, skins: { list: SKINS, current: () => skins.current, select: (id) => { skins.select(id); skinSwitcher.sync() } },
+      createIcons, plugins, skins: { list: SKINS, current: () => skins.current, select: (id) => { skins.select(id); skinSwitcher.sync() } },
       defaults: () => ({ fontFamily: state.fontFamily, fontSize: state.fontSize }),
       close: () => setPropertiesOpen(false), openNoteProps: () => { setPropertiesOpen(false); setNotePropsOpen(true) },
     })
