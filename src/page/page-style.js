@@ -26,6 +26,12 @@ const CSS = `
   box-shadow: 0 1px 0 rgba(31, 27, 22, .06), 0 18px 40px -18px rgba(60, 40, 10, .35);
 }
 .page-editor { position: relative; z-index: 1; }
+.page-icon {
+  position: absolute; z-index: 3; left: 110px; top: 18px; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 18px; cursor: pointer;
+  background: color-mix(in srgb, var(--t) 36%, var(--page-paper)); font: 38px/64px "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", sans-serif;
+}
+.page-icon:focus-visible { outline: 2px solid var(--page-accent); outline-offset: 2px; }
+.page-icon:empty { display: none; }
 .page-sheets { position: absolute; inset: 0; pointer-events: none; }
 .page-sheet-mark {
   position: absolute; left: 0; right: 0; border-top: 1px dashed var(--page-line); padding: 4px 14px 0 0; text-align: right;
@@ -123,13 +129,14 @@ const CSS = `
   .app-shell .page-host { inset: 0; border: 0; border-radius: 0; }
   .page-desk { padding: 0 0 96px; }
   .page-paper { padding: 56px 22px 240px; border-radius: 0; box-shadow: none; }
+  .page-icon { display: none; }
 }
 /* focus mode (F-073): the page is only its words, in a column on paper; no toolbar, sheet marks or tray */
 .app-shell.focus-mode .page-host { inset: 0; border: 0; border-radius: 0; background: var(--paper); }
 .focus-mode .page-desk { padding: 0 16px 120px; }
 .focus-mode .page-stage { width: 680px; }
 .focus-mode .page-paper { padding: 96px 0 360px; background: transparent; box-shadow: none; }
-.focus-mode :is(.page-toolbar, .page-sheets, .page-tray, .page-draw-hint, .page-link-hint, .page-ink, .page-drawing) { display: none; }
+.focus-mode :is(.page-toolbar, .page-sheets, .page-tray, .page-draw-hint, .page-link-hint, .page-ink, .page-drawing, .page-icon) { display: none; }
 }
 `
 

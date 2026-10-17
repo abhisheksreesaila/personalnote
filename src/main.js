@@ -133,7 +133,7 @@ document.querySelector('#app').innerHTML = `
       </header>
       <div class="island-slot">
         <div class="island booting" id="island" data-face="rest">
-          <div class="isl-face" data-face="rest"><button class="isl-open" id="share-button" data-keeps-text-editing title="Note actions" aria-haspopup="dialog" aria-expanded="false" aria-controls="share-menu"><span id="island-title">Untitled note</span></button></div>
+          <div class="isl-face" data-face="rest"><button class="nt isl-ico" id="island-icon" aria-label="Change icon"></button><button class="isl-open" id="share-button" data-keeps-text-editing title="Note actions" aria-haspopup="dialog" aria-expanded="false" aria-controls="share-menu"><span id="island-title">Untitled note</span></button></div>
           <div class="isl-face isl-card" data-face="card" id="share-menu" role="dialog" aria-label="Note actions" hidden>
             <input class="note-title" id="note-title" value="Untitled note" aria-label="Note title" />
             <div class="isl-meta"><div class="save-state" id="save-state"><span></span>Saved on this device</div><span id="island-notebook"></span></div>
@@ -144,6 +144,7 @@ document.querySelector('#app').innerHTML = `
               <button id="share-backup" title="Download backup"><i data-lucide="archive"></i><span>Backup</span></button>
               <button id="share-markdown" title="Markdown + assets"><i data-lucide="file-down"></i><span>Markdown</span></button>
               <button id="share-vault" title="Obsidian vault"><i data-lucide="folder-down"></i><span>Obsidian</span></button>
+              <button id="share-icon" title="Change icon"><i data-lucide="wand-sparkles"></i><span>Icon</span></button>
               <button id="share-link" title="Link to a note…"><i data-lucide="link"></i><span>Link note</span></button>
               <button id="fold-all" title="Fold all linked objects into their words" hidden><i data-lucide="fold-vertical"></i><span>Fold all</span></button>
               <button id="top-properties" title="Settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i><span>Settings</span></button>
@@ -453,6 +454,7 @@ const elements = {
   dockCanvas: document.querySelector('#dock-canvas'),
   shareButton: document.querySelector('#share-button'),
   shareMenu: document.querySelector('#share-menu'),
+  islandIcon: document.querySelector('#island-icon'),
   islandNotebook: document.querySelector('#island-notebook'),
   sidebarScrim: document.querySelector('#sidebar-scrim'),
   sidebar: document.querySelector('#sidebar'),
@@ -556,6 +558,7 @@ function setActiveNoteType(noteType) {
   elements.canvasTypographyProperties.hidden = notCanvas
   elements.mindmapProperties.hidden = !isMindMap
   elements.mindmapRailActions.hidden = !isMindMap
+  paintNoteIcon()
   elements.properties.querySelector('.properties-heading span').textContent = isMindMap ? 'Mind map' : 'Inspector'
   elements.properties.querySelector('.properties-heading h2').textContent = isMindMap ? 'Node properties' : 'Note properties'
   elements.noteSurfaceLabel.textContent = isMindMap ? 'Mind map' : isPage ? 'Page' : 'Canvas'
@@ -583,7 +586,8 @@ async function mountActivePage(documentValue) {
   pageEditor?.destroy()
   pageEditor = null
   const ticket = ++pageMountTicket
-  const editor = await mountPageModule(elements.pageHost, { documentValue, onChange: () => queueSave(), onOpenNote: openLinkedNote })
+  const icon = state.notes.find((note) => note.id === state.activeNoteId)?.icon
+  const editor = await mountPageModule(elements.pageHost, { documentValue, icon, onIcon: (anchor) => openNoteIcon(state.activeNoteId, anchor), onChange: () => queueSave(), onOpenNote: openLinkedNote })
   if (ticket !== pageMountTicket || state.activeNoteType !== 'page') { editor.destroy(); return }
   pageEditor = editor
 }
@@ -865,11 +869,11 @@ function safeStorage() {
 
 function noteRowHtml(note) {
   const secureRow = noteRowIcon(note) // a secure note shows the lock in the secure colour
-  const dot = `<i data-lucide="${secureRow.icon}"></i>`
   return `
     <button class="note-list-item ${note.id === state.activeNoteId ? 'active' : ''} ${secureRow.className}" data-note-id="${note.id}" draggable="true">
-      ${dot}
+      <b class="nt" data-icon-note="${note.id}" style="--t:var(--sk-c${note.icon?.tint})" title="Change icon">${note.icon?.emoji ?? ''}</b>
       <span>${escapeHtml(note.title || 'Untitled note')}</span>
+      <i data-lucide="${secureRow.icon}"></i>
     </button>
   `
 }
@@ -974,6 +978,26 @@ function renderNoteList() {
   renderNotebookPicker()
   createIcons({ icons })
   shelves?.afterRender()
+  paintNoteIcon()
+}
+
+// The open note's emoji: in the island (on a wide screen a page shows it big above the words instead, see page-editor.js). Click it to change it (F-100).
+let paintedIcon = ''
+function paintNoteIcon() {
+  const icon = state.notes.find((note) => note.id === state.activeNoteId)?.icon
+  const key = `${icon?.emoji}${icon?.tint}${state.activeNoteType}`
+  if (key === paintedIcon) return
+  paintedIcon = key
+  elements.islandIcon.textContent = icon?.emoji ?? ''
+  elements.islandIcon.style.setProperty('--t', `var(--sk-c${icon?.tint})`)
+  island?.remeasure()
+  pageEditor?.setIcon(icon)
+}
+
+function openNoteIcon(id, anchor) {
+  void import('./modules/library/note-icon-picker.js').then(({ openNoteIconPicker }) => openNoteIconPicker({
+    id, anchor, api, toast: showToast, getNote: () => state.notes.find((note) => note.id === id), refresh: renderNoteList,
+  }))
 }
 
 // F-095: a bookmark from X that is still to do (in the X notebook, not archived) gets a Done button; its code loads when one is opened.
@@ -1553,7 +1577,7 @@ async function saveActiveNote({ unloading = false } = {}) {
     // body goes as a Blob: handing a note of megabytes to fetch as a string copies it on the main thread and stalls a drag for ~100 ms.
     const mergesBefore = mergeCount
     const result = await api(`/notes/${noteId}`, { method: 'PUT', body: unloading ? body : new Blob([body]), keepalive: unloading && canKeepAlive(body) })
-    if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId })
+    if (note) Object.assign(note, { title, revision: confirmedRevision(note.revision, result.revision), resourceId: result.resourceId, icon: result.icon })
     // What the server now holds is the base for the next merge, unless the note was left or a merge moved the base on while this save was out.
     // The server holds what was just saved, in the frame it was saved in, whether or not a merge came meanwhile; the base moves on only when none did.
     if (editedLeafer && noteId === state.activeNoteId && leaferSource.noteId === noteId && savedShift) leaferServerShift = savedShift
@@ -2024,6 +2048,7 @@ async function selectNoteNow(id, { reload = false } = {}) {
       resourceId: note.resourceId,
       revision: note.revision,
       secure: Boolean(note.secure),
+      icon: note.icon,
     })
     state.selectedNotebookId = note.notebookId
     revealNotebook(note.notebookId)
@@ -3378,6 +3403,7 @@ elements.shareMenu.addEventListener('click', (event) => {
   if (!item || item.disabled) return
   setShareMenuOpen(false)
   if (item.id === 'share-focus') tryFocus()
+  else if (item.id === 'share-icon') openNoteIcon(state.activeNoteId, () => elements.islandIcon.offsetParent ? elements.islandIcon : elements.shareButton)
   else if (item.id === 'share-link') void withNoteLinks((module) => module.startLinking(linkHost))
   else if (item.id === 'share-print') openPrintPreview()
   else if (item.id === 'share-png') void downloadNotePicture()
@@ -3641,7 +3667,10 @@ elements.title.addEventListener('input', () => {
   if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(elements.title.value.trim())
   queueSave()
 })
+elements.islandIcon.addEventListener('click', () => openNoteIcon(state.activeNoteId, () => elements.islandIcon))
 elements.list.addEventListener('click', (event) => {
+  const tile = event.target.closest('[data-icon-note]')
+  if (tile) return void openNoteIcon(Number(tile.dataset.iconNote), () => elements.list.querySelector(`[data-icon-note="${tile.dataset.iconNote}"]`))
   const item = event.target.closest('[data-note-id]')
   if (item) {
     selectNote(Number(item.dataset.noteId))

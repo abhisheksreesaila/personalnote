@@ -3,22 +3,9 @@
   .nbi svg { width: 16px; height: 16px }
   .nbi-gap { width: 16px; flex: none }
   .nbi-l { width: 18px; height: 18px; border-radius: 6px; background: var(--notebook-color); color: #fff; font: 600 11px/18px var(--ui-font) }
-  .nbi:focus-visible, .nbi-pop :focus-visible { outline: 2px solid var(--sk-accent); outline-offset: 1px }
-  .nbi-pop { position: fixed; z-index: 80; width: 296px; max-width: calc(100vw - 16px); display: grid; gap: 8px; padding: 10px; border: 1px solid var(--sk-edge); border-radius: 14px; background: var(--sk-panel); color: var(--sk-ink); box-shadow: 0 12px 36px rgba(0, 0, 0, .22) }
-  .nbi-pop button, .nbi-in { height: 32px; border: 0; border-radius: 8px; background: none; color: inherit; font: 12px var(--ui-font); cursor: pointer }
-  .nbi-pop button:hover { background: var(--hover) }
-  .nbi-pop button[aria-pressed="true"] { background: var(--sk-accent-soft) }
-  .nbi-colors, .nbi-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px }
-  .nbi-colors button::before { content: ""; display: block; width: 18px; height: 18px; margin: auto; border-radius: 50%; background: var(--notebook-color) }
-  .nbi-in { box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid var(--sk-edge); background: var(--sk-desk); cursor: text }
-  .nbi-in[aria-invalid] { border-color: var(--sk-danger) }
-  .nbi-grid svg { margin: auto }
+  .nbi:focus-visible { outline: 2px solid var(--sk-accent); outline-offset: 1px }
   @media (max-width: 800px) {
     .app-shell .nbi { width: 44px }
     .nbi-gap { width: 28px }
-    .nbi-pop button, .nbi-in { height: 44px }
-    .nbi-pop { width: 312px }
-    .nbi-colors { grid-template-columns: repeat(4, minmax(0, 1fr)) }
-    .nbi-grid { grid-template-columns: repeat(6, minmax(0, 1fr)) }
   }
 }

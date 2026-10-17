@@ -234,7 +234,11 @@
   .isl-face { position: absolute; left: 0; top: 0; width: max-content; white-space: nowrap; }
   .isl-face[hidden] { display: none; }
   .isl-open, .isl-moment, .isl-focus { height: calc(var(--h) - 2px); align-items: center; font: 500 13.5px/1 var(--ui-font); }
-  .isl-open { display: block; padding: 0 18px; border: 0; background: none; color: inherit; font-weight: 600; cursor: pointer; }
+  .isl-open { display: inline-block; padding: 0 18px; border: 0; background: none; color: inherit; font-weight: 600; cursor: pointer; }
+  .nt { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: color-mix(in srgb, var(--t) 36%, var(--sk-panel)); font: 14px/1 "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", sans-serif; }
+  .isl-ico { display: inline-grid; vertical-align: middle; margin: 0 -10px 0 10px; padding: 0; border: 0; cursor: pointer; }
+  .isl-ico:empty, .page-active .isl-ico { display: none; }
+  @media (max-width: 900px) { .page-active .isl-ico:not(:empty) { display: inline-grid; } }
   #island-title { display: block; max-width: min(300px, calc(100vw - 150px)); overflow: hidden; text-overflow: ellipsis; }
   .isl-moment { display: flex; gap: 8px; padding: 0 16px; }
   .isl-hit { position: absolute; inset: 0; border: 0; background: none; cursor: pointer; }
@@ -420,7 +424,8 @@
     .app-shell.sidebar-open .sidebar-scrim { opacity: 1; pointer-events: auto; }
     .app-shell .notebook-tab { height: 44px; font-size: 14px; }
     .app-shell .sec-head { height: 44px; font-size: 14px; }
-    .app-shell .note-list-item { min-height: 40px; }
+    .app-shell .note-list-item { min-height: 48px; }
+    .app-shell .note-list-item .nt { width: 32px; height: 32px; border-radius: 9px; font-size: 18px; }
     .app-shell .sec-add, .app-shell .nav-edit { opacity: 1; width: 32px; height: 32px; }
     .app-shell .nav-edit { top: 6px; right: 24px; }
     .app-shell .nav-new-note { right: 58px; }

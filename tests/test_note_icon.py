@@ -77,6 +77,15 @@ class NoteIconApiTests(unittest.TestCase):
         self.assertEqual(self.listed(note["id"])["icon"]["emoji"], "✈️")
         self.assertFalse(self.listed(note["id"])["icon"]["chosen"])
 
+    def test_guess_from_title_chooses_what_the_title_suggests(self):
+        note = self.make("Lisbon trip")
+        guessed = self.client.patch(f"/api/notes/{note['id']}/icon", json={"icon": "🍋", "tint": 2}).json()
+        result = self.client.patch(f"/api/notes/{note['id']}/icon", json={"guess": True, "revision": guessed["revision"]}).json()
+        self.assertEqual(result["icon"]["emoji"], "✈️")
+        self.assertTrue(result["icon"]["chosen"])  # it stays when the title changes
+        saved = self.client.put(f"/api/notes/{note['id']}", json={"title": "Grocery list", "revision": result["revision"], "content": note["content"]}).json()
+        self.assertEqual(saved["icon"]["emoji"], "✈️")
+
     def test_a_guess_follows_a_rename_until_an_icon_is_chosen(self):
         note = self.make("Lisbon trip")
         saved = self.client.put(f"/api/notes/{note['id']}", json={"title": "Grocery list", "revision": note["revision"], "content": note["content"]}).json()

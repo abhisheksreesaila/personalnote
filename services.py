@@ -860,8 +860,8 @@ class NoteService:
         return {"ok": True, "resourceId": current["resource_id"], "revision": revision, "icon": shown_icon(title, note_type, current["icon"], current["icon_tint"])}
 
     def set_note_icon(self, note_id: int, payload: dict) -> dict:
-        """Choose a note's emoji and tint, or take it away with `"icon": ""` (the row then shows the guess from its title). Appearance only:
-        the note keeps its place in the list, but it is a new revision like any other change."""
+        """Choose a note's emoji and tint, `"guess": true` to choose what the title suggests, or take it away with `"icon": ""` (the row then
+        shows the guess from its title). Appearance only: the note keeps its place in the list, but it is a new revision like any other change."""
         emoji = payload.get("icon", "")
         tint = payload.get("tint", 0)
         if not (emoji == "" or is_chosen_icon(emoji)):
@@ -872,6 +872,8 @@ class NoteService:
             current = connection.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
             if current is None:
                 raise NotFoundError("Note not found")
+            if payload.get("guess"):
+                emoji = shown_icon(current["title"], current["note_type"])["emoji"]
             expected_revision = self.expected_revision(payload, current["revision"])
             revision = expected_revision + 1
             if not emoji:
