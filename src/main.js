@@ -139,12 +139,12 @@ document.querySelector('#app').innerHTML = `
             <div class="isl-meta"><div class="save-state" id="save-state"><span></span>Saved on this device</div><span id="island-notebook"></span></div>
             <div class="isl-grid">
               <button id="share-focus" class="isl-wide" data-keeps-text-editing title="Focus mode"><i data-lucide="focus"></i><span>Focus</span><kbd id="focus-top-kbd">Ctrl .</kbd></button>
-              <button id="share-link" title="Link to a note…"><i data-lucide="link"></i><span>Link note</span></button>
               <button id="share-print" title="Print preview"><i data-lucide="printer"></i><span>Print</span></button>
               <button id="share-png" title="Note as picture (PNG)"><i data-lucide="image-down"></i><span>Picture</span></button>
               <button id="share-backup" title="Download backup"><i data-lucide="archive"></i><span>Backup</span></button>
               <button id="share-markdown" title="Markdown + assets"><i data-lucide="file-down"></i><span>Markdown</span></button>
               <button id="share-vault" title="Obsidian vault"><i data-lucide="folder-down"></i><span>Obsidian</span></button>
+              <button id="share-link" title="Link to a note…"><i data-lucide="link"></i><span>Link note</span></button>
               <button id="fold-all" title="Fold all linked objects into their words" hidden><i data-lucide="fold-vertical"></i><span>Fold all</span></button>
               <button id="top-properties" title="Settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i><span>Settings</span></button>
               <button id="clear-note" class="danger" title="Clear all"><i data-lucide="eraser"></i><span>Clear all</span></button>
@@ -2604,6 +2604,7 @@ const pluginShell = {
   mindmapEditor: () => mindmapEditor,
   addEntry: (entry) => { pluginEntries.set(entry.id, entry); syncNoteCreateMenu(); return () => { pluginEntries.delete(entry.id); syncNoteCreateMenu() } }, // a "new ..." entry in the new-note menu and the omnibar
   renderOmni: () => renderOmni(),
+  refreshIcons: () => createIcons({ icons }),
   setPropertiesOpen: (open) => setPropertiesOpen(open),
   inAppWindow: () => hostFlag === 'desktop' || Boolean(window.pywebview),
 }
@@ -3232,7 +3233,6 @@ const linkHost = {
   get page() { return pageEditor },
   get center() { return viewCenterPoint() },
   pickTool: () => setTool('select'),
-  refreshIcons: () => createIcons({ icons }),
   refresh: refreshWorkspaceLists,
   settle: async () => { flushPendingEdits('done'); await saveSettled },
 }

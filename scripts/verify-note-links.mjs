@@ -211,6 +211,21 @@ try {
   const dashed = await pixelAt(removedAt.x - removedCard.w * 0.7 + 3, removedAt.y)
   check('its face is drawn as a removed note (muted badge, not the notebook colour)', dashed !== null)
 
+  // ---- the same in a page: a link whose note was removed is struck through and says so
+  const temp = await call('POST', '/notes', { title: 'Temp target', noteType: 'page', notebookId: hub.notebookId })
+  const holder = await call('POST', '/notes', { title: 'Holds a dead link', noteType: 'page', notebookId: hub.notebookId })
+  await call('PUT', `/notes/${holder.id}`, { title: 'Holds a dead link', revision: holder.revision, content: { version: 1, markdown: `Gone: [Temp target](personal-note://note/${temp.resourceId}) and still here: [Lisbon trip](personal-note://note/${lisbon.resourceId}).`, ink: { marks: [], drawings: [] } } })
+  await call('DELETE', `/notes/${temp.id}`)
+  await pn(() => window.__personalNote.refreshWorkspaceLists())
+  await openNote('Holds a dead link')
+  await page.waitForSelector('.page-note-link.gone', { timeout: 10000 }).catch(() => {})
+  const dead = await pn(() => { const el = document.querySelector('.page-note-link.gone'); return el && { text: el.textContent, after: getComputedStyle(el, '::after').content, struck: getComputedStyle(el).textDecorationLine, others: document.querySelectorAll('.page-note-link:not(.gone)').length } })
+  check('in a page a removed note shows struck through with "(note removed)" and the live link beside it is normal', dead?.text === 'Temp target' && /note removed/.test(dead.after) && dead.struck === 'line-through' && dead.others === 1, JSON.stringify(dead))
+  await shot('desktop-page-gone')
+  await page.click('.page-note-link.gone')
+  await page.waitForTimeout(400)
+  check('clicking it says the note was removed and stays put', (await page.locator('#toast').textContent()).includes('That note was removed') && (await pn(() => window.__personalNote.state.activeNoteId)) === holder.id)
+
   // ---- a secure target shows only its title
   const secret = await noteByTitle('Card numbers')
   await pn(([ref]) => window.__personalNote.leaferCanvas().addNoteLink({ x: 600, y: 800 }, { ref, title: 'Card numbers' }), [secret.resourceId])
@@ -313,6 +328,7 @@ try {
 
   // the visible alternative, by finger
   await phone.tap('#share-button')
+  await phone.waitForTimeout(700) // (the card finishes opening)
   const linkButton = await phone.locator('#share-link').boundingBox()
   check('phone: "Link note" in the note menu is on screen and a finger-sized target', linkButton && linkButton.x >= 0 && linkButton.x + linkButton.width <= 390 && linkButton.height >= 40, JSON.stringify(linkButton))
   await pshot('menu')
