@@ -1,5 +1,6 @@
 import { branchGeometry as computeBranch, cubicAt, PORT_VECTORS, ribbonPath } from './geometry.js'
-import { descendantsOf, getDepth, nodeById, visibleNodes } from './model.js'
+import { ghostNodes } from './jam.js'
+import { BRANCH_COLORS, descendantsOf, displayText, getDepth, nodeById, visibleNodes } from './model.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const createSvg = (name, attributes = {}) => {
@@ -16,7 +17,7 @@ function branchWidths(depth) {
 }
 
 function estimateTextWidth(node) {
-  return Math.max(58, node.text.length * (node.fontSize || 20) * (node.font === 'clean' ? 0.53 : 0.49))
+  return Math.max(58, displayText(node).length * (node.fontSize || 20) * (node.font === 'clean' ? 0.53 : 0.49))
 }
 
 function nodePresentation(node) {
@@ -101,7 +102,53 @@ export class MindMapRenderer {
     visible.filter((node) => node.parentId && ids.has(node.parentId)).forEach((node) => this.renderBranch(node))
     const selected = nodeById(documentValue, selectedId)
     if (selected?.parentId && ids.has(selected.id) && ids.has(selected.parentId)) this.renderBranchControls(selected)
+    const ghosts = ghostNodes(documentValue).filter((ghost) => ids.has(ghost.parentId))
+    ghosts.forEach((ghost) => this.renderGhostBranch(ghost))
     visible.forEach((node) => this.renderNode(node))
+    ghosts.forEach((ghost) => this.renderGhost(ghost))
+  }
+
+  // A suggestion waiting beside the map (F-092): the branch it would grow, faint and dashed.
+  renderGhostBranch(ghost) {
+    const geometry = branchGeometry(nodeById(this.document, ghost.parentId), ghost, getDepth(this.document, ghost.parentId) + 1)
+    this.branchLayer.append(createSvg('path', { class: 'map-ghost-branch', d: centerLine(geometry), fill: 'none', stroke: ghost.color, 'stroke-width': 3, 'stroke-dasharray': '8 8', 'stroke-linecap': 'round', opacity: 0.55, 'pointer-events': 'none' }))
+  }
+
+  // The ghost's box with a Yes and a No beside it. The pills keep one size on screen whatever the zoom (48px high on a phone).
+  renderGhost(ghost) {
+    const frame = nodeFrame(ghost)
+    const compact = Boolean(globalThis.matchMedia?.('(max-width: 800px)').matches)
+    const unit = 1 / this.transform.scale
+    const [height, width, size] = (compact ? [48, 76, 15] : [28, 56, 13]).map((n) => n * unit)
+    const group = createSvg('g', { class: 'map-ghost', transform: `translate(${ghost.x} ${ghost.y})`, 'data-ghost-id': ghost.id })
+    const title = createSvg('title')
+    title.textContent = ghost.why
+    const label = createSvg('text', { class: 'map-node-label', x: 0, y: 1, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': ghost.fontSize, 'font-weight': '500' })
+    label.textContent = ghost.text
+    group.append(
+      title,
+      createSvg('rect', { x: frame.left, y: -frame.height / 2, width: frame.width, height: frame.height, rx: 6, fill: '#fffefa', 'fill-opacity': 0.6, stroke: ghost.color, 'stroke-width': 2, 'stroke-dasharray': '6 5', opacity: 0.75 }),
+      label,
+    )
+    ;[['yes', 'Yes', -1], ['no', 'No', 1]].forEach(([action, words, side]) => {
+      const pill = createSvg('g', { 'data-ghost-id': ghost.id, 'data-ghost-action': action, transform: `translate(${side * (width / 2 + 4 * unit)} ${frame.height / 2 + 6 * unit + height / 2})`, role: 'button', tabindex: 0, 'aria-label': `${words}, ${action === 'yes' ? 'add' : 'drop'} ${ghost.text}`, style: 'cursor:pointer' })
+      const caption = createSvg('text', { x: 0, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: action === 'yes' ? '#fff' : BRANCH_COLORS[7], style: `font:700 ${size}px "IBM Plex Sans",sans-serif` })
+      caption.textContent = words
+      pill.append(createSvg('rect', { x: -width / 2, y: -height / 2, width, height, rx: height / 2, fill: action === 'yes' ? ghost.color : '#fffefa', stroke: action === 'yes' ? ghost.color : BRANCH_COLORS[7], 'stroke-width': 1.5 * unit }), caption)
+      group.append(pill)
+    })
+    this.nodeLayer.append(group)
+  }
+
+  // 👍 or 👎 on a branch; hovering shows why (the tooltip), a tap shows it too (the editor toasts data-reason).
+  renderVote(group, node, x, y) {
+    const badge = createSvg('g', { class: 'map-vote', 'data-vote': node.vote, 'data-reason': node.reason, transform: `translate(${x} ${y})`, role: 'img', 'aria-label': `${node.vote === 'up' ? 'Thumbs up' : 'Thumbs down'}: ${node.reason}`, style: 'cursor:help' })
+    const title = createSvg('title')
+    title.textContent = node.reason
+    const thumb = createSvg('text', { x: 0, y: 1, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': 15 })
+    thumb.textContent = node.vote === 'up' ? '👍' : '👎'
+    badge.append(title, createSvg('circle', { r: 13, fill: '#fffefa', stroke: node.color, 'stroke-width': 2 }), thumb)
+    group.append(badge)
   }
 
   renderBranch(node) {
@@ -183,6 +230,7 @@ export class MindMapRenderer {
       createSvg('rect', { class: 'map-node-selection', x: -width / 2 - 7, y: -height / 2 - 7, width: width + 14, height: height + 14, rx: 24 }),
       label,
     )
+    if (node.vote) this.renderVote(group, node, width / 2 - 4, -height / 2)
   }
 
   renderLabel(group, node) {
@@ -202,7 +250,7 @@ export class MindMapRenderer {
       'font-weight': node.bold ? '700' : '500',
       'font-style': node.italic ? 'italic' : 'normal',
     })
-    label.textContent = midpoint ? node.text.toUpperCase() : node.text
+    label.textContent = midpoint ? displayText(node).toUpperCase() : displayText(node)
     if (!midpoint) {
       label.setAttribute('dominant-baseline', 'middle')
       group.append(
@@ -213,6 +261,7 @@ export class MindMapRenderer {
     } else {
       group.append(createSvg('rect', { class: 'map-node-selection', x: labelX - frame.width / 2, y: labelY - frame.height + 5, width: frame.width, height: frame.height, rx: 5 }), label)
     }
+    if (node.vote) this.renderVote(group, node, labelX + frame.width / 2, midpoint ? labelY - frame.height / 2 : -frame.height / 2)
   }
 
   renderAddHandles(group, node, isRoot) {
@@ -253,7 +302,9 @@ export class MindMapRenderer {
     group.append(createSvg('circle', { class: 'map-collapse-badge', cx: x, cy: 18, r: 11, stroke: node.color }), text)
   }
 
-  bounds(nodes = visibleNodes(this.document, this.focusId)) {
+  bounds(shown = visibleNodes(this.document, this.focusId)) {
+    const ids = new Set(shown.map((node) => node.id))
+    const nodes = [...shown, ...ghostNodes(this.document).filter((ghost) => ids.has(ghost.parentId))] // (the suggestions waiting count: the view must show them)
     if (!nodes.length) return { minX: -100, minY: -100, maxX: 100, maxY: 100 }
     return nodes.reduce((box, node) => ({
       minX: Math.min(box.minX, node.x - 120),

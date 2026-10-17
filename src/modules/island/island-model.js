@@ -7,12 +7,12 @@ export const READY_MS = 1500
 export const NOTICE_MS = 4000
 
 /**
- * Priority, highest first: focus, the open card, a save error, recording, a short flash (Saved, Added N words, is ready),
+ * Priority, highest first: focus, the open card, a save error, a jam, recording, a short flash (Saved, Added N words, is ready),
  * a download, an agent, a slow save, then rest. `onChange(face, patch)` fires only when the face changes; `patch` is true when
  * it is the same kind with new numbers (a download's percent), so the view updates in place instead of measuring again.
  */
 export function createIslandModel({ schedule = setTimeout, cancel = clearTimeout, onChange = () => {} } = {}) {
-  const s = { focus: false, card: false, error: null, recording: null, flash: null, download: null, presence: null, notice: null, sending: false, slow: false }
+  const s = { focus: false, card: false, error: null, recording: null, jam: null, flash: null, download: null, presence: null, notice: null, sending: false, slow: false }
   const timers = { slow: 0, flash: 0, notice: 0 }
   let shown = { kind: 'rest' }
   let shownKey = JSON.stringify(shown)
@@ -21,6 +21,7 @@ export function createIslandModel({ schedule = setTimeout, cancel = clearTimeout
     if (s.focus) return { kind: 'focus' }
     if (s.card) return { kind: 'card' }
     if (s.error) return { kind: 'error', ...s.error }
+    if (s.jam) return { kind: 'jam', ...s.jam }
     if (s.recording) return { kind: 'recording', startedAt: s.recording.startedAt }
     if (s.flash) return s.flash
     if (s.download) return { kind: 'download', name: s.download.name, percent: s.download.percent }
@@ -80,6 +81,8 @@ export function createIslandModel({ schedule = setTimeout, cancel = clearTimeout
       if (arg > 0) flash({ kind: 'added', words: arg }, ADDED_MS)
       else emit()
     },
+    // A jam session on the open map (F-092): { phase: 'idle'|'listening'|'thinking'|'error'|'setup', line, message }, or null when none.
+    jam(face) { s.jam = face; emit() },
     agentPresence(label) { s.presence = label || null; emit() },
     agentNotice(label) {
       cancel(timers.notice)

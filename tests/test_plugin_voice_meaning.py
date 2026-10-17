@@ -95,11 +95,11 @@ class Base(unittest.TestCase):
 
 class SettingsTests(Base):
     def test_all_three_are_on_until_switched_off(self):
-        self.assertEqual(self.settings.view(), {"mindmap": True, "voice": True, "meaning": True})
+        self.assertEqual(self.settings.view(), {"mindmap": True, "voice": True, "meaning": True, "jam": False})
 
     def test_the_choice_is_remembered(self):
         self.settings.set_enabled("voice", False)
-        self.assertEqual(PluginSettings(self.dir / "plugins").view(), {"mindmap": True, "voice": False, "meaning": True})
+        self.assertEqual(PluginSettings(self.dir / "plugins").view(), {"mindmap": True, "voice": False, "meaning": True, "jam": False})
 
 
 class MeaningOffTests(Base):

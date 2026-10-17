@@ -4,7 +4,7 @@
 // off) and keeps its data (kindOf still knows its note types, so existing notes open read-only).
 //
 // A plugin definition:
-//   { id, name, description, icon, defaultOn, needs: [{ kind: 'download'|'network'|'model', text }],
+//   { id, name, description, icon, defaultOn, requires: [plugin ids that must be on too], needs: [{ kind: 'download'|'network'|'model', text }],
 //     noteKinds: [{ type, label, icon, defaultTitle, mount(host, options) -> Promise<editor>, readOnly(host, document, handlers) }],
 //     activate(shell) -> Promise<instance> }   (F-091: for plugins that put things in the shell, such as Voice's mic or the "By meaning" group;
 //                                               `instance.dispose()` takes all of it away again)
@@ -19,6 +19,7 @@ export function createPluginRegistry(definitions) {
   const notify = () => listeners.forEach((listener) => listener())
   const instances = new Map() // plugin id -> what activate() returned, while the plugin is on
   const loading = new Map() // plugin id -> the activate() still on its way
+  const runs = (plugin) => enabled.get(plugin.id) === true && (plugin.requires ?? []).every((id) => enabled.get(id) === true) // its own switch, and every plugin it needs
 
   return {
     list: () => definitions.map(({ id, name, description, icon, needs = [] }) => ({ id, name, description, icon, needs, enabled: enabled.get(id) })),
@@ -34,7 +35,7 @@ export function createPluginRegistry(definitions) {
     // is off is disposed. Safe to call after every change; a plugin switched off while it was still loading is disposed when it arrives.
     async sync(shell) {
       await Promise.all(definitions.filter((plugin) => plugin.activate).map(async (plugin) => {
-        const on = enabled.get(plugin.id) === true
+        const on = runs(plugin)
         if (!on && instances.has(plugin.id)) {
           const instance = instances.get(plugin.id)
           instances.delete(plugin.id)
@@ -45,7 +46,7 @@ export function createPluginRegistry(definitions) {
           const instance = await started
           if (loading.get(plugin.id) === started) loading.delete(plugin.id)
           if (instances.has(plugin.id)) return
-          if (enabled.get(plugin.id) === true) instances.set(plugin.id, instance)
+          if (runs(plugin)) instances.set(plugin.id, instance)
           else await instance.dispose()
         }
       }))

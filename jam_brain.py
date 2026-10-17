@@ -47,6 +47,10 @@ class BrainUnavailable(JamError):
     """The brain could not be reached or refused (not installed, no key, timeout): asking again would not help."""
 
 
+class BrainNotSetUp(BrainUnavailable):
+    """Nothing to ask yet: Claude Code is not installed, or the model address or key is missing. Settings → AI is the fix."""
+
+
 @dataclass(frozen=True)
 class AddBranch:
     parent_id: str
@@ -312,7 +316,7 @@ class ClaudeCodeBrain:
     def complete(self, system: str, user: str) -> str:
         exe = find_claude(self.extra_dirs)
         if not exe:
-            raise BrainUnavailable("Claude Code is not installed here. Install it and sign in, or pick another brain in Settings.")
+            raise BrainNotSetUp("Claude Code is not installed here. Install it and sign in, or pick another brain in Settings.")
         command = [exe, "-p", "--output-format", "json", "--tools", "", "--no-session-persistence",
                    "--setting-sources", "", "--strict-mcp-config", "--system-prompt", system]
         if self.model:
@@ -364,7 +368,7 @@ class OpenAICompatibleBrain:
         self.azure_endpoint, self.deployment = azure_endpoint.rstrip("/"), deployment
         self.api_version, self.key_env, self.timeout = api_version, key_env, timeout
         if not (self.azure_endpoint and self.deployment) and not (self.base_url and self.model):
-            raise BrainUnavailable("Set a base URL and model, or an Azure endpoint and deployment, for this brain.")
+            raise BrainNotSetUp("Set a base URL and model, or an Azure endpoint and deployment, for this brain.")
         for url in (self.base_url, self.azure_endpoint):
             parts = urlparse(url)
             if url and not (parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in LOOPBACK_HOSTS)):
@@ -373,7 +377,7 @@ class OpenAICompatibleBrain:
     def request_for(self, system: str, user: str) -> urllib.request.Request:
         key = os.environ.get(self.key_env, "") or self._key
         if not key:
-            raise BrainUnavailable(f"No API key: add one in Settings → AI, or set the {self.key_env} environment variable.")
+            raise BrainNotSetUp(f"No API key: add one in Settings → AI, or set the {self.key_env} environment variable.")
         body = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 "response_format": {"type": "json_object"}}
         headers = {"Content-Type": "application/json"}

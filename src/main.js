@@ -570,6 +570,7 @@ function setActiveNoteType(noteType) {
     mindmapReadOnly?.destroy()
     mindmapReadOnly = null
     hideMindmapTools(false)
+    plugins.get('jam')?.attach(null)
   }
   if (!isPage) {
     pageMountTicket += 1
@@ -598,6 +599,7 @@ function hideMindmapTools(hide) {
 
 // A map opens in its editor while Mind maps is on, and as a read-only outline (no editor code loaded) while it is off.
 async function mountActiveMindMap(documentValue) {
+  plugins.get('jam')?.attach(null)
   mindmapEditor?.destroy()
   mindmapEditor = null
   mindmapReadOnly?.destroy()
@@ -615,6 +617,7 @@ async function mountActiveMindMap(documentValue) {
     createIcons: () => createIcons({ icons }),
     onChange: () => queueSave(),
   })
+  plugins.get('jam')?.attach(mindmapEditor) // a map made as a jam gets its session
 }
 
 // Turn a plugin on or off: the machine remembers it (the server and the command line read the same file), the page follows at once, and an
@@ -1003,6 +1006,7 @@ const island = mountIsland(document.querySelector('#island'), {
   onOpen: (byKeyboard) => setShareMenuOpen(true, byKeyboard),
   onRetry: () => void saveActiveNote(),
   onStop: () => void plugins.get('voice')?.toggle(),
+  onJam: (action) => plugins.get('jam')?.onIslandAction(action),
 })
 document.fonts.ready.then(() => island.remeasure())
 document.fonts.addEventListener('loadingdone', () => island.remeasure()) // (a font that arrives late changes the title's width)
@@ -2521,9 +2525,16 @@ const IME_KEY = 229 // a key pressed while an input method is composing reports 
 const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], meaningHits: [], meaningReady: false, meaningPending: false, wordsFailed: false } // the meaning fields are the Search by meaning plugin's
 
 // What a plugin that puts things in the page is given (docs/MODULE-CONTRACTS.md, "Plugin host contract"). Plugins are imported only while on.
+const pluginEntries = new Map() // what plugins offer as a way to start something new: { id, label, icon, keywords, run }
+const hasCreateChoices = () => plugins.creatableKinds().length > 0 || pluginEntries.size > 0
 const pluginShell = {
   api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, latestRequest, setup: { createSetupSection, renderSetupRow, createIslandDownload },
   canvas: () => leaferCanvas,
+  voiceSink: null, // a plugin that listens to the mic itself (a jam) sets { heard(text, {final}), listening(on) }; dictation then goes there, not into a text box
+  voice: () => plugins.get('voice'),
+  createNote: (...args) => createNote(...args),
+  mindmapEditor: () => mindmapEditor,
+  addEntry: (entry) => { pluginEntries.set(entry.id, entry); syncNoteCreateMenu(); return () => { pluginEntries.delete(entry.id); syncNoteCreateMenu() } }, // a "new ..." entry in the new-note menu and the omnibar
   renderOmni: () => renderOmni(),
   refreshIcons: () => createIcons({ icons }),
   setPropertiesOpen: (open) => setPropertiesOpen(open),
@@ -2535,6 +2546,7 @@ function omniActions() {
     { id: 'new-note', title: 'New note', icon: 'plus', top: true, keywords: 'create add', run: () => createNote(state.selectedNotebookId ?? undefined) },
     { id: 'quick-note', title: 'Quick note', icon: 'zap', top: true, keycap: quickNoteKeycap(navigator.platform), keywords: 'inbox capture', run: () => createNote() },
   ]
+  for (const entry of pluginEntries.values()) actions.push({ id: entry.id, title: entry.label, icon: entry.icon, top: true, keywords: entry.keywords, run: entry.run })
   actions.push({ id: 'focus', title: 'Focus mode', icon: 'focus', top: true, keycap: `${modifierLabel(navigator.platform)}.`, keywords: 'write quiet distraction full screen words only', run: () => { closeSearch(); toggleFocus() } })
   if (note) actions.push({ id: 'make-secure', title: note.secure ? 'Make this note ordinary' : 'Make this note secure', icon: note.secure ? 'lock-open' : 'lock', top: true, keywords: 'lock private password', run: () => toggleSecureActiveNote() })
   const current = startSkins().current
@@ -3142,24 +3154,28 @@ const suppressedNewNoteClicks = new WeakSet()
 // The menu is the canvas note plus a kind for each plugin that is on; with no plugin kind, the new-note button just makes a note.
 function syncNoteCreateMenu() {
   elements.noteCreateMenu.querySelectorAll('[data-plugin-kind]').forEach((button) => button.remove())
-  for (const kind of plugins.creatableKinds()) {
+  const items = [
+    ...plugins.creatableKinds().map((kind) => ({ attribute: 'createNoteType', value: kind.type, icon: kind.icon, label: kind.label })),
+    ...[...pluginEntries.values()].map((entry) => ({ attribute: 'entryId', value: entry.id, icon: entry.icon, label: entry.label })),
+  ]
+  for (const item of items) {
     const button = document.createElement('button')
     button.setAttribute('role', 'menuitem')
-    button.dataset.createNoteType = kind.type
+    button.dataset[item.attribute] = item.value
     button.dataset.pluginKind = ''
     const icon = document.createElement('i')
-    icon.dataset.lucide = kind.icon
+    icon.dataset.lucide = item.icon
     const label = document.createElement('span')
-    label.textContent = kind.label
+    label.textContent = item.label
     button.append(icon, label)
     elements.noteCreateMenu.append(button)
   }
   createIcons({ icons })
-  if (!plugins.creatableKinds().length) setNoteCreateMenuOpen(false)
+  if (!hasCreateChoices()) setNoteCreateMenuOpen(false)
 }
 
 function setNoteCreateMenuOpen(open, anchor) {
-  if (!plugins.creatableKinds().length) open = false
+  if (!hasCreateChoices()) open = false
   elements.noteCreateMenu.hidden = !open
   desktopNewNoteButtons.forEach((button) => button.setAttribute('aria-expanded', String(open && button === anchor)))
   if (!open || !anchor) return
@@ -3185,7 +3201,7 @@ desktopNewNoteButtons.forEach((button) => {
     cancelHold()
     startPoint = { x: event.clientX, y: event.clientY }
     button.classList.add('is-holding')
-    if (!plugins.creatableKinds().length) return
+    if (!hasCreateChoices()) return
     holdTimer = setTimeout(() => {
       suppressedNewNoteClicks.add(button)
       button.classList.remove('is-holding')
@@ -3199,7 +3215,7 @@ desktopNewNoteButtons.forEach((button) => {
   button.addEventListener('pointerup', cancelHold)
   button.addEventListener('pointercancel', cancelHold)
   button.addEventListener('contextmenu', (event) => {
-    if (!plugins.creatableKinds().length) return
+    if (!hasCreateChoices()) return
     event.preventDefault()
     cancelHold()
     setNoteCreateMenuOpen(true, button)
@@ -3212,6 +3228,8 @@ desktopNewNoteButtons.forEach((button) => {
 })
 
 elements.noteCreateMenu.addEventListener('click', (event) => {
+  const entry = pluginEntries.get(event.target.closest('[data-entry-id]')?.dataset.entryId)
+  if (entry) { setNoteCreateMenuOpen(false); entry.run(); return }
   const option = event.target.closest('[data-create-note-type]')
   if (!option) return
   setNoteCreateMenuOpen(false)

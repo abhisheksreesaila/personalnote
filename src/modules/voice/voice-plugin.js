@@ -86,6 +86,7 @@ export async function activateVoice(shell) {
     const live = listening && (voiceMode === 'local' || voiceMode === 'browser') // (connecting is not recording yet)
     if (live && !recordingMoment) { recordingMoment = true; voiceWords = 0; island.model.recording(true, Date.now()) }
     else if (!live && recordingMoment) { recordingMoment = false; island.model.recording(false, voiceWords) }
+    shell.voiceSink?.listening(live) // (a jam hears the mic through its sink; see toggle())
     voiceButton.classList.toggle('active', listening)
     voiceButton.setAttribute('aria-pressed', String(listening))
     voiceButton.setAttribute('aria-label', listening ? 'Stop voice dictation' : 'Start voice dictation')
@@ -113,6 +114,7 @@ export async function activateVoice(shell) {
     if (target?.__voiceDictationBox && !target.text.trim() && shell.canvas().isEditingText()) shell.canvas().finishTextEdit() // a new box nothing was said into is never made
   }
   function updateTextBox(text, { record = false, create = true } = {}) {
+    if (shell.voiceSink) return // words go to the sink, never into a box
     const canvas = shell.canvas()
     if (!dictationSession.target || !canvas.isEditingText()) { // the editor was closed meanwhile: what comes next goes in a new text box
       if (!create) return
@@ -125,9 +127,18 @@ export async function activateVoice(shell) {
     voiceShown = text
     if (record) canvas.flushText() // final words are in the document (and a save) now, inside the same typing session
   }
-  const previewTranscript = (transcript, options) => updateTextBox(dictationSession.preview(transcript, options))
+  const previewTranscript = (transcript, options) => {
+    const text = dictationSession.preview(transcript, options)
+    if (shell.voiceSink) shell.voiceSink.heard(dictationSession.partial, { final: false })
+    else updateTextBox(text)
+  }
   function insertTranscript(transcript) {
     if (!transcript) return
+    if (shell.voiceSink) { // a jam is listening: the finished sentence goes to it, not into a text box (and counts no words for the island)
+      dictationSession.commit(transcript)
+      shell.voiceSink.heard(transcript, { final: true })
+      return
+    }
     voiceWords += shell.countWords(transcript)
     updateTextBox(dictationSession.commit(transcript), { record: true })
   }
@@ -250,7 +261,7 @@ export async function activateVoice(shell) {
       else await stopLocal({ cancel: voiceMode !== 'local' })
       return
     }
-    dictationSession.start(createTextBox())
+    dictationSession.start(shell.voiceSink ? { text: '' } : createTextBox())
     const attempt = attemptCount + 1
     attemptCount = attempt
     voiceMode = 'connecting'

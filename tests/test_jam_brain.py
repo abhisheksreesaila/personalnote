@@ -412,5 +412,25 @@ class OpenAICompatibleTests(unittest.TestCase):
         self.assertIn("could not be reached", str(caught.exception))
 
 
+class NotSetUpTests(unittest.TestCase):
+    """Settings → AI is the fix for these three; a slow or refusing brain is a different message, so the page can tell them apart."""
+
+    def test_no_claude_no_key_and_no_address_are_not_set_up(self):
+        with tempfile.TemporaryDirectory() as home, mock.patch("shutil.which", return_value=None), \
+                mock.patch.dict(os.environ, {"HOME": home}), self.assertRaises(jam_brain.BrainNotSetUp):
+            ClaudeCodeBrain().complete("s", "u")
+        with mock.patch.dict(os.environ, {"PERSONAL_NOTE_JAM_API_KEY": ""}), self.assertRaises(jam_brain.BrainNotSetUp):
+            OpenAICompatibleBrain("https://example.com/v1", "m").complete("s", "u")
+        with self.assertRaises(jam_brain.BrainNotSetUp):
+            OpenAICompatibleBrain()
+
+    def test_a_timeout_is_not_a_set_up_problem(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_claude(tmp, "sleep 5")
+            with mock.patch("shutil.which", return_value=None), self.assertRaises(jam_brain.BrainUnavailable) as caught:
+                ClaudeCodeBrain(timeout=0.3, extra_dirs=[tmp]).complete("s", "u")
+            self.assertNotIsInstance(caught.exception, jam_brain.BrainNotSetUp)
+
+
 if __name__ == "__main__":
     unittest.main()

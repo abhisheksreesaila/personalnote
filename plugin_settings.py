@@ -14,8 +14,8 @@ from pathlib import Path
 import app_paths
 
 SETTINGS_FILE = "plugins.json"
-DEFAULTS = {"mindmap": True, "voice": True, "meaning": True}  # id -> on by default
-NAMES = {"mindmap": "Mind maps", "voice": "Voice", "meaning": "Search by meaning"}
+DEFAULTS = {"mindmap": True, "voice": True, "meaning": True, "jam": False}  # id -> on by default (Jam is opt-in: it sends a map to a model)
+NAMES = {"mindmap": "Mind maps", "voice": "Voice", "meaning": "Search by meaning", "jam": "Jam sessions"}
 
 
 class PluginSettingsError(Exception):
