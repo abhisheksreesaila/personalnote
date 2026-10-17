@@ -196,6 +196,7 @@ try {
     // on (the default)
     await open()
     await page.locator(label === 'phone' ? '#mobile-speak' : '#voice-button').waitFor({ state: 'visible', timeout: 15000 })
+    for (let i = 0; i < 100 && !code.some((name) => name.startsWith('voice-plugin')); i++) await page.waitForTimeout(100) // F-097: the mic shows with the first screen, its code follows on idle
     check(`[${label}] voice on: the mic is there and the voice code was loaded`, await micShown() && code.some((name) => name.startsWith('voice-plugin')), code.join())
     check(`[${label}] meaning on: the "By meaning" group shows under a search`, await byMeaning() === 1 && code.some((name) => name.startsWith('meaning-plugin')))
     await settings()

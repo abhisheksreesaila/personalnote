@@ -116,6 +116,55 @@ try {
     await page.context().close()
   }
 
+  // ---- Settings and the omnibar used while the optional code is still on its way (the settings chunk is held back for 2.5 s)
+  const openSettings = async (page) => { if (!(await page.locator('#top-properties').isVisible())) await page.click('#share-button'); await page.click('#top-properties') }
+  const slowPanels = (page) => page.route(/\/assets\/settings-panels-[^/]*\.js/, async (route) => { await new Promise((r) => setTimeout(r, 2500)); await route.continue() })
+  {
+    const page = await newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    await slowPanels(page)
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    await openSettings(page)
+    const before = await page.locator('#plugin-mindmap').count()
+    await page.locator('#plugin-mindmap').waitFor({ timeout: 15000 })
+    check('Settings opened before the optional code arrived fills in (Plugins rows and the AI section) when it does', before === 0 && await page.locator('#ai-settings').isVisible() && errors.length === 0, errors.join())
+    await page.context().close()
+  }
+  {
+    const page = await newPage()
+    await slowPanels(page)
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    await page.click('#search-button')
+    await page.fill('#search-input', 'Plain')
+    await page.locator('#search-results .search-result', { hasText: 'Plain note' }).first().waitFor({ timeout: 15000 })
+    await page.waitForTimeout(3500) // the optional code has now arrived: the bar still shows what was typed and its results
+    check('the omnibar typed in before the optional code arrived keeps its text and results when it does',
+      (await page.inputValue('#search-input')) === 'Plain' && await page.locator('#search-results .search-result', { hasText: 'Plain note' }).count() > 0)
+    await page.context().close()
+  }
+
+  // ---- a load that fails (the settings chunk answers with an error once) says so, in plain words, and Reload brings everything back
+  {
+    const page = await newPage()
+    let failed = 0
+    await page.route(/\/assets\/settings-panels-[^/]*\.js/, async (route) => { if (failed++ === 0) await route.abort(); else await route.continue() })
+    await page.goto(`${BASE}/notes`)
+    await page.locator('#toast').waitFor({ state: 'visible', timeout: 20000 })
+    const said = await page.locator('#toast').textContent()
+    check('a chunk that fails to load is said on screen in plain words, with a Reload button', /did not load/.test(said) && /Reload/.test(said), said)
+    await Promise.all([page.waitForNavigation(), page.click('#toast-action')])
+    await page.locator('#voice-button').waitFor({ state: 'visible', timeout: 15000 })
+    await openSettings(page)
+    await page.locator('#plugin-mindmap').waitFor({ timeout: 15000 })
+    await page.click('#voice-button')
+    await page.locator('#voice-caption').waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
+    check('after Reload Settings is filled in and the mic works', await page.locator('#voice-caption').evaluate((e) => !e.hidden))
+    await page.context().close()
+  }
+
   // ---- Voice and Search by meaning off: their code is never fetched, even after idle
   await call('POST', '/plugins/voice', { enabled: false }); await call('POST', '/plugins/meaning', { enabled: false })
   {

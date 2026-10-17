@@ -65,7 +65,11 @@ async function follow(name, entry = false) {
   const code = await readFile(join(DIST_DIRECTORY, name), 'utf8')
   const here = name.includes('/') ? name.slice(0, name.lastIndexOf('/')) : ''
   for (const [, target] of code.matchAll(/(?:\bfrom|\bimport)\s*["']\.\/([^"']+\.js)["']/g)) await follow(join(here, target))
-  if (entry) for (const [, target] of code.matchAll(/\bimport\(`\.\/([^`]+\.js)`\)/g)) await follow(join(here, target))
+  if (entry) {
+    const boot = [...code.matchAll(/\bimport\(\s*["'`]\.\/([^"'`]+\.js)["'`]\s*\)/g)]
+    if (!boot.length) { console.error(`FAIL  first load: no boot import() found in ${name}; the walker cannot see the app chunk`); process.exitCode = 1 }
+    for (const [, target] of boot) await follow(join(here, target))
+  }
 }
 for (const [, target] of html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.js)"/g)) await follow(target, true)
 const firstLoadGzip = [...firstLoad].reduce((total, name) => total + byName.get(name).gzip, 0)

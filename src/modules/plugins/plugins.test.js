@@ -113,3 +113,13 @@ test('Jam sessions is built in, off until someone turns it on, and says what it 
   assert.deepEqual([jam.name, jam.defaultOn, jam.requires], ['Jam sessions', false, ['mindmap', 'voice']])
   assert.match(describePlugin(jam), /Needs: .*Mind maps and Voice.*Settings → AI/)
 })
+
+test('a plugin whose code failed to load is activated by the next sync, not stuck on the failure', async () => {
+  let attempts = 0
+  const registry = createPluginRegistry([{ id: 'voice', name: 'Voice', defaultOn: true, needs: [], activate: async () => { attempts += 1; if (attempts === 1) throw new Error('chunk 404'); return { dispose() {} } } }])
+  await assert.rejects(registry.sync({}), /chunk 404/)
+  assert.equal(registry.get('voice'), null)
+  await registry.sync({})
+  assert.equal(attempts, 2)
+  assert.notEqual(registry.get('voice'), null)
+})

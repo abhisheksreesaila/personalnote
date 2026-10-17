@@ -3302,7 +3302,7 @@ document.querySelector('#top-properties').addEventListener('click', () => {
 })
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#top-properties').addEventListener('click', () => {
-  if (elements.properties.classList.contains('open')) void loadOptional().then(() => { plugins.instances().forEach((plugin) => plugin.onSettingsOpen?.()); void aiSettings.refresh() })
+  if (elements.properties.classList.contains('open')) void loadOptional().then(() => { if (!aiSettings) return; plugins.instances().forEach((plugin) => plugin.onSettingsOpen?.()); void aiSettings.refresh() })
 })
 document.querySelector('#download-backup').addEventListener('click', () => {
   void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
@@ -4104,17 +4104,33 @@ elements.zoomValue.addEventListener('click', resetZoom)
 // F-097: everything optional (the plugins' code, the AI / X / Plugins settings panels) comes after the first screen is drawn, on idle, so the notes
 // list and the open note are never waiting for it. Anything that needs it sooner (Settings, the omnibar, a plugin's button, a map that was
 // made as a jam) calls this and waits for the same single load: nothing is lost, nothing loads twice.
+let panelsLoad = null
 let optionalLoad = null
-function loadOptional() {
-  optionalLoad ??= (async () => {
+// The settings panels are drawn once; a failed import is forgotten so the next call tries again.
+function loadPanels() {
+  panelsLoad ??= (async () => {
     const panels = await import('./modules/plugins/settings-panels.js')
     pluginShell.setup = { createSetupSection: panels.createSetupSection, renderSetupRow: panels.renderSetupRow, createIslandDownload: panels.createIslandDownload }
     aiSettings = panels.mountAISettings(document.querySelector('#ai-settings'), api)
     panels.mountXSettings(document.querySelector('#ai-settings'), api, elements.properties)
     panels.mountPluginSettings(document.querySelector('#settings-plugins-rows'), plugins, switchPlugin, () => createIcons({ icons }))
-    try { await plugins.sync(pluginShell) } catch (error) { console.error(error) } // a plugin that fails to load never takes the notebook with it
-    plugins.get('jam')?.attach(mindmapEditor) // a map opened before Jam arrived gets its session now
-    if (omni.open) plugins.get('meaning')?.queue(elements.searchInput.value.trim()) // and a search typed before Search by meaning arrived
+  })().catch((error) => { panelsLoad = null; throw error })
+  return panelsLoad
+}
+// Never rejects: a load that fails (a chunk that 404s after an update, the server gone) says so in plain words and offers Reload; a browser
+// remembers a module that failed to fetch until the page is reloaded, so Reload is the retry that works everywhere. The failure is forgotten here,
+// so the next trigger (Settings, the omnibar, the mic) asks again in the engines that do fetch it again.
+function loadOptional() {
+  optionalLoad ??= (async () => {
+    try {
+      await loadPanels()
+      await plugins.sync(pluginShell) // a plugin's own activate attaches Jam to the open map and fills an open omnibar
+      if (omni.open) { plugins.get('meaning')?.queue(elements.searchInput.value.trim()); renderOmni() } // a search typed before Search by meaning arrived
+    } catch (error) {
+      console.error(error)
+      optionalLoad = null
+      showToast('Voice, search by meaning and some settings did not load.', 'Reload', () => location.reload())
+    }
   })()
   return optionalLoad
 }
@@ -4126,27 +4142,34 @@ function showMicEarly() {
   if (!plugins.isEnabled('voice')) return
   const parts = [elements.voiceButton, document.querySelector('#voice-divider'), elements.mobileSpeak]
   parts.forEach((part) => { part.hidden = false })
+  const HOLD_MS = 450 // as press-to-talk.js: a press shorter than this is a tap (keep listening), a longer one is a hold (talk while down)
   let pressedEarly = false // a press that began before Voice arrived is finished here, whenever Voice arrives
   let held = false // the finger or button is still down
   let startedByHold = false
+  let holdTimer = 0
   const early = async (event) => {
     if (event.type === 'pointerdown') {
       if (plugins.get('voice')) return
       pressedEarly = true
       held = true
-      await loadOptional()
-      if (held && !state.listening) { startedByHold = true; void plugins.get('voice')?.toggle() } // still held when Voice arrived: talk until let go
+      void loadOptional()
+      holdTimer = setTimeout(async () => { // still down after HOLD_MS: this is a hold; start as soon as Voice is there, stop on release
+        await loadOptional()
+        if (held && !state.listening && plugins.get('voice')) { startedByHold = true; void plugins.get('voice').toggle() }
+      }, HOLD_MS)
       return
     }
     if (event.type !== 'click') { // pointerup / pointercancel
       held = false
+      clearTimeout(holdTimer)
+      if (event.type === 'pointercancel') pressedEarly = false // no click follows a cancelled press
       if (startedByHold) { startedByHold = false; pressedEarly = false; if (state.listening) void plugins.get('voice')?.toggle() }
       return
     }
     if (plugins.get('voice') && !pressedEarly) return // Voice was already there: its own handlers took this click
     pressedEarly = false
     await loadOptional()
-    if (!state.listening) void plugins.get('voice')?.toggle() // tapped before Voice arrived: keep listening
+    if (!state.listening) void plugins.get('voice')?.toggle() // a tap before Voice arrived: keep listening
   }
   for (const part of [elements.voiceButton, elements.mobileSpeak]) {
     for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'click']) part.addEventListener(type, early)
