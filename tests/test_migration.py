@@ -32,7 +32,8 @@ class MigrationTests(unittest.TestCase):
         return Path(self.tmp.name) / "served.db"
 
     def resolve(self):
-        return default_database_path(platform="linux", env=self.env, home=self.home, legacy_path=self.legacy)
+        return default_database_path(platform="linux", env=self.env, home=self.home, legacy_path=self.legacy,
+                                     source=self.legacy.parent.parent)
 
     def titles(self, path):
         return sorted(note["title"] for note in NoteService(path).list_notes())
