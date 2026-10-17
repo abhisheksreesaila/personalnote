@@ -12,11 +12,13 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium, webkit } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4920)
+const UI_PORT = basePort(4920)
 const API_PORT = UI_PORT + 1
 const CONTROL_PORT = UI_PORT + 2
 const CALLBACK_PORT = UI_PORT + 3
+await assertPortsFree([UI_PORT, API_PORT, CONTROL_PORT, CALLBACK_PORT])
 if ([UI_PORT, API_PORT, CONTROL_PORT, CALLBACK_PORT].includes(3137)) throw new Error('never the real app port')
 const API = `http://127.0.0.1:${API_PORT}`
 const CLIENT_ID = 'client-abc' // the id the fake X from tests/test_x_bookmarks.py accepts

@@ -8,6 +8,9 @@
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
+const PORT = basePort(4750)
+await assertPortsFree([PORT])
 
 const now = new Date().toISOString()
 const load = (name) => JSON.parse(fs.readFileSync(new URL(`../tests/fixtures/documents/${name}.json`, import.meta.url), 'utf8'))
@@ -17,7 +20,7 @@ const puts = []
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
 
-const server = await createServer({ server: { port: 4750, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' })
 await server.listen()
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
 try {
@@ -41,7 +44,7 @@ try {
     }
     return json({})
   })
-  await page.goto('http://127.0.0.1:4750/notes')
+  await page.goto(`http://127.0.0.1:${PORT}/notes`)
   await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   await page.waitForTimeout(500)
   const hostShot = () => page.screenshot({ clip: { x: 300, y: 90, width: 460, height: 540 } }) // the sheet only: no status text or toasts

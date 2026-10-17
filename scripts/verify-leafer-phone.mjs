@@ -12,8 +12,10 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = 4811
+const PORT = basePort(4811)
+await assertPortsFree([PORT])
 const SHOTS = process.env.SHOTS || fs.mkdtempSync(path.join(os.tmpdir(), 'pn-shots-')) // a folder of this run's own
 fs.mkdirSync(SHOTS, { recursive: true })
 const now = new Date().toISOString()

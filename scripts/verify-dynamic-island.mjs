@@ -14,8 +14,10 @@
 //   PN_VERIFY_PORT=4896 node scripts/verify-dynamic-island.mjs      (PN_SHOT=/var/tmp/f084/di also saves pictures)
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = Number(process.env.PN_VERIFY_PORT || 4896)
+const PORT = basePort(4896)
+await assertPortsFree([PORT])
 if (PORT === 3137) throw new Error('never the real app port')
 const now = new Date().toISOString()
 const results = []

@@ -12,8 +12,10 @@
 //   PN_VERIFY_PORT=4891 node scripts/verify-notes-panel.mjs      (PN_SHOT=/var/tmp/f074 also saves screenshots)
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = Number(process.env.PN_VERIFY_PORT || 4891)
+const PORT = basePort(4891)
+await assertPortsFree([PORT])
 if (PORT === 3137) throw new Error('never the real app port')
 const now = new Date().toISOString()
 const results = []

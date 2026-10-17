@@ -8,6 +8,9 @@
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
+const PORT = basePort(4531)
+await assertPortsFree([PORT])
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => { const [key, value = 'true'] = arg.replace(/^--/, '').split('='); return [key, value] }))
 const dprs = args.dpr ? [Number(args.dpr)] : [1, 2]
@@ -83,7 +86,7 @@ async function runDpr(browser, baseUrl, dpr, content) {
   return { dpr, setup, rows }
 }
 
-const server = await createServer({ server: { port: 4531, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' })
 await server.listen()
 const baseUrl = server.resolvedUrls.local[0]
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })

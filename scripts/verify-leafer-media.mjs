@@ -13,9 +13,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const API_PORT = 4790
-const UI_PORT = 4791
+const UI_PORT = basePort(4790)
+const API_PORT = UI_PORT + 1
+await assertPortsFree([UI_PORT, API_PORT])
 const root = new URL('..', import.meta.url).pathname
 const work = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'pn-media-'))
 const results = []

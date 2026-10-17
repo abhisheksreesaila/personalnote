@@ -8,8 +8,10 @@
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = 4840
+const PORT = basePort(4840)
+await assertPortsFree([PORT])
 const now = new Date().toISOString()
 const summary = { id: 1, resourceId: 'res_gest', revision: 1, noteType: 'canvas', title: 'Gesture', notebookId: 1, createdAt: now, updatedAt: now }
 const note = { content: generateNote(), pageState: { columns: COLUMNS, rows: ROWS } }

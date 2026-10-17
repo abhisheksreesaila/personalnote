@@ -7,6 +7,9 @@ import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
+const PORT = basePort(4533)
+await assertPortsFree([PORT])
 
 const now = new Date().toISOString()
 const summary = { id: 1, resourceId: 'res_view', revision: 1, noteType: 'canvas', title: 'View check', notebookId: 1, createdAt: now, updatedAt: now }
@@ -58,7 +61,7 @@ const sameView = async (page, label, before) => {
   return view
 }
 
-const server = await createServer({ server: { port: 4533, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' })
+const server = await createServer({ server: { port: PORT, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' })
 await server.listen()
 const baseUrl = server.resolvedUrls.local[0]
 const browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })

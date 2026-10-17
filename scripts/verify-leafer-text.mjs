@@ -11,8 +11,10 @@ import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { readJsonCanvas, writeJsonCanvas } from '../src/core/document/jsoncanvas.js'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
-const PORT = 4760
+const PORT = basePort(4760)
+await assertPortsFree([PORT])
 const SHOTS = process.env.SHOTS || fs.mkdtempSync(path.join(os.tmpdir(), 'pn-shots-')) // a folder of this run's own
 fs.mkdirSync(SHOTS, { recursive: true })
 const now = new Date().toISOString()

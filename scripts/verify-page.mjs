@@ -7,10 +7,12 @@ import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 // PN_VERIFY_PORT moves both servers (UI on it, API on it + 1) so two runs can't collide.
-const UI_PORT = Number(process.env.PN_VERIFY_PORT || 4830)
+const UI_PORT = basePort(4830)
 const API_PORT = UI_PORT + 1
+await assertPortsFree([UI_PORT, API_PORT])
 const API = `http://127.0.0.1:${API_PORT}`
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }

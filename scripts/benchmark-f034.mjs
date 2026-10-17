@@ -12,13 +12,15 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { COLUMNS, ROWS, generateNote } from './benchmark-note.mjs'
 import { generateStressNote } from '../src/modules/speedtest/stress-note.js'
+import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => { const [key, ...value] = arg.replace(/^--/, '').split('='); return [key, value.length ? value.join('=') : 'true'] }))
 const dprs = args.dpr ? [Number(args.dpr)] : [1, 2]
 const which = args.note ?? 'both'
 const flags = args.flags ? JSON.parse(args.flags) : null
 const only = args.only ? new Set(args.only.split(',')) : null
-const PORT = 4802
+const PORT = basePort(4802)
+await assertPortsFree([PORT])
 const now = new Date().toISOString()
 const summary = { id: 1, resourceId: 'res_bench', revision: 1, noteType: 'canvas', title: 'Benchmark note', notebookId: 1, createdAt: now, updatedAt: now }
 
