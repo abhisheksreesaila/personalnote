@@ -596,11 +596,12 @@ Brief: none (Encode Lessons in Structure: "never kill a process you didn't start
 Reviewed: PASS (36 scripts guarded; the real bug was a stale uvicorn on UI+1 silently reused). Follow-ups done: 3137 refused for every checked port, tested.
 - [x] every scripts/verify-*.mjs and benchmark that starts a server checks its port first and fails with "port N is busy: set PORT/… to another" instead of reusing or killing whatever is there
 - [x] one shared helper, one test; the lessons line points to it
-## F-095 Drop a note into a note [todo]
+## F-095 Drop a note into a note [done]
 Brief: docs/briefs/x-bookmarks.md ("drag onto any note … lands as a link card"); captain: "I can just move around and drop it into a note and it will be there" · Needs: F-088
-- [ ] drag a note's row from the notes panel onto an open canvas or page note: it lands as a link card (title, first lines, icon) that opens that note; works for X bookmark notes and any other note
-- [ ] the link survives backup/import and Markdown export (as a link); a deleted target shows as "note removed", never an error
-- [ ] a "Done" action on an X bookmark note archives it in one click
+Reviewed: PASS after one round (a page drop no longer pastes the dragged id into the words, checked on the exact Markdown; X sync never files into the Done archive). Canvas: a JSON Canvas link node personal-note://note/<resourceId>; page: a Markdown link. Secure targets show the title only. Phone: "Link note" / "Link to a note…" (a finger can't start a browser drag). Gaps: secure-note and Obsidian imports don't repoint links; card titles refresh on next open; lucide-icon notebooks show a letter on the card. First load 90.94/91 KiB: the next first-load addition must make room.
+- [x] drag a note's row from the notes panel onto an open canvas or page note: it lands as a link card (title, first lines, icon) that opens that note; works for X bookmark notes and any other note
+- [x] the link survives backup/import and Markdown export (as a link); a deleted target shows as "note removed", never an error
+- [x] a "Done" action on an X bookmark note archives it in one click
 ## F-096 Show and Undo on "Claude edited this note" [todo]
 Brief: docs/design/dynamic-island.md (agent moment) · Needs: F-084
 - [ ] the island's agent face offers Show (scrolls to and briefly marks what the agent changed) and Undo (reverts the agent's revision as one step, revision-checked, never losing the person's later edits)
