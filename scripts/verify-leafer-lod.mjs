@@ -79,6 +79,7 @@ const compare = (page, a, b) => page.evaluate(async ([one, two]) => {
   const pixels = first.data.length / 4
   return { mean: total / pixels, strong: strong / pixels, any: any / pixels }
 }, [a.toString('base64'), b.toString('base64')])
+const rafs2 = (pg) => pg.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))))
 const wheel = async (page, count, dy, x = 800, y = 450) => { await page.mouse.move(x, y); for (let i = 0; i < count; i += 1) { await page.mouse.wheel(0, dy); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r()))) } }
 
 try {
@@ -164,13 +165,13 @@ try {
       const during = await lod(pg)
       await zoomTo(pg, 1)
       await pg.waitForFunction(() => !window.__personalNote.leaferCanvas().lodState().active, null, { timeout: 15000 }) // (the vectors are back: waited for, not guessed at, so a slow machine does not read the picture mid-change)
-      await pg.waitForTimeout(900)
+      await rafs2(pg)
       runs.push({ state: await lod(pg), image: await shot(pg), during, stroke: await pg.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth })) })
       await c.close()
     }
     check('(setup) the gestures went through the bitmaps', runs[1].during.enters >= 1, JSON.stringify(runs[1].during))
     const same = await compare(page, runs[0].image, runs[1].image)
-    check('after zooming through the bitmaps, the vectors are back and the picture at 100% is the same as after the same gestures without them (mean under 0.05 of 255, under 1e-5 of pixels far off)', !runs[1].state.active && same.strong < 1e-5 && same.mean < 0.05, JSON.stringify([runs[1].state.active, same])) // (nothing far off = under 6 pixels of 560,000: two runs with the bitmaps OFF differ by one pixel now and then, measured, so exactly 0 asks more of the engine than it gives) // (the engine's first draw and a later redraw differ by a few anti-aliasing levels on 0.2% of the pixels)
+    check('after zooming through the bitmaps, the vectors are back and the picture at 100% is the same as after the same gestures without them (mean under 0.05 of 255, under 1e-5 of pixels far off)', !runs[1].state.active && same.strong < 1e-5 && same.mean < 0.05, JSON.stringify([runs[1].state.active, same])) // (waiting for the vectors alone did not fix it: 3 of 6 runs still had one strong pixel. Measured with the bitmaps OFF in both runs: 2 of 4 runs differ by one pixel in 560,000 (strong 1.8e-6), so the noise is the engine's own and exactly 0 asks more than it gives. Under 1e-5 = under 6 pixels) // (the engine's first draw and a later redraw differ by a few anti-aliasing levels on 0.2% of the pixels)
     check('a stroke that keeps its screen width has the width of the zoom it ends at (not one left from while the bitmaps showed)', Math.abs(runs[1].stroke.width - 6 * runs[1].stroke.scale) < 1e-6, JSON.stringify(runs[1].stroke))
     await zoomTo(page, 0.3)
     await page.waitForTimeout(500)

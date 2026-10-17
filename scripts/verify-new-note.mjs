@@ -15,7 +15,7 @@ await assertPortsFree([UI_PORT, API_PORT])
 const API = `http://127.0.0.1:${API_PORT}`
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${ok ? '' : detail}`) }
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'pn-verify-omnibar-'))
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'pn-verify-new-note-'))
 const python = fs.existsSync('.venv/bin/python') ? '.venv/bin/python' : 'python3'
 const api = spawn(python, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(API_PORT)], { env: { ...process.env, PERSONAL_NOTE_DB: path.join(scratch, 'verify.db') }, stdio: 'ignore' })
 const apiUp = async () => { for (let i = 0; i < 100; i++) { try { if ((await fetch(`${API}/api/notebooks`)).ok) return } catch {} await new Promise((r) => setTimeout(r, 150)) } throw new Error('API did not start') }
@@ -52,6 +52,22 @@ try {
   const stored = async (title) => { const n = (await call('GET', '/api/notes')).body.find((item) => item.title === title); return n ? (await call('GET', `/api/notes/${n.id}`)).body.content?.markdown : undefined }
   check('words typed just before New note are saved on the note they were typed in', (await stored('Alpha')) === 'alpha words', String(await stored('Alpha')))
   check('words typed once the new note is open land on the new note', (await stored('Beta')) === 'beta words', String(await stored('Beta')))
+  // The same on a canvas note: words still in the open text editor when New note is pressed stay on the note they were typed on (the canvas save is
+  // guarded by the note it belongs to, so a switch must save the old note before the new one is active).
+  const g = (await call('POST', '/api/notes', { title: 'Gamma', notebookId: null, noteType: 'canvas' })).body
+  await page.evaluate((id) => window.__personalNote.selectNote(id), g.id)
+  await page.waitForFunction((id) => window.__personalNote.state.activeNoteId === id && !window.__personalNote.state.loading, g.id)
+  await page.waitForTimeout(1500)
+  await page.evaluate(() => window.__personalNote.setTool('text'))
+  await page.mouse.click(500, 350)
+  await page.waitForSelector('.leafer-text-editor', { timeout: 10000 })
+  await page.keyboard.type('gamma words')
+  await page.evaluate(() => { void window.__personalNote.createNote(undefined, 'canvas', 'Delta') })
+  await page.waitForFunction(() => window.__personalNote.state.notes.find((n) => n.id === window.__personalNote.state.activeNoteId)?.title === 'Delta' && !window.__personalNote.state.loading, null, { timeout: 15000 })
+  await page.waitForTimeout(3000)
+  const canvasText = async (title) => { const n = (await call('GET', '/api/notes')).body.find((item) => item.title === title); return n ? JSON.stringify((await call('GET', `/api/notes/${n.id}`)).body.content) : '' }
+  check('canvas: words still being typed when New note is pressed are saved on their own note', (await canvasText('Gamma')).includes('gamma words'), (await canvasText('Gamma')).slice(0, 200))
+  check('canvas: and the new note has none of them', !(await canvasText('Delta')).includes('gamma words'))
   check('no page errors', errors.length === 0, errors.join(' | '))
 } finally {
   await browser?.close()

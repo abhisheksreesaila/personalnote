@@ -275,7 +275,8 @@ try {
   // The grow is a CSS transition. Frame sampling races the machine's load (under load the first sample can already be the end), so take the
   // transition itself at the moment it starts, pause it, and read the box at its start, middle and end.
   await pn(() => {
-    window.__grow = new Promise((resolve) => document.addEventListener('transitionrun', function once(event) {
+    window.__grow = new Promise((resolve) => setTimeout(() => resolve(null), 3000)) // (no transition started in 3 s: the check below fails, it does not wait forever)
+    window.__grow = Promise.race([window.__grow, new Promise((resolve) => document.addEventListener('transitionrun', function once(event) {
       if (event.propertyName !== 'width' || !event.target.classList?.contains('spotlight')) return
       document.removeEventListener('transitionrun', once)
       const box = event.target
@@ -286,10 +287,10 @@ try {
       resolve({ total, grow: [at(0), at(total / 2), at(total)] })
       animation.currentTime = 0
       animation.play()
-    }))
+    }))])
   })
   await page.click('#search-button')
-  const { total, grow } = await pn(() => window.__grow)
+  const { total, grow } = (await pn(() => window.__grow)) ?? { total: 0, grow: [] }
   await searchSettled()
   const open = await rect('.spotlight')
   check('it grows out of the circle (44px at first, then wider), anchored at the same top right corner', grow[0] === 44 && grow[1] > 44 && grow[1] < grow[2] && grow[2] >= 370 && total > 0 && open.w >= 370 && Math.abs(open.r - circle.r) <= 1 && Math.abs(open.y - circle.y) <= 1, JSON.stringify({ grow, total, open, circle }))

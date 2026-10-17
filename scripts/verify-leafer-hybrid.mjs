@@ -159,17 +159,26 @@ try {
     const { context, page, errors } = await open(null)
     const state0 = await lod(page)
     check('the default render mode is hybrid: page bitmaps at every zoom', state0.hybrid && state0.mode === 'always', JSON.stringify(state0))
+    // The first step is read on a page that holds the bitmaps up (perf.lodQuiet, the way the other checks do): at the default 170 ms the vectors can already be
+    // back by the time a slow machine has sent the next command, and "still showing" would be read as "never showed". `enters` going up by one says the step entered.
+    const held = await open({ lodQuiet: 60000 })
+    for (const zoom of [1, 0.5]) {
+      await zoomTo(held.page, zoom)
+      await held.page.waitForTimeout(400)
+      await idle(held.page)
+      const enters = (await lod(held.page)).enters
+      await wheel(held.page, 1, 40)
+      const first = await lod(held.page)
+      check(`at ${zoom * 100}% the FIRST step of a pan shows the bitmaps (no vector frame first)`, first.active && first.enters === enters + 1 && !(await vectorsOn(held.page)), JSON.stringify(first))
+    }
+    await held.context.close()
     for (const zoom of [1, 0.5]) {
       await zoomTo(page, zoom)
       await page.waitForTimeout(400)
       await idle(page)
       const rest = await lod(page)
       check(`at ${zoom * 100}% the pages on screen have bitmaps made for this zoom, at rest, with the vectors on the stage`, rest.visibleReady && !rest.active && await vectorsOn(page), JSON.stringify(rest))
-      const enters = rest.enters
-      await wheel(page, 1, 40)
-      const first = await lod(page)
-      check(`at ${zoom * 100}% the FIRST step of a pan shows the bitmaps (no vector frame first)`, first.active && first.enters === enters + 1 && !(await vectorsOn(page)), JSON.stringify(first))
-      await wheel(page, 5, 40)
+      await wheel(page, 6, 40)
       await page.keyboard.down('Control')
       await wheel(page, 3, -30)
       await wheel(page, 3, 30)
@@ -418,6 +427,7 @@ try {
     const stickyNow = await page.evaluate(() => { const s = window.__personalNote.leaferCanvas(); const near = window.__personalNote.leaferEdits.doc.objects.filter((x) => x.type === 'sticky').filter((x) => { const g = x.geometry; const px = g.x - Math.floor(g.x / 860) * 860; const py = g.y - Math.floor(g.y / 1080) * 1080; return px > 120 && px + g.width < 740 && py > 120 && py + g.height < 960 }).map((x) => ({ id: x.id, b: s.screenBox(x.id) })).filter((x) => x.b).sort((p, q) => Math.hypot(p.b.x - 400, p.b.y - 300) - Math.hypot(q.b.x - 400, q.b.y - 300)); return { id: near[0].id } })
     const before = await lod(page)
     await page.evaluate(() => { window.__gaps = []; let last = performance.now(); const tick = (t) => { window.__gaps.push(t - last); last = t; window.__raf = requestAnimationFrame(tick) }; window.__raf = requestAnimationFrame(tick) })
+    // (This first step is a setView, the call a wheel step ends in, made in the same task as the edit: not the wheel path itself, which takes frames in between.)
     // The edit and the first step of the pan in one task: the idle build of the touched pages (it starts 120 ms after an edit) cannot get in between, which on a
     // busy machine it did, so the pages were no longer lacking when the pan began.
     await scene((s, e, a) => { s.select([a.id]); s.nudge(20, 12); const v = s.view(); s.setView({ ...v, y: v.y - 30 }) }, stickyNow)
