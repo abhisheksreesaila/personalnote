@@ -602,9 +602,10 @@ Reviewed: PASS after one round (a page drop no longer pastes the dragged id into
 - [x] drag a note's row from the notes panel onto an open canvas or page note: it lands as a link card (title, first lines, icon) that opens that note; works for X bookmark notes and any other note
 - [x] the link survives backup/import and Markdown export (as a link); a deleted target shows as "note removed", never an error
 - [x] a "Done" action on an X bookmark note archives it in one click
-## F-096 Show and Undo on "Claude edited this note" [todo]
+## F-096 Show and Undo on "Claude edited this note" [done]
 Brief: docs/design/dynamic-island.md (agent moment) · Needs: F-084
-- [ ] the island's agent face offers Show (scrolls to and briefly marks what the agent changed) and Undo (reverts the agent's revision as one step, revision-checked, never losing the person's later edits)
+Reviewed: PASS after one round (a note made secure drops its agent-edit copies, so Undo can't wipe it or leave words on disk; page Undo needs the surrounding words to match, else refuses; Undo's save and state flip in one transaction). The CLI's notes append/write record before/after (last 10 per note, never for secure notes, not in backup). Follow-up: the island picks its refusal message by matching the server's wording; a code field on the 409 would be sturdier.
+- [x] the island's agent face offers Show (scrolls to and briefly marks what the agent changed) and Undo (reverts the agent's revision as one step, revision-checked, never losing the person's later edits)
 ## F-097 First screen first: optional plugins load after it [done]
 Brief: docs/briefs/plugins.md ("no plugin code in the first load"); captain 2026-10-16: "speed is important … boom very fast and then load everything behind the scenes" · Needs: F-091
 Reviewed: PASS after one round (a failed load shows a toast with Reload instead of a dead mic; tap vs hold by 450 ms; budget walker fails loudly). First load 207.05 → 204.21 KiB, budget tightened to 205. Time to first screen unchanged within noise (scripts/verify-first-screen.mjs, accepted as the measurement): the real win is F-098.
