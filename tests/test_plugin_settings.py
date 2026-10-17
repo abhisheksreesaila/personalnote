@@ -31,40 +31,40 @@ class Base(unittest.TestCase):
 
 class SettingsFileTests(Base):
     def test_mind_maps_are_on_until_someone_switches_them_off(self):
-        self.assertEqual(self.settings.view(), {"mindmap": True})
+        self.assertEqual(self.settings.view(), {"mindmap": True, "voice": True, "meaning": True})
 
     def test_the_choice_is_remembered_by_a_new_reader(self):
         self.settings.set_enabled("mindmap", False)
-        self.assertEqual(PluginSettings(self.dir / "plugins").view(), {"mindmap": False})
+        self.assertEqual(PluginSettings(self.dir / "plugins").view(), {"mindmap": False, "voice": True, "meaning": True})
         self.settings.set_enabled("mindmap", True)
-        self.assertEqual(PluginSettings(self.dir / "plugins").view(), {"mindmap": True})
+        self.assertEqual(PluginSettings(self.dir / "plugins").view(), {"mindmap": True, "voice": True, "meaning": True})
 
     def test_a_damaged_file_means_the_defaults(self):
         (self.dir / "plugins").mkdir()
         (self.dir / "plugins" / "plugins.json").write_text("{nope", "utf-8")
-        self.assertEqual(self.settings.view(), {"mindmap": True})
+        self.assertEqual(self.settings.view(), {"mindmap": True, "voice": True, "meaning": True})
 
     def test_the_folder_can_come_from_the_environment(self):
         with mock.patch.dict(os.environ, {"PERSONAL_NOTE_PLUGINS_DIR": str(self.dir / "env")}):
             PluginSettings().set_enabled("mindmap", False)
-        self.assertEqual(json.loads((self.dir / "env" / "plugins.json").read_text("utf-8")), {"mindmap": False})
+        self.assertEqual(json.loads((self.dir / "env" / "plugins.json").read_text("utf-8")), {"mindmap": False, "voice": True, "meaning": True})
 
 
 class ApiTests(Base):
     def test_the_page_reads_the_choice(self):
-        self.assertEqual(self.client.get("/api/plugins").json(), {"plugins": {"mindmap": True}})
+        self.assertEqual(self.client.get("/api/plugins").json(), {"plugins": {"mindmap": True, "voice": True, "meaning": True}})
 
     def test_switching_off_and_on_is_kept(self):
         response = self.client.post("/api/plugins/mindmap", json={"enabled": False}, headers=H)
-        self.assertEqual((response.status_code, response.json()), (200, {"plugins": {"mindmap": False}}))
-        self.assertEqual(self.client.get("/api/plugins").json(), {"plugins": {"mindmap": False}})
+        self.assertEqual((response.status_code, response.json()), (200, {"plugins": {"mindmap": False, "voice": True, "meaning": True}}))
+        self.assertEqual(self.client.get("/api/plugins").json(), {"plugins": {"mindmap": False, "voice": True, "meaning": True}})
         self.client.post("/api/plugins/mindmap", json={"enabled": True}, headers=H)
-        self.assertEqual(self.client.get("/api/plugins").json(), {"plugins": {"mindmap": True}})
+        self.assertEqual(self.client.get("/api/plugins").json(), {"plugins": {"mindmap": True, "voice": True, "meaning": True}})
 
     def test_another_web_page_cannot_switch_a_plugin(self):
         response = self.client.post("/api/plugins/mindmap", json={"enabled": False})
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(self.settings.view(), {"mindmap": True})
+        self.assertEqual(self.settings.view(), {"mindmap": True, "voice": True, "meaning": True})
 
     def test_an_unknown_plugin_or_a_non_boolean_is_refused(self):
         self.assertEqual(self.client.post("/api/plugins/nope", json={"enabled": True}, headers=H).status_code, 400)
