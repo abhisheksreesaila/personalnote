@@ -40,7 +40,7 @@ const MOMENTS = {
     const chip = (action, label) => { const button = h('button', 'isl-chip', label); button.dataset.islandAction = action; return button }
     if (f.phase === 'thinking') return [h('span', 'saving-spinner'), h('span', 'isl-label', 'Thinking…')]
     if (f.phase === 'error') return [icon('triangle-alert', 'isl-bad'), h('span', 'isl-bad isl-label', f.message), chip('jam', 'Try again')]
-    if (f.phase === 'setup') return [icon('settings'), h('span', 'isl-label', f.message), chip('jam-setup', 'Open Settings')]
+    if (f.phase === 'setup') return [icon('sliders-horizontal'), h('span', 'isl-label', f.message), chip('jam-setup', 'Open Settings')]
     return [f.phase === 'listening' ? h('span', 'isl-rec') : icon('sparkles'), h('span', 'isl-label isl-line', jamLine(f)), chip('jam', 'Jam')]
   },
   recording: (f) => {

@@ -14,11 +14,11 @@ export async function api(path, options = {}) {
     ...rest,
   })
   if (!response.ok) {
-    let message = 'Request failed'
+    let body = {}
     try {
-      message = (await response.json()).error || message
+      body = await response.json()
     } catch {}
-    throw Object.assign(new Error(message), { status: response.status })
+    throw Object.assign(new Error(body.error || 'Request failed'), { status: response.status, body })
   }
   return response.status === 204 ? null : response.json()
 }

@@ -36,4 +36,17 @@ export const BUILTIN_PLUGINS = [
     needs: [{ kind: 'download', text: 'about 315 MB download (the EmbeddingGemma model), runs on this computer' }],
     activate: async (shell) => (await import('../search/meaning-plugin.js')).activateMeaning(shell),
   },
+  {
+    id: 'jam',
+    name: 'Jam sessions',
+    description: 'Talk an idea through and watch Claude grow a mind map from it.',
+    icon: 'sparkles',
+    defaultOn: false, // it sends the map and what you say to the model you chose, so it starts only when you ask
+    requires: ['mindmap', 'voice'],
+    needs: [
+      { kind: 'plugin', text: 'Mind maps and Voice switched on' },
+      { kind: 'model', text: 'a model chosen in Settings → AI (Claude Code on this computer, or an OpenAI-compatible service); each Jam sends that map and your words to it' },
+    ],
+    activate: async (shell) => (await import('../jam/jam-plugin.js')).activateJam(shell), // the jam code arrives only when it is on
+  },
 ]

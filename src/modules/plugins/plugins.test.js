@@ -82,8 +82,34 @@ test('switched off while still loading: it is disposed the moment it arrives', a
 
 test('Voice and Search by meaning are built-in, on by default, and say what they need', () => {
   const byId = Object.fromEntries(BUILTIN_PLUGINS.map((plugin) => [plugin.id, plugin]))
-  assert.deepEqual(BUILTIN_PLUGINS.map((plugin) => plugin.id), ['mindmap', 'voice', 'meaning'])
+  assert.deepEqual(BUILTIN_PLUGINS.map((plugin) => plugin.id), ['mindmap', 'voice', 'meaning', 'jam'])
   assert.deepEqual([byId.voice.name, byId.voice.defaultOn, byId.meaning.name, byId.meaning.defaultOn], ['Voice', true, 'Search by meaning', true])
   assert.equal(describePlugin(byId.voice), 'Dictate into a note with your voice. Audio is never kept, only the words. Needs: about 750 MB download (the Nemotron speech model), runs on this computer.')
   assert.equal(describePlugin(byId.meaning), 'Find notes by what they mean, not only their words. Needs: about 315 MB download (the EmbeddingGemma model), runs on this computer.')
+})
+
+// ---- F-092: a plugin that needs other plugins ----
+const needy = (log) => ({ ...lifecyclePlugin(log, 'jam'), defaultOn: true, requires: ['mindmap', 'voice'] })
+const base = () => [{ id: 'mindmap', name: 'Mind maps', description: '', icon: 'map', defaultOn: true, needs: [] }, lifecyclePlugin([], 'voice')]
+
+test('a plugin that needs others waits until they are all on, and goes when one goes', async () => {
+  const log = []
+  const registry = createPluginRegistry([...base(), needy(log)])
+  registry.apply({ voice: false })
+  await registry.sync({ tag: 'a' })
+  assert.deepEqual(log, [])
+  registry.apply({ voice: true })
+  await registry.sync({ tag: 'b' })
+  assert.deepEqual(log, ['activate b'])
+  registry.apply({ mindmap: false })
+  await registry.sync({ tag: 'c' })
+  assert.deepEqual(log, ['activate b', 'dispose'])
+  assert.equal(registry.get('jam'), null)
+  assert.equal(registry.isEnabled('jam'), true) // its own switch is still on: it comes back when Mind maps does
+})
+
+test('Jam sessions is built in, off until someone turns it on, and says what it needs', () => {
+  const jam = BUILTIN_PLUGINS.find((plugin) => plugin.id === 'jam')
+  assert.deepEqual([jam.name, jam.defaultOn, jam.requires], ['Jam sessions', false, ['mindmap', 'voice']])
+  assert.match(describePlugin(jam), /Needs: .*Mind maps and Voice.*Settings → AI/)
 })
