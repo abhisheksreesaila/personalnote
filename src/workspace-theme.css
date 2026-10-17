@@ -54,7 +54,6 @@
   .property-label, .property-section-title > span, .property-section-title small,
   .property-note-info span, .font-size-row, .settings-section-label,
   .setting-field-heading small, .setting-row small, .setting-row svg,
-  .settings-footer-status,
   .dialog-eyebrow, .field-label, .color-fieldset legend, .dialog-note,
   .print-preview-title span,
   .print-summary > p, .print-summary dt,
@@ -99,7 +98,6 @@
   .dialog-primary, .print-button {
     color: var(--rail); background: var(--accent); border-color: var(--accent);
   }
-  .dialog-danger { color: var(--rail); background: var(--terracotta); border-color: var(--terracotta); }
   .notebook-color input:checked + span { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--notebook-color); }
   .notebook-dialog::backdrop { background: rgba(0, 0, 0, .65); backdrop-filter: none; }
   .print-preview { color: var(--ink); background: var(--canvas); }

@@ -3,7 +3,6 @@
 @media screen {
   .app-shell .note-list-item.is-secure, .app-shell .note-list-item.is-secure.active { color: var(--sk-secure); }
   .app-shell .note-list-item.is-secure > svg { opacity: 1; }
-  .app-shell .note-list-item .secure-row-lock { width: 12px; height: 12px; flex: none; color: var(--sk-secure); }
 
   .secure-cover { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 72px 16px 24px; background: var(--sk-secure-soft); color: var(--sk-ink); border-top: 3px solid var(--sk-secure); }
   .secure-cover-title, .secure-cover-card h3, .secure-sheet h3 { margin: 0; font-family: var(--sk-display); font-weight: var(--sk-display-weight, 700); font-style: var(--sk-display-style, normal); letter-spacing: -.02em; }
