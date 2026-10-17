@@ -1734,7 +1734,13 @@ let leaferShowFixed = false
 async function showLeaferNote(note, { openView = true } = {}) {
   // The stored JSON Canvas is read straight into the document model; the note's own content is kept to save back until it is edited.
   const showing = ++leaferShowSequence
-  const [decoded] = await Promise.all([decodeNoteDocument(note), leaferCanvas.ready]) // the engine and the web fonts (F-098): the notes panel and the title are on screen before this waits
+  let decoded
+  try { [decoded] = await Promise.all([decodeNoteDocument(note), leaferCanvas.ready]) } catch (error) { // the engine and the web fonts (F-098): the notes panel and the title are on screen before this waits
+    // A chunk that does not arrive (gone after an update, the server away) is said in plain words; a reload is the retry that works everywhere. (Said here,
+    // not when the chunk fails: opening a note clears the toast.)
+    showToast('The canvas did not load.', 'Reload', () => location.reload())
+    throw error
+  }
   if (showing !== leaferShowSequence || note.id !== state.activeNoteId) return false
   leaferInk?.documentChanged() // the document is replaced: an erase pass planned on the old one is dropped
   leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.doc.page }
@@ -1808,10 +1814,6 @@ function startEngine() {
   engineStarted ??= Promise.all([import('./modules/canvas-leafer/index.js'), prepareCanvasFonts()]).then(([engine]) => {
     syncCanvasSize() // the window may have been resized while the engine was on its way
     return engine.createLeaferCanvas({ ...leaferOptions, width: viewSize.width, height: viewSize.height })
-  }).catch((error) => { // a chunk that does not arrive (gone after an update, the server away): said in plain words, and a reload is the retry that works everywhere
-    console.error(error)
-    showToast('The canvas did not load.', 'Reload', () => location.reload())
-    throw error
   })
   return engineStarted
 }
