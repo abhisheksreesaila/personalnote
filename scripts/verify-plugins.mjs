@@ -3,7 +3,10 @@
 // Mind maps on: the new-mind-map entry is there and a map opens in its editor. Switched off in Settings → Plugins: no entry in the new-note menu,
 // the editor chunk is never requested (not even after a reload and opening a map), an existing map opens read-only as an outline with
 // "Turn on Mind maps to edit", the server refuses a new map and keeps the old one untouched. "Turn on Mind maps" in that view brings the editor
-// back without a reload, and an edit saves. Phone width first, then desktop. The command line's side is tests/test_plugin_settings.py.
+// back without a reload, and an edit saves. F-091 adds Voice and Search by meaning: with each on, the mic / the "By meaning" group, their Settings
+// rows and their code (voice-plugin, meaning-plugin chunks) are there; off from Settings they vanish at once; reloaded with both off, none of that code
+// is requested and nothing is asked of /api/voice, /api/search-meaning or /api/search/meaning; on again without a reload brings them back.
+// Phone width first, then desktop. The command line's side is tests/test_plugin_settings.py and tests/test_plugin_voice_meaning.py.
 //   PN_VERIFY_PORT=4910 node scripts/verify-plugins.mjs        (PN_SHOT=/path/shot.png also saves pictures)
 import fs from 'node:fs'
 import os from 'node:os'
@@ -150,6 +153,95 @@ try {
     check(`[${label}] on again: the map is editable and the edit saves`, after.content.nodes.length === before.content.nodes.length + 1 && after.content.nodes.filter((n) => n.text === 'Hotels').length === before.content.nodes.filter((n) => n.text === 'Hotels').length + 1 && after.content.nodes.some((n) => n.text === 'Flights'), JSON.stringify(after.content.nodes.map((n) => n.text)))
     check(`[${label}] on again: the new-note menu offers Mind map again`, (await menuKinds()).join() === 'canvas,mindmap')
     await shot('on-again')
+    await page.context().close()
+  }
+  // ---- F-091: Voice and Search by meaning. The mic, the "By meaning" group and their Settings rows follow the switches; off loads and asks nothing.
+  const voiceCode = /\/(voice-plugin|setup-row)[-.]|\/src\/modules\/voice\/voice-plugin\.js|\/src\/modules\/plugins\/setup-row\.js/
+  const meaningCode = /\/meaning-plugin[-.]|\/src\/modules\/search\/meaning-plugin\.js/
+  const featureApi = /\/api\/(voice|search-meaning|search\/meaning)/
+  for (const [label, viewport] of [['phone', { width: 390, height: 780 }], ['desktop', { width: 1360, height: 900 }]]) {
+    await call('POST', '/plugins/voice', { enabled: true })
+    await call('POST', '/plugins/meaning', { enabled: true })
+    const page = await (await browser.newContext({ viewport })).newPage()
+    page.on('pageerror', (error) => errors.push(error.message))
+    // A stand-in for an installed index, so the group can be seen: the real engine is a 315 MB download this check never makes.
+    await page.route('**/api/search-meaning/status', (route) => route.fulfill({ json: { state: 'ready', index: { indexed: 2, total: 2, error: '', failed: 0 } } }))
+    await page.route('**/api/search/meaning**', (route) => route.fulfill({ json: [{ id: plain.id, title: 'Plain note', notebookName: 'Inbox', score: 0.9 }] }))
+    let code = []
+    let asked = []
+    page.on('request', (request) => { if (voiceCode.test(request.url()) || meaningCode.test(request.url())) code.push(request.url().split('/').pop().split('?')[0]); if (featureApi.test(request.url())) asked.push(new URL(request.url()).pathname) })
+    const open = async () => {
+      await page.goto(`http://127.0.0.1:${UI_PORT}/notes`)
+      await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+      // the mic lives on a canvas note's tool island (a mind map has its own tools), so start on the plain canvas note
+      await page.evaluate((n) => window.__personalNote.selectNote(n), plain.id)
+      await page.waitForFunction((n) => window.__personalNote.state.activeNoteId === n && !window.__personalNote.state.loading, plain.id, { timeout: 15000 })
+    }
+    const settings = async () => {
+      if (!(await page.locator('#properties-panel').evaluate((e) => e.classList.contains('open')))) { if (!(await page.locator('#top-properties').isVisible())) await page.click('#share-button'); await page.click('#top-properties'); await page.waitForTimeout(500) }
+      await page.locator('#plugin-voice').waitFor()
+    }
+    const closeSettings = async () => { await page.click('#close-properties'); await page.waitForTimeout(300) }
+    const micShown = () => page.locator(label === 'phone' ? '#mobile-speak' : '#voice-button').isVisible()
+    const byMeaning = async () => {
+      await page.click('#search-button')
+      await page.fill('#search-input', 'sleep')
+      await page.waitForTimeout(1200)
+      const shown = await page.locator('#search-results .omni-group h4', { hasText: 'By meaning' }).count()
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(400)
+      return shown
+    }
+
+    // on (the default)
+    await open()
+    await page.locator(label === 'phone' ? '#mobile-speak' : '#voice-button').waitFor({ state: 'visible', timeout: 15000 })
+    check(`[${label}] voice on: the mic is there and the voice code was loaded`, await micShown() && code.some((name) => name.startsWith('voice-plugin')), code.join())
+    check(`[${label}] meaning on: the "By meaning" group shows under a search`, await byMeaning() === 1 && code.some((name) => name.startsWith('meaning-plugin')))
+    await settings()
+    const text = await page.locator('#settings-plugins').textContent()
+    check(`[${label}] Settings → Plugins lists Voice and Search by meaning with what each needs`,
+      /Dictate into a note with your voice\. Audio is never kept, only the words\. Needs: about 750 MB download \(the Nemotron speech model\), runs on this computer\./.test(text)
+      && /Find notes by what they mean, not only their words\. Needs: about 315 MB download \(the EmbeddingGemma model\), runs on this computer\./.test(text)
+      && await page.locator('#plugin-voice').isChecked() && await page.locator('#plugin-meaning').isChecked())
+    check(`[${label}] on: both download rows are in Settings`, await page.locator('#settings-voice-section').count() === 1 && await page.locator('#settings-meaning-section').count() === 1)
+    if (label === 'phone') check('[phone] the new switch rows are at least 48px tall', (await page.locator('#settings-plugins .setting-row').evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height))).every((height) => height >= 48))
+
+    // voice off from Settings, no reload
+    await page.locator('#plugin-voice').uncheck()
+    await page.waitForFunction(() => document.querySelector('#voice-button').hidden && !document.querySelector('#settings-voice-section'), null, { timeout: 10000 })
+    check(`[${label}] voice off: no mic, no recording-face trigger, no voice row; the choice is kept`, !(await micShown()) && !(await page.locator('#voice-button').isVisible()) && !(await page.locator('#mobile-speak').isVisible()) && savedChoice()?.voice === false && savedChoice()?.meaning === true, JSON.stringify(savedChoice()))
+    // meaning off from Settings, no reload
+    await page.locator('#plugin-meaning').uncheck()
+    await page.waitForFunction(() => !document.querySelector('#settings-meaning-section'), null, { timeout: 10000 })
+    check(`[${label}] meaning off: the download row is gone and the choice is kept`, savedChoice()?.meaning === false)
+    await closeSettings()
+    asked = []
+    check(`[${label}] meaning off: no "By meaning" group, and the omnibar asks the server nothing about meaning`, await byMeaning() === 0 && asked.length === 0, asked.join())
+
+    // both off, fresh page: nothing of either loads or is asked
+    code = []
+    asked = []
+    await open()
+    await page.waitForTimeout(800)
+    await settings()
+    await closeSettings()
+    check(`[${label}] both off, after a reload: no mic, no voice or meaning code requested, no voice or meaning request made`,
+      !(await page.locator('#voice-button').isVisible()) && !(await page.locator('#mobile-speak').isVisible()) && code.length === 0 && asked.length === 0 && await byMeaning() === 0, `${code.join()} ${asked.join()}`)
+    check(`[${label}] both off: the server's answers are plain`,
+      (await (await fetch(`${API}/api/search/meaning?q=sleep`)).json()).length === 0
+      && (await fetch(`${API}/api/search/meaning?q=sleep&strict=1`)).status === 409
+      && (await fetch(`${API}/api/voice/engine/start`, { method: 'POST', headers: { 'x-personal-note': '1' } })).status === 409)
+
+    // on again, no restart
+    await settings()
+    await page.locator('#plugin-voice').check()
+    await page.locator(label === 'phone' ? '#mobile-speak' : '#voice-button').waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator('#plugin-meaning').check()
+    await page.locator('#settings-meaning-section').waitFor({ timeout: 10000 })
+    await closeSettings()
+    check(`[${label}] on again, no reload: the mic and the voice code are back`, await micShown() && code.some((name) => name.startsWith('voice-plugin')) && savedChoice()?.voice === true, code.join())
+    check(`[${label}] on again: the "By meaning" group is back`, await byMeaning() === 1 && code.some((name) => name.startsWith('meaning-plugin')))
     await page.context().close()
   }
   check('no page errors', errors.length === 0, errors.join(' | '))
