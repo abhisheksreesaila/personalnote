@@ -165,6 +165,14 @@ class NoteLinkApiTests(unittest.TestCase):
         service.mark_x_done(other["id"])  # the same archive notebook is used again
         self.assertEqual(len([b for b in service.list_notebooks() if b["name"] == "X bookmarks done"]), 1)
 
+    def test_done_works_on_a_restored_bookmark_in_an_x_notebook_before_the_sync_adopts_it(self):
+        service = NoteService(Path(self.folder.name) / "restored.db")
+        notebook = service.create_notebook({"name": "X bookmarks", "category": "resources", "icon": "brand:x"})
+        note = service.create_note({"title": "@ada: restored", "noteType": "page", "notebookId": notebook["id"]})
+        done = service.mark_x_done(note["id"])
+        self.assertEqual(service.get_note(note["id"])["notebookId"], done["notebookId"])
+        self.assertNotEqual(done["notebookId"], notebook["id"])
+
     def test_done_refuses_a_note_that_is_not_an_x_bookmark(self):
         plain = self.make_page("Plain", "x")
         response = self.client.post(f"/api/notes/{plain['id']}/x-done", headers={"x-personal-note": "1"})

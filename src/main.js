@@ -3265,6 +3265,11 @@ function setSidebarOpen(open, remember = false) {
   if (isOpen && !wasOpen) requestAnimationFrame(() => document.querySelector('#rail-new-note').focus())
 }
 
+// F-095: on a narrow window the panel covers the note, so a dragged note row slides it away once it leaves it: the note is under the finger to drop on.
+document.addEventListener('dragover', (event) => {
+  if (mobileLayout.matches && elements.sidebar.classList.contains('open') && !elements.sidebar.contains(event.target) && [...(event.dataTransfer?.types || [])].includes(NOTE_DRAG)) setSidebarOpen(false)
+})
+
 const restoredSidebar = () => !mobileLayout.matches && loadPanelOpen(safeStorage())
 elements.sidebarToggle.addEventListener('click', () => setSidebarOpen(!elements.sidebar.classList.contains('open'), true))
 document.querySelector('#close-sidebar').addEventListener('click', () => setSidebarOpen(false, true))

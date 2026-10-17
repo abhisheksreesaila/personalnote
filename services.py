@@ -1897,9 +1897,19 @@ class NoteService:
         return found
 
     def mark_x_done(self, note_id: int) -> dict:
-        """Done on an X bookmark: filed into the Archive notebook "X bookmarks done" (made on first use). Nothing is deleted."""
+        """Done on an X bookmark: filed into the Archive notebook "X bookmarks done" (made on first use). Nothing is deleted.
+
+        A bookmark is a note the sync imported, or one in a notebook with the X icon (a restored backup has the notes before the sync adopts them).
+        """
         with self.connection() as connection:
-            if connection.execute("SELECT 1 FROM x_posts WHERE note_id = ?", (note_id,)).fetchone() is None:
+            row = connection.execute(
+                """
+                SELECT 1 FROM notes n LEFT JOIN notebooks b ON b.id = n.notebook_id
+                WHERE n.id = ? AND (b.icon = 'brand:x' OR EXISTS (SELECT 1 FROM x_posts p WHERE p.note_id = n.id))
+                """,
+                (note_id,),
+            ).fetchone()
+            if row is None:
                 raise NotFoundError("This note is not an X bookmark")
             row = connection.execute("SELECT id FROM notebooks WHERE name = ? AND category = 'archive' ORDER BY id LIMIT 1", (X_DONE_NOTEBOOK_NAME,)).fetchone()
         notebook_id = row["id"] if row else self.create_notebook({"name": X_DONE_NOTEBOOK_NAME, "category": "archive", "icon": "brand:x"})["id"]

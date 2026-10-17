@@ -1,10 +1,14 @@
 // "Done" on an X bookmark (F-095): one click files the open bookmark into the Archive notebook "X bookmarks done" (archived, never deleted), with
 // Undo. Loaded only when a bookmark is open. host: { api, state, parent, settle(), refresh(), moveNote(id, notebookId), toast(message, label, run) }.
 const CSS = `
-.x-done { height: 44px; padding: 0 18px; border-radius: 22px; font: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.x-done[hidden] { display: none; }
-.x-done:disabled { opacity: .6; cursor: default; }
-@media (max-width: 800px) { .x-done { height: 40px; padding: 0 14px; } }
+.app-shell .x-done { height: var(--h, 44px); padding: 0 16px 0 12px; border-radius: 999px; background: var(--sk-panel); border: 1px solid var(--sk-edge); box-shadow: var(--sk-shadow); color: var(--ink-soft); font: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.app-shell .x-done[hidden] { display: none; }
+.app-shell .x-done svg { width: 18px; height: 18px; }
+.app-shell .x-done:hover { border-color: color-mix(in srgb, var(--sk-accent) 45%, var(--sk-edge)); }
+.app-shell .x-done:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
+.app-shell .x-done:disabled { opacity: .6; cursor: default; }
+/* a phone's top bar is full (menu, title, search): Done floats above the tools at the bottom right instead */
+@media (max-width: 800px) { .app-shell .x-done { position: fixed; right: 14px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); height: 48px; z-index: 30; } }
 `
 
 export function mountXDone(host) {
@@ -12,7 +16,7 @@ export function mountXDone(host) {
   style.textContent = CSS
   const button = document.createElement('button')
   button.type = 'button'
-  button.className = 'x-done glass-button'
+  button.className = 'x-done'
   button.hidden = true
   button.title = 'Done with this bookmark: file it in the Archive'
   button.innerHTML = '<i data-lucide="check"></i><span>Done</span>'

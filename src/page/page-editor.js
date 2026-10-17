@@ -71,7 +71,7 @@ function noteLinkDecorations(view) {
   }
   return { shown: builder.finish(), hidden: hidden.finish() }
 }
-const noteLinks = (onOpenNote) => {
+const noteLinks = () => {
   const plugin = ViewPlugin.fromClass(class {
     constructor(view) {
       this.built = noteLinkDecorations(view)
@@ -90,14 +90,6 @@ const noteLinks = (onOpenNote) => {
   return [
     plugin,
     EditorView.atomicRanges.of((view) => view.plugin(plugin)?.built.hidden ?? Decoration.none),
-    EditorView.domEventHandlers({
-      click(event, view) {
-        const link = event.target instanceof Element ? event.target.closest('[data-note-ref]') : null
-        if (!link || !view.state.selection.main.empty) return false
-        onOpenNote(link.dataset.noteRef)
-        return true
-      },
-    }),
   ]
 }
 
@@ -135,7 +127,7 @@ export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote
         EditorView.contentAttributes.of({ 'aria-label': 'Page text', spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences' }),
         pageTheme,
         inkState(initial.ink),
-        noteLinks(onOpenNote),
+        noteLinks(),
         EditorView.updateListener.of((update) => {
           if (silent) return
           if (update.docChanged || update.transactions.some(isInkTransaction)) onChange()
@@ -144,6 +136,20 @@ export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote
     }),
   })
   const ink = mountInkLayer({ view, host, paper, desk })
+  // A press and release close together on a note link opens its note. The press is read first (capture), before the caret enters the link and its
+  // address shows, which would move the words under the finger; a drag or a long press only does what it always did.
+  let linkPress = null
+  const pressLink = (event) => {
+    const link = event.button === 0 && !event.shiftKey && event.target instanceof Element ? event.target.closest('[data-note-ref]') : null
+    linkPress = link && { ref: link.dataset.noteRef, id: event.pointerId, x: event.clientX, y: event.clientY, time: performance.now() }
+  }
+  const releaseLink = (event) => {
+    const press = linkPress
+    linkPress = null
+    if (press && press.id === event.pointerId && performance.now() - press.time < 700 && Math.hypot(event.clientX - press.x, event.clientY - press.y) < 6) onOpenNote(press.ref)
+  }
+  host.addEventListener('pointerdown', pressLink, true)
+  host.addEventListener('pointerup', releaseLink, true)
 
   // Faint "Page N" marks every sheet: the page is one continuous sheet that grows; the marks only show where paper would break.
   let shownSheets = 0
@@ -196,7 +202,9 @@ export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote
     // A note dropped or picked into this page (F-095): the link goes in at the window point `at` (a drop) or at the caret, with a space on either
     // side where it would touch a word.
     insertNoteLink(markdown, at) {
-      const pos = (at && view.posAtCoords({ x: at.clientX, y: at.clientY })) ?? view.state.selection.main.head
+      let pos = (at && view.posAtCoords({ x: at.clientX, y: at.clientY })) ?? view.state.selection.main.head
+      const word = view.state.wordAt(pos)
+      if (word && pos > word.from && pos < word.to) pos = pos - word.from < word.to - pos ? word.from : word.to // (dropped in the middle of a word: at the nearer edge of it)
       const before = view.state.sliceDoc(Math.max(0, pos - 1), pos)
       const after = view.state.sliceDoc(pos, pos + 1)
       const text = `${before && !/\s/.test(before) ? ' ' : ''}${markdown}${after && !/\s/.test(after) ? ' ' : ''}`
@@ -218,6 +226,8 @@ export function mountPage(host, { documentValue, onChange = () => {}, onOpenNote
     focus() { view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true }); view.focus() },
     destroy() {
       resize.disconnect()
+      host.removeEventListener('pointerdown', pressLink, true)
+      host.removeEventListener('pointerup', releaseLink, true)
       ink.destroy()
       view.destroy()
       host.replaceChildren()
