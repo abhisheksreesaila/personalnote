@@ -165,6 +165,57 @@ try {
     await page.context().close()
   }
 
+  // ---- F-098: the canvas engine (Leafer) is a chunk of its own that arrives after the notes panel and the title; held back 2 s here
+  const slowEngine = (page) => page.route(/\/assets\/canvas-leafer-[^/]*\.js/, async (route) => { await new Promise((r) => setTimeout(r, 2000)); await route.continue() })
+  {
+    const page = await newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    await slowEngine(page)
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    const early = await page.evaluate(() => ({ canvases: document.querySelectorAll('#leafer-host canvas').length, title: document.querySelector('#note-title').value, island: document.querySelector('#island-title').textContent }))
+    check('the notes list and the open note\'s title are drawn before the canvas engine arrives (no canvas yet)', early.canvases === 0 && early.title === 'Plain note' && early.island === 'Plain note', JSON.stringify(early))
+    await page.locator('#leafer-host canvas').first().waitFor({ state: 'attached', timeout: 20000 })
+    await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 20000 })
+    check('and the canvas fills in when it does, without errors', errors.length === 0, errors.join())
+    await page.context().close()
+  }
+  {
+    // a press on the page before the engine is there is held and placed at the same spot once it is: the words typed after it land in a text there
+    const page = await newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    await slowEngine(page)
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    const press = { x: 640, y: 420 }
+    await page.mouse.click(press.x, press.y)
+    const editor = page.locator('.leafer-text-editor')
+    await editor.first().waitFor({ state: 'attached', timeout: 20000 })
+    await page.waitForFunction(() => document.activeElement?.classList.contains('leafer-text-editor'), null, { timeout: 20000 }) // (the caret is in: a person types when they see it)
+    await page.keyboard.type('held press')
+    const box = await editor.first().boundingBox()
+    const text = await editor.first().inputValue()
+    const near = box && Math.abs(box.x - press.x) < 120 && Math.abs(box.y - press.y) < 120
+    check('a press on the page before the canvas engine arrives is placed there when it does, and typing goes into it', near && /held press/.test(text) && errors.length === 0, `${JSON.stringify(box)} ${text} ${errors.join()}`)
+    await page.context().close()
+  }
+
+  {
+    // the engine chunk answers with an error once: the notes list is still there, the failure is said in plain words, and Reload brings the canvas
+    const page = await newPage()
+    let failed = 0
+    await page.route(/\/assets\/canvas-leafer-[^/]*\.js/, async (route) => { if (failed++ === 0) await route.abort(); else await route.continue() })
+    await page.goto(`${BASE}/notes`)
+    await page.locator('#toast').waitFor({ state: 'visible', timeout: 20000 })
+    const said = await page.locator('#toast').textContent()
+    check('a canvas engine that fails to load is said on screen in plain words, with a Reload button', /canvas did not load/.test(said) && /Reload/.test(said), said)
+    await Promise.all([page.waitForNavigation(), page.click('#toast-action')])
+    await page.locator('#leafer-host canvas').first().waitFor({ state: 'attached', timeout: 20000 })
+    check('and after Reload the canvas is there', true)
+    await page.context().close()
+  }
   // ---- Voice and Search by meaning off: their code is never fetched, even after idle
   await call('POST', '/plugins/voice', { enabled: false }); await call('POST', '/plugins/meaning', { enabled: false })
   {

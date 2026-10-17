@@ -9,10 +9,11 @@ const budgets = {
   // 240 until F-092: the captain raised it to 260 on 2026-10-16 for jam sessions and the plugins after them ("two hundred sixty KB is fine");
   // F-097 moved the optional plugins and settings panels out of the first load (see firstLoadGzip below).
   javascriptGzip: 260 * KIB,
-  // F-097: the JavaScript the first screen waits for (index.html's script and everything it imports statically). It measured 207.05 KiB with the
-  // plugins and settings panels in it and 204.11 KiB after they moved out; 205 guards what was achieved, so putting optional code back in
-  // the first load fails here. This number can only go down.
-  firstLoadGzip: 205 * KIB,
+  // The JavaScript the first screen waits for (index.html's script and everything it imports statically). F-097 took the plugins out (207 -> 204 KiB);
+  // F-098 took the canvas engine (Leafer and the scene: its own chunk, fetched in parallel with the notes list and drawn into the page when it arrives)
+  // out as well: 204.21 -> 89.85 KiB. 90 guards what was achieved, so putting the engine or optional code back in the first load fails here.
+  // This number can only go down.
+  firstLoadGzip: 90 * KIB,
   // The editors built on CodeMirror are not in the first load: the page editor comes when a page note opens (F-040), the Markdown text
   // editor is fetched once a canvas has opened and the window is idle (F-049). They have their own budget instead of eating the app's:
   // the two editors and the CodeMirror chunk they share.

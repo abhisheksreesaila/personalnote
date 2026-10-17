@@ -596,6 +596,7 @@
   .ink-surface[data-tool="eraser"] { cursor: none; }
   .ink-live { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   .app-shell.leafer-switching #leafer-host, .app-shell.leafer-switching .ink-surface, .app-shell.leafer-switching .connect-surface, .app-shell.leafer-switching .selection-bar { pointer-events: none; }
+  .app-shell.engine-loading .ink-surface, .app-shell.engine-loading .connect-surface, .app-shell.engine-loading .selection-bar { pointer-events: none; } /* F-098: until the canvas engine is there */
   .selection-bar { position: absolute; z-index: 15; top: 64px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--paper, #fbfaf5) 92%, transparent); border: 1px solid var(--line, #d4cec3); box-shadow: 0 6px 18px rgba(20, 20, 30, .12); }
   .selection-bar[hidden] { display: none; }
   .selection-bar button { font: 500 12px/1 "IBM Plex Sans", system-ui, sans-serif; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted, #50505a); cursor: pointer; }

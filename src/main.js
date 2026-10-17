@@ -21,7 +21,7 @@ import { pickFlagBlock } from './modules/sync/changes.js'
 import { dockIcon } from './modules/editor/dock-icons.js'
 import { imageFiles, objectPalette, stickyDefaults } from './modules/editor/objects.js'
 import { readPreferences, writePreferences } from './preferences.js'
-import { createLeaferCanvas } from './modules/canvas-leafer/index.js'
+import { lazyCanvas } from './modules/canvas-leafer/lazy.js'
 import { RENDER_MODES } from './modules/canvas-leafer/perf.js'
 import { createLeaferEdits } from './modules/canvas-leafer/edits.js'
 import { mergeDocuments } from './core/document/merge.js'
@@ -1234,6 +1234,7 @@ function writingViewFor(text) {
 // The caret goes into the writing as the note opens: at the end of its topmost text, or in a new text at the top of the first page.
 // `sequence`: the note pick this belongs to (a later pick, or the person having clicked into something else meanwhile, wins).
 async function startWriting(sequence) {
+  if (replayEarlyPress()) return
   const writing = writingTarget()
   if (!writing) return
   const focusedBefore = document.activeElement
@@ -1733,7 +1734,7 @@ let leaferShowFixed = false
 async function showLeaferNote(note, { openView = true } = {}) {
   // The stored JSON Canvas is read straight into the document model; the note's own content is kept to save back until it is edited.
   const showing = ++leaferShowSequence
-  const decoded = await decodeNoteDocument(note)
+  const [decoded] = await Promise.all([decodeNoteDocument(note), leaferCanvas.ready]) // the engine and the web fonts (F-098): the notes panel and the title are on screen before this waits
   if (showing !== leaferShowSequence || note.id !== state.activeNoteId) return false
   leaferInk?.documentChanged() // the document is replaced: an erase pass planned on the old one is dropped
   leaferSource = { noteId: note.id, content: note.content || { objects: [] }, pageState: decoded.doc.page }
@@ -1766,12 +1767,15 @@ function setPageZoomLocked(locked) {
   meta.setAttribute('content', locked ? `${base}, maximum-scale=1.0` : base)
 }
 
+// F-098: the host is in the page at once (so nothing moves when the engine arrives); the engine (Leafer and the scene) is its own chunk, fetched
+// from the first line of initialize() and made once the web fonts are in (text is measured with them). `leaferCanvas` answers meanwhile as a
+// canvas with nothing on it (modules/canvas-leafer/lazy.js).
 function mountLeaferCanvas() {
   const host = document.createElement('div')
   leaferHost = host
   host.id = 'leafer-host'
   elements.paper.prepend(host)
-  leaferCanvas = createLeaferCanvas({ host, width: viewSize.width, height: viewSize.height, onOperation: (op, options) => leaferEdits.record(op, options),
+  const engineOptions = { host, width: viewSize.width, height: viewSize.height, onOperation: (op, options) => leaferEdits.record(op, options),
     onBegin: (label) => leaferEdits.begin(label),
     onEnd: () => leaferEdits.end(),
     // A drag, a resize or a turn brought an object near an edge: the page grid grows in every direction.
@@ -1795,9 +1799,38 @@ function mountLeaferCanvas() {
         return { fill, ink, style: { fontFamily, fontSize, fontWeight, lineHeight } }
       },
     },
-  })
+  }
+  return engineOptions
 }
-mountLeaferCanvas()
+const leaferOptions = mountLeaferCanvas()
+let engineStarted = null
+function startEngine() {
+  engineStarted ??= Promise.all([import('./modules/canvas-leafer/index.js'), prepareCanvasFonts()]).then(([engine]) => {
+    syncCanvasSize() // the window may have been resized while the engine was on its way
+    return engine.createLeaferCanvas({ ...leaferOptions, width: viewSize.width, height: viewSize.height })
+  }).catch((error) => { // a chunk that does not arrive (gone after an update, the server away): said in plain words, and a reload is the retry that works everywhere
+    console.error(error)
+    showToast('The canvas did not load.', 'Reload', () => location.reload())
+    throw error
+  })
+  return engineStarted
+}
+leaferCanvas = lazyCanvas(() => startEngine())
+elements.shell.classList.add('engine-loading') // the pen and connect surfaces take no input until the engine is there (a press to place words is held: earlyPress)
+leaferCanvas.ready.then(() => elements.shell.classList.remove('engine-loading'), () => {})
+// A press on the page to place words, a sticky or a shape that comes before the engine does is not lost and not placed anywhere else: it is
+// held here, and placed at the same spot on screen once the note is drawn (replayEarlyPress, from startWriting).
+let earlyPress = null
+function replayEarlyPress() {
+  const press = earlyPress
+  earlyPress = null
+  if (!press || press.tool !== state.tool) return false // another tool has been picked since: the press is not for this one
+  const at = leaferCanvas.pageAt(press.x, press.y)
+  if (press.tool === 'sticky') placeSticky(at, { now: press.now })
+  else if (press.tool === 'shape') placeShape(at)
+  else if (!leaferCanvas.toggleFoldAt(at) && !leaferCanvas.editText(at, { select: false })) leaferCanvas.createText(at, { select: false })
+  return true
+}
 
 // The pen, highlighter and eraser (F-031). The stroke is a model object recorded as one undo step; a page grows when the pen
 // goes past the right or bottom edge.
@@ -3016,6 +3049,7 @@ for (const type of ['mousedown', 'mouseup', 'auxclick']) window.addEventListener
 // are not relied on.
 inputSurface.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 || event.pointerType !== 'mouse') return
+  if (!leaferCanvas.isReady()) { if (state.tool === 'sticky' || state.tool === 'shape' || state.tool === 'text') earlyPress = { x: event.clientX, y: event.clientY, tool: state.tool }; return }
   if (state.tool === 'sticky') placeSticky(leaferCanvas.pageAt(event.clientX, event.clientY))
   else if (state.tool === 'shape') placeShape(leaferCanvas.pageAt(event.clientX, event.clientY))
   else if (state.tool === 'text') {
@@ -3034,6 +3068,7 @@ window.addEventListener('pointerup', (event) => {
   tapStart = null
   if (!start || start.id !== event.pointerId || state.activeNoteType !== 'canvas' || canvasPinchGesture) return
   if (performance.now() - start.time > 600 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) return
+  if (!leaferCanvas.isReady()) { if (state.tool === 'sticky' || state.tool === 'shape' || state.tool === 'text') earlyPress = { x: event.clientX, y: event.clientY, tool: state.tool, now: true }; return }
   const at = leaferCanvas.pageAt(event.clientX, event.clientY)
   if (state.tool === 'sticky') placeSticky(at, { now: true })
   else if (state.tool === 'shape') placeShape(at)
@@ -4177,23 +4212,30 @@ function showMicEarly() {
 }
 
 async function initialize() {
-  await prepareCanvasFonts()
   refreshPageColors()
   resizePaper()
   resetCanvasView()
   syncDefaultTypographySettings()
   syncTypographyControls()
   loadCapabilitySettings()
-  plugins.apply((await api('/plugins').catch(() => ({}))).plugins) // the machine's choice; unreachable: every plugin keeps its default
+  // F-098: everything the first screen needs is asked for at once, not one after another: the plugin choice, the lists, and the locking of secure notes.
+  const pluginChoice = api('/plugins').catch(() => ({}))
+  const lists = Promise.all([api('/notebooks'), api('/notes')])
+  // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server;
+  // and the window may be shared again (a Mac window an earlier page left hidden). The note itself is asked for after this.
+  const locked = (async () => { await api('/secure/lock', { method: 'POST' }).catch(() => {}); await secure.resetCapture() })()
+  lists.catch(() => {}); locked.catch(() => {}) // (awaited below, inside the try)
+  plugins.apply((await pluginChoice).plugins) // the machine's choice; unreachable: every plugin keeps its default
   syncNoteCreateMenu()
   showMicEarly()
   try {
-    // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server.
-    await api('/secure/lock', { method: 'POST' }).catch(() => {})
-    await secure.resetCapture() // and the window may be shared again (a Mac window an earlier page left hidden)
-    ;[state.notebooks, state.notes] = await Promise.all([api('/notebooks'), api('/notes')])
+    ;[state.notebooks, state.notes] = await lists
     pruneOpenNotebooks()
     state.selectedNotebookId = state.notes[0]?.notebookId ?? null
+    // The notes panel and the open note's title are drawn now, from the lists: the note's words and the canvas follow (the engine is on its way).
+    const first = state.notes[0]
+    if (first && !first.secure) { renderNoteList(); setNoteTitle(first.title) }
+    await locked
     if (!state.notes.length) await createNote()
     else await selectNote(state.notes[0].id)
     requestAnimationFrame(() => requestAnimationFrame(() => { // the first screen is on the glass: now the optional code
