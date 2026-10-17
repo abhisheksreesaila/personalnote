@@ -6,7 +6,7 @@ ENV VITE_LOCAL_ASR_ENDPOINT=${VITE_LOCAL_ASR_ENDPOINT}
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY index.html landing-note.html landing-spatial.html spatial-docs.html vite.config.js ./
+COPY index.html landing-note.html vite.config.js ./
 COPY public ./public
 COPY src ./src
 RUN npm run build

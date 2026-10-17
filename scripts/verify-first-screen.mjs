@@ -12,7 +12,7 @@ import { chromium } from 'playwright'
 import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const PORT = basePort(4930)
-await assertPortsFree([PORT])
+await assertPortsFree([PORT, PORT + 1])
 const ROOT = path.resolve(process.env.PN_ROOT || '.')
 const RUNS = Number(process.env.PN_RUNS || 9)
 const THROTTLE = Number(process.env.PN_THROTTLE || 1)
@@ -313,6 +313,32 @@ try {
     await page.locator('#leafer-host canvas').first().waitFor({ state: 'attached', timeout: 20000 })
     check('and after Reload the canvas is there', true)
     await page.context().close()
+  }
+  // ---- an empty notebook makes its first note while the page is already up: a title typed the moment the field takes typing is kept (and survives a reload)
+  {
+    const EMPTY = `http://127.0.0.1:${PORT + 1}`
+    const emptyScratch = fs.mkdtempSync(path.join(os.tmpdir(), 'pn-verify-first-empty-'))
+    const emptyApi = spawn(python, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(PORT + 1)], { cwd: ROOT, env: { ...env, PERSONAL_NOTE_DB: path.join(emptyScratch, 'empty.db'), PERSONAL_NOTE_PLUGINS_DIR: path.join(emptyScratch, 'plugins') }, stdio: 'ignore' })
+    process.on('exit', () => { try { emptyApi.kill() } catch {} })
+    try {
+      for (let i = 0; i < 100; i++) { try { if ((await fetch(`${EMPTY}/api/notebooks`)).ok) break } catch {} await new Promise((r) => setTimeout(r, 150)) }
+      const page = await browser.newPage()
+      const puts = []
+      page.on('request', (request) => { if (request.method() === 'PUT' && /\/api\/notes\/\d+$/.test(request.url())) puts.push(request.url()) })
+      await page.goto(`${EMPTY}/notes`)
+      await page.waitForFunction(() => !document.querySelector('#note-title').readOnly, null, { timeout: 30000 })
+      await page.evaluate(() => { const t = document.querySelector('#note-title'); t.value = 'First thought'; t.dispatchEvent(new Event('input', { bubbles: true })) }) // (as typed: the field may not be on screen yet)
+      let saved = ''
+      for (let i = 0; i < 30 && saved !== 'First thought'; i++) { await page.waitForTimeout(300); saved = (await (await fetch(`${EMPTY}/api/notes`)).json())[0]?.title }
+      check('in an empty notebook a title typed the moment the field takes typing is kept, not reset to "Untitled note"', saved === 'First thought' && (await page.evaluate(() => document.querySelector('#note-title').value)) === 'First thought', `${saved} / ${await page.evaluate(() => document.querySelector('#note-title').value)} / ${puts.length} saves`)
+      await page.reload()
+      await page.waitForFunction(() => document.querySelector('#note-title').value !== '' && !document.querySelector('#note-title').readOnly, null, { timeout: 30000 })
+      check('and after a reload the note still has it', (await page.evaluate(() => document.querySelector('#note-title').value)) === 'First thought')
+      await page.close()
+    } finally {
+      try { emptyApi.kill() } catch {}
+      fs.rmSync(emptyScratch, { recursive: true, force: true })
+    }
   }
   // ---- Voice and Search by meaning off: their code is never fetched, even after idle
   await call('POST', '/plugins/voice', { enabled: false }); await call('POST', '/plugins/meaning', { enabled: false })

@@ -56,7 +56,8 @@ class WebViewSmokeTest(unittest.TestCase):
                 try:
                     deadline = time.monotonic() + 20
                     while time.monotonic() < deadline:
-                        listed = window.evaluate_js("document.querySelectorAll('[data-note-id]').length")
+                        # the title takes typing only once the note is drawn (it is read-only while the canvas engine is on its way)
+                        listed = window.evaluate_js("document.querySelectorAll('[data-note-id]').length && !document.querySelector('#note-title').readOnly ? 1 : 0")
                         if listed:
                             break
                         time.sleep(0.1)

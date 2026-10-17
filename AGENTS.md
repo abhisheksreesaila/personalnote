@@ -14,6 +14,7 @@ Design language: web=Personal Note skins (Crayon, Paper, Night in `src/skins.css
 ## Core boundaries
 
 - `src/main.js` owns the browser shell and hosts the Leafer canvas (view, input, save, note lifecycle). The engine is a separate chunk (F-098): the shell holds `leaferCanvas` as `lazyCanvas` (`canvas-leafer/lazy.js`) and draws the notes panel and title before the engine arrives; keep `leafer-ui` and `scene.js` out of what main.js imports statically (the first-load budget fails if they come back). `src/modules/canvas-leafer/` is the engine adapter and the only code that imports `leafer-ui`.
+- The omnibar's results, pills and preview (`src/modules/omnibar/omnibar-view.js`) are a lazy chunk fetched when it first opens; main.js keeps only its state and keys.
 - `src/core/api.js` is the browser API boundary.
 - `routes.py` owns core HTTP routes.
 - `services.py::NoteService` is the only owner of canonical SQLite reads and writes.
@@ -50,7 +51,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run dev
 npm run test:ui
-python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_agent_edit tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_secret_store tests.test_x_bookmarks tests.test_download_tls tests.test_meaning_index tests.test_meaning_search tests.test_meaning_rank tests.test_plugin_settings tests.test_plugin_voice_meaning tests.test_jam_brain tests.test_jam_route tests.test_ai_settings tests.test_note_links tests.test_note_icon -v
+python -m unittest tests.test_api tests.test_startup tests.test_cli tests.test_agent_access tests.test_agent_edit tests.test_app_paths tests.test_document_model tests.test_json_canvas tests.test_note_format tests.test_migration tests.test_desktop tests.test_desktop_menu tests.test_speedtest_report tests.test_page_notes tests.test_markdown_text tests.test_webview_smoke tests.test_secure_platform tests.test_secure_notes tests.test_inbox tests.test_search_runtime tests.test_secret_store tests.test_x_bookmarks tests.test_download_tls tests.test_meaning_index tests.test_meaning_search tests.test_meaning_rank tests.test_plugin_settings tests.test_plugin_voice_meaning tests.test_jam_brain tests.test_jam_route tests.test_ai_settings tests.test_note_links tests.test_note_icon tests.test_search_results -v
 npm run benchmark:bundle
 ```
 

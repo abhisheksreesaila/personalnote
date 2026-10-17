@@ -43,7 +43,7 @@ FLUSH_TIMEOUT = 3.0
 FOCUS_PATH = "/_desktop/focus"
 NONCE_HEADER = "x-focus-nonce"
 ROOT = resource_root()
-FRONTEND_INPUTS = ("src", "public", "index.html", "landing-note.html", "spatial-docs.html", "vite.config.js", "package.json")
+FRONTEND_INPUTS = ("src", "public", "index.html", "landing-note.html", "vite.config.js", "package.json")
 
 logger = logging.getLogger("personal-note.desktop")
 

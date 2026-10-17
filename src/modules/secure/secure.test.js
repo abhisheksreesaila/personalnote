@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  createHeldEdit, createQuietTimer, formatCountdown, shouldPing, formatRecoveryInput, noteRowIcon, passphraseProblem, recoveryGroups, searchResultView, unlockFailureMessage,
+  createHeldEdit, createQuietTimer, formatCountdown, shouldPing, formatRecoveryInput, noteRowIcon, passphraseProblem, recoveryGroups, unlockFailureMessage,
 } from './secure.js'
 
 test('the countdown reads minutes and seconds and never goes below zero', () => {
@@ -66,11 +66,6 @@ test('a secure note row gets the lock and the secure class; the others keep thei
   assert.deepEqual(noteRowIcon({ noteType: 'mindmap' }), { icon: 'git-fork', className: '' })
   assert.deepEqual(noteRowIcon({ noteType: 'page' }), { icon: 'file-pen', className: '' })
   assert.deepEqual(noteRowIcon({ noteType: 'canvas' }), { icon: 'file-text', className: '' })
-})
-
-test('a search result for a secure note shows the title only', () => {
-  assert.deepEqual(searchResultView({ secure: true, noteType: 'page', excerpt: 'card 4111' }), { icon: 'lock', excerpt: '', className: 'is-secure' })
-  assert.deepEqual(searchResultView({ noteType: 'mindmap', excerpt: 'branch' }), { icon: 'git-fork', excerpt: 'branch', className: '' })
 })
 
 test('activity pings the server at most every 30 seconds', () => {

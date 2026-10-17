@@ -1,17 +1,17 @@
 // The icons the app draws, and only those: the whole Lucide set is most of a megabyte and the page would carry all of it.
 // An icon is named in the markup as <i data-lucide="kebab-name"></i>; add its PascalCase export here when you use a new one.
 import {
-  AlignLeft, Archive, ArrowLeft, ArrowUpDown, AudioLines, BookOpen, Braces, Check, ChevronDown, ChevronRight, Compass, CornerDownLeft, Download,
+  AlignLeft, Archive, ArrowLeft, AudioLines, BookOpen, Braces, Check, ChevronDown, ChevronRight, Compass, Download,
   Eraser, FileDown, FilePen, FileText, Focus, FoldVertical, FolderDown, FolderInput, FolderOpen, Gauge, GitBranch, GitFork, Hand, HardDrive, ImageDown,
-  ImagePlus, Inbox, LayoutGrid, Maximize2, Mic, Minus, MoreHorizontal, MousePointer2, NotebookTabs, PanelLeft, Pencil, Plus,
-  Printer, Redo2, Scan, Search, SearchX, SlidersHorizontal, Square, StickyNote, Target, Trash2, Undo2, UnfoldVertical, WandSparkles, X, createIcons as createLucideIcons,
+  ImagePlus, Inbox, LayoutGrid, Maximize2, Mic, Minus, MoreHorizontal, MousePointer2, PanelLeft, Pencil, Plus,
+  Printer, Redo2, Scan, Search, SlidersHorizontal, Square, StickyNote, Target, Trash2, Undo2, UnfoldVertical, WandSparkles, X, createIcons as createLucideIcons,
 } from 'lucide'
 
 export const icons = {
-  AlignLeft, Archive, ArrowLeft, ArrowUpDown, AudioLines, BookOpen, Braces, Check, ChevronDown, ChevronRight, Compass, CornerDownLeft, Download,
+  AlignLeft, Archive, ArrowLeft, AudioLines, BookOpen, Braces, Check, ChevronDown, ChevronRight, Compass, Download,
   Eraser, FileDown, FilePen, FileText, Focus, FoldVertical, FolderDown, FolderInput, FolderOpen, Gauge, GitBranch, GitFork, Hand, HardDrive, ImageDown,
-  ImagePlus, Inbox, LayoutGrid, Maximize2, Mic, Minus, MoreHorizontal, MousePointer2, NotebookTabs, PanelLeft, Pencil, Plus,
-  Printer, Redo2, Scan, Search, SearchX, SlidersHorizontal, Square, StickyNote, Target, Trash2, Undo2, UnfoldVertical, WandSparkles, X,
+  ImagePlus, Inbox, LayoutGrid, Maximize2, Mic, Minus, MoreHorizontal, MousePointer2, PanelLeft, Pencil, Plus,
+  Printer, Redo2, Scan, Search, SlidersHorizontal, Square, StickyNote, Target, Trash2, Undo2, UnfoldVertical, WandSparkles, X,
 }
 
 // Secure notes (F-058). Added here, not in the lists above, so a change to those never clashes with this.
