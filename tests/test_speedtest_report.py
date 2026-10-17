@@ -138,9 +138,10 @@ class SpeedTestInstanceTests(unittest.TestCase):
             self.assertIs(routes.launch_speedtest_instance(settle=0.01), popen.return_value)
 
 
-def run_main(arguments, voice):
+def run_main(arguments, voice, voice_on=True):
     app = mock.Mock()
     app.state.voice = voice
+    app.state.plugins.enabled.side_effect = lambda plugin_id: voice_on if plugin_id == "voice" else True
     server = mock.Mock(fell_back=False, nonce="n")
     server.start.return_value = "http://127.0.0.1:1"
     with mock.patch("routes.create_app", return_value=app) as create, mock.patch.object(desktop, "LocalServer", return_value=server), \
@@ -176,6 +177,11 @@ class SpeedTestVoiceTests(unittest.TestCase):
         voice.shutdown.assert_called_once()
         self.assertFalse(create.call_args.kwargs.get("speedtest_instance"))
         self.assertNotIn("storage", window.call_args.kwargs)
+
+    def test_a_launch_with_the_voice_plugin_off_starts_no_engine(self):
+        voice = mock.Mock()
+        run_main([], voice, voice_on=False)
+        voice.autostart.assert_not_called()
 
 
 class SpeedTestWindowTests(unittest.TestCase):

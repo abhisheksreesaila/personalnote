@@ -36,8 +36,8 @@ JOIN_SECONDS = 10.0
 
 
 class MeaningIndexer:
-    def __init__(self, service, runtime, idle: float = IDLE_SECONDS, poll: float = POLL_SECONDS, batch: int = BATCH, pause: float = PAUSE_SECONDS, clock=time.monotonic):
-        self.service, self.runtime = service, runtime
+    def __init__(self, service, runtime, idle: float = IDLE_SECONDS, poll: float = POLL_SECONDS, batch: int = BATCH, pause: float = PAUSE_SECONDS, clock=time.monotonic, enabled=lambda: True):
+        self.service, self.runtime, self.enabled = service, runtime, enabled  # `enabled`: the Search by meaning plugin's switch, asked on every wake-up
         self.idle, self.poll, self.batch, self.pause, self.clock = idle, poll, batch, pause, clock
         self.error = ""
         self.failed: dict[int, int] = {}  # note id -> the revision the engine refused; left out until the note changes
@@ -51,8 +51,11 @@ class MeaningIndexer:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        if self._thread is None:
-            self._thread = threading.Thread(target=self._loop, name="meaning-index", daemon=True)
+        """Start the thread; after a stop() (the plugin was switched off) it starts a fresh one. Each thread has its own stop flag, so a thread
+        still finishing a batch after a stop() that gave up waiting ends by itself and never stops its successor."""
+        if self._thread is None or not self._thread.is_alive() or self._stop.is_set():
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._loop, args=(self._stop,), name="meaning-index", daemon=True)
             self._thread.start()
 
     def stop(self) -> None:
@@ -62,18 +65,18 @@ class MeaningIndexer:
         if thread is not None and thread is not threading.current_thread():
             thread.join(JOIN_SECONDS)
 
-    def _loop(self) -> None:
-        while not self._stop.is_set():
+    def _loop(self, stop: threading.Event) -> None:
+        while not stop.is_set():
             try:
                 busy = self.tick() > 0
             except Exception:  # the index must never take the app down; the next poll tries again
                 logger.exception("event=search.index outcome=failed")
                 busy = False
-            self._stop.wait(self.pause if busy else self.poll)
+            stop.wait(self.pause if busy else self.poll)
 
     def tick(self) -> int:
         """One wake-up of the thread: do a pass only if something may have changed. Returns how many notes were stored."""
-        if not self.runtime.installed():
+        if not self.enabled() or not self.runtime.installed():
             return 0
         model = self.runtime.model_id
         sequence = self.service.workspace_sequence()

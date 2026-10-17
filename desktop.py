@@ -667,7 +667,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[timing] server ready {time.perf_counter() - PROCESS_START:.2f}s after process start", flush=True)
     record_instance(database, base_url, server.nonce)
     if not speedtest_dir:
-        app.state.voice.autostart()  # when voice is installed, its engine starts with the window (in the background)
+        if app.state.plugins.enabled("voice"):
+            app.state.voice.autostart()  # when voice is installed, its engine starts with the window (in the background)
         app.state.x_sync.start()  # hourly, only when X is connected
     try:
         if engine == "serve":

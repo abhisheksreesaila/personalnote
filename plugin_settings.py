@@ -14,8 +14,8 @@ from pathlib import Path
 import app_paths
 
 SETTINGS_FILE = "plugins.json"
-DEFAULTS = {"mindmap": True}  # id -> on by default; Voice and Search by meaning join in F-091
-NAMES = {"mindmap": "Mind maps"}
+DEFAULTS = {"mindmap": True, "voice": True, "meaning": True}  # id -> on by default
+NAMES = {"mindmap": "Mind maps", "voice": "Voice", "meaning": "Search by meaning"}
 
 
 class PluginSettingsError(Exception):

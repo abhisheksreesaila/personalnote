@@ -12,18 +12,13 @@ import { createHeldEdit, noteRowIcon, searchResultView } from './modules/secure/
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
 import { nudgeDistance } from './core/document/operations.js'
-import { createVoiceClient, describeVoice, prepareLocalVoice } from './modules/voice/voice-setup.js'
 import { mountAISettings } from './modules/ai/ai-settings.js'
 import { mountXSettings } from './modules/x/x-settings.js'
-import { createMeaningClient, describeMeaning, indexIsCatchingUp } from './modules/search/meaning-setup.js'
 import { createPluginRegistry } from './core/plugins.js'
 import { BUILTIN_PLUGINS } from './modules/plugins/builtin.js'
+import { createIslandDownload, createSetupSection, renderSetupRow } from './modules/plugins/setup-row.js'
 import { mountPluginSettings } from './modules/plugins/plugins-settings.js'
 import { mountPageModule } from './modules/page.js'
-import { DictationSession } from './modules/voice/transcript-session.js'
-import { createMobileHoldController } from './modules/voice/mobile-hold-controller.js'
-import { pageBoundedTextLayout, voiceInsertPoint } from './modules/voice/text-layout.js'
-import { contentBounds } from './modules/canvas-leafer/bounds.js'
 import { mountAgentSync } from './modules/sync/index.js'
 import { mountIsland } from './modules/island/island.js'
 import { pickFlagBlock } from './modules/sync/changes.js'
@@ -40,7 +35,6 @@ import { renderNotePicture, renderSheet } from './modules/canvas-leafer/export.j
 import { createConnectTool } from './modules/canvas-leafer/connect-tool.js'
 import { EDGE_OVERFLOW, shiftedDocument } from './modules/canvas-leafer/pages.js'
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
-import { createPressToTalk } from './modules/voice/press-to-talk.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, NOTEBOOK_FOLD_KEY, readFolded, writeFolded } from './modules/library/outline.js'
 import { mountShelves } from './modules/library/shelves.js'
 import { iconButtonHtml, openIconPicker } from './modules/library/notebook-icon-picker.js'
@@ -53,6 +47,7 @@ import { createMiddleClick } from './modules/editor/middle-click.js'
 import { DEFAULT_FONT_CHOICE, canvasFontFamily, fontChoice } from './modules/editor/fonts.js'
 import { loadPanelOpen, savePanelOpen } from './modules/library/panel-pref.js'
 import { writingBox } from './modules/canvas-leafer/text-ops.js'
+import { contentBounds } from './modules/canvas-leafer/bounds.js'
 import { countWords, createFocusMode, focusShortcut, focusView } from './modules/editor/focus-mode.js'
 import { chooseOpeningView, fitView, isDrawingTool, openingView, pageLabel, pageView, scrollThumbs, stepZoom, writingView, zoomPercent } from './modules/editor/navigation.js'
 import {
@@ -96,7 +91,6 @@ const STROKE_WIDTHS = {
   pen: [1, 3, 6, 10],
   highlight: [10, 20, 32, 48],
 }
-const dictationSession = new DictationSession()
 const DEFAULT_MINDMAP_DOCUMENT = {
   version: 1,
   title: 'Untitled mind map',
@@ -195,8 +189,8 @@ document.querySelector('#app').innerHTML = `
               </div>
             </div>
             <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
-            <div class="dock-divider"></div>
-            <button class="voice-button" id="voice-button" data-keeps-text-editing title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon">${dockIcon("mic", 2)}</span></button>
+            <div class="dock-divider" id="voice-divider" hidden></div>
+            <button class="voice-button" id="voice-button" hidden data-keeps-text-editing title="Hold to talk, or tap to keep listening" aria-label="Start voice dictation" aria-pressed="false"><span class="voice-button-icon voice-mic-icon">${dockIcon("mic", 2)}</span></button>
           </div>
           <div class="mindmap-dock-actions mindmap-rail-actions" id="mindmap-rail-actions" aria-label="Mind map tools" hidden>
             <button class="tool-button" data-map-action="image" title="Add image" aria-label="Add image"><i data-lucide="image-plus"></i></button>
@@ -216,7 +210,7 @@ document.querySelector('#app').innerHTML = `
           <button class="mobile-tool-button" id="mobile-sticky" title="Sticky note" aria-label="Sticky note" aria-pressed="false"><i data-lucide="sticky-note"></i></button>
           <button class="mobile-connect-button" id="mobile-connect" title="Connect two objects" aria-label="Connect two objects" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 16.5c4-1 3-8 9-9"/></svg></button>
           <button class="mobile-draw-button" id="mobile-draw" aria-label="Enable drawing"><i data-lucide="pencil"></i><span>Draw</span></button>
-          <button class="mobile-speak-button" id="mobile-speak" data-keeps-text-editing title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
+          <button class="mobile-speak-button" id="mobile-speak" hidden data-keeps-text-editing title="Hold to speak" aria-label="Hold to speak" aria-pressed="false"><i data-lucide="mic"></i><span>Hold to speak</span></button>
         </div>
         <section class="ink-options-popover" id="ink-options-popover" role="dialog" aria-label="Ink options" hidden>
           <div class="ink-options-heading">
@@ -319,27 +313,6 @@ document.querySelector('#app').innerHTML = `
       <section class="settings-section" id="settings-plugins" aria-labelledby="settings-plugins-label">
         <p class="settings-section-label" id="settings-plugins-label">Plugins</p>
         <div id="settings-plugins-rows"></div>
-      </section>
-      <section class="settings-section" id="settings-voice-section" aria-labelledby="settings-voice-label">
-        <p class="settings-section-label" id="settings-voice-label">Voice</p>
-        <div class="setting-row"><span><i data-lucide="mic"></i>Dictation</span><small id="voice-setup-headline">Checking…</small></div>
-        <progress class="setup-progress" id="voice-setup-progress" max="100" value="0" aria-label="Voice download progress" hidden></progress>
-        <p class="portability-help" id="voice-setup-detail" role="status" aria-live="polite"></p>
-        <div class="portability-actions">
-          <button id="voice-download" hidden><i data-lucide="download"></i><span></span></button>
-          <button id="voice-cancel" hidden><i data-lucide="x"></i><span></span></button>
-          <button id="voice-remove" hidden><i data-lucide="trash-2"></i><span></span></button>
-        </div>
-      </section>
-      <section class="settings-section" id="settings-meaning-section" aria-labelledby="settings-meaning-label">
-        <p class="settings-section-label" id="settings-meaning-label">Search by meaning</p>
-        <div class="setting-row"><span><i data-lucide="search"></i>Find by meaning</span><small id="meaning-setup-headline">Checking…</small></div>
-        <progress class="setup-progress" id="meaning-setup-progress" max="100" value="0" aria-label="Search by meaning download progress" hidden></progress>
-        <p class="portability-help" id="meaning-setup-detail" role="status" aria-live="polite"></p>
-        <div class="portability-actions">
-          <button id="meaning-download" hidden><i data-lucide="download"></i><span></span></button>
-          <button id="meaning-cancel" hidden><i data-lucide="x"></i><span></span></button>
-        </div>
       </section>
       <section class="settings-section" id="ai-settings" aria-labelledby="ai-label"></section>
       <section class="settings-section">
@@ -555,14 +528,7 @@ const state = {
   renderMode: 'default',
   displayScale: 1,
   canvasZoom: 1,
-  recognition: null,
-  listening: false,
-  voiceError: null,
-  voiceMode: null,
-  localTranscription: null,
-  microphoneCapture: null,
-  localFinishTimer: null,
-  voiceAttempt: 0,
+  listening: false, // set by the Voice plugin while it dictates
   creatingNote: false,
   loading: false,
   noteLocked: false, // the open note is a locked secure note: the page shows its cover and nothing here may be saved
@@ -657,6 +623,8 @@ async function switchPlugin(id, on) {
   const saved = await api(`/plugins/${id}`, { method: 'POST', body: JSON.stringify({ enabled: on }) })
   plugins.apply(saved.plugins)
   syncNoteCreateMenu()
+  await plugins.sync(pluginShell)
+  void loadCapabilitySettings()
   if (plugins.kindOf(state.activeNoteType)?.pluginId === id && state.activeNoteId) await selectNote(state.activeNoteId, { reload: true })
 }
 
@@ -1034,7 +1002,7 @@ function renderNotebookPicker() {
 const island = mountIsland(document.querySelector('#island'), {
   onOpen: (byKeyboard) => setShareMenuOpen(true, byKeyboard),
   onRetry: () => void saveActiveNote(),
-  onStop: () => void toggleVoiceDictation(),
+  onStop: () => void plugins.get('voice')?.toggle(),
 })
 document.fonts.ready.then(() => island.remeasure())
 document.fonts.addEventListener('loadingdone', () => island.remeasure()) // (a font that arrives late changes the title's width)
@@ -1930,26 +1898,11 @@ let selectSequence = 0
 // From the moment a switch to another note starts until it has landed, the old note takes no more input on the Leafer canvas: an edit
 // made then would land on a note that is being left (and be dropped).
 let leaferSwitching = 0
-// Dictation ends when a switch to another note starts: the words already final stay in the note being left (and go out with its save);
-// an interim result still being heard is dropped, and nothing more arrives for the new note.
-async function stopDictationForSwitch() {
-  if (!state.listening) return
-  if (dictationSession.active && dictationSession.partial) updateVoiceTextBox(dictationSession.preview(''), { create: false }) // the interim words go first (before anything is awaited)
-  if (state.voiceMode === 'browser') {
-    state.recognition?.abort?.()
-    removeEmptyVoiceTextBox()
-    dictationSession.cancel()
-    setVoiceListening(false)
-    state.voiceMode = null
-  } else await stopLocalDictation({ cancel: true })
-  leaferCanvas?.finishTextEdit()
-}
-
 async function selectNote(id, { reload = false } = {}) {
   if (id === state.activeNoteId && !reload) return
   if (focusActive) { focus.leave(); clearTimeout(focusRestore?.timer); focusRestore = null } // (the other note opens in its own view)
   leaferSwitching += 1
-  await stopDictationForSwitch()
+  await plugins.get('voice')?.stopForSwitch()
   leaferCanvas.clearSelection()
   leaferInk.cancel()
   leaferConnect.cancel()
@@ -2390,95 +2343,7 @@ async function loadCapabilitySettings() {
   }
 }
 
-const voiceClient = createVoiceClient(api)
-let voicePoll = null
-
-// One Settings row for an optional download: its headline, bar, sentence and buttons are `#<name>-setup-*` and `#<name>-download|cancel|remove`.
-function renderSetupRow(name, view) {
-  document.querySelector(`#${name}-setup-headline`).textContent = view.headline
-  document.querySelector(`#${name}-setup-detail`).textContent = view.detail
-  const progress = document.querySelector(`#${name}-setup-progress`)
-  progress.hidden = view.percent === null
-  if (view.percent !== null) progress.value = view.percent
-  for (const [action, label] of [['download', view.download], ['cancel', view.cancel], ['remove', view.remove]]) {
-    const button = document.querySelector(`#${name}-${action}`)
-    if (!button) continue
-    button.hidden = !label
-    button.querySelector('span').textContent = label || ''
-  }
-}
-
-// A download that runs shows on the island too, fed by the same status the Settings row polls (no polling of its own).
-const downloading = {}
-function islandDownload(key, name, status) {
-  if (status?.state === 'downloading') { downloading[key] = true; island.model.download(key, name, status.percent ?? 0) }
-  else if (downloading[key]) { downloading[key] = false; island.model.downloadEnd(key, status?.state === 'ready') }
-}
-const renderVoiceSetup = (status) => { renderSetupRow('voice', describeVoice(status)); islandDownload('voice', 'Voice model', status) }
-
-async function refreshVoiceSetup() {
-  clearTimeout(voicePoll)
-  let status
-  try {
-    status = await voiceClient.status()
-  } catch {
-    renderVoiceSetup({ state: 'error', error: 'The local server did not answer.' })
-    return null
-  }
-  renderVoiceSetup(status)
-  // Keep the progress bar moving while the server downloads.
-  if (status.state === 'downloading') voicePoll = setTimeout(refreshVoiceSetup, 1000)
-  return status
-}
-
-async function voiceSetupAction(action) {
-  try {
-    renderVoiceSetup(await action(voiceClient))
-  } catch (error) {
-    renderVoiceSetup({ state: 'error', error: error.message })
-    return
-  }
-  void refreshVoiceSetup()
-}
-
 const aiSettings = mountAISettings(document.querySelector('#ai-settings'), api)
-const meaningClient = createMeaningClient(api)
-let meaningPoll = null
-
-const renderMeaningSetup = (status) => { renderSetupRow('meaning', describeMeaning(status)); islandDownload('meaning', 'Search by meaning', status) }
-
-async function refreshMeaningSetup() {
-  clearTimeout(meaningPoll)
-  let status
-  try {
-    status = await meaningClient.status()
-  } catch {
-    renderMeaningSetup({ state: 'error', error: 'The local server did not answer.' })
-    return
-  }
-  renderMeaningSetup(status)
-  if (status.state === 'downloading') meaningPoll = setTimeout(refreshMeaningSetup, 1000)
-  else if (indexIsCatchingUp(status)) meaningPoll = setTimeout(refreshMeaningSetup, 3000)
-}
-
-async function meaningSetupAction(action) {
-  try {
-    renderMeaningSetup(await action(meaningClient))
-  } catch (error) {
-    renderMeaningSetup({ state: 'error', error: error.message })
-    return
-  }
-  void refreshMeaningSetup()
-}
-
-function openVoiceSettings() {
-  setPropertiesOpen(true)
-  void refreshVoiceSetup()
-  const section = document.querySelector('#settings-voice-section')
-  section.scrollIntoView?.({ block: 'center' })
-  section.querySelector('button:not([hidden])')?.focus({ preventScroll: true })
-}
-
 function setPortabilityStatus(message, error = false) {
   elements.portabilityStatus.textContent = message
   elements.portabilityStatus.classList.toggle('error', error)
@@ -2651,280 +2516,19 @@ function printNote() {
   window.print()
 }
 
-let recordingMoment = false
-let voiceWords = 0
-function setVoiceListening(listening, message = 'Listening') {
-  state.listening = listening
-  const live = listening && (state.voiceMode === 'local' || state.voiceMode === 'browser') // (connecting is not recording yet)
-  if (live && !recordingMoment) { recordingMoment = true; voiceWords = 0; island.model.recording(true, Date.now()) }
-  else if (!live && recordingMoment) { recordingMoment = false; island.model.recording(false, voiceWords) }
-  elements.voiceButton.classList.toggle('active', listening)
-  elements.voiceButton.setAttribute('aria-pressed', String(listening))
-  elements.voiceButton.setAttribute('aria-label', listening ? 'Stop voice dictation' : 'Start voice dictation')
-  elements.mobileSpeak.classList.toggle('active', listening)
-  elements.mobileSpeak.setAttribute('aria-pressed', String(listening))
-  elements.mobileSpeak.setAttribute('aria-label', listening ? 'Release to finish speaking' : 'Hold to speak')
-  leaferCanvas?.setListening(listening)
-  elements.voiceCaption.hidden = !listening
-  elements.voiceStatus.textContent = message
-}
-
-
-// The words go into the text being edited through the overlay (the selected text, the open one, or a new text box).
-// The "target" is only what the dictation session reads: the words in the editor now.
-// Where a new dictation box goes when nothing is being edited: under the note's content.
-const currentVoiceInsertPoint = () => voiceInsertPoint(contentBounds(leaferEdits.doc.objects, (object) => leaferCanvas.sizeOf(object) ?? {}), { columns: state.pages.columns, pageWidth: PAGE_WIDTH })
-let leaferVoiceShown = '' // the words last put in the editor
-function createVoiceTextBox() {
-  const layout = pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH })
-  const { fresh } = leaferCanvas.beginDictation({ x: layout.x, y: layout.y }, { width: layout.width })
-  leaferVoiceShown = leaferCanvas.dictationText() ?? ''
-  return { __voiceDictationBox: fresh, get text() { return leaferCanvas.dictationText() ?? '' } }
-}
-
-function removeEmptyVoiceTextBox() {
-  const target = dictationSession.target
-  if (dictationSession.active && dictationSession.partial) updateVoiceTextBox(dictationSession.preview(''), { create: false })
-  if (target?.__voiceDictationBox && !target.text.trim() && leaferCanvas.isEditingText()) leaferCanvas.finishTextEdit() // a new box nothing was said into is never made
-}
-
-function updateVoiceTextBox(text, { record = false, create = true } = {}) {
-  if (!dictationSession.target || !leaferCanvas.isEditingText()) { // the editor was closed meanwhile: what comes next goes in a new text box
-    if (!create) return
-    const shown = leaferVoiceShown
-    dictationSession.target = createVoiceTextBox()
-    dictationSession.committed = ''
-    text = text.startsWith(shown) ? text.slice(shown.length).trim() : text
-  }
-  leaferCanvas.setDictation(text)
-  leaferVoiceShown = text
-  if (record) leaferCanvas.flushText() // final words are in the document (and a save) now, inside the same typing session
-}
-
-function previewVoiceTranscript(transcript, options) {
-  updateVoiceTextBox(dictationSession.preview(transcript, options))
-}
-
-function insertVoiceTranscript(transcript) {
-  if (!transcript) return
-  voiceWords += countWords(transcript)
-  updateVoiceTextBox(dictationSession.commit(transcript), { record: true })
-}
-
-function showVoiceNotice(message, duration = 2600) {
-  elements.voiceCaption.hidden = false
-  elements.voiceStatus.textContent = message
-  clearTimeout(showVoiceNotice.timer)
-  showVoiceNotice.timer = setTimeout(() => {
-    if (!state.listening) elements.voiceCaption.hidden = true
-  }, duration)
-}
-
-function completeLocalDictation(message = '') {
-  clearTimeout(state.localFinishTimer)
-  state.localTranscription?.disconnect()
-  state.localTranscription = null
-  state.microphoneCapture = null
-  state.voiceMode = null
-  removeEmptyVoiceTextBox()
-  dictationSession.finish()
-  setVoiceListening(false)
-  if (message) showVoiceNotice(message)
-}
-
-async function stopLocalDictation({ cancel = false } = {}) {
-  state.voiceAttempt += 1
-  await state.microphoneCapture?.stop()
-  state.microphoneCapture = null
-  if (cancel) {
-    state.localTranscription?.cancel()
-    state.localTranscription = null
-    state.voiceMode = null
-    removeEmptyVoiceTextBox()
-    dictationSession.cancel()
-    setVoiceListening(false)
-    return
-  }
-
-  state.localTranscription?.finish()
-  elements.voiceStatus.textContent = 'Finishing transcript'
-  state.localFinishTimer = setTimeout(() => completeLocalDictation(), 4000)
-}
-
-async function startLocalDictation(attempt, endpoint) {
-  const { LocalTranscriptionProvider, MicrophonePcmCapture } = await import('./modules/voice/capture.js')
-  // The server picks the engine's port (8080 when free), so the page uses the endpoint it reports.
-  const provider = new LocalTranscriptionProvider(endpoint ? { endpoint, connectionTimeout: 3000 } : {})
-  state.localTranscription = provider
-  await provider.connect({
-    language: (navigator.language || 'en').split('-')[0],
-    onPartial: (text) => {
-      elements.voiceStatus.textContent = text || 'Listening locally'
-      previewVoiceTranscript(text, { append: true })
-    },
-    onFinal: (text) => {
-      if (!dictationSession.active) return
-      elements.voiceStatus.textContent = text || 'Listening locally'
-      insertVoiceTranscript(text)
-      if (!state.microphoneCapture) completeLocalDictation()
-    },
-    onError: async () => {
-      await state.microphoneCapture?.stop()
-      completeLocalDictation('Local transcription became unavailable; no audio was saved')
-    },
-  })
-  if (attempt !== state.voiceAttempt) {
-    provider.cancel()
-    return false
-  }
-
-  const capture = new MicrophonePcmCapture()
-  state.microphoneCapture = capture
-  await capture.start((audio) => { provider.sendAudio(audio); island.level(pcmLevel(audio)) })
-  if (attempt !== state.voiceAttempt) {
-    await capture.stop()
-    provider.cancel()
-    return false
-  }
-  state.voiceMode = 'local'
-  setVoiceListening(true, 'Listening locally')
-  return true
-}
-
-let toggleVoiceDictation = async () => {}
-// How loud a chunk of 16-bit audio is, 0 to 1 (every 16th sample is enough for a row of bars).
-function pcmLevel(buffer) {
-  const samples = new Int16Array(buffer)
-  let sum = 0
-  let count = 0
-  for (let i = 0; i < samples.length; i += 16, count += 1) sum += samples[i] * samples[i]
-  return count ? Math.sqrt(sum / count) / 32768 : 0
-}
-
-function setupVoiceInput() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-  let recognition = null
-  if (SpeechRecognition) {
-    recognition = new SpeechRecognition()
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = navigator.language || 'en-US'
-    state.recognition = recognition
-
-    recognition.onstart = () => {
-      state.voiceMode = 'browser'
-      setVoiceListening(true, 'Local service unavailable · using browser voice; Personal Note retains transcript only')
-    }
-    recognition.onresult = (event) => {
-      const update = dictationSession.accept(event.results, event.resultIndex)
-      elements.voiceStatus.textContent = update.partial || update.stable.at(-1) || 'Listening'
-      update.stable.forEach(insertVoiceTranscript)
-      previewVoiceTranscript(update.partial)
-    }
-    recognition.onerror = (event) => {
-      state.voiceError = event.error === 'not-allowed' ? 'Microphone permission is required' : 'Voice input stopped'
-      if (event.error === 'not-allowed') dictationSession.cancel()
-    }
-    recognition.onend = () => {
-      state.voiceMode = null
-      removeEmptyVoiceTextBox()
-      dictationSession.finish()
-      setVoiceListening(false)
-      if (state.voiceError) {
-        showVoiceNotice(state.voiceError)
-        state.voiceError = null
-      }
-    }
-  }
-
-  toggleVoiceDictation = async () => {
-    if (state.listening) {
-      if (state.voiceMode === 'browser') recognition.stop()
-      else await stopLocalDictation({ cancel: state.voiceMode !== 'local' })
-      return
-    }
-
-    dictationSession.start(createVoiceTextBox())
-    const attempt = state.voiceAttempt + 1
-    state.voiceAttempt = attempt
-    state.voiceMode = 'connecting'
-    setVoiceListening(true, 'Connecting local voice')
-    const plan = await prepareLocalVoice(voiceClient, {
-      onStarting: () => { elements.voiceStatus.textContent = 'Starting voice' },
-    })
-    if (attempt !== state.voiceAttempt) return
-    const inAppWindow = hostFlag === 'desktop' || Boolean(window.pywebview)
-    if (plan.blocked && (inAppWindow || !recognition)) {
-      // Not ready: say why and take the user to where it is fixed, never fail silently.
-      state.voiceMode = null
-      removeEmptyVoiceTextBox()
-      dictationSession.cancel()
-      setVoiceListening(false)
-      showVoiceNotice(plan.blocked, 6000)
-      openVoiceSettings()
-      return
-    }
-    try {
-      if (!plan.blocked && await startLocalDictation(attempt, plan.endpoint)) return
-    } catch (error) {
-      state.localTranscription?.cancel()
-      state.localTranscription = null
-      await state.microphoneCapture?.stop()
-      state.microphoneCapture = null
-      if (attempt !== state.voiceAttempt) return
-      if (error?.name === 'NotAllowedError') {
-        state.voiceMode = null
-        removeEmptyVoiceTextBox()
-        dictationSession.cancel()
-        setVoiceListening(false)
-        showVoiceNotice('Microphone permission is required')
-        return
-      }
-    }
-
-    if (!recognition) {
-      state.voiceMode = null
-      removeEmptyVoiceTextBox()
-      dictationSession.cancel()
-      setVoiceListening(false)
-      showVoiceNotice('Voice is unavailable. Start the loopback transcription service; no audio was retained.')
-      return
-    }
-    try {
-      recognition.start()
-    } catch {
-      state.voiceMode = null
-      removeEmptyVoiceTextBox()
-      dictationSession.cancel()
-      setVoiceListening(false)
-      showVoiceNotice('Voice input could not start')
-    }
-  }
-
-  // Hold to talk (release stops), or tap once to keep listening and tap again to stop.
-  const pressToTalk = createPressToTalk({ toggle: () => toggleVoiceDictation(), isListening: () => state.listening })
-  elements.voiceButton.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return
-    event.preventDefault()
-    elements.voiceButton.setPointerCapture?.(event.pointerId)
-    void pressToTalk.press()
-  })
-  elements.voiceButton.addEventListener('pointerup', (event) => {
-    elements.voiceButton.releasePointerCapture?.(event.pointerId)
-    void pressToTalk.release()
-  })
-  elements.voiceButton.addEventListener('pointercancel', () => void pressToTalk.release())
-  elements.voiceButton.addEventListener('contextmenu', (event) => event.preventDefault())
-  // Keyboard activation arrives as a click with no pointer; pointer clicks are handled above.
-  elements.voiceButton.addEventListener('click', (event) => {
-    if (event.detail === 0) toggleVoiceDictation()
-  })
-}
-
 // ---- The omnibar (F-072): a slim bar at the top centre that grows into grouped results ----
 const IME_KEY = 229 // a key pressed while an input method is composing reports keyCode 229
-const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], meaningHits: [], meaningReady: false, meaningPending: false, wordsFailed: false }
+const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], items: [], wordHits: [], meaningHits: [], meaningReady: false, meaningPending: false, wordsFailed: false } // the meaning fields are the Search by meaning plugin's
 
+// What a plugin that puts things in the page is given (docs/MODULE-CONTRACTS.md, "Plugin host contract"). Plugins are imported only while on.
+const pluginShell = {
+  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, latestRequest, setup: { createSetupSection, renderSetupRow, createIslandDownload },
+  canvas: () => leaferCanvas,
+  renderOmni: () => renderOmni(),
+  refreshIcons: () => createIcons({ icons }),
+  setPropertiesOpen: (open) => setPropertiesOpen(open),
+  inAppWindow: () => hostFlag === 'desktop' || Boolean(window.pywebview),
+}
 function omniActions() {
   const note = state.notes.find((item) => item.id === state.activeNoteId)
   const actions = [
@@ -3014,7 +2618,7 @@ function openSearch() {
   panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top))}px`)
   panel.style.setProperty('--omni-right', `${Math.max(0, Math.round(innerWidth - bar.right))}px`)
   Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], meaningHits: [], meaningPending: false, wordsFailed: false })
-  api('/search-meaning/status').then((status) => { omni.meaningReady = status.state === 'ready' }, () => { omni.meaningReady = false })
+  plugins.get('meaning')?.open()
   elements.searchInput.value = ''
   elements.searchBackdrop.hidden = false
   elements.searchButton.setAttribute('aria-expanded', 'true')
@@ -3029,7 +2633,7 @@ function closeSearch() {
   omni.pending = false
   searchSequence += 1
   clearTimeout(searchTimer)
-  cancelMeaningSearch()
+  plugins.get('meaning')?.cancel()
   elements.searchBackdrop.classList.remove('open')
   elements.searchButton.setAttribute('aria-expanded', 'false')
   setTimeout(() => { if (!elements.searchBackdrop.classList.contains('open')) elements.searchBackdrop.hidden = true }, 200)
@@ -3037,10 +2641,6 @@ function closeSearch() {
 
 let searchTimer
 let searchSequence = 0
-let meaningTimer
-const meaningRequest = latestRequest()
-const MEANING_DEBOUNCE_MS = 250
-const MEANING_MIN_CHARS = 3
 // Typing shows the title, notebook and action matches at once; the word matches (the full-text search) fill in when they arrive.
 function queueSearch() {
   clearTimeout(searchTimer)
@@ -3050,7 +2650,7 @@ function queueSearch() {
   omni.wordsFailed = false
   omni.wordHits = [] // word matches belong to the query they were found for
   omni.meaningHits = [] // and so do the meaning matches
-  queueMeaningSearch(query)
+  plugins.get('meaning')?.queue(query)
   omni.pending = Boolean(query)
   omni.items = []
   if (!query) return renderOmni()
@@ -3069,40 +2669,6 @@ function queueSearch() {
     omni.pending = false
     renderOmni()
   }, 120)
-}
-
-// "By meaning" (F-080) fills in below everything else, never blocking it: a quiet request after a pause in typing, aborted when the query
-// changes, its answer dropped if it is not the newest. Without the download the server answers [] at once and nothing shows. When it is
-// installed, a query with no other match shows nothing (not "Nothing matches") while the answer is on its way, for 6 s at most.
-const MEANING_WAIT_MS = 6000
-let meaningGiveUp
-function cancelMeaningSearch() {
-  clearTimeout(meaningTimer)
-  clearTimeout(meaningGiveUp)
-  meaningRequest.cancel()
-  omni.meaningPending = false
-}
-
-function queueMeaningSearch(query) {
-  cancelMeaningSearch()
-  if (query.length < MEANING_MIN_CHARS) return
-  omni.meaningPending = omni.meaningReady
-  meaningGiveUp = setTimeout(() => {
-    meaningRequest.cancel() // after the wait an answer would only move the list under the cursor: drop it
-    if (omni.meaningPending) { omni.meaningPending = false; renderOmni() }
-  }, MEANING_WAIT_MS)
-  meaningTimer = setTimeout(async () => {
-    const request = meaningRequest.start()
-    try {
-      const hits = await api(`/search/meaning?q=${encodeURIComponent(query)}&limit=10`, { signal: request.signal })
-      if (!request.current() || !omni.open) return
-      omni.meaningHits = hits
-    } catch {
-      if (!request.current()) return // aborted by a newer query; no answer: the omnibar stays as it is
-    }
-    omni.meaningPending = false
-    renderOmni()
-  }, MEANING_DEBOUNCE_MS)
 }
 
 function runOmniItem(item) {
@@ -3658,31 +3224,6 @@ document.addEventListener('pointerdown', (event) => {
   }
 })
 
-const mobileHoldController = createMobileHoldController({
-  start: async () => {
-    if (!state.listening) await toggleVoiceDictation()
-  },
-  finish: async () => {
-    if (state.listening) await toggleVoiceDictation()
-  },
-  cancel: async () => {
-    if (state.listening) await toggleVoiceDictation()
-  },
-})
-
-elements.mobileSpeak.addEventListener('pointerdown', async (event) => {
-  if (event.button !== 0) return
-  event.preventDefault()
-  elements.mobileSpeak.setPointerCapture?.(event.pointerId)
-  await mobileHoldController.press(event)
-})
-elements.mobileSpeak.addEventListener('pointerup', async (event) => {
-  event.preventDefault()
-  elements.mobileSpeak.releasePointerCapture?.(event.pointerId)
-  await mobileHoldController.release()
-})
-elements.mobileSpeak.addEventListener('pointercancel', async () => mobileHoldController.cancel())
-elements.mobileSpeak.addEventListener('contextmenu', (event) => event.preventDefault())
 // A finger choosing a drawing tool says a finger is going to draw: pen use is forgotten at once.
 for (const selector of ['#mobile-draw', '[data-tool="pen"]', '[data-tool="highlight"]', '[data-tool="eraser"]']) document.querySelectorAll(selector).forEach((button) => button.addEventListener('pointerdown', (event) => { if (event.pointerType === 'touch') penLastAt = -Infinity }))
 document.querySelector('#mobile-draw').addEventListener('click', () => setTool(state.tool === 'pen' ? 'text' : 'pen'))
@@ -3745,15 +3286,10 @@ document.querySelector('#top-properties').addEventListener('click', () => {
 })
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#top-properties').addEventListener('click', () => {
-  if (elements.properties.classList.contains('open')) { void refreshVoiceSetup(); void refreshMeaningSetup(); void aiSettings.refresh() }
+  if (elements.properties.classList.contains('open')) { plugins.instances().forEach((plugin) => plugin.onSettingsOpen?.()); void aiSettings.refresh() }
 })
-mountXSettings(document.querySelector('#settings-meaning-section'), api, elements.properties)
+mountXSettings(document.querySelector('#ai-settings'), api, elements.properties)
 mountPluginSettings(document.querySelector('#settings-plugins-rows'), plugins, switchPlugin, () => createIcons({ icons }))
-document.querySelector('#meaning-download').addEventListener('click', () => void meaningSetupAction((client) => client.install()))
-document.querySelector('#meaning-cancel').addEventListener('click', () => void meaningSetupAction((client) => client.cancel()))
-document.querySelector('#voice-download').addEventListener('click', () => void voiceSetupAction((client) => client.install()))
-document.querySelector('#voice-cancel').addEventListener('click', () => void voiceSetupAction((client) => client.cancel()))
-document.querySelector('#voice-remove').addEventListener('click', () => void voiceSetupAction((client) => client.remove()))
 document.querySelector('#download-backup').addEventListener('click', () => {
   void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
 })
@@ -4561,6 +4097,7 @@ async function initialize() {
   loadCapabilitySettings()
   plugins.apply((await api('/plugins').catch(() => ({}))).plugins) // the machine's choice; unreachable: every plugin keeps its default
   syncNoteCreateMenu()
+  void plugins.sync(pluginShell)
   try {
     // A page that opens (or reloads) starts with every secure note locked, whatever an earlier page left unlocked on the server.
     await api('/secure/lock', { method: 'POST' }).catch(() => {})
@@ -4667,8 +4204,7 @@ window.addEventListener('resize', keepEditorAboveKeyboard)
 document.addEventListener('input', (event) => { if (event.target?.classList?.contains('leafer-text-editor')) keepEditorAboveKeyboard() }, true)
 document.addEventListener('focusin', (event) => { if (event.target?.classList?.contains('leafer-text-editor')) keepEditorAboveKeyboard() })
 if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResize).observe(elements.workspace)
-setupVoiceInput()
 setupToolOptionGestures()
 // Dev-only handle used by the scripts/ checks; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { island: island.model, voiceBoxPoint: () => pageBoundedTextLayout(currentVoiceInsertPoint(), { pageWidth: PAGE_WIDTH }), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, setViewTo, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { island: island.model, voiceBoxPoint: () => plugins.get('voice')?.voiceBoxPoint(), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, setViewTo, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize().then(async () => { await speedTestStatus; if (speedTestInstance && new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way

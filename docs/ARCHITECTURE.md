@@ -87,7 +87,7 @@ The editor chunk is fetched only when a mind-map note opens, and only while the 
 
 ### Built-in plugins
 
-`src/core/plugins.js` is the registry the shell asks about optional features; `src/modules/plugins/builtin.js` declares them; `plugin_settings.py` keeps which are on, per machine (`plugins.json`), for the page, the server and the CLI alike. See ADR 0006 and docs/MODULE-CONTRACTS.md.
+`src/core/plugins.js` is the registry the shell asks about optional features; `src/modules/plugins/builtin.js` declares them; `plugin_settings.py` keeps which are on, per machine (`plugins.json`), for the page, the server and the CLI alike. Voice and Search by meaning join through `activate(shell)` (F-091): their code is a separate chunk fetched only while the plugin is on, counted in the same bundle total as everything else. See ADR 0006 and docs/MODULE-CONTRACTS.md.
 
 ### Optional search by meaning
 

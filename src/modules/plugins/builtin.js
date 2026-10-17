@@ -18,4 +18,22 @@ export const BUILTIN_PLUGINS = [
       readOnly: renderMindMapReadOnly,
     }],
   },
+  {
+    id: 'voice',
+    name: 'Voice',
+    description: 'Dictate into a note with your voice. Audio is never kept, only the words.',
+    icon: 'mic',
+    defaultOn: true,
+    needs: [{ kind: 'download', text: 'about 750 MB download (the Nemotron speech model), runs on this computer' }],
+    activate: async (shell) => (await import('../voice/voice-plugin.js')).activateVoice(shell), // the voice code arrives only when it is on
+  },
+  {
+    id: 'meaning',
+    name: 'Search by meaning',
+    description: 'Find notes by what they mean, not only their words.',
+    icon: 'search',
+    defaultOn: true,
+    needs: [{ kind: 'download', text: 'about 315 MB download (the EmbeddingGemma model), runs on this computer' }],
+    activate: async (shell) => (await import('../search/meaning-plugin.js')).activateMeaning(shell),
+  },
 ]

@@ -128,6 +128,7 @@ class VoiceRuntime:
     opener: Callable = open_url
     ready_timeout: float = 90.0
     preferred_port: int = PREFERRED_PORT
+    enabled: Callable = lambda: True  # the Voice plugin's switch, asked again under the start lock so a request queued behind another cannot start the engine after the switch-off
 
     def __post_init__(self):
         self.root = Path(self.root)
@@ -548,6 +549,8 @@ class VoiceRuntime:
     def start_engine(self) -> dict:
         """Start the engine (if installed and not running) and wait until it accepts connections."""
         with self._start_lock:
+            if not self.enabled():
+                raise VoiceError("Voice is switched off. Turn it on in Settings → Plugins.")
             if not self._running():
                 if self.key is None or not self.installed():
                     raise VoiceError("Voice is not installed. Open Settings, then Voice, and download it.")
@@ -631,6 +634,8 @@ class VoiceRuntime:
     def _await_ready(self, process: subprocess.Popen, port: int) -> None:
         deadline = time.monotonic() + self.ready_timeout
         while time.monotonic() < deadline:
+            if self._stopping:  # stop_engine() ran while this start was waiting (the plugin was switched off): do not come up behind it
+                raise VoiceError("Voice was switched off while it was starting.")
             code = process.poll()
             if code is not None:
                 if code == -signal.SIGILL:

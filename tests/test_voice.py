@@ -387,6 +387,86 @@ class EngineProcessTests(VoiceTestCase):
         self.assertIsNone(runtime.status()["endpoint"])
         self.assertTrue((self.root / "logs").is_dir())
 
+    def test_a_stop_that_lands_while_the_engine_is_starting_leaves_nothing_running(self):
+        runtime = self.installed()
+        entered, proceed = threading.Event(), threading.Event()
+        choose_port = runtime._choose_port
+
+        def slow_port():
+            entered.set()
+            proceed.wait(5)
+            return choose_port()
+
+        runtime._choose_port = slow_port
+        spawned = []
+        popen = runtime._popen
+        runtime._popen = lambda port: spawned.append(popen(port)) or spawned[-1]
+        outcome = {}
+
+        def start():
+            try:
+                runtime.start_engine()
+            except VoiceError as error:
+                outcome["error"] = str(error)
+
+        starter = threading.Thread(target=start)
+        starter.start()
+        self.assertTrue(entered.wait(5))
+        runtime.stop_engine()  # the plugin was switched off while the engine was being started
+        proceed.set()
+        starter.join(20)
+        self.assertEqual(len(spawned), 1)
+        self.assertIsNotNone(spawned[0].poll(), "the process that was spawned has exited")
+
+        self.assertFalse(starter.is_alive())
+        self.assertEqual(outcome, {"error": "Voice was switched off while it was starting."})
+        self.assertEqual((runtime.status()["running"], runtime._process), (False, None))
+
+    def test_a_mic_request_queued_behind_the_autostart_cannot_start_the_engine_after_voice_is_switched_off(self):
+        runtime = self.installed()
+        on = {"voice": True}
+        runtime.enabled = lambda: on["voice"]
+        entered, proceed = threading.Event(), threading.Event()
+        choose_port = runtime._choose_port
+
+        def slow_port():
+            entered.set()
+            proceed.wait(5)
+            return choose_port()
+
+        runtime._choose_port = slow_port
+        spawned = []
+        popen = runtime._popen
+        runtime._popen = lambda port: spawned.append(popen(port)) or spawned[-1]
+        outcomes = {}
+
+        def start(name):
+            try:
+                runtime.start_engine()
+                outcomes[name] = "started"
+            except VoiceError as error:
+                outcomes[name] = str(error)
+
+        autostart = threading.Thread(target=start, args=("autostart",))
+        autostart.start()
+        self.assertTrue(entered.wait(5))  # the autostart holds the start lock
+        mic = threading.Thread(target=start, args=("mic",))
+        mic.start()  # the mic request waits behind it
+        time.sleep(0.2)
+        on["voice"] = False  # Voice is switched off: the route saves it, then stops the engine
+        runtime.stop_engine()
+        proceed.set()
+        autostart.join(20)
+        mic.join(20)
+
+        self.assertEqual(outcomes, {
+            "autostart": "Voice was switched off while it was starting.",
+            "mic": "Voice is switched off. Turn it on in Settings → Plugins.",
+        })
+        self.assertEqual(len(spawned), 1)
+        self.assertIsNotNone(spawned[0].poll())
+        self.assertEqual((runtime.status()["running"], runtime._process), (False, None))
+
     def test_the_preferred_port_is_used_when_free_and_another_when_taken(self):
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))

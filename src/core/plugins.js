@@ -5,7 +5,9 @@
 //
 // A plugin definition:
 //   { id, name, description, icon, defaultOn, needs: [{ kind: 'download'|'network'|'model', text }],
-//     noteKinds: [{ type, label, icon, defaultTitle, mount(host, options) -> Promise<editor>, readOnly(host, document, handlers) }] }
+//     noteKinds: [{ type, label, icon, defaultTitle, mount(host, options) -> Promise<editor>, readOnly(host, document, handlers) }],
+//     activate(shell) -> Promise<instance> }   (F-091: for plugins that put things in the shell, such as Voice's mic or the "By meaning" group;
+//                                               `instance.dispose()` takes all of it away again)
 
 export function createPluginRegistry(definitions) {
   const plugins = new Map(definitions.map((definition) => [definition.id, definition]))
@@ -15,6 +17,8 @@ export function createPluginRegistry(definitions) {
   for (const plugin of definitions) for (const kind of plugin.noteKinds ?? []) kinds.set(kind.type, { plugin, kind })
 
   const notify = () => listeners.forEach((listener) => listener())
+  const instances = new Map() // plugin id -> what activate() returned, while the plugin is on
+  const loading = new Map() // plugin id -> the activate() still on its way
 
   return {
     list: () => definitions.map(({ id, name, description, icon, needs = [] }) => ({ id, name, description, icon, needs, enabled: enabled.get(id) })),
@@ -25,6 +29,30 @@ export function createPluginRegistry(definitions) {
       for (const plugin of definitions) enabled.set(plugin.id, typeof saved[plugin.id] === 'boolean' ? saved[plugin.id] : Boolean(plugin.defaultOn))
       notify()
     },
+
+    // Make the shell match the switches: a plugin that is on and has `activate` is activated once (its code is imported only now); one that
+    // is off is disposed. Safe to call after every change; a plugin switched off while it was still loading is disposed when it arrives.
+    async sync(shell) {
+      await Promise.all(definitions.filter((plugin) => plugin.activate).map(async (plugin) => {
+        const on = enabled.get(plugin.id) === true
+        if (!on && instances.has(plugin.id)) {
+          const instance = instances.get(plugin.id)
+          instances.delete(plugin.id)
+          await instance.dispose()
+        } else if (on && !instances.has(plugin.id)) {
+          if (!loading.has(plugin.id)) loading.set(plugin.id, plugin.activate(shell))
+          const started = loading.get(plugin.id)
+          const instance = await started
+          if (loading.get(plugin.id) === started) loading.delete(plugin.id)
+          if (instances.has(plugin.id)) return
+          if (enabled.get(plugin.id) === true) instances.set(plugin.id, instance)
+          else await instance.dispose()
+        }
+      }))
+    },
+
+    get: (id) => instances.get(id) ?? null,
+    instances: () => [...instances.values()],
 
     onChange(listener) {
       listeners.add(listener)

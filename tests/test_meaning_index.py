@@ -14,6 +14,7 @@ import time
 import unittest
 import zlib
 from pathlib import Path
+from unittest import mock
 
 from starlette.testclient import TestClient
 
@@ -324,6 +325,41 @@ class EngineDownTests(MeaningCase):
         finally:
             indexer.stop()
         self.assertEqual(len(self.rows()), 1)
+
+    def test_started_again_after_a_stop_that_timed_out_it_indexes_what_comes_next(self):
+        import meaning_index
+        entered, release = threading.Event(), threading.Event()
+        embed = self.engine.embed
+
+        def slow(texts, kind="document"):
+            entered.set()
+            release.wait(5)
+            return embed(texts, kind)
+
+        self.engine.embed = slow
+        self.page("First", "first words")
+        indexer = MeaningIndexer(self.service, self.engine, idle=0, poll=0.02, pause=0.02)
+        indexer.start()
+        try:
+            self.assertTrue(entered.wait(5))
+            with mock.patch.object(meaning_index, "JOIN_SECONDS", 0.1):
+                indexer.stop()  # gives up waiting for the batch in flight
+            indexer.start()  # switched on again at once
+            release.set()
+            self.page("Second", "second words")
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and len(self.rows()) < 2:
+                time.sleep(0.02)
+        finally:
+            release.set()
+            indexer.stop()
+        self.assertEqual(len(self.rows()), 2)
+
+    def test_a_switched_off_plugin_is_honoured_by_the_thread_itself(self):
+        self.page("Trip", "flights to lisbon")
+        indexer = MeaningIndexer(self.service, self.engine, idle=0, enabled=lambda: False)
+        self.assertEqual(indexer.tick(), 0)
+        self.assertEqual((self.engine.documents, self.rows()), ([], {}))
 
 
 class OneBadNoteTests(MeaningCase):
