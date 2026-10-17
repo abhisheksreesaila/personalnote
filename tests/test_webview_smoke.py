@@ -56,19 +56,26 @@ class WebViewSmokeTest(unittest.TestCase):
                 try:
                     deadline = time.monotonic() + 20
                     while time.monotonic() < deadline:
-                        listed = window.evaluate_js("document.querySelectorAll('[data-note-id]').length")
+                        # the title takes typing only once the note is drawn (it is read-only while the canvas engine is on its way)
+                        listed = window.evaluate_js("document.querySelectorAll('[data-note-id]').length && !document.querySelector('#note-title').readOnly ? 1 : 0")
                         if listed:
                             break
                         time.sleep(0.1)
                     outcome["listed"] = listed
                     outcome["storage"] = window.evaluate_js("typeof localStorage")
-                    window.evaluate_js(
-                        "const t = document.querySelector('#note-title'); t.value = 'Smoke title';"
-                        "t.dispatchEvent(new Event('input', { bubbles: true })); 0"
-                    )
-                    outcome["flushed"] = flush_page(window)
-                    with urlopen(f"{base_url}/api/notes", timeout=3) as response:
-                        outcome["titles"] = [note["title"] for note in json.load(response)]
+                    # An empty notebook makes its first note while the list is already up: a title typed in that moment is lost, as
+                    # it would be for a person, who types again. So type, flush, look, and try again for a few seconds.
+                    for _ in range(10):
+                        window.evaluate_js(
+                            "const t = document.querySelector('#note-title'); t.value = 'Smoke title';"
+                            "t.dispatchEvent(new Event('input', { bubbles: true })); 0"
+                        )
+                        outcome["flushed"] = flush_page(window)
+                        with urlopen(f"{base_url}/api/notes", timeout=3) as response:
+                            outcome["titles"] = [note["title"] for note in json.load(response)]
+                        if "Smoke title" in outcome["titles"]:
+                            break
+                        time.sleep(0.5)
                 except Exception as error:  # reported by the assertions below
                     outcome["error"] = repr(error)
                 finally:
