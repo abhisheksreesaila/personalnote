@@ -20,6 +20,7 @@ from document_model import DocumentError, empty_document, from_fabric, plain_tex
 from json_canvas import estimate_text_box, from_json_canvas, is_json_canvas, to_json_canvas
 from media_store import MediaStore, data_url_of
 from meaning_rank import select_meaning
+from note_icon import is_chosen_icon, shown_icon, tint_of, valid_tint
 from notebook_icon import valid_icon
 from x_bookmarks import x_post_note
 from page_note import empty_page_document, find_quote, normalize_page_document, page_document_of, page_text, reanchor_ink, utf16
@@ -202,6 +203,7 @@ class NoteService:
             "updatedAt": note["updated_at"],
             "secure": bool(note["secure"]),
             "locked": False,
+            "icon": shown_icon(note["title"], note["note_type"], note["icon"], note["icon_tint"]),
         }
 
     @staticmethod
@@ -718,7 +720,7 @@ class NoteService:
     def list_notes(self) -> list[dict]:
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT id, resource_id, revision, note_type, title, notebook_id, created_at, updated_at, secure FROM notes ORDER BY updated_at DESC, id DESC"
+                "SELECT id, resource_id, revision, note_type, title, notebook_id, created_at, updated_at, secure, icon, icon_tint FROM notes ORDER BY updated_at DESC, id DESC"
             ).fetchall()
         return [
             {
@@ -731,6 +733,7 @@ class NoteService:
                 "createdAt": row["created_at"],
                 "updatedAt": row["updated_at"],
                 "secure": bool(row["secure"]),
+                "icon": shown_icon(row["title"], row["note_type"], row["icon"], row["icon_tint"]),
             }
             for row in rows
         ]
@@ -854,7 +857,36 @@ class NoteService:
             if self.acting_agent and data_key is None and not current["secure"] and note_type in ("canvas", "page"):
                 self.remember_agent_edit(connection, current, (stored_content, content_format, stored_page_state), revision)
             connection.commit()
-        return {"ok": True, "resourceId": current["resource_id"], "revision": revision}
+        return {"ok": True, "resourceId": current["resource_id"], "revision": revision, "icon": shown_icon(title, note_type, current["icon"], current["icon_tint"])}
+
+    def set_note_icon(self, note_id: int, payload: dict) -> dict:
+        """Choose a note's emoji and tint, or take it away with `"icon": ""` (the row then shows the guess from its title). Appearance only:
+        the note keeps its place in the list, but it is a new revision like any other change."""
+        emoji = payload.get("icon", "")
+        tint = payload.get("tint", 0)
+        if not (emoji == "" or is_chosen_icon(emoji)):
+            raise InvalidNoteContentError("An icon is one emoji")
+        if tint != 0 and not valid_tint(tint):
+            raise InvalidNoteContentError("A tint is a number from 1 to 5")
+        with self.connection() as connection:
+            current = connection.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+            if current is None:
+                raise NotFoundError("Note not found")
+            expected_revision = self.expected_revision(payload, current["revision"])
+            revision = expected_revision + 1
+            if not emoji:
+                tint = 0
+            elif not tint:
+                tint = tint_of(emoji)
+            cursor = connection.execute(
+                "UPDATE notes SET icon = ?, icon_tint = ?, revision = ? WHERE id = ? AND revision = ?",
+                (emoji, tint, revision, note_id, expected_revision),
+            )
+            if cursor.rowcount == 0:
+                raise ConflictError("Resource revision does not match")
+            self.record_change(connection, "note", current["resource_id"], revision, "updated")
+            connection.commit()
+        return {"ok": True, "resourceId": current["resource_id"], "revision": revision, "icon": shown_icon(current["title"], current["note_type"], emoji, tint)}
 
     @staticmethod
     def object_bottom(item: dict) -> float:
@@ -1492,7 +1524,7 @@ class NoteService:
                 "SELECT resource_id, name, color, category, icon, created_at, updated_at FROM notebooks ORDER BY id"
             ).fetchall()
             notes = connection.execute(
-                "SELECT resource_id, note_type, title, content, content_format, page_state, notebook_id, created_at, updated_at, secure, secure_key_id, seal_id, sealed FROM notes ORDER BY id"
+                "SELECT resource_id, note_type, title, content, content_format, page_state, notebook_id, created_at, updated_at, secure, secure_key_id, seal_id, sealed, icon, icon_tint FROM notes ORDER BY id"
             ).fetchall()
             secure_keys = self.secure_key_rows(connection)
             notebook_resources = {
@@ -1527,6 +1559,8 @@ class NoteService:
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
         }
+        if row["icon"]:
+            note.update(icon=row["icon"], iconTint=row["icon_tint"])  # (only a chosen icon: a backup of a note without one is as it was before icons)
         if row["secure"]:
             # Ciphertext only, whether or not the note is unlocked right now; the wrapped keys travel in `secureKeys`.
             return {**note, "content": {}, "pageState": dict(DEFAULT_PAGE_STATE), "secure": True, "keyId": row["secure_key_id"], "sealId": row["seal_id"], "sealed": row["sealed"]}
@@ -1668,13 +1702,15 @@ class NoteService:
                         raise WorkspaceImportError(f"A note in the backup cannot be read: {error}") from error
                     reserved_ids.update(o["id"] for o in document["objects"] if isinstance(o, dict) and isinstance(o.get("id"), str))
                 title = str(note.get("title") or "Untitled note")[:180]
+                icon = note.get("icon") if is_chosen_icon(note.get("icon")) else ""  # a backup from before note icons, or a hand-edited one, has none
+                icon_tint = note.get("iconTint") if valid_tint(note.get("iconTint")) else tint_of(icon) if icon else 0
                 resource_id = new_ids[note["resourceId"]] if note.get("resourceId") in new_ids and note["resourceId"] not in claimed else self.new_resource_id()
                 claimed.add(note.get("resourceId"))
                 cursor = connection.execute(
                     """
                     INSERT INTO notes
-                        (resource_id, note_type, title, content, content_format, page_state, notebook_id, secure, secure_key_id, seal_id, sealed)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (resource_id, note_type, title, content, content_format, page_state, notebook_id, secure, secure_key_id, seal_id, sealed, icon, icon_tint)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         resource_id,
@@ -1688,6 +1724,8 @@ class NoteService:
                         secure_key_id,
                         seal_id,
                         sealed,
+                        icon,
+                        icon_tint,
                     ),
                 )
                 note_id = cursor.lastrowid

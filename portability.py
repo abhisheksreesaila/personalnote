@@ -212,7 +212,7 @@ def markdown_archive(service) -> bytes:
                 target = paths.get(ref)
                 return f"[{title}]({posixpath.relpath(target, posixpath.dirname(here))})" if target else f"{title} (note removed)"
             lines = [
-                f"# {note.get('title') or 'Untitled note'}",
+                f"# {note['icon'] + ' ' if note.get('icon') else ''}{note.get('title') or 'Untitled note'}",
                 "",
                 f"- Type: {note.get('noteType', 'canvas')}",
                 f"- Notebook: {notebook.get('name', 'Notebook')}",

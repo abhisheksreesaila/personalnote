@@ -145,6 +145,8 @@ def initialize_schema(connection: sqlite3.Connection) -> int | None:
         ("secure_key_id", "TEXT"),
         ("seal_id", "TEXT"),
         ("sealed", "TEXT"),
+        ("icon", "TEXT NOT NULL DEFAULT ''"),  # F-100: a chosen emoji ('' = none: the app shows a guess), with its tint 1-5
+        ("icon_tint", "INTEGER NOT NULL DEFAULT 0"),
     ):
         if column not in note_columns:
             try:
