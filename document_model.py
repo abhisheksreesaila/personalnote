@@ -18,7 +18,7 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 PAGE = {"width": 860, "height": 1080}
-OBJECT_TYPES = ("text", "sticky", "shape", "ink", "image", "connector", "group", "unknown")
+OBJECT_TYPES = ("text", "sticky", "shape", "ink", "image", "connector", "group", "notelink", "unknown")
 SHAPE_KINDS = ("rect", "circle")
 INK_KINDS = ("stroke", "dot")
 TEXT_MODES = ("point", "box")
@@ -556,6 +556,11 @@ def _check_object(obj: Any, path: str, report) -> None:
         else:
             for i, child in enumerate(obj["children"]):
                 _check_object(child, f"{path}.children[{i}]", report)
+    elif kind == "notelink":
+        if not isinstance(obj.get("noteRef"), str) or obj["noteRef"] == "":
+            report(f"{path}.noteRef", "a note link needs the note it points at", True)
+        if not isinstance(obj.get("title"), str):
+            report(f"{path}.title", "must be a string")
     elif kind == "unknown":
         if "raw" not in obj:
             report(f"{path}.raw", "unknown objects must keep their raw value", True)
@@ -577,6 +582,8 @@ def _text_of(obj: Any) -> str | None:
         text = raw.get("text") if isinstance(raw, dict) else None
     elif obj.get("type") in ("text", "sticky"):
         text = obj.get("content")
+    elif obj.get("type") == "notelink":
+        text = obj.get("title")  # only the target's title is searched or read aloud; the address is not words
     else:
         text = (obj.get("extras") or {}).get("text")
     return text if isinstance(text, str) else None

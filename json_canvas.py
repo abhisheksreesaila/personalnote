@@ -217,7 +217,8 @@ def _externalize(obj: dict, store: _Store) -> dict:
     return copy_
 
 
-_PN_SKIP = ("id", "z", "type", "content", "mediaRef", "children", "raw")
+NOTE_URL = "personal-note://note/"  # a link node to another note: the url is the address (the pn keeps only the title)
+_PN_SKIP = ("id", "z", "type", "content", "mediaRef", "children", "raw", "noteRef")
 
 
 def _pn_of(obj: dict, extra: dict | None = None) -> dict:
@@ -290,6 +291,9 @@ def to_json_canvas(doc: dict, media: Any = None, derived: str = "file") -> dict:
                 node["file"] = store.from_id(ref["id"]) if ref["kind"] == "media" else store.put_data_url(ref["dataUrl"])
                 if not isinstance(node["file"], str):
                     node["file"] = ref["dataUrl"]
+            elif kind == "notelink":
+                node["type"] = "link"
+                node["url"] = NOTE_URL + obj["noteRef"]
             elif kind == "group":
                 node["type"] = "group"
                 pn["children"] = [_externalize(child, store) for child in obj["children"]]
@@ -391,7 +395,7 @@ def _foreign_objects(node: dict) -> list[dict]:
     return [frame, {"id": f"{node['id']}-label", "type": "text", "mode": "box", "geometry": label_geometry, "content": label, "style": dict(FOREIGN_TEXT_STYLE), "extras": {}}]
 
 
-_VALID_NODE_KINDS = {"text", "sticky", "shape", "ink", "image", "group"}
+_VALID_NODE_KINDS = {"text", "sticky", "shape", "ink", "image", "group", "notelink"}
 
 
 def _object_from_node(node: dict) -> list[dict]:
@@ -406,6 +410,8 @@ def _object_from_node(node: dict) -> list[dict]:
         return [obj]
     if not pn or kind not in _VALID_NODE_KINDS:
         return _foreign_objects(node)
+    if kind == "notelink" and not (isinstance(node.get("url"), str) and node["url"].startswith(NOTE_URL) and len(node["url"]) > len(NOTE_URL)):
+        return _foreign_objects(node)  # another app changed the address to something else: an ordinary web link then
     obj = {**_clone(pn), "id": node["id"]}
     for key in ("noId", "origId", "member"):
         obj.pop(key, None)
@@ -424,6 +430,9 @@ def _object_from_node(node: dict) -> list[dict]:
         obj["mediaRef"] = _media_ref_of(node["file"]) if isinstance(node.get("file"), str) and node["file"] != "" else {"kind": "inline", "dataUrl": ""}
     elif kind == "group":
         obj["children"] = _clone(pn["children"]) if isinstance(pn.get("children"), list) else []
+    elif kind == "notelink":
+        obj["noteRef"] = node["url"][len(NOTE_URL):]
+        obj.setdefault("title", "")
     if "extras" not in obj or not obj["extras"]:
         obj["extras"] = obj.get("extras") or {}
     return [obj]

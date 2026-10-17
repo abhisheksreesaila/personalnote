@@ -563,6 +563,20 @@ def create_app(
     def list_notes():
         return JSONResponse(service.list_notes())
 
+    @app.get("/api/note-links")
+    def note_links(request):
+        # What a link card shows (F-095): {resourceId: {id, title, excerpt, secure, notebook} | null when the note is gone}.
+        return JSONResponse(service.note_links(request.query_params.get("refs", "").split(",")))
+
+    @app.post("/api/notes/{note_id}/x-done")
+    def x_done(request, note_id: int):
+        if not from_this_app(request):
+            return forbidden()
+        try:
+            return JSONResponse(service.mark_x_done(note_id))
+        except Exception as error:
+            return json_error(error)
+
     @app.get("/api/notes/{note_id}")
     def get_note(request, note_id: int):
         try:

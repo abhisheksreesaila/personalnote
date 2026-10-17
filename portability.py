@@ -12,6 +12,7 @@ import base64
 import binascii
 import io
 import json
+import posixpath
 import re
 import zipfile
 from datetime import datetime, timezone
@@ -33,6 +34,7 @@ _DATA_URL = re.compile(
     r"^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$",
     re.IGNORECASE,
 )
+_PAGE_NOTE_LINK = re.compile(r"\[([^\]]*)\]\(personal-note://note/(res_[0-9a-f]{32})\)")  # a link to another note in a page (F-095)
 _IMAGE_EXTENSIONS = {
     "image/png": "png",
     "image/jpeg": "jpg",
@@ -91,7 +93,7 @@ def _extract_data_image(value, archive: zipfile.ZipFile, asset_path: str) -> str
     return path
 
 
-def _canvas_markdown(note: dict, archive: zipfile.ZipFile, asset_root: str) -> list[str]:
+def _canvas_markdown(note: dict, archive: zipfile.ZipFile, asset_root: str, link_to=lambda ref, title: title) -> list[str]:
     content = note.get("content", {})
     try:
         document = from_json_canvas(content) if is_json_canvas(content) else from_fabric(content, note.get("pageState"))
@@ -101,7 +103,7 @@ def _canvas_markdown(note: dict, archive: zipfile.ZipFile, asset_root: str) -> l
     asset_number = 0
     # Markdown projection: text in reading order (top edge first) with each picture where it sits.
     for item in reading_order(document):
-        text = object_text(item)
+        text = link_to(item["noteRef"], item.get("title") or "Untitled note") if item.get("type") == "notelink" else object_text(item)
         if text and text.strip():
             lines.extend([text.strip(), ""])
         source = item.get("mediaRef", {}).get("dataUrl") if item.get("type") == "image" else None
@@ -169,7 +171,6 @@ def _mindmap_markdown(note: dict, archive: zipfile.ZipFile, asset_root: str) -> 
 def markdown_archive(service) -> bytes:
     backup = workspace_backup(service)
     buffer = io.BytesIO()
-    used_paths: set[str] = set()
     manifest = {
         "format": "personal-note-markdown",
         "version": 1,
@@ -177,6 +178,21 @@ def markdown_archive(service) -> bytes:
         "notes": [],
     }
     notebooks = {item["resourceId"]: item for item in backup["notebooks"]}
+
+    # Every note's file first, so a link to a note can name the file it will be in.
+    paths: dict[str, str] = {}
+    used_paths: set[str] = set()
+    for index, note in enumerate(backup["notes"], start=1):
+        notebook = notebooks.get(note.get("notebookResourceId"), {"name": "Inbox"})
+        notebook_name = safe_name(notebook.get("name", "notebook"), "notebook")
+        base = safe_name(note.get("title", "untitled-note"), f"note-{index}")
+        path = f"notes/{notebook_name}/{base}.md"
+        suffix = 2
+        while path in used_paths:
+            path = f"notes/{notebook_name}/{base}-{suffix}.md"
+            suffix += 1
+        used_paths.add(path)
+        paths[note.get("resourceId")] = path
 
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
@@ -188,15 +204,13 @@ def markdown_archive(service) -> bytes:
         )
         for index, note in enumerate(backup["notes"], start=1):
             notebook = notebooks.get(note.get("notebookResourceId"), {"name": "Inbox"})  # no notebook: unfiled
-            notebook_name = safe_name(notebook.get("name", "notebook"), "notebook")
             base = safe_name(note.get("title", "untitled-note"), f"note-{index}")
-            path = f"notes/{notebook_name}/{base}.md"
-            suffix = 2
-            while path in used_paths:
-                path = f"notes/{notebook_name}/{base}-{suffix}.md"
-                suffix += 1
-            used_paths.add(path)
+            path = paths[note.get("resourceId")]
             asset_root = f"assets/{base}-{index}"
+
+            def link_to(ref, title, here=path):
+                target = paths.get(ref)
+                return f"[{title}]({posixpath.relpath(target, posixpath.dirname(here))})" if target else f"{title} (note removed)"
             lines = [
                 f"# {note.get('title') or 'Untitled note'}",
                 "",
@@ -210,11 +224,12 @@ def markdown_archive(service) -> bytes:
                 lines.append("*Secure note: its words are not part of this export.*")
             elif note.get("noteType") == "page":
                 # A page is Markdown already: written as is (its ink stays in the JSON backup).
-                lines.extend(normalize_page_document(note.get("content"))["markdown"].splitlines())
+                markdown = normalize_page_document(note.get("content"))["markdown"]
+                lines.extend(_PAGE_NOTE_LINK.sub(lambda found: link_to(found.group(2), found.group(1)), markdown).splitlines())
             elif note.get("noteType") == "mindmap":
                 lines.extend(_mindmap_markdown(note, archive, asset_root))
             else:
-                lines.extend(_canvas_markdown(note, archive, asset_root))
+                lines.extend(_canvas_markdown(note, archive, asset_root, link_to))
             archive.writestr(path, "\n".join(lines).rstrip() + "\n")
             manifest["notes"].append({
                 "resourceId": note.get("resourceId"),
