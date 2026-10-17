@@ -1,6 +1,9 @@
 /* Skins: Crayon (default), Paper, Night. Screen-only (AGENTS.md invariant 9): print output
    and the saved canvas paper are not touched. Loaded after workspace-theme.css; it maps each
    skin's tokens onto the chrome variables that stylesheet already uses. */
+/* F-099: Geist's line metrics on a system face, so the swap after first paint moves no line. */
+@font-face { font-family: "Geist Fallback"; font-weight: 100 550; size-adjust: 106%; ascent-override: 95%; descent-override: 28%; line-gap-override: 0%; src: local(Arial), local("Liberation Sans"); }
+@font-face { font-family: "Geist Fallback"; font-weight: 551 900; size-adjust: 105%; ascent-override: 95.7%; descent-override: 28.1%; line-gap-override: 0%; src: local("Arial Bold"), local("Liberation Sans Bold"); }
 @media screen {
   :root, :root[data-skin="crayon"] {
     color-scheme: light;
@@ -50,7 +53,7 @@
 
   /* Map the tokens onto the chrome variables used across style.css and workspace-theme.css. */
   :root, :root[data-skin] {
-    --ui-font: "Geist", system-ui, sans-serif;
+    --ui-font: "Geist", "Geist Fallback", system-ui, sans-serif;
     --ink: var(--sk-ink);
     --muted: var(--sk-muted);
     --line: var(--sk-line);
@@ -82,7 +85,6 @@
   .voice-button.active,
   .dialog-primary, .print-button { color: var(--skin-on-accent); }
   .dialog-primary:hover, .print-button:hover { background: color-mix(in srgb, var(--sk-accent) 88%, var(--sk-ink)); }
-  .dialog-danger:hover { background: color-mix(in srgb, var(--sk-danger) 88%, var(--sk-ink)); }
 
   /* Geometry: controls and panels follow the skin's radii and shadows. */
   .tool-dock, .ink-options-popover, .note-create-menu, .notebook-picker-menu,

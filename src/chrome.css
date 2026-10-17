@@ -78,7 +78,7 @@
     background: var(--sk-accent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sk-accent) 62%, #000);
   }
   .app-shell .brand-mark::after { content: ""; position: absolute; right: 5px; top: 0; bottom: 0; width: 3px; background: var(--sk-accent-ink); opacity: .7; }
-  .app-shell .brand-name { flex: 1; min-width: 0; font-family: var(--sk-display); font-weight: var(--sk-display-weight); font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track); font-size: 17px; color: var(--sk-ink); white-space: nowrap; }
+  .app-shell .brand-name { flex: 1; min-width: 0; font-family: var(--sk-display); font-weight: var(--sk-display-weight); font-style: var(--sk-display-style); letter-spacing: var(--sk-title-track); font-size: 17px; line-height: 20px; color: var(--sk-ink); white-space: nowrap; }
   .app-shell .sidebar-close { display: none; }
 
   .app-shell .quick-note {

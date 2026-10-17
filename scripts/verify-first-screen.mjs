@@ -262,12 +262,37 @@ try {
     await page.goto(`${BASE}/notes`)
     await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
     const rects = () => page.evaluate(() => [...document.querySelectorAll('.sidebar, #notebook-navigator, #notebook-navigator *, .island, #island-title, .topbar, .topbar *')].map((e) => { const r = e.getBoundingClientRect(); return `${e.id || e.className || e.tagName}:${r.x.toFixed(1)},${r.y.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}` }))
+    // (this check is about the engine arriving: the web font has its own check below, so let it settle first)
+    await page.waitForFunction(() => document.fonts.status === 'loaded' && [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Geist' && f.status === 'loaded'), null, { timeout: 5000 }).catch(() => {})
+    await page.waitForTimeout(400)
     const first = await rects()
     await page.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 25000 })
     await page.waitForTimeout(1500)
     const later = await rects()
     const moved = first.map((r, i) => r === later[i] ? null : `${r} -> ${later[i]}`).filter(Boolean)
-    check('the title pill, top bar and notes panel do not move or change size after the first paint', first.length === later.length && first.length > 5 && moved.length === 0, moved.slice(0, 4).join(' | '))
+    check('the title pill, top bar and notes panel do not move or change size after the first paint', first.length === later.length && first.length > 5 && moved.length === 0, moved.slice(0, +(process.env.PN_MOVED || 4)).join(' | '))
+    await page.context().close()
+  }
+  {
+    // F-099: the web font (Geist) arrives after the first paint, delayed here so the swap surely happens later: nothing in the notes panel or
+    // the top bar changes size or place when it does (the fallback face carries Geist's metrics)
+    const page = await newPage()
+    await page.addInitScript(() => localStorage.setItem('pn.notesPanelOpen', '1'))
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue() })
+    await page.goto(`${BASE}/notes`)
+    await page.waitForFunction(() => window.__firstScreen, null, { timeout: 60000 })
+    const geist = () => page.evaluate(() => [...document.fonts].filter((f) => f.family.replace(/"/g, '') === 'Geist' && f.status === 'loaded').length)
+    const rects = () => page.evaluate(() => [...document.querySelectorAll('.sidebar, .sidebar *, .island, .island *, .topbar, .topbar *')].map((e) => { const r = e.getBoundingClientRect(); return { name: `${e.id || e.className || e.tagName}[${String(e.textContent).replace(/\s+/g, ' ').slice(0, 14)}]`, x: r.x, y: r.y, w: r.width, h: r.height } }))
+    const swappedBefore = await geist()
+    const first = await rects()
+    await page.waitForFunction(() => [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Geist' && f.status === 'loaded'), null, { timeout: 20000 }).catch(() => {})
+    const swappedAfter = await geist()
+    await page.waitForTimeout(500)
+    const later = await rects()
+    // Nothing may jump up or down or change height (a line of text that grows pushes what is below it). A word is a few pixels wider in a
+    // different face whatever the metrics, so across the swap x and width may differ by up to 2 px (the face's own letter widths), no more.
+    const moved = first.map((r, i) => { const n = later[i]; return Math.abs(r.y - n.y) > 0.01 || Math.abs(r.h - n.h) > 0.01 || Math.abs(r.x - n.x) > 2 || Math.abs(r.w - n.w) > 2 ? `${r.name} ${r.x},${r.y},${r.w},${r.h} -> ${n.x},${n.y},${n.w},${n.h}` : null }).filter(Boolean)
+    check('the notes panel and top bar do not jump or grow when the web font arrives after the first paint (the font did arrive later)', swappedBefore === 0 && swappedAfter > 0 && first.length === later.length && first.length > 20 && moved.length === 0, `${swappedBefore}->${swappedAfter} ${moved.slice(0, +(process.env.PN_MOVED || 4)).join(' | ')}`)
     await page.context().close()
   }
   {

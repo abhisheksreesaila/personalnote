@@ -338,8 +338,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .portability-help, .portability-status { margin: 10px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .portability-status:empty { display: none; }
 .portability-status.error { color: var(--terracotta); }
-.settings-footer-status { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 12px 4px 2px; color: #9a9287; font-size: 9px; }
-.settings-footer-status > span { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: #6f8c63; box-shadow: 0 0 0 3px rgba(111,140,99,.12); }
 
 .print-preview {
   position: fixed;
@@ -445,8 +443,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .dialog-cancel { margin-left: auto; border: 1px solid #d2cdc3; background: #f1eee7; }
 .dialog-primary { border: 1px solid #292825; color: #fff; background: #292825; }
 .dialog-primary:hover { background: #44413b; }
-.dialog-danger { border: 1px solid #9a463e; color: white; background: #9a463e; }
-.dialog-danger:hover { background: #ad544a; }
 
 @media (max-width: 800px) {
   .portability-actions button[id$="-download"], .portability-actions button[id$="-cancel"], .portability-actions button[id$="-remove"], #ai-settings :is(button, input, select) { min-height: 44px; }
