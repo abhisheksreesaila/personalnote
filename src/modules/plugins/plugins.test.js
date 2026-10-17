@@ -3,6 +3,7 @@ import test from 'node:test'
 import { mapOutline } from './mindmap-readonly.js'
 import { describePlugin } from './plugins-settings.js'
 import { BUILTIN_PLUGINS } from './builtin.js'
+import { createPluginRegistry } from '../../core/plugins.js'
 
 test('a map reads as an outline: branches under their parent, in the order they were made', () => {
   const doc = { rootId: 'r', nodes: [
@@ -28,4 +29,61 @@ test('a plugin row says what it is and what it needs, in a line', () => {
 test('Mind maps is the first built-in plugin, on by default, making mindmap notes', () => {
   const [mindmaps] = BUILTIN_PLUGINS
   assert.deepEqual([mindmaps.id, mindmaps.name, mindmaps.defaultOn, mindmaps.noteKinds.map((k) => k.type)], ['mindmap', 'Mind maps', true, ['mindmap']])
+})
+
+// ---- F-091: plugins with a lifecycle (activate / dispose), loaded only while on ----
+function lifecyclePlugin(log, id = 'voice') {
+  return { id, name: id, description: '', icon: 'mic', defaultOn: true, needs: [], activate: async (shell) => { log.push(`activate ${shell.tag}`); return { id, dispose: () => log.push('dispose') } } }
+}
+
+test('a plugin that is on is activated once and its instance is found by id', async () => {
+  const log = []
+  const registry = createPluginRegistry([lifecyclePlugin(log)])
+  await registry.sync({ tag: 'a' })
+  await registry.sync({ tag: 'b' })
+  assert.deepEqual(log, ['activate a'])
+  assert.equal(registry.get('voice').id, 'voice')
+  assert.deepEqual(registry.instances().map((instance) => instance.id), ['voice'])
+})
+
+test('a plugin that is off is never activated, so nothing of it is loaded', async () => {
+  const log = []
+  const registry = createPluginRegistry([lifecyclePlugin(log)])
+  registry.apply({ voice: false })
+  await registry.sync({ tag: 'a' })
+  assert.deepEqual(log, [])
+  assert.equal(registry.get('voice'), null)
+})
+
+test('switching off disposes the instance, switching on again activates a fresh one', async () => {
+  const log = []
+  const registry = createPluginRegistry([lifecyclePlugin(log)])
+  await registry.sync({ tag: 'a' })
+  registry.apply({ voice: false })
+  await registry.sync({ tag: 'a' })
+  assert.equal(registry.get('voice'), null)
+  registry.apply({ voice: true })
+  await registry.sync({ tag: 'b' })
+  assert.deepEqual(log, ['activate a', 'dispose', 'activate b'])
+})
+
+test('switched off while still loading: it is disposed the moment it arrives', async () => {
+  const log = []
+  let release
+  const slow = { ...lifecyclePlugin(log), activate: () => new Promise((resolve) => { release = () => resolve({ dispose: () => log.push('dispose') }) }) }
+  const registry = createPluginRegistry([slow])
+  const syncing = registry.sync({})
+  registry.apply({ voice: false })
+  release()
+  await syncing
+  assert.deepEqual(log, ['dispose'])
+  assert.equal(registry.get('voice'), null)
+})
+
+test('Voice and Search by meaning are built-in, on by default, and say what they need', () => {
+  const byId = Object.fromEntries(BUILTIN_PLUGINS.map((plugin) => [plugin.id, plugin]))
+  assert.deepEqual(BUILTIN_PLUGINS.map((plugin) => plugin.id), ['mindmap', 'voice', 'meaning'])
+  assert.deepEqual([byId.voice.name, byId.voice.defaultOn, byId.meaning.name, byId.meaning.defaultOn], ['Voice', true, 'Search by meaning', true])
+  assert.equal(describePlugin(byId.voice), 'Dictate into a note with your voice. Audio is never kept, only the words. Needs: about 750 MB download (the Nemotron speech model), runs on this computer.')
+  assert.equal(describePlugin(byId.meaning), 'Find notes by what they mean, not only their words. Needs: about 315 MB download (the EmbeddingGemma model), runs on this computer.')
 })
