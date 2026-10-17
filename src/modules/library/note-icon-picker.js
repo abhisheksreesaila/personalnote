@@ -40,7 +40,8 @@ const CSS = `
   .nip-in { height: 44px; font-size: 16px; }
   .nip-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .nip-grid button { height: 48px; font-size: 26px; }
-  .nip-tints button { width: 40px; height: 40px; }
+  .nip-tints { gap: 10px; }
+  .nip-tints button { width: 44px; height: 44px; }
   .nip-foot button { padding: 12px 10px; margin: -12px -10px; }
 }
 @keyframes nip-up { from { transform: translateY(40%); opacity: 0; } }
@@ -71,8 +72,9 @@ export function findEmoji(query) {
  *  anchor()   the emoji button the picker opens from (looked up again when it closes, because the list is drawn again)
  *  getNote()  the note's row in the notes list: { revision, icon: { emoji, tint, chosen } }
  *  api, toast, refresh   the app's request helper, its toast, and a redraw of the notes list and the open note's emoji
+ *  settled()  resolves once no text save of the note is in flight (that save moves the revision)
  */
-export function openNoteIconPicker({ id, anchor, getNote, api, toast, refresh }) {
+export function openNoteIconPicker({ id, anchor, getNote, api, toast, refresh, settled = async () => {} }) {
   open?.close()
   if (!getNote()) return
   if (!document.querySelector('#nip-style')) document.head.append(Object.assign(document.createElement('style'), { id: 'nip-style', textContent: CSS }))
@@ -138,6 +140,7 @@ export function openNoteIconPicker({ id, anchor, getNote, api, toast, refresh })
   let saves = Promise.resolve()
   const save = (change) => {
     saves = saves.then(async () => {
+      await settled()
       const note = getNote()
       if (!note) return
       try {

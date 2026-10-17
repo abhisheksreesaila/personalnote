@@ -997,6 +997,7 @@ function paintNoteIcon() {
 function openNoteIcon(id, anchor) {
   void import('./modules/library/note-icon-picker.js').then(({ openNoteIconPicker }) => openNoteIconPicker({
     id, anchor, api, toast: showToast, getNote: () => state.notes.find((note) => note.id === id), refresh: renderNoteList,
+    settled: async () => { if (unsavedEdits && !saveInFlight) { clearTimeout(saveTimer); await saveActiveNote() } while (saveInFlight || saveQueued) await saveSettled }, // text waiting to be saved, or out, owns the revision: the icon goes after it
   }))
 }
 
@@ -3670,7 +3671,7 @@ elements.title.addEventListener('input', () => {
 elements.islandIcon.addEventListener('click', () => openNoteIcon(state.activeNoteId, () => elements.islandIcon))
 elements.list.addEventListener('click', (event) => {
   const tile = event.target.closest('[data-icon-note]')
-  if (tile) return void openNoteIcon(Number(tile.dataset.iconNote), () => elements.list.querySelector(`[data-icon-note="${tile.dataset.iconNote}"]`))
+  if (tile && !mobileLayout.matches) return void openNoteIcon(Number(tile.dataset.iconNote), () => elements.list.querySelector(`[data-icon-note="${tile.dataset.iconNote}"]`))
   const item = event.target.closest('[data-note-id]')
   if (item) {
     selectNote(Number(item.dataset.noteId))

@@ -128,9 +128,10 @@ try {
   // The open note: a canvas shows its emoji in the island.
   await row('Startup pitch').click()
   await page.waitForFunction(() => document.querySelector('#island-icon')?.textContent === '🚀', null, { timeout: 15000 })
+  await settle(700)
   const islandIcon = await page.locator('#island-icon').boundingBox()
   const islandBox = await page.locator('#island').boundingBox()
-  check('a canvas note shows its emoji in the title island', islandIcon && islandIcon.width === 24 && islandIcon.x >= islandBox.x && islandIcon.x + islandIcon.width <= islandBox.x + islandBox.width, JSON.stringify({ islandIcon, islandBox }))
+  check('a canvas note shows its emoji in the title island', islandIcon && islandIcon.width === 44 && islandIcon.x >= islandBox.x && islandIcon.x + islandIcon.width <= islandBox.x + islandBox.width, JSON.stringify({ islandIcon, islandBox }))
   const titleBox = await page.locator('#island-title').boundingBox()
   check('and the title fits in the island beside it', titleBox.x + titleBox.width <= islandBox.x + islandBox.width + 1 && titleBox.x >= islandIcon.x + islandIcon.width, JSON.stringify({ titleBox, islandBox }))
   await shot('canvas')
@@ -171,9 +172,31 @@ try {
   check('a rename keeps a chosen emoji', (await tile('Grocery ideas').textContent()) === '🌱')
   await page.keyboard.press('Escape')
 
+  // A text save in flight owns the revision: an icon change made meanwhile waits for it, and is not refused.
+  await row('Grocery ideas').click()
+  await page.waitForSelector('.page-icon:not(:empty)', { timeout: 15000 })
+  await settle(600)
+  let putSeen = false
+  await page.route(/\/api\/notes\/\d+$/, async (route) => {
+    if (route.request().method() === 'PUT') { putSeen = true; await new Promise((r) => setTimeout(r, 1500)) }
+    await route.continue()
+  })
+  await page.locator('#share-button').click()
+  await page.locator('#note-title').fill('Wedding plans two')
+  for (let i = 0; i < 100 && !putSeen; i++) await settle(100) // the save is out (and held for 1.5 s)
+  await tile('Grocery ideas').click()
+  await page.waitForSelector('.nip')
+  await page.fill('.nip-in', 'rock')
+  await page.locator('.nip-grid button', { hasText: '🚀' }).click()
+  await settle(5000)
+  const raced = await stored('Grocery ideas')
+  check('an icon change made while a text save is in flight waits for it and is kept', putSeen && raced.title === 'Wedding plans two' && raced.icon.emoji === '🚀', JSON.stringify(raced))
+  check('and no "Couldn\'t change" toast showed', !(await page.locator('#toast').textContent().then((t) => t.includes("Couldn't change")).catch(() => false)))
+  await page.unroute(/\/api\/notes\/\d+$/)
+
   // It all survives a reload.
   await open()
-  check('the choices survive a reload', (await tile('Zzz qqq').textContent()) === '🍳' && (await tile('Startup pitch').textContent()) === '🎯' && (await tile('Grocery ideas').textContent()) === '🌱')
+  check('the choices survive a reload', (await tile('Zzz qqq').textContent()) === '🍳' && (await tile('Startup pitch').textContent()) === '🎯' && (await tile('Grocery ideas').textContent()) === '🚀')
 
   // The skins, wide and narrow.
   for (const skin of ['crayon', 'paper', 'night']) {
@@ -199,10 +222,19 @@ try {
   check('on a phone the tile is 32px and the row at least 48px', phoneTile.width === 32 && phoneRow.height >= 48, JSON.stringify({ phoneTile, phoneRow }))
   await shot('paper-phone-list')
   await tile('Lisbon trip').click()
+  await settle(600)
+  check('on a phone a tap on the tile opens the note like the row (no picker)', (await page.locator('.nip').count()) === 0 && (await page.locator('#note-title').inputValue()) === 'Lisbon trip')
+  await page.waitForSelector('#island-icon:not(:empty)')
+  await settle(600)
+  const hit = await page.locator('#island-icon').boundingBox()
+  check('on a phone the island emoji is a 44px-wide target, as tall as the island', hit.width >= 44 && hit.height >= 38, JSON.stringify(hit))
+  await page.mouse.click(hit.x + 4, hit.y + hit.height / 2) // beside the 24px tile, inside the button
   await page.waitForSelector('.nip')
   await settle(400)
   const sheet = await page.locator('.nip').boundingBox()
   check('on a phone the picker is a bottom sheet', sheet.y + sheet.height >= 843 && sheet.width === 390, JSON.stringify(sheet))
+  const tintBox = await page.locator('.nip-tints button').first().boundingBox()
+  check('the sheet\'s tint buttons are at least 44px', tintBox.width >= 44 && tintBox.height >= 44, JSON.stringify(tintBox))
   const cell = await page.locator('.nip-grid button').first().boundingBox()
   check('its emoji are at least 44px targets', cell.height >= 44 && cell.width >= 44, JSON.stringify(cell))
   await shot('paper-phone-picker')
@@ -222,8 +254,6 @@ try {
   await page.mouse.up()
   await settle(300)
   check('a drag down past 80px closes the sheet', (await page.locator('.nip').count()) === 0)
-  await row('Lisbon trip').click()
-  await page.waitForSelector('#island-icon:not(:empty)')
   await settle(800)
   check('on a phone a page shows its emoji in the island', await page.locator('#island-icon').isVisible() && !(await page.locator('.page-icon').isVisible()))
   await shot('paper-phone-page')
