@@ -3,7 +3,8 @@
 // 4 / 4 / 24 / 4. Browser only (it draws on a canvas); the cache keeps one image per distinct size.
 import { pixelRatioFor, readPerf } from './perf.js'
 export const STICKY_CORNERS = [4, 4, 24, 4]
-const MARGIN = 44
+export const STICKY_SHADOW_MARGIN = 44 // how far the baked shadow reaches past the paper
+const MARGIN = STICKY_SHADOW_MARGIN
 const BLUR = 16
 const OFFSET_Y = 9
 const FAR = 4000

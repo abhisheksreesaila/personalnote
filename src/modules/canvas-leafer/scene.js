@@ -19,7 +19,7 @@ import { createGestureView, marginFor } from './gesture-view.js'
 import { createOverlays } from './overlay.js'
 import { GHOST_REACH, finalizeOp, growForDrag, growForText } from './pages.js'
 import { applyMatrix, geometryFromMatrix, multiplyMatrices, placementMatrix } from './placement.js'
-import { bakedStickyShadow, STICKY_CORNERS, liveStickyShadow } from './sticky-shadow.js'
+import { bakedStickyShadow, STICKY_CORNERS, STICKY_SHADOW_MARGIN, liveStickyShadow } from './sticky-shadow.js'
 import { pixelRatioFor, readPerf } from './perf.js'
 import { createTileLod } from './tiles.js'
 import { canvasFamily, fabricLineMetrics, withAlpha } from './style.js'
@@ -596,7 +596,8 @@ export function createScene({ host, width, height, onOperation = () => null, onB
       if (!object) continue
       const edges = rectOfObject(object)
       if (!edges) return undefined
-      rects.push({ left: edges.left - TOUCH_PAD, top: edges.top - TOUCH_PAD, right: edges.right + TOUCH_PAD, bottom: edges.bottom + TOUCH_PAD })
+      const pad = object.type === 'sticky' ? Math.max(TOUCH_PAD, STICKY_SHADOW_MARGIN) : TOUCH_PAD // a sticky's shadow reaches further than a stroke
+      rects.push({ left: edges.left - pad, top: edges.top - pad, right: edges.right + pad, bottom: edges.bottom + pad })
     }
     return rects.length ? rects : undefined
   }
