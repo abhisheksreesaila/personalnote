@@ -4,11 +4,10 @@ import './skins.css'
 import './chrome.css'
 import './secure.css'
 import { mountSkinSwitcher, SKINS, startSkins } from './skins.js'
-import { buildGroups, FILTERS, flatten, highlight, latestRequest, moveSelection, queryTokens } from './modules/omnibar/omnibar.js'
 import { MAC_CHROME_CLASS, readHostChrome, setMacFullscreen } from './modules/desktop/hostChrome.js'
 import { createIcons, icons } from './icons.js'
 import { createSecureSession } from './modules/secure/session.js'
-import { createHeldEdit, noteRowIcon, searchResultView } from './modules/secure/secure.js'
+import { createHeldEdit, noteRowIcon } from './modules/secure/secure.js'
 import { api, downloadWorkspaceFile } from './core/api.js'
 import { createDocumentEncoder, decodeNoteDocument, encodeDocument } from './core/note-codec.js'
 import { nudgeDistance } from './core/document/operations.js'
@@ -34,7 +33,7 @@ import { EDGE_OVERFLOW, shiftedDocument } from './modules/canvas-leafer/pages.js
 import { createSpeedMeter, detectEngine, detectHost, isSpeedMeterShortcut } from './speedMeter.js'
 import { CATEGORIES, categoryLabel, inboxNotes, isQuickNoteShortcut, isSectionOpen, modifierLabel, outline as notebookOutline, quickNoteKeycap, NOTEBOOK_FOLD_KEY, readFolded, writeFolded } from './modules/library/outline.js'
 import { mountShelves } from './modules/library/shelves.js'
-import { X_LOGO, iconButtonHtml } from './modules/library/notebook-icon-button.js'
+import { X_LOGO, glyphHtml, iconButtonHtml } from './modules/library/notebook-icon-button.js'
 import { NOTEBOOK_COLORS, displayName, iconOf } from './modules/library/notebook-icon.js'
 import { bindPageLifecycle, canKeepAlive, confirmedRevision, createSaveTiming, joinSaveBody, settleSaves } from './modules/editor/save-flush.js'
 import { canPanFromKeyboard as keyboardCanPan, keyboardPan } from './modules/editor/keyboard-pan.js'
@@ -342,7 +341,7 @@ document.querySelector('#app').innerHTML = `
         <button class="search-close" id="search-close" aria-label="Close search"><span class="k-esc">Esc</span><span class="k-cancel">Cancel</span></button>
       </div>
       <div class="omni-chips" id="omni-chips" role="group" aria-label="Show"></div>
-      <div class="search-results" id="search-results" role="listbox" aria-label="Results"></div>
+      <div class="omni-body"><div class="search-results" id="search-results" role="listbox" aria-label="Results"></div><aside class="omni-preview" id="omni-preview" aria-hidden="true"></aside></div>
       <footer class="search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Move</span><span><kbd>↵</kbd> Open</span><span><kbd>Esc</kbd> Close</span></footer>
     </section>
   </div>
@@ -2623,7 +2622,7 @@ const omni = { open: false, pending: false, filter: 'All', sel: 0, groups: [], i
 const pluginEntries = new Map() // what plugins offer as a way to start something new: { id, label, icon, keywords, run }
 const hasCreateChoices = () => plugins.creatableKinds().length > 0 || pluginEntries.size > 0
 const pluginShell = {
-  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, latestRequest, setup: null, // setup: the setup-row helpers, set by loadOptional before any plugin is activated
+  api, state, elements, island, omni, pageWidth: PAGE_WIDTH, edits: leaferEdits, countWords, contentBounds, setup: null, // setup: the setup-row helpers, set by loadOptional before any plugin is activated
   canvas: () => leaferCanvas,
   voiceSink: null, // a plugin that listens to the mic itself (a jam) sets { heard(text, {final}), listening(on) }; dictation then goes there, not into a text box
   voice: () => plugins.get('voice'),
@@ -2652,82 +2651,21 @@ function omniActions() {
   return actions
 }
 
-function omniRowHtml(item, index, tokens) {
-  const sel = index === omni.sel
-  const base = `id="omni-row-${index}" role="option" aria-selected="${sel}" data-omni="${index}" tabindex="-1"`
-  const ret = '<i class="omni-ret" data-lucide="corner-down-left"></i>'
-  if (item.kind === 'note' || item.kind === 'words' || item.kind === 'meaning') {
-    const view = searchResultView(item)
-    const sub = item.secure ? `Secure note · ${modifierLabel(navigator.platform) === '⌘' ? 'opens with Touch ID' : 'unlock to open'}` : item.kind === 'words' ? highlight(item.excerpt, tokens) : escapeHtml(item.notebookName)
-    return `<button class="omni-row search-result ${view.className}${item.kind === 'meaning' ? ' is-meaning' : ''}${sel ? ' sel' : ''}" ${base} data-search-note-id="${item.id}">
-      <span class="omni-ic"><i data-lucide="${view.icon}"></i></span>
-      <span class="omni-copy"><span class="omni-title">${highlight(item.title, tokens)}</span><span class="omni-sub">${sub}</span></span>
-      ${item.kind === 'words' || item.secure ? `<span class="omni-meta">${escapeHtml(item.notebookName)}</span>` : ''}${ret}</button>`
-  }
-  if (item.kind === 'notebook') {
-    return `<button class="omni-row${sel ? ' sel' : ''}" ${base}><span class="omni-ic"><span class="omni-dot" style="--c:${escapeHtml(item.color || 'var(--sk-accent)')}"></span></span>
-      <span class="omni-copy"><span class="omni-title">${highlight(item.name, tokens)}</span><span class="omni-sub">Notebook · ${item.noteCount} ${item.noteCount === 1 ? 'note' : 'notes'}</span></span>${ret}</button>`
-  }
-  return `<button class="omni-row${sel ? ' sel' : ''}" ${base}><span class="omni-ic"><i data-lucide="${item.icon}"></i></span>
-    <span class="omni-copy"><span class="omni-title">${highlight(item.title, tokens)}</span></span>${item.hint ? `<span class="omni-meta">${item.hint}</span>` : ''}${item.keycap ? `<kbd>${item.keycap}</kbd>` : ''}${ret}</button>`
-}
-
-const omniKey = (item) => (item ? `${item.kind === 'words' ? 'note' : item.kind}:${item.id ?? item.title}` : '')
-function omniCreateRowHtml(index, query, sel) {
-  return `<button class="omni-row${sel ? ' sel' : ''}" id="omni-row-${index}" role="option" aria-selected="${sel}" data-omni="${index}" tabindex="-1"><span class="omni-ic"><i data-lucide="plus"></i></span><span class="omni-copy"><span class="omni-title">New note “${escapeHtml(query)}”</span></span><i class="omni-ret" data-lucide="corner-down-left"></i></button>`
-}
-
-function renderOmni() {
-  const keep = omniKey(omni.items[omni.sel]) // the selection stays on the same item when more results land
-  const query = elements.searchInput.value.trim()
-  const tokens = queryTokens(query)
-  const skip = omni.pick ? state.activeNoteId : pendingDelete?.note.id // (asking for a note to link: not this one)
-  const notes = state.notes.filter((note) => note.id !== skip)
-  const wordHits = omni.wordHits.filter((hit) => hit.id !== skip)
-  const searchesNotes = omni.filter === 'All' || omni.filter === 'Notes'
-  omni.groups = buildGroups({ query, filter: omni.filter, notes, notebooks: omni.pick ? [] : state.notebooks, actions: omni.pick ? [] : omniActions(), wordHits, meaningHits: omni.meaningHits, wordsPending: omni.pending })
-  omni.items = flatten(omni.groups)
-  const kept = omni.items.findIndex((item) => omniKey(item) === keep)
-  if (kept >= 0) omni.sel = kept
-  const onlyCreate = omni.items.length === 1 && omni.items[0].kind === 'create'
-  const waiting = (omni.pending || omni.meaningPending) && searchesNotes // a search is still out: no "nothing" yet
-  document.querySelector('#omni-chips').innerHTML = FILTERS.map((name) => `<button type="button" class="omni-chip" data-omni-chip="${name}" aria-pressed="${name === omni.filter}">${name}</button>`).join('')
-  let html = ''
-  if (!omni.items.length) {
-    if (!waiting) html = `<div class="omni-none"><strong>${query ? `Nothing matches “${escapeHtml(query)}”` : 'Nothing here yet'}</strong><span>Secure notes match by title only.</span></div>`
-  } else {
-    let index = 0
-    omni.sel = onlyCreate ? 0 : Math.min(omni.sel, omni.items.length - 1)
-    // Only a New note row: say nothing matched, once no search is still out (the row itself is there at once, so Enter never waits).
-    if (onlyCreate && !waiting) html = `<div class="omni-none"><strong>Nothing matches “${escapeHtml(query)}”</strong><span>Secure notes match by title only.</span></div>`
-    html += omni.groups.map((group) => group.key === 'create'
-      ? `<div class="omni-group">${omniCreateRowHtml(index++, group.items[0].title, omni.sel === index - 1)}</div>`
-      : `<div class="omni-group" role="group" aria-label="${group.label}"><h4>${group.label}</h4>${group.items.map((item) => omniRowHtml(item, index++, tokens)).join('')}</div>`).join('')
-  }
-  if (omni.wordsFailed && query) html += '<p class="omni-note">Couldn’t search inside notes.</p>'
-  elements.searchResults.innerHTML = html
-  createIcons({ icons })
-  if (omni.items.length) elements.searchInput.setAttribute('aria-activedescendant', `omni-row-${omni.sel}`)
-  else elements.searchInput.removeAttribute('aria-activedescendant')
-}
-
-function setOmniSelection(index, { scroll = true } = {}) {
-  if (!omni.items.length) return
-  omni.sel = index
-  elements.searchResults.querySelectorAll('.omni-row').forEach((row, i) => { row.classList.toggle('sel', i === index); row.setAttribute('aria-selected', String(i === index)) })
-  elements.searchInput.setAttribute('aria-activedescendant', `omni-row-${index}`)
-  if (scroll) document.querySelector(`#omni-row-${index}`)?.scrollIntoView({ block: 'nearest' })
-}
+// The results, pills and preview are drawn by omnibar-view.js, fetched when the omnibar first opens (until then the list is empty and fills in on arrival).
+let omniView = null
+const omniViewHost = () => ({
+  omni, state, elements, api, actions: omniActions, glyph: glyphHtml, refreshIcons: () => createIcons({ icons }),
+  skip: () => (omni.pick ? state.activeNoteId : pendingDelete?.note.id), // (asking for a note to link: not this one)
+  hint: modifierLabel(navigator.platform) === '⌘' ? 'opens with Touch ID' : 'unlock to open',
+})
+function renderOmni() { omniView?.render() }
+const setOmniSelection = (index, options) => omniView?.select(index, options)
 
 let openFrame = 0
 function openSearch() {
-  const bar = elements.searchButton.getBoundingClientRect()
-  const panel = elements.searchBackdrop.firstElementChild
-  // The field grows leftward out of the circle, from its top right corner (a phone fills the screen instead, see chrome.css).
-  panel.style.setProperty('--omni-top', `${Math.max(0, Math.round(bar.top))}px`)
-  panel.style.setProperty('--omni-right', `${Math.max(0, Math.round(innerWidth - bar.right))}px`)
   Object.assign(omni, { open: true, filter: 'All', sel: 0, wordHits: [], meaningHits: [], meaningPending: false, wordsFailed: false })
   void loadOptional() // Search by meaning joins as soon as its code is there (F-097)
+  if (!omniView) void import('./modules/omnibar/omnibar-view.js').then((module) => { omniView ??= module.mountOmniView(omniViewHost()); if (omni.open) renderOmni() })
   plugins.get('meaning')?.open()
   elements.searchInput.value = ''
   elements.searchBackdrop.hidden = false
@@ -3718,7 +3656,7 @@ elements.searchInput.addEventListener('input', queueSearch)
 elements.searchInput.addEventListener('keydown', (event) => {
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
-    setOmniSelection(moveSelection(omni.sel, event.key === 'ArrowDown' ? 1 : -1, omni.items.length))
+    omniView?.move(event.key === 'ArrowDown' ? 1 : -1)
   } else if (event.key === 'Enter' && !event.isComposing && event.keyCode !== IME_KEY) {
     event.preventDefault()
     if (!(omni.pending && omni.items[omni.sel]?.kind === 'create')) runOmniItem(omni.items[omni.sel])

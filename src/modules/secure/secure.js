@@ -51,13 +51,6 @@ export function noteRowIcon(note) {
   return note.secure ? { icon: 'lock', className: 'is-secure' } : { icon: plainIcon(note.noteType), className: '' }
 }
 
-// A secure note is found by its title only: no words, whatever the server sent.
-export function searchResultView(result) {
-  return result.secure
-    ? { icon: 'lock', excerpt: '', className: 'is-secure' }
-    : { icon: plainIcon(result.noteType), excerpt: result.excerpt ?? '', className: '' }
-}
-
 export const PING_EVERY_MS = 30_000
 
 // While a secure note is open the server keeps its keys only for the quiet time; activity on the page renews it, not more than every 30 s.

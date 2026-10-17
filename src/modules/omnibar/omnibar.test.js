@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildGroups, flatten, highlight, latestRequest, moveSelection, queryTokens } from './omnibar.js'
+import { buildGroups, filterCounts, flatten, highlight, moveSelection, queryTokens, relativeTime } from './omnibar.js'
 
 const notebooks = [
   { id: 1, name: 'Travel', color: '#2f9d8f', noteCount: 2 },
@@ -158,19 +158,6 @@ test('By meaning is the last group, below the actions too, so arrows flow throug
   assert.equal(items[moveSelection(3, 1, items.length)].id, 'new')
 })
 
-test('a new request cancels the one before it, and only the newest is current', () => {
-  const latest = latestRequest()
-  const first = latest.start()
-  const second = latest.start()
-  assert.equal(first.signal.aborted, true)
-  assert.equal(first.current(), false)
-  assert.equal(second.signal.aborted, false)
-  assert.equal(second.current(), true)
-  latest.cancel()
-  assert.equal(second.signal.aborted, true)
-  assert.equal(second.current(), false)
-})
-
 // ---- the "New note" row is offered whenever nothing else matches (F-080) ----
 const created = (groups) => flatten(groups).filter((item) => item.kind === 'create').map((item) => item.title)
 
@@ -202,4 +189,45 @@ test('no create row while the word search is out, for an empty query, or under t
   assert.deepEqual(created(buildGroups({ ...base, query: '' })), [])
   assert.deepEqual(created(buildGroups({ ...base, query: 'zzzz', filter: 'Notebooks' })), [])
   assert.deepEqual(created(buildGroups({ ...base, query: 'zzzz', filter: 'Actions' })), [])
+})
+
+// ---- prettier results (F-101) ----
+const NOW = Date.parse('2026-10-17T12:00:00Z')
+
+test('a note result carries what its row shows: emoji icon, resource id, notebook and when it was edited', () => {
+  const icon = { emoji: '✈️', tint: 2, chosen: true }
+  const stored = [{ id: 20, resourceId: 'res_a', title: 'Lisbon trip', noteType: 'page', notebookId: 1, secure: false, icon, updatedAt: '2026-10-17 10:00:00', createdAt: '2026-10-02 08:00:00' }]
+  const [item] = flatten(buildGroups({ ...base, notes: stored, query: 'lisbon' }))
+  assert.deepEqual([item.icon, item.resourceId, item.notebookName, item.updatedAt, item.createdAt], [icon, 'res_a', 'Travel', '2026-10-17 10:00:00', '2026-10-02 08:00:00'])
+})
+
+test('a title match shows the snippet the word search found for the same note', () => {
+  const wordHits = [{ id: 10, title: 'Tide tables', excerpt: 'low tide at 6:42', notebookId: 1 }]
+  const [group] = buildGroups({ ...base, query: 'tide', wordHits })
+  assert.deepEqual(group.items.map((item) => [item.id, item.excerpt]), [[10, 'low tide at 6:42']])
+})
+
+test('a secure note matched by title shows no snippet even when the search sent one', () => {
+  const wordHits = [{ id: 12, title: 'Card numbers', excerpt: 'secret 4111', secure: true, notebookId: 2 }]
+  assert.equal(flatten(buildGroups({ ...base, query: 'card', wordHits }))[0].excerpt, '')
+})
+
+test('the pills count notes, notebooks and actions for a query', () => {
+  assert.deepEqual(filterCounts(buildGroups({ ...base, query: 'note' })), { Notes: 0, Notebooks: 0, Actions: 3 })
+  assert.deepEqual(filterCounts(buildGroups({ ...base, query: 'home' })), { Notes: 0, Notebooks: 1, Actions: 0 })
+  assert.deepEqual(filterCounts(buildGroups({ ...base, query: 'tide', meaningHits: meaning([13, 'Loose thought']) })), { Notes: 2, Notebooks: 0, Actions: 0 })
+})
+
+test('the New note row is not counted as a result', () => {
+  assert.deepEqual(filterCounts(buildGroups({ ...base, query: 'zzzz' })), { Notes: 0, Notebooks: 0, Actions: 0 })
+})
+
+test('time is said the way people say it: minutes, hours, a weekday, then a date', () => {
+  assert.equal(relativeTime('2026-10-17 11:59:40', NOW), 'now')
+  assert.equal(relativeTime('2026-10-17 11:15:00', NOW), '45 min ago')
+  assert.equal(relativeTime('2026-10-17 10:00:00', NOW), '2 h ago')
+  assert.equal(relativeTime('2026-10-14 09:00:00', NOW), 'Wed')
+  assert.equal(relativeTime('2026-09-03 09:00:00', NOW), 'Sep 3')
+  assert.equal(relativeTime('2025-09-03 09:00:00', NOW), 'Sep 3, 2025')
+  assert.equal(relativeTime('', NOW), '')
 })
