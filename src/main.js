@@ -2851,12 +2851,19 @@ function isOutsidePages(event) {
 
 // Touch pinch and pan and the middle-button pan work from every layer that takes the pointer: the input surface (the hand, Space, text,
 // sticky), Leafer's own (the select tool), the words being typed and the ink surface.
+const editorLayerInput = [] // F-098: the words' layer is made by the engine; what was registered before it came is put on it when it does
 function onCanvasInput(type, handler, options) {
   inputSurface.addEventListener(type, handler, options)
   leaferHost.addEventListener(type, handler, options)
-  elements.paper.querySelector('.leafer-editor-layer')?.addEventListener(type, handler, options)
+  const layer = elements.paper.querySelector('.leafer-editor-layer')
+  if (layer) layer.addEventListener(type, handler, options)
+  else editorLayerInput.push([type, handler, options])
   leaferInk?.surface.addEventListener(type, handler, options)
 }
+leaferCanvas.ready.then(() => {
+  const layer = elements.paper.querySelector('.leafer-editor-layer')
+  for (const [type, handler, options] of editorLayerInput.splice(0)) layer?.addEventListener(type, handler, options)
+}, () => {})
 const canvasTouchPointers = new Map()
 let canvasPinchGesture = null
 let canvasPanGesture = null

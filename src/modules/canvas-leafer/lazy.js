@@ -45,6 +45,7 @@ export function lazyCanvas(load) {
   const waiting = (name) => (...args) => ready.then((canvas) => canvas[name]?.(...args))
   const handler = {
     get(_, name) {
+      if (name === 'then' || typeof name === 'symbol') return real ? real[name] : undefined // (not a thenable: `await canvas` and a promise resolved with it must settle)
       if (name === 'ready') return ready
       if (name === 'isReady') return () => real !== null
       if (real) return real[name]

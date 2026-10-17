@@ -52,3 +52,9 @@ test('an engine that does not arrive rejects ready, and the canvas stays empty',
   assert.equal(canvas.isReady(), false)
   assert.deepEqual(canvas.selection(), [])
 })
+
+test('the canvas is not a thenable: awaiting it, or resolving a promise with it, settles at once', async () => {
+  const canvas = lazyCanvas(() => gate().promise)
+  assert.equal(await canvas, canvas)
+  assert.equal(await Promise.resolve(canvas), canvas)
+})
