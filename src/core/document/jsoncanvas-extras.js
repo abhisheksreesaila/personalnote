@@ -138,6 +138,7 @@ export function validateJsonCanvas(canvas) {
 const textOf = (object) => {
   if (object.type === 'unknown') return typeof object.raw?.text === 'string' ? object.raw.text : null
   if (object.type === 'text' || object.type === 'sticky') return typeof object.content === 'string' ? object.content : null
+  if (object.type === 'notelink') return typeof object.title === 'string' ? object.title : null // only the title: the address is not words
   return typeof object.extras?.text === 'string' ? object.extras.text : null
 }
 

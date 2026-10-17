@@ -61,6 +61,8 @@ DEFAULT_NOTEBOOK_COLOR = "#B86B4B"
 NOTEBOOK_CATEGORIES = ("projects", "areas", "resources", "archive")
 DEFAULT_NOTEBOOK_CATEGORY = "projects"
 X_NOTEBOOK_NAME = "X bookmarks"
+X_DONE_NOTEBOOK_NAME = "X bookmarks done"  # Done files a bookmark here: an Archive notebook, so nothing is deleted
+NOTE_LINK = re.compile(r"personal-note://note/(res_[0-9a-f]{32})")  # a note dropped into a note (F-095); the address is the target's resource id
 X_POST_LINK = re.compile(r"^\[Open on X\]\(https://x\.com/[A-Za-z0-9_]+/status/(\d+)\)$", re.MULTILINE)
 INBOX_NAME = "Inbox"  # the built-in home of unfiled notes (notes.notebook_id IS NULL); not a notebook row
 NOTEBOOK_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$", re.IGNORECASE)
@@ -1602,6 +1604,9 @@ class NoteService:
 
         imported_notebooks: dict[str, int] = {}
         imported_note_ids: list[int] = []
+        # Every note gets its new resource id first, so a link between two notes of the backup can point at the copy it is imported as.
+        new_ids = {note["resourceId"]: self.new_resource_id() for note in notes if isinstance(note.get("resourceId"), str)}
+        claimed: set[str] = set()  # (a hand-edited backup may name one resource id twice: only the first note takes the mapped id)
         with self.connection() as connection:
             local_key_rows = connection.execute("SELECT key_id, kind, wrapped FROM secure_keys").fetchall()
             backup_keys = self.check_secure_import(snapshot, notes, {row["key_id"] for row in local_key_rows})
@@ -1623,6 +1628,8 @@ class NoteService:
 
             for note in notes:
                 note_type = note.get("noteType", "canvas")
+                if not note.get("secure"):
+                    note = {**note, "content": self.repoint_note_links(note["content"], new_ids)}  # (a secure note's words are sealed: its links stay as they were)
                 page_state_value = note.get("pageState")
                 page_state = page_state_value if isinstance(page_state_value, dict) else DEFAULT_PAGE_STATE
                 body = None
@@ -1648,7 +1655,8 @@ class NoteService:
                         raise WorkspaceImportError(f"A note in the backup cannot be read: {error}") from error
                     reserved_ids.update(o["id"] for o in document["objects"] if isinstance(o, dict) and isinstance(o.get("id"), str))
                 title = str(note.get("title") or "Untitled note")[:180]
-                resource_id = self.new_resource_id()
+                resource_id = new_ids[note["resourceId"]] if note.get("resourceId") in new_ids and note["resourceId"] not in claimed else self.new_resource_id()
+                claimed.add(note.get("resourceId"))
                 cursor = connection.execute(
                     """
                     INSERT INTO notes
@@ -1680,6 +1688,14 @@ class NoteService:
             "notesImported": len(imported_note_ids),
             "noteIds": imported_note_ids,
         }
+
+    @staticmethod
+    def repoint_note_links(content, new_ids: dict):
+        """A backup's content with every link to a note of the backup pointing at the copy that is imported (other links stay)."""
+        text = json.dumps(content, ensure_ascii=False)
+        if "personal-note://note/" not in text:
+            return content
+        return json.loads(NOTE_LINK.sub(lambda found: "personal-note://note/" + new_ids.get(found.group(1), found.group(1)), text))
 
     @staticmethod
     def import_secure_keys(connection: sqlite3.Connection, keys: list[dict], local_rows: list) -> None:
@@ -1795,7 +1811,7 @@ class NoteService:
                 if found:
                     connection.execute("INSERT OR IGNORE INTO x_posts (post_id, note_id) VALUES (?, ?)", (found[-1], row["id"]))
             if connection.execute("SELECT COUNT(*) FROM x_posts").fetchone()[0]:
-                notebook = connection.execute("SELECT id FROM notebooks WHERE icon = 'brand:x' ORDER BY id LIMIT 1").fetchone()
+                notebook = connection.execute("SELECT id FROM notebooks WHERE icon = 'brand:x' AND category != 'archive' ORDER BY id LIMIT 1").fetchone()  # (not the Done archive, which has the X icon too)
                 if notebook:
                     connection.execute("INSERT OR IGNORE INTO x_notebook (id, notebook_id) VALUES (1, ?)", (notebook[0],))
                     connection.execute("UPDATE x_notebook SET notebook_id = ? WHERE id = 1 AND notebook_id IS NULL", (notebook[0],))
@@ -1816,7 +1832,7 @@ class NoteService:
             if not fresh:
                 return 0
             row = connection.execute(
-                "SELECT notebook_id FROM x_notebook JOIN notebooks ON notebooks.id = x_notebook.notebook_id WHERE x_notebook.id = 1"
+                "SELECT notebook_id FROM x_notebook JOIN notebooks ON notebooks.id = x_notebook.notebook_id WHERE x_notebook.id = 1 AND notebooks.category != 'archive'"
             ).fetchone()
             notebook_id = row[0] if row else None
         if notebook_id is None:
@@ -1836,6 +1852,71 @@ class NoteService:
                 self.record_change(connection, "note", resource_id, 1, "created")
             connection.commit()
         return len(fresh)
+
+    @staticmethod
+    def excerpt_of(text: str, lines: int = 3, limit: int = 200) -> str:
+        """The first lines of a note's words as plain text: list and heading marks, link addresses and escapes taken off."""
+        kept: list[str] = []
+        for line in text.splitlines():
+            line = re.sub(r"^\s*(#{1,6}|[>*+-]|\d+\.)\s+", "", line)
+            line = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", line)
+            line = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|<>~])", r"\1", line).strip()
+            if line:
+                kept.append(line)
+            if len(kept) == lines:
+                break
+        return "\n".join(kept)[:limit]
+
+    def note_links(self, refs) -> dict:
+        """What a link card shows, for notes named by resource id: {ref: {id, title, excerpt, secure, notebook} or None when the note is gone}.
+
+        A secure note gives its title and nothing of its words, locked or not.
+        """
+        wanted = list(dict.fromkeys(ref for ref in refs if isinstance(ref, str) and re.fullmatch(r"res_[0-9a-f]{32}", ref)))[:200]
+        found: dict = {ref: None for ref in wanted}
+        if not wanted:
+            return found
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT n.id, n.resource_id, n.title, n.note_type, n.content, n.content_format, n.page_state, n.secure,
+                       b.name AS book_name, b.color AS book_color, b.icon AS book_icon
+                FROM notes n LEFT JOIN notebooks b ON b.id = n.notebook_id
+                WHERE n.resource_id IN ({', '.join('?' * len(wanted))})
+                """,
+                wanted,
+            ).fetchall()
+        for row in rows:
+            secure = bool(row["secure"])
+            text = "" if secure else self.note_text(row["note_type"], row["content"], row["content_format"], row["page_state"])
+            found[row["resource_id"]] = {
+                "id": row["id"],
+                "title": row["title"],
+                "excerpt": self.excerpt_of(text),
+                "secure": secure,
+                "notebook": None if row["book_name"] is None else {"name": row["book_name"], "color": row["book_color"], "icon": row["book_icon"]},
+            }
+        return found
+
+    def mark_x_done(self, note_id: int) -> dict:
+        """Done on an X bookmark: filed into the Archive notebook "X bookmarks done" (made on first use). Nothing is deleted.
+
+        A bookmark is a note the sync imported, or one in a notebook with the X icon (a restored backup has the notes before the sync adopts them).
+        """
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM notes n LEFT JOIN notebooks b ON b.id = n.notebook_id
+                WHERE n.id = ? AND (b.icon = 'brand:x' OR EXISTS (SELECT 1 FROM x_posts p WHERE p.note_id = n.id))
+                """,
+                (note_id,),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("This note is not an X bookmark")
+            row = connection.execute("SELECT id FROM notebooks WHERE name = ? AND category = 'archive' ORDER BY id LIMIT 1", (X_DONE_NOTEBOOK_NAME,)).fetchone()
+        notebook_id = row["id"] if row else self.create_notebook({"name": X_DONE_NOTEBOOK_NAME, "category": "archive", "icon": "brand:x"})["id"]
+        moved = self.move_note(note_id, {"notebookId": notebook_id})
+        return {**moved, "notebookId": notebook_id}
 
     def note_revisions(self, note_ids) -> dict:
         """{note_id: revision} for those that still exist."""
