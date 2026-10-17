@@ -57,8 +57,23 @@ class DefaultDatabasePathTests(unittest.TestCase):
 
     def resolve(self, env=None):
         return default_database_path(
-            platform="linux", env=self.env if env is None else env, home=self.home, legacy_path=self.legacy
+            platform="linux", env=self.env if env is None else env, home=self.home, legacy_path=self.legacy,
+            source=self.legacy.parent.parent,
         )
+
+    def test_an_agent_worktree_refuses_the_real_database(self):
+        worktree = Path(self.tmp.name) / "repo" / ".claude" / "worktrees" / "agent-1"
+        with self.assertRaises(RuntimeError):
+            default_database_path(platform="linux", env=self.env, home=self.home, legacy_path=self.legacy, source=worktree)
+        self.assertFalse(self.appdata_db.exists())
+
+    def test_an_agent_worktree_may_use_a_scratch_database(self):
+        worktree = Path(self.tmp.name) / "repo" / ".claude" / "worktrees" / "agent-1"
+        scratch = Path(self.tmp.name) / "scratch.db"
+        path = default_database_path(
+            platform="linux", env={**self.env, "PERSONAL_NOTE_DB": str(scratch)}, home=self.home, legacy_path=self.legacy, source=worktree
+        )
+        self.assertEqual(path, scratch)
 
     def test_fresh_install_uses_app_data_folder(self):
         self.assertEqual(self.resolve(), self.appdata_db)

@@ -52,12 +52,18 @@ def instance_file(database: Path) -> Path:
     return database.with_name(database.name + ".desktop.json")
 
 
+def is_agent_worktree(source: Path) -> bool:
+    parts = source.resolve().parts
+    return any(a == ".claude" and b == "worktrees" for a, b in zip(parts, parts[1:]))
+
+
 def default_database_path(
     platform: str | None = None,
     env: Mapping[str, str] | None = None,
     home: Path | None = None,
     legacy_path: Path | None = None,
     frozen: bool | None = None,
+    source: Path | None = None,
 ) -> Path:
     """Choose the notebook database. Nothing is created, moved, copied or deleted here.
 
@@ -66,6 +72,9 @@ def default_database_path(
        `personal-note migrate-data` (which leaves a marker) and the app-data database exists.
        Another install creating an empty app-data database first therefore never hides the notes.
     3. The app-data database.
+
+    A checkout inside an agent worktree (`.claude/worktrees/`) refuses 2 and 3: agents test on scratch databases only and
+    twice opened the captain's real one by mistake (docs/lessons.md), so without PERSONAL_NOTE_DB it stops here.
     """
     env = os.environ if env is None else env
     override = env.get("PERSONAL_NOTE_DB", "")
@@ -74,6 +83,8 @@ def default_database_path(
     appdata_db = app_data_dir(platform, env, home) / DATABASE_FILENAME
     if bool(getattr(sys, "frozen", False)) if frozen is None else frozen:
         return appdata_db  # a packaged app has no checkout, so there is no legacy database to keep
+    if is_agent_worktree(Path(__file__).resolve().parent if source is None else source):
+        raise RuntimeError("This checkout is an agent worktree: set PERSONAL_NOTE_DB to a scratch database.")
     legacy = LEGACY_DATABASE if legacy_path is None else legacy_path
     if legacy.exists() and not (marker_path(legacy).exists() and appdata_db.exists()):
         return legacy
