@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import threading
+import time
 import subprocess
 import sys
 from datetime import datetime
@@ -13,6 +14,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from ai_settings import AISettings, AISettingsError
+import jam_brain
 from plugin_settings import PluginSettings, PluginSettingsError
 from app_paths import app_data_dir, default_database_path, resource_root
 from portability import (
@@ -43,6 +45,8 @@ from voice_runtime import VoiceError, VoiceRuntime, app_version
 
 
 logger = logging.getLogger(__name__)
+JAM_MAX_NODES = 500
+JAM_MAX_TRANSCRIPT = 6000
 ROOT = resource_root()
 
 
@@ -176,9 +180,11 @@ def create_app(
     secure_platform=None,
     ai: AISettings | None = None,
     plugins: PluginSettings | None = None,
+    brain=None,
     x_sync: XSync | None = None,
 ) -> FastHTML:
-    """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served."""
+    """`bound_host` is the address the server listens on; when it is loopback, only loopback Host headers are served.
+    `brain` is a function returning the jam brain (a check script's scripted one); without it, Settings → AI decides."""
     data_path = Path(database_path or default_database_path())
     speedtest_process: dict = {}  # the speed test this app started: one at a time
     search = search or default_search_runtime(data_path)
@@ -328,6 +334,56 @@ def create_app(
             return JSONResponse({"error": str(error)}, status_code=400)
         await asyncio.to_thread(follow_plugin, plugin_id, state[plugin_id])  # stopping an engine or the indexer waits for a batch: never on the event loop, which saves notes
         return JSONResponse({"plugins": state})
+
+    jam_turn_lock = threading.Lock()  # one brain call at a time: a plan's limits are for the person, not for a stuck button
+
+    def checked_jam_request(body: dict):
+        """(map, transcript, waiting ghost texts) from a request body, or raise ValueError in plain words."""
+        map_json, transcript, ghosts = body.get("map"), body.get("transcript"), body.get("ghosts", [])
+        nodes = map_json.get("nodes") if isinstance(map_json, dict) else None
+        if not isinstance(nodes, list) or not 0 < len(nodes) <= JAM_MAX_NODES or not all(isinstance(n, dict) and isinstance(n.get("id"), str) for n in nodes):
+            raise ValueError("Send the mind map to jam on.")
+        if not isinstance(transcript, str) or not transcript.strip():
+            raise ValueError("There is nothing to jam on yet: say something first.")
+        if len(transcript) > JAM_MAX_TRANSCRIPT:
+            raise ValueError("That is too much to jam on at once: jam a little sooner.")
+        if not isinstance(ghosts, list) or len(ghosts) > 10 or not all(isinstance(g, str) for g in ghosts):
+            raise ValueError("The waiting suggestions must be a short list of text.")
+        return map_json, transcript, ghosts
+
+    def jam_turn_edits(map_json: dict, transcript: str, ghosts: list) -> list:
+        edits = jam_brain.propose(map_json, transcript, brain() if brain else app.state.ai.brain(), ghosts).edits
+        wire = {jam_brain.AddBranch: lambda e: {"op": "add_branch", "parentId": e.parent_id, "text": e.text, "emoji": e.emoji, "id": e.id},
+                jam_brain.React: lambda e: {"op": "react", "nodeId": e.node_id, "vote": e.vote, "reason": e.reason},
+                jam_brain.Ghost: lambda e: {"op": "ghost", "parentId": e.parent_id, "text": e.text, "why": e.why}}
+        return [wire[type(edit)](edit) for edit in edits]
+
+    @app.post("/api/jam/turn")
+    async def jam_turn(request):
+        """One jam turn: the map and what was said go to the brain, the validated edits come back. Nothing is saved here."""
+        if not from_this_app(request):
+            return forbidden()
+        try:
+            app.state.plugins.require("jam")
+            app.state.plugins.require("mindmap")
+        except PluginSettingsError as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
+        try:
+            map_json, transcript, ghosts = checked_jam_request(await payload(request))
+        except ValueError as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
+        if not jam_turn_lock.acquire(blocking=False):
+            return JSONResponse({"error": "Claude is still working on the last turn.", "busy": True}, status_code=409)
+        try:
+            started = time.monotonic()
+            edits = await asyncio.to_thread(jam_turn_edits, map_json, transcript, ghosts)  # a model call takes seconds: never on the event loop, which saves notes
+            return JSONResponse({"edits": edits, "seconds": round(time.monotonic() - started, 1)})
+        except jam_brain.BrainNotSetUp as error:
+            return JSONResponse({"error": str(error), "setup": True}, status_code=409)
+        except jam_brain.JamError as error:
+            return JSONResponse({"error": str(error)}, status_code=502)
+        finally:
+            jam_turn_lock.release()
 
     @app.get("/api/ai/settings")
     def ai_settings_view():
