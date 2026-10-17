@@ -191,6 +191,7 @@ try {
 } finally {
   await browser?.close()
   stopApi()
+  fs.rmSync(scratch, { recursive: true, force: true })
 }
 const failed = results.filter((ok) => !ok).length
 console.log(`\n${results.length - failed}/${results.length} checks passed`)
