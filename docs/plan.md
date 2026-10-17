@@ -575,9 +575,10 @@ Reviewed: PASS after one round (read-only maps never save, shared port guard, ba
 - [x] Settings → Plugins lists Mind maps with what it needs and a switch; the choice is remembered (Voice and Search by meaning rows arrive with their switches in F-091)
 - [x] Mind maps off: no new-mind-map entry, no mind-map code loaded, existing maps open read-only with "turn on Mind maps to edit"; on again without restart
 - [x] a small host contract (note types, settings rows; buttons and omnibar actions arrive with their first plugin that needs them) in docs/MODULE-CONTRACTS.md; ADR for built-in plugins
-## F-091 Voice and Search by meaning become plugins [todo]
+## F-091 Voice and Search by meaning become plugins [done]
 Brief: docs/briefs/plugins.md · Needs: F-090
-- [ ] each off: no mic / no meaning group, nothing started or downloaded, data kept; on: as today; both listed in Settings → Plugins with what they need
+Reviewed: PASS after one round (switch-off off the event loop, indexer restart after a timed-out stop, voice engine can't start after a switch-off, hand-edited plugins.json honoured). Budget check unchanged (a proposed plugin-chunk category was rejected); JS 239.26/240.
+- [x] each off: no mic / no meaning group, nothing started or downloaded, data kept; on: as today; both listed in Settings → Plugins with what they need
 ## F-092 Jam sessions in a mind map [todo]
 Brief: docs/briefs/jam-sessions.md · Design: to do (Stitch: ghost branches, 👍/👎, live line) · Needs: F-086, F-090
 - [ ] New jam; hold mic, live line, Jam button → brain edits applied as one undo step; ghosts accepted by click or "yes"; Settings → Jam picks the brain
