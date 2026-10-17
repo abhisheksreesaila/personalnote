@@ -79,7 +79,6 @@ const compare = (page, a, b) => page.evaluate(async ([one, two]) => {
   const pixels = first.data.length / 4
   return { mean: total / pixels, strong: strong / pixels, any: any / pixels }
 }, [a.toString('base64'), b.toString('base64')])
-const rafs2 = (pg) => pg.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))))
 const wheel = async (page, count, dy, x = 800, y = 450) => { await page.mouse.move(x, y); for (let i = 0; i < count; i += 1) { await page.mouse.wheel(0, dy); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r()))) } }
 
 try {
@@ -165,7 +164,7 @@ try {
       const during = await lod(pg)
       await zoomTo(pg, 1)
       await pg.waitForFunction(() => !window.__personalNote.leaferCanvas().lodState().active, null, { timeout: 15000 }) // (the vectors are back: waited for, not guessed at, so a slow machine does not read the picture mid-change)
-      await rafs2(pg)
+      await pg.waitForTimeout(900) // (tried without: the picture is still settling then, mean 0.2 to 0.4 in 5 of 5 runs)
       runs.push({ state: await lod(pg), image: await shot(pg), during, stroke: await pg.evaluate(() => ({ scale: window.__personalNote.leaferCanvas().view().scale, width: window.__personalNote.leaferCanvas().nodeInfo('uniform').strokeWidth })) })
       await c.close()
     }
