@@ -2415,7 +2415,6 @@ async function importWorkspaceFile(file) {
   } catch (error) {
     console.error(error)
     setPortabilityStatus(`Import failed: ${error.message}`, true)
-  } finally {
   }
 }
 
@@ -3447,8 +3446,6 @@ let speedTestCanLaunch = false
 const speedTestStatus = api('/speedtest/status').then((status) => {
   speedTestInstance = Boolean(status?.instance)
   speedTestCanLaunch = Boolean(status?.canLaunch)
-  // Only the desktop app starts the test (it has a window to open it in); elsewhere the button is not offered.
-  if (!speedTestCanLaunch && !speedTestInstance) document.querySelectorAll('.speedtest-offer').forEach((node) => { node.hidden = true })
 }).catch(() => {})
 async function startSpeedTest() {
   if (speedTestRunning) return
@@ -4158,6 +4155,8 @@ function loadPanels() {
     panels.mountXSettings(document.querySelector('[data-sw-page="x"]'), api, elements.properties)
     panels.mountPluginSettings(document.querySelector('#settings-plugins-rows'), plugins, switchPlugin, () => createIcons({ icons }))
     settingsWindow.refresh()
+    // Only the desktop app starts the speed test (it has a window to open it in); elsewhere the button is not offered.
+    void speedTestStatus.then(() => { if (!speedTestCanLaunch && !speedTestInstance) document.querySelectorAll('.speedtest-offer').forEach((node) => { node.hidden = true }) })
   })().catch((error) => { panelsLoad = null; throw error })
   return panelsLoad
 }

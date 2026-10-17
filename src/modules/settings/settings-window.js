@@ -19,18 +19,18 @@ const PAGES = {
     <label class="font-size-row" for="settings-font-size"><span>Size</span><output id="settings-font-size-value">24</output><input id="settings-font-size" type="range" min="12" max="72" step="1" value="24" /></label></section>`,
   ai: '<section class="settings-section" id="ai-settings"></section>',
   plugins: '<section class="settings-section" id="settings-plugins"><div id="settings-plugins-rows"></div></section>',
-  voice: `${label('Built-in modules')}<section class="settings-section">${row('mic', 'Voice capture', '<small id="settings-voice">Transcript only</small>')}${row('audio-lines', 'Audio retention', '<small>None</small>')}</section><p class="sw-off">Voice is off. Switch it on in Plugins.</p>`,
-  meaning: '<p class="sw-off">Search by meaning is off. Switch it on in Plugins.</p>',
-  locked: `<section class="settings-section">${row('lock', '<span class="row-text"><b>Locks itself</b><small>When you open another note, when the app starts, and when the Mac sleeps or its screen locks. Search sees titles only.</small></span>', '')}<div class="portability-actions"><button type="button" id="settings-make-secure"><i data-lucide="lock"></i><span>Make the open note secure…</span></button></div></section>`,
+  voice: `${label('Built-in modules')}<section class="settings-section">${row('mic', 'Voice capture', '<small id="settings-voice">Transcript only</small>')}${row('audio-lines', 'Audio retention', '<small>None</small>')}</section><p class="sw-off">Off. Switch it on in Plugins.</p>`,
+  meaning: '<p class="sw-off">Off. Switch it on in Plugins.</p>',
+  locked: `<section class="settings-section">${row('lock', '<span class="row-text"><b>Locks itself</b><small>When you open another note, when the app starts, and when the Mac sleeps. Search sees titles only.</small></span>', '')}<div class="portability-actions"><button type="button" id="settings-make-secure"><i data-lucide="lock"></i><span>Make the open note secure…</span></button></div></section>`,
   advanced: `${label('Performance')}<section class="settings-section">
     <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
     <label class="setting-row" for="settings-render-mode"><span>Render mode</span><select id="settings-render-mode">${RENDER.map(([value, name]) => `<option value="${value}">${name}</option>`).join('')}</select></label>
-    <p class="portability-help">For trying how the canvas feels on this computer. Changes only how the screen is drawn, never a note. "Page bitmaps always" can make drawing and typing slower.</p>
-    <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
+    <p class="portability-help">Changes only how the screen is drawn, never a note. "Page bitmaps always" can slow drawing and typing.</p>
+    <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects, in a window of its own. Your notes are left alone.</p>
     <div class="portability-actions speedtest-offer">${button('settings-speed-test', 'gauge', 'Run speed test…')}</div></section>
     ${label('Workspace data')}<section class="settings-section">${row('hard-drive', 'Storage', '<small id="settings-storage">SQLite · This device</small>')}
     <div class="portability-actions">${button('download-backup', 'archive', 'Download backup')}${button('export-markdown', 'file-down', 'Markdown + assets')}${button('import-backup', 'folder-input', 'Import backup')}<input id="import-backup-file" type="file" accept="application/json,.json" hidden /></div>
-    <p class="portability-help">Backup JSON preserves editable canvas and mind-map data. Import merges copies without replacing existing notes.</p>
+    <p class="portability-help">Backup keeps canvas and mind-map data. Import merges copies and never replaces notes.</p>
     <p class="portability-status" id="portability-status" role="status" aria-live="polite"></p></section>`,
 }
 
@@ -123,7 +123,7 @@ export function mountSettingsWindow(panel, host) {
   // asked for right after Settings opened: the opening resets a phone to its list in a microtask of its own, so this goes after it
   panel.addEventListener('settings-show', (event) => Promise.resolve().then(() => { box.value = ''; filter(); select(event.detail, true) }))
 
-  // keys: arrows in the list; Tab stays inside the window
+  // Tab stays inside the window
   const focusable = () => [...panel.querySelectorAll('button, input, select, a[href]')].filter((node) => node.getClientRects().length && !node.disabled && node.tabIndex >= 0)
   panel.addEventListener('keydown', (event) => {
     const list = focusable()
@@ -131,10 +131,6 @@ export function mountSettingsWindow(panel, host) {
     if (event.key === 'Tab') {
       const edge = list[event.shiftKey ? 0 : list.length - 1]
       if (at < 0 || list[at] === edge) { event.preventDefault(); list[event.shiftKey ? list.length - 1 : 0].focus() }
-    } else if (event.target.closest('.sw-groups') && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
-      event.preventDefault()
-      const all = [...groups.querySelectorAll('.sw-item:not([hidden])')]
-      all[(all.indexOf(event.target) + (event.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length].focus()
     }
   })
 

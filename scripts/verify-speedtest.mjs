@@ -13,6 +13,7 @@ import fs from 'node:fs'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { assertPortsFree, basePort } from './lib/ports.mjs'
+import { showSection } from './lib/settings.mjs'
 const PORT = basePort(4830)
 await assertPortsFree([PORT])
 
@@ -133,6 +134,7 @@ try {
   await own.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
   await own.waitForTimeout(2500)
   check('?speedtest=1 in the person\'s own app does not run the test', !await own.evaluate(() => document.querySelector('.speedtest-panel')) && !calls.some((call) => call[0] === 'POST' && call[1] === '/notes'), JSON.stringify(calls))
+  await own.waitForSelector('#settings-speed-test', { state: 'attached', timeout: 15000 }) // (drawn by the settings chunk)
   await own.evaluate(() => document.querySelector('#settings-speed-test').click())
   await own.waitForTimeout(1000)
   check('Settings > Run… asks for a separate instance and makes no note here', calls.some((call) => call[1] === '/speedtest/launch') && !calls.some((call) => call[1] === '/notes') && Object.keys(notesDb).length === 1, JSON.stringify(calls))
@@ -146,11 +148,15 @@ try {
   const choose = async (value) => { await mac.evaluate((v) => { const select = document.querySelector('#settings-render-mode'); select.value = v; select.dispatchEvent(new Event('change', { bubbles: true })) }, value); await mac.waitForTimeout(1000) }
   await mac.goto(`http://127.0.0.1:${PORT}/notes`)
   await mac.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  // (Render mode is on the Advanced page of the Settings window, which comes with the settings chunk)
+  const advanced = async () => { if (!(await mac.locator('#properties-panel.open').count())) { await mac.click('#share-button'); await mac.click('#top-properties') } await showSection(mac, 'advanced') }
+  await advanced()
   check('Render mode starts at Default and draws at the screen\'s 2x', await mac.evaluate(() => document.querySelector('#settings-render-mode').value === 'default' && !window.__pnPerf?.pageBitmaps) && Math.abs(await ratio() - 2) < 0.05, String(await ratio()))
   await choose('bitmaps')
   check('choosing page bitmaps always sets the switches and keeps the note drawn', await mac.evaluate(() => window.__pnPerf?.pageBitmaps === 'always' && window.__pnPerf.lodZoom > 1 && window.__personalNote.state.activeNoteId === 1 && document.querySelectorAll('#leafer-host canvas').length > 0))
   await mac.reload()
   await mac.waitForFunction(() => document.documentElement.dataset.leaferSettled, null, { timeout: 60000 })
+  await advanced()
   check('the choice is remembered after a reload', await mac.evaluate(() => window.__pnPerf?.pageBitmaps === 'always' && document.querySelector('#settings-render-mode').value === 'bitmaps'))
   await choose('dpr1')
   check('DPR 1 makes the live canvas draw at 1x', Math.abs(await ratio() - 1) < 0.05, String(await ratio()))

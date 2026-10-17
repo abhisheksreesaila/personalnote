@@ -404,18 +404,22 @@ try {
   await page.evaluate(() => { document.querySelector('#voice-caption').hidden = true })
   check('the mic is the foot of the island and is live', await page.evaluate(() => { const b = document.querySelector('#voice-button'); return !b.disabled && getComputedStyle(b).pointerEvents !== 'none' }))
 
-  // ================= Settings is a centred window over a dim (F-102), not a side panel: the right-hand islands stay at the edge, and a tool can still be clicked
+  // ================= Settings is a centred window over a dim (F-102), not a side panel: the right-hand islands stay at the edge, 
   await click('[data-tool="text"]')
   check('(the tool is Text before Settings opens, so the click below has something to change)', (await tool()) === 'text')
   await click('#share-button')
+  await page.waitForTimeout(700) // (the card has to finish opening before its buttons can be pressed)
   await click('#top-properties')
   await page.waitForTimeout(500)
   const panelBox = await rect('#properties-panel')
   const dockWithSettings = await rect('.tool-dock')
   const zoomWithSettings = await rect('#zoom-control')
   check('with Settings open the window is centred and the tool island and zoom island stay at the edge', Math.abs(panelBox.x + panelBox.w / 2 - 640) <= 2 && Math.abs(dockWithSettings.r - 1264) <= 1 && zoomWithSettings.r > panelBox.x + panelBox.w, JSON.stringify({ panelBox, dockWithSettings, zoomWithSettings }))
-  await click('[data-tool="select"]')
-  check('and a tool can still be clicked there (the press also closes Settings)', (await tool()) === 'select' && await page.evaluate(() => !document.querySelector('#properties-panel').classList.contains('open')))
+  check('Settings is open before the press', await page.evaluate(() => document.querySelector('#properties-panel').classList.contains('open')))
+  const selectTool = await rect('[data-tool="select"]')
+  await page.mouse.click(selectTool.x + selectTool.w / 2, selectTool.y + selectTool.h / 2) // (on the Select tool, under the dim)
+  await page.waitForTimeout(300)
+  check('a press on the tool island closes Settings and does not reach the tool: it is still Text (the dim stands over the islands)', (await tool()) === 'text' && await page.evaluate(() => !document.querySelector('#properties-panel').classList.contains('open')))
 
   // ================= focus mode
   await page.evaluate(() => window.__personalNote.setViewTo({ x: 200, y: 100, scale: 1 }))

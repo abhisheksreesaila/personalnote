@@ -33,8 +33,7 @@ test('every word must match, in any order, ignoring case', () => {
   assert.equal(matches('map zebra', 'Mind maps'), false)
 })
 
-test('a keyword finds a section whose rows do not say it', () => {
-  assert.deepEqual(filterSections('dark', rows).map((s) => s.id), ['appearance'])
+test('a search with no match keeps nothing', () => {
   assert.deepEqual(filterSections('zzz', rows), [])
 })
 

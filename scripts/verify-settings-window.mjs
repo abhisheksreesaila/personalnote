@@ -171,6 +171,21 @@ try {
     await context.close()
   }
 
+  // ---- Run speed test… is offered only where it can run (the status says so)
+  for (const [canLaunch, label] of [[false, 'is not offered where it cannot run'], [true, 'is offered where it can run']]) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    await context.route('**/api/speedtest/status', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ instance: false, canLaunch }) }))
+    const page = await context.newPage()
+    await page.goto(`${BASE}/notes`)
+    await page.locator('#island-title').waitFor()
+    await page.waitForTimeout(1500)
+    await openSettings(page)
+    await page.click('.sw-item[data-sw-item="advanced"]')
+    await page.waitForTimeout(300)
+    check(`"Run speed test…" ${label}`, (await page.locator('#settings-speed-test').isVisible()) === canLaunch)
+    await context.close()
+  }
+
   // ---- the note's properties: a popover from the island
   {
     const { page, context } = await open({ width: 1440, height: 900 }, 'paper')
