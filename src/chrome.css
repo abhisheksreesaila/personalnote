@@ -234,11 +234,12 @@
   .isl-face { position: absolute; left: 0; top: 0; width: max-content; white-space: nowrap; }
   .isl-face[hidden] { display: none; }
   .isl-open, .isl-moment, .isl-focus { height: calc(var(--h) - 2px); align-items: center; font: 500 13.5px/1 var(--ui-font); }
-  .isl-open { display: inline-block; padding: 0 18px; border: 0; background: none; color: inherit; font-weight: 600; cursor: pointer; }
+  .isl-open { display: block; padding: 0 18px; border: 0; background: none; color: inherit; font-weight: 600; cursor: pointer; }
   .nt { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: color-mix(in srgb, var(--t) 36%, var(--sk-panel)); font: 14px/1 "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", sans-serif; }
-  .isl-ico { display: inline-grid; vertical-align: middle; margin: 0 -10px 0 10px; padding: 0; border: 0; cursor: pointer; }
-  .isl-ico:empty, .page-active .isl-ico { display: none; }
-  @media (max-width: 900px) { .page-active .isl-ico:not(:empty) { display: inline-grid; } }
+  .isl-ico { position: absolute; left: 10px; top: calc((var(--h) - 26px) / 2); padding: 0; border: 0; cursor: pointer; }
+  .isl-ico:empty { display: none; }
+  .isl-ico:not(:empty) + .isl-open { padding-left: 42px; }
+  @media (min-width: 901px) { .page-active .isl-ico { display: none; } .page-active .isl-ico + .isl-open { padding-left: 18px; } }
   #island-title { display: block; max-width: min(300px, calc(100vw - 150px)); overflow: hidden; text-overflow: ellipsis; }
   .isl-moment { display: flex; gap: 8px; padding: 0 16px; }
   .isl-hit { position: absolute; inset: 0; border: 0; background: none; cursor: pointer; }
