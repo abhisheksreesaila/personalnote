@@ -44,7 +44,7 @@ export function describeX(status, replacing = false) {
   }
 }
 
-export function mountXSettings(after, request, panel) {
+export function mountXSettings(container, request, panel) {
   const client = createXClient(request)
   const section = document.createElement('section')
   section.className = 'settings-section'
@@ -62,7 +62,7 @@ export function mountXSettings(after, request, panel) {
       <button id="x-sync" hidden><span>Sync now</span></button>
       <button id="x-disconnect" hidden><span>Disconnect</span></button>
     </div>`
-  after.after(section)
+  container.append(section)
   const el = (id) => section.querySelector(`#x-${id}`)
   let poll = null
   let last = null

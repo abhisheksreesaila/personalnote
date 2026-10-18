@@ -63,6 +63,7 @@ export function mountAISettings(root, request) {
   function show(view) {
     const d = describeAI(view)
     $('provider').value = d.provider
+    $('provider').dispatchEvent(new Event('input')) // (Settings' segmented control follows the choice)
     for (const [name, id] of Object.entries(fields)) if (typeof view?.[name] === 'string') $(id).value = view[name]
     $('claude-note').textContent = d.claudeNote
     keySaved = Boolean(view?.keySaved)

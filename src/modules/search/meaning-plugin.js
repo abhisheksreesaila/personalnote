@@ -26,7 +26,7 @@ export async function activateMeaning(shell) {
   let giveUp
 
   const section = createSetupSection({ name: 'meaning', label: 'Search by meaning', rowLabel: 'Find by meaning', icon: 'search', actions: ['download', 'cancel'] })
-  document.querySelector('#ai-settings').before(section)
+  document.querySelector('[data-sw-page="meaning"]').append(section)
   shell.refreshIcons()
 
   const renderSetup = (status) => { renderSetupRow('meaning', describeMeaning(status)); islandDownload('meaning', 'Search by meaning', status) }

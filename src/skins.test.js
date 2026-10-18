@@ -154,7 +154,7 @@ function contrast(a, b) {
 }
 function skinTokens(id) {
   const css = readFileSync(new URL('./skins.css', import.meta.url), 'utf8')
-  const selector = id === 'crayon' ? ':root, :root[data-skin="crayon"] {' : `:root[data-skin="${id}"] {`
+  const selector = id === 'crayon' ? ':root, :root[data-skin="crayon"], .pv-crayon {' : `:root[data-skin="${id}"], .pv-${id} {`
   const start = css.indexOf(selector)
   const block = css.slice(start, css.indexOf('}', start))
   return Object.fromEntries([...block.matchAll(/--sk-([a-z-]+):\s*(#[0-9a-f]{6})/g)].map((m) => [m[1], m[2]]))
@@ -179,7 +179,7 @@ test('Paper takes the two-layer prototype look: ink-dark accent on ivory, readab
 test('every skin defines the secure colour, its soft fill and its line, and the colour reads on its page (F-058)', () => {
   const css = readFileSync(new URL('./skins.css', import.meta.url), 'utf8')
   for (const id of ['crayon', 'paper', 'night']) {
-    const selector = id === 'crayon' ? ':root, :root[data-skin="crayon"] {' : `:root[data-skin="${id}"] {`
+    const selector = id === 'crayon' ? ':root, :root[data-skin="crayon"], .pv-crayon {' : `:root[data-skin="${id}"], .pv-${id} {`
     const start = css.indexOf(selector)
     const block = css.slice(start, css.indexOf('}', start))
     for (const token of ['--sk-secure:', '--sk-secure-soft:', '--sk-secure-line:']) assert.ok(block.includes(token), `${id} lacks ${token}`)

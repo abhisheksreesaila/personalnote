@@ -79,7 +79,7 @@ try {
   await page.evaluate((id) => window.__personalNote.selectNote(id), afterQuick.find((note) => note.notebookId === null).id)
   await settle(400)
   await page.click('#share-button') // (Settings now sits in the ... menu)
-  await page.click('#top-properties') // the picker lives in the settings and properties panel
+  await page.click('#share-props') // the picker lives in the note's properties popover (F-102)
   await settle(300)
   check('the picker shows Inbox for an unfiled note', (await page.textContent('#notebook-picker')).trim() === 'Inbox')
   await page.click('#notebook-picker')

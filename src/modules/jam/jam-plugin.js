@@ -70,6 +70,7 @@ export async function activateJam(shell) {
       if (action === 'jam') void session?.jam()
       else if (action === 'jam-setup') {
         shell.setPropertiesOpen(true)
+        document.querySelector('#properties-panel').dispatchEvent(new CustomEvent('settings-show', { detail: 'ai' }))
         document.querySelector('#ai-settings')?.scrollIntoView?.({ block: 'center' })
       }
     },

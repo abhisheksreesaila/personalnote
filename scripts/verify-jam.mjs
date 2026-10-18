@@ -21,6 +21,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { closeSettings, showSection } from './lib/settings.mjs'
 import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const UI_PORT = basePort(4930)
@@ -114,8 +115,9 @@ try {
     const pick = async (id) => { await page.evaluate((n) => window.__personalNote.selectNote(n), id); await page.waitForFunction((n) => window.__personalNote.state.activeNoteId === n && !window.__personalNote.state.loading, id, { timeout: 15000 }) }
     const openSettings = async () => {
       if (!(await page.locator('#properties-panel').evaluate((e) => e.classList.contains('open')))) { if (!(await page.locator('#top-properties').isVisible())) { await page.waitForTimeout(400); await page.locator('#island .isl-face:not([hidden]) :is(#share-button, .isl-hit)').last().click() } await page.click('#top-properties'); await page.waitForTimeout(500) }
+      await showSection(page, 'plugins')
     }
-    const switchJam = async (on) => { await openSettings(); await page.locator('#plugin-jam').setChecked(on); await page.waitForFunction((want) => document.querySelector('#plugin-jam').checked === want, on); await page.waitForTimeout(700); await page.click('#close-properties'); await page.waitForTimeout(300) }
+    const switchJam = async (on) => { await openSettings(); await page.locator('#plugin-jam').setChecked(on); await page.waitForFunction((want) => document.querySelector('#plugin-jam').checked === want, on); await page.waitForTimeout(700); await closeSettings(page); await page.waitForTimeout(300) }
     // Where a new jam can be started: the omnibar's actions (phone and desktop) and, on desktop, the new-note menu (a phone has none).
     const omniTitles = async () => { await page.click('#search-button'); await page.waitForSelector('.omni-row'); return page.locator('.omni-group[aria-label="Actions"] .omni-row .omni-title').allTextContents() }
     const closeOmni = async () => { await page.keyboard.press('Escape'); await page.waitForTimeout(300) }

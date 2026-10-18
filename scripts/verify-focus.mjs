@@ -438,7 +438,7 @@ try {
   await wait(1500)
   const secureId = await pn(() => window.__personalNote.state.activeNoteId)
   await page.keyboard.press('Escape')
-  await pn(() => document.querySelector('#top-properties').click())
+  await pn(() => document.querySelector('#share-props').click())
   await wait(300)
   await page.click('#secure-note')
   await page.waitForSelector('.secure-sheet')

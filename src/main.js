@@ -146,7 +146,8 @@ document.querySelector('#app').innerHTML = `
               <button id="share-icon" title="Change icon"><i data-lucide="wand-sparkles"></i><span>Icon</span></button>
               <button id="share-link" title="Link to a note…"><i data-lucide="link"></i><span>Link note</span></button>
               <button id="fold-all" title="Fold all linked objects into their words" hidden><i data-lucide="fold-vertical"></i><span>Fold all</span></button>
-              <button id="top-properties" title="Settings and properties" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i><span>Settings</span></button>
+              <button id="share-props" title="Notebook, type and storage of this note" aria-controls="note-popover" aria-expanded="false"><i data-lucide="file-text"></i><span>Properties</span></button>
+              <button id="top-properties" title="Settings" aria-controls="properties-panel" aria-expanded="false"><i data-lucide="sliders-horizontal"></i><span>Settings</span></button>
               <button id="clear-note" class="danger" title="Clear all"><i data-lucide="eraser"></i><span>Clear all</span></button>
             </div>
           </div>
@@ -249,11 +250,11 @@ document.querySelector('#app').innerHTML = `
       </section>
     </main>
 
-    <aside class="properties-panel" id="properties-panel" aria-label="Settings and properties" aria-hidden="true" inert>
-      <div class="properties-heading">
-        <div><span>Inspector</span><h2>Note properties</h2></div>
-        <button class="icon-button" id="close-properties" title="Close settings and properties" aria-label="Close settings and properties"><i data-lucide="x"></i></button>
-      </div>
+    <div class="settings-dim" id="settings-dim"></div>
+    <aside class="properties-panel" id="properties-panel" role="dialog" aria-modal="true" aria-label="Settings" aria-hidden="true" inert>
+      <div class="properties-heading"><h2>Settings</h2><button class="icon-button" id="close-properties" title="Close settings" aria-label="Close settings"><i data-lucide="x"></i></button></div>
+    </aside>
+    <div class="note-popover" id="note-popover" role="dialog" aria-label="Note properties" hidden>
       <section class="property-section">
         <label class="property-label">Notebook</label>
         <div class="notebook-picker-wrap">
@@ -278,58 +279,11 @@ document.querySelector('#app').innerHTML = `
         <div><span id="note-surface-label">Canvas</span><strong id="note-surface-detail">Expands automatically</strong></div>
         <div><span>Storage</span><strong>On this device</strong></div>
       </section>
-      <div class="properties-section-heading"><span>Workspace settings</span></div>
-      <section class="settings-section">
-        <p class="settings-section-label">Writing</p>
-        <div class="setting-field-heading"><span>Default text</span><small>New objects</small></div>
-        <div class="font-family-control settings-font-control" aria-label="Default font family">
-          <button data-default-font-family="Source Serif 4" title="Serif" aria-label="Serif">Ag</button>
-          <button data-default-font-family="IBM Plex Sans" title="Sans serif" aria-label="Sans serif">Ag</button>
-          <button data-default-font-family="monospace" title="Monospace" aria-label="Monospace">Ag</button>
-        </div>
-        <label class="font-size-row settings-font-size-row" for="settings-font-size">
-          <span>Size</span><output id="settings-font-size-value">24</output>
-          <input id="settings-font-size" type="range" min="12" max="72" step="1" value="24" />
-        </label>
-      </section>
-      <section class="settings-section">
-        <p class="settings-section-label">Performance</p>
-        <label class="setting-row" for="settings-speed-meter"><span><i data-lucide="gauge"></i>Show speed meter</span><input type="checkbox" id="settings-speed-meter" aria-keyshortcuts="Control+Shift+F" title="Ctrl/Cmd+Shift+F" /></label>
-        <details class="settings-advanced">
-          <summary>Advanced</summary>
-          <label class="setting-row" for="settings-render-mode"><span>Render mode</span><select id="settings-render-mode"><option value="default">Hybrid (page bitmaps while navigating)</option><option value="classic">Draw every step (before)</option><option value="bitmaps">Page bitmaps always</option><option value="gestureTransform">Slide picture (preview 3)</option><option value="dpr1">Lower resolution (1x)</option></select></label>
-          <p class="portability-help">For trying how the canvas feels on this computer. Changes only how the screen is drawn, never a note. "Page bitmaps always" can make drawing and typing slower.</p>
-        </details>
-        <p class="portability-help speedtest-offer">The speed test measures this computer on a generated note of 5,000+ objects. It opens in a window of its own and leaves your notes alone.</p>
-        <div class="portability-actions speedtest-offer"><button type="button" id="settings-speed-test"><i data-lucide="gauge"></i><span>Run speed test…</span></button></div>
-      </section>
-      <section class="settings-section">
-        <p class="settings-section-label">Built-in modules</p>
-        <div class="setting-row"><span><i data-lucide="mic"></i>Voice capture</span><small id="settings-voice">Transcript only</small></div>
-        <div class="setting-row"><span><i data-lucide="audio-lines"></i>Audio retention</span><small>None</small></div>
-      </section>
-      <section class="settings-section" id="settings-plugins" aria-labelledby="settings-plugins-label">
-        <p class="settings-section-label" id="settings-plugins-label">Plugins</p>
-        <div id="settings-plugins-rows"></div>
-      </section>
-      <section class="settings-section" id="ai-settings" aria-labelledby="ai-label"></section>
-      <section class="settings-section">
-        <p class="settings-section-label">Workspace data</p>
-        <div class="setting-row"><span><i data-lucide="hard-drive"></i>Storage</span><small id="settings-storage">SQLite · This device</small></div>
-        <div class="portability-actions">
-          <button id="download-backup"><i data-lucide="archive"></i><span>Download backup</span></button>
-          <button id="export-markdown"><i data-lucide="file-down"></i><span>Markdown + assets</span></button>
-          <button id="import-backup"><i data-lucide="folder-input"></i><span>Import backup</span></button>
-          <input id="import-backup-file" type="file" accept="application/json,.json" hidden />
-        </div>
-        <p class="portability-help">Backup JSON preserves editable canvas and mind-map data. Import merges copies without replacing existing notes.</p>
-        <p class="portability-status" id="portability-status" role="status" aria-live="polite"></p>
-      </section>
       <div class="properties-footer">
         <button class="secure-note-action" id="secure-note" type="button"><i data-lucide="lock"></i><span>Make secure</span></button>
         <button class="delete-note-action" id="delete-note"><i data-lucide="trash-2"></i><span>Delete note</span></button>
       </div>
-    </aside>
+    </div>
 
   </div>
 
@@ -473,16 +427,14 @@ const elements = {
   notebookName: document.querySelector('#notebook-name'),
   sidebarToggle: document.querySelector('#toggle-sidebar'),
   properties: document.querySelector('#properties-panel'),
+  settingsDim: document.querySelector('#settings-dim'),
+  noteProps: document.querySelector('#note-popover'),
   canvasTypographyProperties: document.querySelector('#canvas-typography-properties'),
   noteSurfaceLabel: document.querySelector('#note-surface-label'),
   noteSurfaceDetail: document.querySelector('#note-surface-detail'),
   printButton: document.querySelector('#share-print'),
   fontSize: document.querySelector('#font-size-control'),
   fontSizeValue: document.querySelector('#font-size-value'),
-  settingsFontSize: document.querySelector('#settings-font-size'),
-  settingsSpeedMeter: document.querySelector('#settings-speed-meter'),
-  settingsRenderMode: document.querySelector('#settings-render-mode'),
-  settingsFontSizeValue: document.querySelector('#settings-font-size-value'),
   voiceButton: document.querySelector('#voice-button'),
   voiceCaption: document.querySelector('#voice-caption'),
   voiceStatus: document.querySelector('#voice-status'),
@@ -497,8 +449,6 @@ const elements = {
   strokeOptions: document.querySelector('#stroke-options'),
   strokeOptionsLabel: document.querySelector('#stroke-options-label'),
   strokeWidths: document.querySelector('#stroke-widths'),
-  portabilityStatus: document.querySelector('#portability-status'),
-  importBackupFile: document.querySelector('#import-backup-file'),
   printPreview: document.querySelector('#print-preview'),
   printSheetList: document.querySelector('#print-sheet-list'),
   printPaper: document.querySelector('#print-paper'),
@@ -558,8 +508,6 @@ function setActiveNoteType(noteType) {
   elements.mindmapProperties.hidden = !isMindMap
   elements.mindmapRailActions.hidden = !isMindMap
   paintNoteIcon()
-  elements.properties.querySelector('.properties-heading span').textContent = isMindMap ? 'Mind map' : 'Inspector'
-  elements.properties.querySelector('.properties-heading h2').textContent = isMindMap ? 'Node properties' : 'Note properties'
   elements.noteSurfaceLabel.textContent = isMindMap ? 'Mind map' : isPage ? 'Page' : 'Canvas'
   elements.noteSurfaceDetail.textContent = isMindMap ? 'Infinite SVG workspace' : isPage ? 'Markdown you can draw on' : 'Expands automatically'
   elements.printButton.disabled = notCanvas
@@ -628,7 +576,6 @@ async function switchPlugin(id, on) {
   plugins.apply(saved.plugins)
   syncNoteCreateMenu()
   await plugins.sync(pluginShell)
-  void loadCapabilitySettings()
   if (plugins.kindOf(state.activeNoteType)?.pluginId === id && state.activeNoteId) await selectNote(state.activeNoteId, { reload: true })
 }
 
@@ -1674,7 +1621,7 @@ function syncSecureMenu() {
 function toggleSecureActiveNote() {
   const note = state.notes.find((item) => item.id === state.activeNoteId)
   if (!note) return
-  setPropertiesOpen(false)
+  setNotePropsOpen(false)
   void (note.secure ? secure.makeOrdinary(note.id) : secure.makeSecure(note.id)).catch((error) => { console.error(error); showToast(error.message || 'Something went wrong') })
 }
 document.querySelector('#secure-note').addEventListener('click', toggleSecureActiveNote)
@@ -2397,15 +2344,20 @@ async function deleteNotebook() {
   renderNoteList()
 }
 
-let settingsFromMenu = false // opened from the ... menu: closing it puts the focus back on the ... button
+let settingsOpener = null // where the focus was when Settings opened: closing it puts the focus back there (the island when that is gone)
 function setPropertiesOpen(open) {
   if (open) void loadOptional() // the panels it shows are optional code (F-097)
+  const was = elements.properties.classList.contains('open')
+  if (open && !was) settingsOpener = document.activeElement
   elements.properties.classList.toggle('open', open)
+  elements.settingsDim.classList.toggle('open', open)
   elements.properties.setAttribute('aria-hidden', String(!open))
   elements.properties.inert = !open
-  if (!open && settingsFromMenu) {
-    settingsFromMenu = false
-    if (!document.activeElement || document.activeElement === document.body) focusIsland()
+  if (open && !was) document.querySelector('#close-properties').focus()
+  if (!open && was) {
+    const back = settingsOpener
+    settingsOpener = null
+    if (elements.properties.contains(document.activeElement) || document.activeElement === document.body) back?.getClientRects().length ? back.focus() : focusIsland()
   }
   const trigger = document.querySelector('#top-properties')
   trigger.classList.toggle('active', open)
@@ -2413,38 +2365,21 @@ function setPropertiesOpen(open) {
   trigger.setAttribute('aria-label', open ? 'Close settings and properties' : 'Open settings and properties')
 }
 
-function syncDefaultTypographySettings() {
-  document.querySelectorAll('[data-default-font-family]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.defaultFontFamily === state.fontFamily)
-  })
-  elements.settingsFontSize.value = state.fontSize
-  elements.settingsFontSizeValue.value = state.fontSize
-}
-
-function updateCapabilitySettings(capabilities) {
-  const storage = capabilities.storage || {}
-  const modules = capabilities.modules || {}
-  document.querySelector('#settings-storage').textContent = storage.engine === 'sqlite'
-    ? 'SQLite · This device'
-    : 'Unavailable'
-  document.querySelector('#settings-voice').textContent = modules.voice?.available
-    ? 'Transcript only'
-    : 'Unavailable'
-}
-
-async function loadCapabilitySettings() {
-  try {
-    updateCapabilitySettings(await api('/settings/capabilities'))
-  } catch {
-    document.querySelector('#settings-storage').textContent = 'Unavailable'
-    document.querySelector('#settings-voice').textContent = 'Unavailable'
-  }
+// The open note's own properties (notebook, type, storage, secure, delete): a small popover from the island's card (F-102), not part of Settings.
+function setNotePropsOpen(open) {
+  if (open === !elements.noteProps.hidden) return
+  elements.noteProps.hidden = !open
+  document.querySelector('#share-props').setAttribute('aria-expanded', String(open))
+  if (open) elements.noteProps.querySelector('button')?.focus()
+  else if (elements.noteProps.contains(document.activeElement)) focusIsland()
 }
 
 let aiSettings = null // Settings → AI, mounted with the rest of the optional code (loadOptional)
 function setPortabilityStatus(message, error = false) {
-  elements.portabilityStatus.textContent = message
-  elements.portabilityStatus.classList.toggle('error', error)
+  const status = document.querySelector('#portability-status') // (Settings draws it, once its code has arrived)
+  if (!status) return
+  status.textContent = message
+  status.classList.toggle('error', error)
 }
 
 async function downloadWorkspaceExport(path, fileName) {
@@ -2479,8 +2414,6 @@ async function importWorkspaceFile(file) {
   } catch (error) {
     console.error(error)
     setPortabilityStatus(`Import failed: ${error.message}`, true)
-  } finally {
-    elements.importBackupFile.value = ''
   }
 }
 
@@ -3170,7 +3103,7 @@ elements.strokeWidths.addEventListener('click', (event) => {
 
 document.querySelector('#clear-note').addEventListener('click', clearActiveNote)
 elements.toastAction.addEventListener('click', () => elements.toast.onAction?.())
-document.querySelector('#delete-note').addEventListener('click', deleteActiveNote)
+document.querySelector('#delete-note').addEventListener('click', () => { setNotePropsOpen(false); deleteActiveNote() })
 document.querySelector('#prettify').addEventListener('click', prettifyActiveNote)
 document.querySelector('#undo').addEventListener('click', () => stepHistory(-1))
 document.querySelector('#redo').addEventListener('click', () => stepHistory(1))
@@ -3342,6 +3275,7 @@ elements.shareMenu.addEventListener('click', (event) => {
   if (!item || item.disabled) return
   setShareMenuOpen(false)
   if (item.id === 'share-focus') tryFocus()
+  else if (item.id === 'share-props') setNotePropsOpen(true)
   else if (item.id === 'share-icon') openNoteIcon(state.activeNoteId, () => elements.islandIcon.offsetParent ? elements.islandIcon : elements.shareButton)
   else if (item.id === 'share-link') void withNoteLinks((module) => module.startLinking(linkHost))
   else if (item.id === 'share-print') openPrintPreview()
@@ -3367,23 +3301,11 @@ elements.shareMenu.addEventListener('keydown', (event) => {
 // Tabbing out of the card closes it, as leaving the menu did.
 elements.shareMenu.addEventListener('focusout', (event) => { if (event.relatedTarget && !event.relatedTarget.closest('#island')) setShareMenuOpen(false) })
 document.querySelector('#top-properties').addEventListener('click', () => {
-  const open = !elements.properties.classList.contains('open')
-  setPropertiesOpen(open)
-  settingsFromMenu = open
+  setPropertiesOpen(!elements.properties.classList.contains('open'))
 })
 document.querySelector('#close-properties').addEventListener('click', () => setPropertiesOpen(false))
 document.querySelector('#top-properties').addEventListener('click', () => {
   if (elements.properties.classList.contains('open')) void loadOptional().then(() => { if (!aiSettings) return; plugins.instances().forEach((plugin) => plugin.onSettingsOpen?.()); void aiSettings.refresh() })
-})
-document.querySelector('#download-backup').addEventListener('click', () => {
-  void downloadWorkspaceExport('/export/workspace', 'personal-note-backup.json')
-})
-document.querySelector('#export-markdown').addEventListener('click', () => {
-  void downloadWorkspaceExport('/export/markdown', 'personal-note-markdown.zip')
-})
-document.querySelector('#import-backup').addEventListener('click', () => elements.importBackupFile.click())
-elements.importBackupFile.addEventListener('change', () => {
-  void importWorkspaceFile(elements.importBackupFile.files?.[0])
 })
 document.querySelector('#close-print').addEventListener('click', closePrintPreview)
 document.querySelector('#print-note').addEventListener('click', printNote)
@@ -3391,14 +3313,6 @@ document.querySelectorAll('[data-font-family]').forEach((button) => {
   button.addEventListener('click', () => applyTypography('fontFamily', button.dataset.fontFamily))
 })
 elements.fontSize.addEventListener('input', () => applyTypography('fontSize', Number(elements.fontSize.value)))
-document.querySelectorAll('[data-default-font-family]').forEach((button) => {
-  button.addEventListener('click', () => {
-    state.fontFamily = button.dataset.defaultFontFamily
-    savePreferences()
-    syncDefaultTypographySettings()
-    syncTypographyControls()
-  })
-})
 // Speed meter: a corner pill, created on first use. The frame loop only runs while it is visible.
 let speedMeterPill = null
 const speedMeter = createSpeedMeter({
@@ -3420,7 +3334,6 @@ window.addEventListener('pywebviewready', renderSpeedMeterWhere)
 
 function setSpeedMeter(visible) {
   state.speedMeter = visible
-  elements.settingsSpeedMeter.checked = visible
   if (visible) {
     if (!speedMeterPill) {
       speedMeterPill = document.createElement('div')
@@ -3460,17 +3373,6 @@ function applyRenderMode(name, document = null) {
   })
   return renderModeQueue
 }
-elements.settingsRenderMode.value = state.renderMode
-elements.settingsRenderMode.addEventListener('change', () => {
-  state.renderMode = elements.settingsRenderMode.value
-  savePreferences()
-  void applyRenderMode(state.renderMode)
-})
-
-elements.settingsSpeedMeter.addEventListener('change', () => {
-  setSpeedMeter(elements.settingsSpeedMeter.checked)
-  savePreferences()
-})
 if (state.speedMeter) setSpeedMeter(true)
 
 // The speed test (F-034): Settings, the View menu of the desktop app, or the page opened with ?speedtest=1. The code is loaded when it runs.
@@ -3482,8 +3384,6 @@ let speedTestCanLaunch = false
 const speedTestStatus = api('/speedtest/status').then((status) => {
   speedTestInstance = Boolean(status?.instance)
   speedTestCanLaunch = Boolean(status?.canLaunch)
-  // Only the desktop app starts the test (it has a window to open it in); elsewhere the button is not offered.
-  if (!speedTestCanLaunch && !speedTestInstance) document.querySelectorAll('.speedtest-offer').forEach((node) => { node.hidden = true })
 }).catch(() => {})
 async function startSpeedTest() {
   if (speedTestRunning) return
@@ -3546,14 +3446,6 @@ async function startSpeedTest() {
     console.error('Speed test failed to start', error)
   } finally { speedTestRunning = false }
 }
-document.querySelector('#settings-speed-test')?.addEventListener('click', () => void startSpeedTest())
-
-elements.settingsFontSize.addEventListener('input', () => {
-  state.fontSize = Number(elements.settingsFontSize.value)
-  savePreferences()
-  syncDefaultTypographySettings()
-  syncTypographyControls()
-})
 elements.notebookPicker.addEventListener('click', () => {
   const willOpen = elements.notebookPickerMenu.hidden
   elements.notebookPickerMenu.hidden = !willOpen
@@ -3601,6 +3493,7 @@ document.addEventListener('pointerdown', (event) => {
     elements.properties.classList.contains('open')
     && !target.closest('.properties-panel, #top-properties')
   ) setPropertiesOpen(false)
+  if (!target.closest('#note-popover, #island')) setNotePropsOpen(false)
 })
 elements.title.addEventListener('input', () => {
   if (state.activeNoteType === 'mindmap') mindmapEditor?.setTitle(elements.title.value.trim())
@@ -3912,6 +3805,7 @@ const focus = createFocusMode({
     focusScroll = 0
     setSidebarOpen(false)
     setPropertiesOpen(false)
+    setNotePropsOpen(false)
     setShareMenuOpen(false)
     closeInkOptions()
     if (saved.page) {
@@ -4092,6 +3986,8 @@ document.addEventListener('keydown', (event) => {
     else openSearch()
   } else if (event.key === 'Escape' && omni.open && !event.isComposing && event.keyCode !== IME_KEY) {
     closeSearch()
+  } else if (event.key === 'Escape' && !elements.noteProps.hidden) {
+    setNotePropsOpen(false)
   } else if (event.key === 'Escape' && elements.properties.classList.contains('open')) {
     setPropertiesOpen(false)
   } else if (event.key === 'Escape' && !elements.inkOptionsPopover.hidden) {
@@ -4186,9 +4082,19 @@ function loadPanels() {
   panelsLoad ??= (async () => {
     const panels = await import('./modules/plugins/settings-panels.js')
     pluginShell.setup = { createSetupSection: panels.createSetupSection, renderSetupRow: panels.renderSetupRow, createIslandDownload: panels.createIslandDownload }
+    const skins = startSkins()
+    const settingsWindow = panels.mountSettingsWindow(elements.properties, {
+      createIcons, plugins, skins: { list: SKINS, current: () => skins.current, select: (id) => { skins.select(id); skinSwitcher.sync() } },
+      state, api, save: savePreferences, typography: syncTypographyControls, speedMeter: setSpeedMeter, speedTest: startSpeedTest, exportTo: downloadWorkspaceExport, importFile: importWorkspaceFile,
+      renderMode: (mode) => { state.renderMode = mode; savePreferences(); void applyRenderMode(mode) },
+      close: () => setPropertiesOpen(false), openNoteProps: () => { setPropertiesOpen(false); setNotePropsOpen(true) },
+    })
     aiSettings = panels.mountAISettings(document.querySelector('#ai-settings'), api)
-    panels.mountXSettings(document.querySelector('#ai-settings'), api, elements.properties)
+    panels.mountXSettings(document.querySelector('[data-sw-page="x"]'), api, elements.properties)
     panels.mountPluginSettings(document.querySelector('#settings-plugins-rows'), plugins, switchPlugin, () => createIcons({ icons }))
+    settingsWindow.refresh()
+    // Only the desktop app starts the speed test (it has a window to open it in); elsewhere the button is not offered.
+    void speedTestStatus.then(() => { if (!speedTestCanLaunch && !speedTestInstance) document.querySelectorAll('.speedtest-offer').forEach((node) => { node.hidden = true }) })
   })().catch((error) => { panelsLoad = null; throw error })
   return panelsLoad
 }
@@ -4255,9 +4161,7 @@ async function initialize() {
   refreshPageColors()
   resizePaper()
   resetCanvasView()
-  syncDefaultTypographySettings()
   syncTypographyControls()
-  loadCapabilitySettings()
   // F-098: everything the first screen needs is asked for at once, not one after another: the plugin choice, the lists, and the locking of secure notes.
   const pluginChoice = api('/plugins').catch(() => ({}))
   const lists = Promise.all([api('/notebooks'), api('/notes')])

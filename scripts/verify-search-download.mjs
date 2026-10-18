@@ -12,6 +12,7 @@ import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { showSection } from './lib/settings.mjs'
 import { assertPortsFree, basePort } from './lib/ports.mjs'
 
 const UI_PORT = basePort(4890)
@@ -102,6 +103,7 @@ try {
     await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
     await page.click('#share-button')
     await page.click('#top-properties')
+    await showSection(page, 'meaning')
     const r = row(page)
     await page.waitForFunction(() => document.querySelector('#meaning-setup-headline').textContent !== 'Checking…', null, { timeout: 10000 })
     await page.waitForTimeout(500) // the panel slides in
@@ -116,7 +118,8 @@ try {
     check(`[${label}] before the download the row says "Not installed" and offers Download (≈315 MB)`, (await r.download.textContent()).trim() === 'Download (≈315 MB)' && await r.cancel.isHidden() && await r.progress.isHidden())
     check(`[${label}] the row is reachable inside the panel`, await r.download.isVisible() && (await r.download.boundingBox()).x + (await r.download.boundingBox()).width <= viewport.width)
     if (label === 'phone') {
-      const heights = await page.evaluate(() => ['#voice-download', '#meaning-download'].map((id) => document.querySelector(id).getBoundingClientRect().height))
+      const heights = []
+      for (const [section, id] of [['voice', '#voice-download'], ['meaning', '#meaning-download']]) { await showSection(page, section); heights.push(await page.locator(id).evaluate((e) => e.getBoundingClientRect().height)) }
       check('[phone] the Download buttons (voice and search) are at least 44px tall to touch', heights.every((h) => h >= 44), JSON.stringify(heights))
     }
     await shot(page, `${label}-idle`)
