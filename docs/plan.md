@@ -641,9 +641,10 @@ Design: docs/design/polish.md (2) · Needs: F-100 (emoji per note)
 - [x] typing, keys and early-typing behaviour (verify-first-screen) unchanged; budgets green
 Reviewed: reviewer PASS (round 2) — secure notes show no snippet or preview, matches escaped before marking, omnibar CSS rides in its lazy chunk. Fixed on the way: a title typed in an empty notebook before its first note opened was lost (the title now starts read-only; verify-first-screen covers it). spatial-docs.html is out of the build (file kept).
 
-## F-102 Settings as its own monochrome window [todo]
+## F-102 Settings as its own monochrome window [done]
 Design: docs/design/polish.md (3) · Needs: none
-- [ ] Settings opens as a centred window with a section list (monochrome tiles) and a "Search settings" box that filters sections and rows; phone: a grouped list sheet that drills in
-- [ ] every setting that exists today is still reachable and works (AI, plugins, voice, search by meaning, X, locked notes, writing defaults, speed meter, advanced); switches replace checkboxes
-- [ ] the open note's properties move to a popover from the title island
-- [ ] Paper, Crayon and Night all look right; budgets green; verify-first-screen still passes
+- [x] Settings opens as a centred window with a section list (monochrome tiles) and a "Search settings" box that filters sections and rows; phone: a grouped list sheet that drills in
+- [x] every setting that exists today is still reachable and works (AI, plugins, voice, search by meaning, X, locked notes, writing defaults, speed meter, advanced); switches replace checkboxes
+- [x] the open note's properties move to a popover from the title island
+- [x] Paper, Crayon and Night all look right; budgets green; verify-first-screen still passes
+Reviewed: reviewer PASS (round 3) — real backdrop (a press on the dim never reaches the canvas), modal dialog with focus trap, skin cards drawn from skin tokens, speed-test offer hidden where it can't run. Cut to fit the 260 KiB JS budget: keyword search in Settings ("dark" no longer finds Appearance), arrow keys in the section list, hover feedback on rows, the switch colour animation, some help text.
