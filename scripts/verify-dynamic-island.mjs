@@ -7,7 +7,7 @@
 //   - an agent at work shows on the island (the chip is gone); a notice lasts 4 s
 //   - a voice or search download shows its name and percent from the Settings status poll, then "... is ready"
 //   - focus mode: the island wears the focus face
-//   - the search circle grows leftward into the field in place and shrinks back on Esc, on a pick and on a click away
+//   - the search circle opens the centred search panel over a dim (F-101), which closes back to the circle on Esc, on a pick and on a click away
 //   - nothing runs at rest: no island timer, no frame, no animation, and the speed meter's numbers are the speed test's business
 //   - Crayon, Paper, Night and a phone: pictures of every face
 //
@@ -272,42 +272,24 @@ try {
   // --- the search circle
   const circle = await rect('#search-button')
   check('the search circle is 44px, round, at the top right', circle.w === 44 && circle.h === 44 && circle.r === 1264 && circle.y === 16 && (await pn(() => getComputedStyle(document.querySelector('#search-button')).borderRadius)) === '50%', JSON.stringify(circle))
-  // The grow is a CSS transition. Frame sampling races the machine's load (under load the first sample can already be the end), so take the
-  // transition itself at the moment it starts, pause it, and read the box at its start, middle and end.
-  await pn(() => {
-    window.__grow = new Promise((resolve) => setTimeout(() => resolve(null), 3000)) // (no transition started in 3 s: the check below fails, it does not wait forever)
-    window.__grow = Promise.race([window.__grow, new Promise((resolve) => document.addEventListener('transitionrun', function once(event) {
-      if (event.propertyName !== 'width' || !event.target.classList?.contains('spotlight')) return
-      document.removeEventListener('transitionrun', once)
-      const box = event.target
-      const animation = box.getAnimations().find((item) => item.transitionProperty === 'width')
-      animation.pause()
-      const at = (time) => { animation.currentTime = time; return Math.round(box.getBoundingClientRect().width) }
-      const total = animation.effect.getComputedTiming().duration
-      resolve({ total, grow: [at(0), at(total / 2), at(total)] })
-      animation.currentTime = 0
-      animation.play()
-    }))])
-  })
+  // F-101: search opens as a centred panel (760 px wide, its top at min(11vh, 96px)) over a dim; the circle stays where it is.
   await page.click('#search-button')
-  const { total, grow } = (await pn(() => window.__grow)) ?? { total: 0, grow: [] }
   await searchSettled()
   const open = await rect('.spotlight')
-  check('it grows out of the circle (44px at first, then wider), anchored at the same top right corner', grow[0] === 44 && grow[1] > 44 && grow[1] < grow[2] && grow[2] >= 370 && total > 0 && open.w >= 370 && Math.abs(open.r - circle.r) <= 1 && Math.abs(open.y - circle.y) <= 1, JSON.stringify({ grow, total, open, circle }))
+  const view = await pn(() => ({ w: innerWidth, h: innerHeight }))
+  check('it opens as the centred search panel, 760px wide, near the top, over a dim', Math.abs(open.w - 760) <= 2 && Math.abs((open.x + open.w / 2) - view.w / 2) <= 2 && Math.abs(open.y - Math.min(view.h * 0.11, 96)) <= 3 && await pn(() => getComputedStyle(document.querySelector('#search-backdrop')).display !== 'none'), JSON.stringify({ open, view }))
   check('the field is focused and results are below it', await pn(() => document.activeElement.id === 'search-input' && document.querySelectorAll('.omni-row').length > 0))
   await shot('search-open')
   const closedBy = async (how, run) => {
     await run()
-    const shrink = []
-    for (let i = 0; i < 8; i += 1) { shrink.push(Math.round((await rect('.spotlight'))?.w ?? 0)); await wait(25) }
     const hidden = await page.waitForSelector('#search-backdrop', { state: 'hidden', timeout: 3000 }).then(() => true, () => false)
     const back = await rect('#search-button')
-    check(`${how} shrinks it back to the circle`, hidden && shrink.some((w) => w < open.w - 20) && Math.abs(back.w - 44) < 1 && back.r === 1264, JSON.stringify({ shrink, hidden, back }))
+    check(`${how} closes the panel and leaves the 44px circle at the top right`, hidden && Math.abs(back.w - 44) < 1 && back.r === 1264, JSON.stringify({ hidden, back }))
   }
   await closedBy('Esc', () => page.keyboard.press('Escape'))
   await page.click('#search-button')
   await searchSettled()
-  await closedBy('a click away', () => page.mouse.click(300, 600))
+  await closedBy('a click away (outside the panel)', () => page.mouse.click(120, 700))
   await page.click('#search-button')
   await searchSettled()
   await page.keyboard.press('Control+k')

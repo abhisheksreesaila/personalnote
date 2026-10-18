@@ -3,7 +3,7 @@
 //   - at rest the island is only the title; a click opens the card (editable title, where it is saved, Focus first, then every old ... menu action)
 //   - editing the title saves it; a failed save shows in the card's save state AND on the island (danger colour, reason, Try again), never in a modal
 //   - every old menu action is on the card and works (print preview, picture, backup, Markdown, vault, Clear all + undo, Settings), from the mouse and the keyboard
-//   - the Focus pill is gone: Focus is the card's first action; the island wears the focus face in focus mode; Ctrl+K opens search from the top right circle
+//   - the Focus pill is gone: Focus is the card's first action; the island wears the focus face in focus mode; Ctrl+K opens the centred search panel
 //   - the agent chip is gone: an agent shows as a face on the island, cut before it reaches the circles
 //   - at 1280x800 and 1440x900 the islands are inset 16px, do not overlap, and a long title stays one line within 300px
 //
@@ -235,7 +235,7 @@ try {
   check('and leaves it', !(await inFocus()))
   await page.keyboard.press('Control+k')
   await page.waitForTimeout(500)
-  check('Ctrl+K opens the search field at the top right, growing from the circle', await page.evaluate(() => { const p = document.querySelector('.spotlight'); const b = document.querySelector('#search-button').getBoundingClientRect(); if (!p) return false; const r = p.getBoundingClientRect(); return r.width >= 370 && Math.abs(r.right - b.right) <= 2 && Math.abs(r.top - b.top) <= 2 }))
+  check('Ctrl+K opens the centred search panel (760px wide)', await page.evaluate(() => { const p = document.querySelector('.spotlight'); if (!p) return false; const r = p.getBoundingClientRect(); return Math.abs(r.width - 760) <= 2 && Math.abs(r.left + r.width / 2 - innerWidth / 2) <= 2 && document.activeElement?.id === 'search-input' }))
   await page.keyboard.press('Escape')
   await page.waitForTimeout(300)
   await click('#search-button')
