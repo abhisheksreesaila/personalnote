@@ -1,4 +1,4 @@
-// The dynamic island's brain (F-084): which face it wears. Pure state; the DOM lives in island.js. Nothing runs at rest: the only
+// The title island's brain (F-084): which face it wears. Pure state; the DOM lives in island.js. Nothing runs at rest: the only
 // timers are one-shot ones that exist while a moment is on (the 3 s wait before "Saving", and the moment that fades back).
 export const SLOW_SAVE_MS = 3000
 export const SAVED_MS = 1200

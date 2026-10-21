@@ -978,7 +978,7 @@ function renderNotebookPicker() {
   `).join('')
 }
 
-// The dynamic island (F-084): the title at rest, a card of actions on a click, and a short face for the moments (a slow or failed save, recording, an agent, a download, focus).
+// The title island (F-084): the title at rest, a card of actions on a click, and a short face for the moments (a slow or failed save, recording, an agent, a download, focus).
 const island = mountIsland(document.querySelector('#island'), {
   onOpen: (byKeyboard) => setShareMenuOpen(true, byKeyboard),
   onRetry: () => void saveActiveNote(),

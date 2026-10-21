@@ -1,5 +1,5 @@
 // F-084 checks, in the real app (Vite dev server on PN_VERIFY_PORT, mocked /api, headless Chromium with a fake microphone and a mocked local
-// transcription service), the dynamic island playing each of its moments with the real mouse and keyboard:
+// transcription service), the title island playing each of its moments with the real mouse and keyboard:
 //   - a routine save never changes the island (no new face, no measure, no frame, same size), however long you type
 //   - a save still out after 3 s: Saving, then Saved for a moment, then the title again at its old size
 //   - a failed save stays (danger edge, reason, Try again) until a save works
@@ -11,7 +11,7 @@
 //   - nothing runs at rest: no island timer, no frame, no animation, and the speed meter's numbers are the speed test's business
 //   - Crayon, Paper, Night and a phone: pictures of every face
 //
-//   PN_VERIFY_PORT=4896 node scripts/verify-dynamic-island.mjs      (PN_SHOT=/var/tmp/f084/di also saves pictures)
+//   PN_VERIFY_PORT=4896 node scripts/verify-title-island.mjs      (PN_SHOT=/var/tmp/f084/di also saves pictures)
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { assertPortsFree, basePort } from './lib/ports.mjs'

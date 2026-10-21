@@ -5,6 +5,12 @@
 @font-face { font-family: "Geist Fallback"; font-weight: 100 550; size-adjust: 106%; ascent-override: 95%; descent-override: 28%; line-gap-override: 0%; src: local(Arial), local("Liberation Sans"); }
 @font-face { font-family: "Geist Fallback"; font-weight: 551 900; size-adjust: 105%; ascent-override: 95.7%; descent-override: 28.1%; line-gap-override: 0%; src: local("Arial Bold"), local("Liberation Sans Bold"); }
 @media screen {
+  /* F-104 motion: Liquid's fast spring (k380 c30) for small things under the finger; the Settle and Gentle tiers decelerate with no overshoot. Reduced motion zeroes the distances. */
+  :root {
+    --oq-spring-fast: linear(0, .071, .226, .407, .577, .72, .831, .911, .964, .997, 1.014, 1.021, 1.023, 1.02, 1.017, 1.012, 1.009, 1.006, 1.003, 1.002, 1);
+    --oq-spring-fast-dur: 300ms; --oq-ease-in: cubic-bezier(.2, 0, 0, 1); --settle-y: 12px; --gentle-y: 4px; --gentle-s: .97;
+  }
+  @media (prefers-reduced-motion: reduce) { :root { --settle-y: 0px; --gentle-y: 0px; --gentle-s: 1; } }
   :root, :root[data-skin="crayon"], .pv-crayon {
     color-scheme: light;
     --sk-desk: #f2f2f7; --sk-desk-dot: rgba(0, 0, 40, .07);
@@ -125,7 +131,7 @@
     width: 16px; height: 16px; padding: 0; border-radius: 50%;
     border: 1px solid color-mix(in srgb, var(--sk-ink) 22%, transparent);
     background: var(--swatch); cursor: pointer; box-shadow: none;
-    transition: transform 160ms ease, box-shadow 160ms ease;
+    transition: transform 160ms ease, box-shadow 160ms ease, var(--press-t);
   }
   .skin-swatch:hover { transform: scale(1.12); }
   .skin-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--sk-panel), 0 0 0 3.5px var(--sk-accent); }

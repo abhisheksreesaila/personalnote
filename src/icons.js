@@ -18,7 +18,7 @@ export const icons = {
 import { Fingerprint, Lock, LockOpen, Palette, ShieldCheck, Zap } from 'lucide'
 Object.assign(icons, { Fingerprint, Lock, LockOpen, Palette, ShieldCheck, Zap })
 
-// The dynamic island (F-084).
+// The title island (F-084).
 import { Sparkles, TriangleAlert } from 'lucide'
 Object.assign(icons, { Sparkles, TriangleAlert })
 

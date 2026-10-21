@@ -1,5 +1,5 @@
 // F-075 and F-084 checks, in the real app (Vite dev server on PN_VERIFY_PORT, mocked in-memory /api, headless Chromium, real mouse and keyboard):
-// the top of the window is three islands: the notes circle (top left), the dynamic island with the note's title (top centre), the search circle (top right).
+// the top of the window is three islands: the notes circle (top left), the title island with the note's title (top centre), the search circle (top right).
 //   - at rest the island is only the title; a click opens the card (editable title, where it is saved, Focus first, then every old ... menu action)
 //   - editing the title saves it; a failed save shows in the card's save state AND on the island (danger colour, reason, Try again), never in a modal
 //   - every old menu action is on the card and works (print preview, picture, backup, Markdown, vault, Clear all + undo, Settings), from the mouse and the keyboard
