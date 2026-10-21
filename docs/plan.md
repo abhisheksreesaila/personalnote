@@ -658,10 +658,11 @@ Design: docs/design/omxqua.md (Texture, Shape) · Needs: none
 - [x] saved canvas, page and print appearance unchanged; every verify script that touches these surfaces passes; budgets green (CSS ≤ 17.6 KiB: edit rules in place, don't layer overrides)
 Reviewed: reviewer PASS (round 2) — hover draws a state layer over the solid panel (--lift), prefers-contrast: more gets real outlines where borders went. CSS 17.00/17.6, JS 259.90/260. verify-speedtest runs past its timeout on main too (a long benchmark, not this change).
 
-## F-104 omxqua motion: one press for everything, calm panels, no "Dynamic Island" [todo]
+## F-104 omxqua motion: one press for everything, calm panels, no "Dynamic Island" [done]
 Design: docs/design/omxqua.md (Motion) · Needs: F-103
-- [ ] every tappable control squashes on press and springs back, sized by the control; one delegated handler; the old per-component `:active` scale rules are gone; canvas objects never press
-- [ ] panels and sheets settle (no bounce), menus and popovers ease in gently, ⌘K search and keyboard moves are instant
-- [ ] reduced motion turns springs into short fades
-- [ ] "Dynamic Island" is gone from code, scripts and current docs (the title island)
-- [ ] verify scripts pass; budgets green (JS ≤ 260 KiB: the press handler must fit, or say so before raising anything)
+- [x] every tappable control squashes on press and springs back, sized by the control; one delegated handler; the old per-component `:active` scale rules are gone; canvas objects never press
+- [x] panels and sheets settle (no bounce), menus and popovers ease in gently, ⌘K search and keyboard moves are instant
+- [x] reduced motion turns springs into short fades
+- [x] "Dynamic Island" is gone from code, scripts and current docs (the title island)
+- [x] verify scripts pass; budgets green (JS ≤ 260 KiB: the press handler must fit, or say so before raising anything)
+Reviewed: reviewer PASS — press is one CSS rule (no JS cost; draggable rows, disabled and [data-nopress] excluded; scripts/verify-press.mjs proves it with a real mouse and touch scroll), panels settle, menus ease in, ⌘K instant with its view prefetched on idle, reduced motion fades only, verify-dynamic-island renamed verify-title-island. JS 259.93/260 (70 bytes left), CSS 17.27/17.6. Menus shown by `hidden` animate in only (a fade-out would need JS).
