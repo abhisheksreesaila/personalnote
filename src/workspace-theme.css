@@ -97,7 +97,6 @@
   .mindmap-inspector header strong { font-size: 17px; }
   .mindmap-host, .mindmap-stage { color-scheme: light; }
 
-  button:not(:disabled):active { scale: 1; }
   button:focus-visible, input:focus-visible, textarea:focus-visible,
   select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 

@@ -4,7 +4,7 @@ import { createAgentSyncController } from './controller.js'
 
 /**
  * Keeps the open note in step with local agent writes and shows agent presence
- * (a face on the dynamic island plus a cursor flag over the block the agent is working on).
+ * (a face on the title island plus a cursor flag over the block the agent is working on).
  * The host supplies everything that touches the canvas:
  *   api(path), island ({agentPresence(label|null), agentNotice(text)}), getActive() -> {id, resourceId, revision, noteType} | null,
  *   hasUnsavedEdits(), reload(note), merge(note) -> number of objects added,

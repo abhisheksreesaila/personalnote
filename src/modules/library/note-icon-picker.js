@@ -15,7 +15,7 @@ const EMOJI_FONT = '"Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", s
 
 const CSS = `
 @media screen {
-.nip { position: fixed; z-index: 90; width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--glass-border); border-radius: 16px;
+.nip { animation: menu-in 220ms var(--oq-ease-in); position: fixed; z-index: 90; width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--glass-border); border-radius: 16px;
   background: var(--sk-panel); color: var(--sk-ink); box-shadow: var(--oq-shadow-2); font: 12px var(--ui-font); }
 .nip :focus-visible { outline: 2px solid var(--sk-accent); outline-offset: 1px; }
 .nip button { border: 0; background: none; color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }
@@ -34,7 +34,7 @@ const CSS = `
 .nip-scrim { position: fixed; inset: 0; z-index: 89; background: color-mix(in srgb, var(--sk-ink) 38%, transparent); }
 .nip-grab { display: none; }
 @media (max-width: 800px) {
-  .nip { inset: auto 0 0 0 !important; width: auto; max-width: none; padding: 8px 16px calc(18px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; gap: 12px; animation: nip-up 240ms cubic-bezier(.2, .9, .25, 1.08); }
+  .nip { inset: auto 0 0 0 !important; width: auto; max-width: none; padding: 8px 16px calc(18px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; gap: 12px; animation: nip-up 280ms var(--oq-ease-in); }
   .nip-grab { display: block; height: 22px; margin: 0 -16px; touch-action: none; cursor: grab; }
   .nip-grab::after { content: ""; display: block; width: 38px; height: 5px; margin: 9px auto 0; border-radius: 3px; background: var(--sk-edge); }
   .nip-in { height: 44px; font-size: 16px; }
@@ -44,8 +44,8 @@ const CSS = `
   .nip-tints button { width: 44px; height: 44px; }
   .nip-foot button { padding: 12px 10px; margin: -12px -10px; }
 }
-@keyframes nip-up { from { transform: translateY(40%); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .nip { animation: none; } }
+@keyframes nip-up { from { translate: 0 var(--settle-y); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .nip { animation-duration: 150ms; } }
 }`
 
 let open = null // { close } while one is showing
@@ -216,7 +216,7 @@ export function openNoteIconPicker({ id, anchor, getNote, api, toast, refresh, s
     const flick = drag.speed > 0.6
     drag = null
     if (far > 80 || (flick && far > 12)) return close()
-    picker.style.transition = 'transform 220ms cubic-bezier(.2, .9, .25, 1.08)'
+    picker.style.transition = 'transform var(--oq-spring-fast-dur) var(--oq-spring-fast)'
     picker.style.transform = ''
   }
   grab.addEventListener('pointerup', release)

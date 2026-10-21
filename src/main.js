@@ -978,7 +978,7 @@ function renderNotebookPicker() {
   `).join('')
 }
 
-// The dynamic island (F-084): the title at rest, a card of actions on a click, and a short face for the moments (a slow or failed save, recording, an agent, a download, focus).
+// The title island (F-084): the title at rest, a card of actions on a click, and a short face for the moments (a slow or failed save, recording, an agent, a download, focus).
 const island = mountIsland(document.querySelector('#island'), {
   onOpen: (byKeyboard) => setShareMenuOpen(true, byKeyboard),
   onRetry: () => void saveActiveNote(),
@@ -4186,7 +4186,7 @@ async function initialize() {
     else await selectNote(state.notes[0].id, { reload: drawn }) // (reload: the note is already the current one here; nothing of an earlier note is open to leave)
     requestAnimationFrame(() => requestAnimationFrame(() => { // the first screen is on the glass: now the optional code
       performance.mark('pn-first-screen')
-      whenIdle(() => void loadOptional())
+      whenIdle(() => { void loadOptional(); void import('./modules/omnibar/omnibar-view.js') }) // (the omnibar's rows are there before the first ⌘K)
     }))
     agentSync = mountAgentSync({
       api,

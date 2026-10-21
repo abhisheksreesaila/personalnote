@@ -36,7 +36,11 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; overflow: hidden; }
 button, input, textarea { font: inherit; letter-spacing: 0; }
 button { color: inherit; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-button:not(:disabled):active { scale: .97; transition: scale 80ms ease-out; }
+/* F-104: one press for everything. A button squashes on pointer-down (fast, ease-out) and springs back on release; its size sets the amount
+   (icon-size controls 0.90, the rest 0.96). Rules that set their own `transition` add var(--press-t). Draggable rows, disabled buttons and [data-nopress] never press. */
+button { --press: .96; --press-t: scale var(--pd, var(--oq-spring-fast-dur)) var(--pe, var(--oq-spring-fast)); transition: var(--press-t); }
+button:is(.glass-button, .tool-button, .icon-button, .voice-button, .search-button, .nav-edit, .sec-add, .skin-swatch, .sw-close) { --press: .9; }
+button:not(:disabled, [data-nopress], [draggable="true"]):is(:active, .is-holding) { --pd: 110ms; --pe: ease-out; scale: var(--press); }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .app-shell { height: 100vh; height: 100dvh; }
@@ -176,7 +180,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mindmap-node-editor { position: absolute; z-index: 20; min-width: 0; padding: 0 10px; border: 2px solid #247c73; border-radius: 6px; outline: 0; background: #fffefa; box-shadow: 0 5px 16px rgba(57,48,37,.15); text-align: center; }
 .mindmap-branch-chooser { position: absolute; z-index: 24; display: grid; grid-template-columns: 1fr 1fr; width: 190px; padding: 5px; border: 1px solid #cfc8ba; border-radius: 7px; background: rgba(255,254,250,.98); box-shadow: 0 12px 30px rgba(57,48,37,.2); transform: translate(-50%, calc(-100% - 18px)); animation: mindmap-choice-pop 150ms cubic-bezier(.2,.8,.2,1); }
 .mindmap-branch-chooser[hidden] { display: none; }
-.mindmap-branch-chooser button { display: grid; place-items: center; align-content: center; gap: 5px; height: 64px; padding: 5px 10px; border: 0; border-radius: 4px; color: #5f5b53; background: transparent; font: 700 11px "IBM Plex Sans", sans-serif; cursor: pointer; transition: color 120ms ease, background 120ms ease, transform 120ms ease; }
+.mindmap-branch-chooser button { display: grid; place-items: center; align-content: center; gap: 5px; height: 64px; padding: 5px 10px; border: 0; border-radius: 4px; color: #5f5b53; background: transparent; font: 700 11px "IBM Plex Sans", sans-serif; cursor: pointer; transition: color 120ms ease, background 120ms ease, transform 120ms ease, var(--press-t); }
 .mindmap-branch-chooser button + button { border-left: 1px solid #ded8cc; border-radius: 0 4px 4px 0; }
 .mindmap-branch-chooser button svg { width: 23px; height: 23px; stroke-width: 2; }
 .mindmap-branch-chooser button:hover,
@@ -451,7 +455,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 }
 
 @media (prefers-reduced-motion: reduce) {
-  button:not(:disabled):active { scale: 1; transition: none; }
+  button:not(:disabled):is(:active, .is-holding) { scale: none; }
   .paper { animation: none; }
   .voice-button.active { animation: none; }
 }

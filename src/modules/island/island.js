@@ -1,4 +1,4 @@
-// The dynamic island's body (F-084): puts the face the model chose on screen. One hidden measure per change of face (the new face is laid out
+// The title island's body (F-084): puts the face the model chose on screen. One hidden measure per change of face (the new face is laid out
 // once to read its size, the island's width and height follow with a CSS transition); nothing runs at rest, and a download's percent or a
 // recording's level only touch text and a custom property.
 import { createIcons, icons } from '../../icons.js'

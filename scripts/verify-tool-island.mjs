@@ -106,7 +106,7 @@ try {
   }
   const away = async () => { const r = await rect('#history-island'); await page.mouse.click(r.x + 2, r.y + r.h / 2); await page.waitForTimeout(200) } // a harmless place that is not the canvas (the edge of the undo island)
   const clickPage = async (point) => { await page.waitForTimeout(500); const c = await toClient(point); await page.mouse.click(c.x, c.y); await page.waitForTimeout(250) }
-  const openFlyout = async () => { if (!(await flyoutOpen())) await click('#dock-more'); await page.waitForTimeout(200) }
+  const openFlyout = async () => { if (!(await flyoutOpen())) await click('#dock-more'); await page.waitForTimeout(240) }
   const fromFlyout = async (selector) => { await openFlyout(); await click(selector); await page.waitForTimeout(200) }
   const openPanel = async () => { if (!(await page.evaluate(() => document.querySelector('#sidebar').classList.contains('open')))) await click('#toggle-sidebar'); await page.waitForTimeout(400) }
   const tools = ['select', 'text', 'pen', 'shape', 'sticky']
@@ -542,12 +542,12 @@ try {
     }
   }
 
-  // reduced motion: the flyout does not animate
+  // reduced motion (F-104): the flyout fades in over 150 ms and moves nothing
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await load()
   await click('#dock-more')
-  check('with reduced motion the flyout shows without animation', await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('#dock-flyout')).animationDuration) < 0.001))
+  check('with reduced motion the flyout only fades in, in 150 ms, with no distance', await page.evaluate(() => { const f = getComputedStyle(document.querySelector('#dock-flyout')); return Math.abs(parseFloat(f.animationDuration) - 0.15) < 0.001 && f.getPropertyValue('--gentle-y').trim() === '0px' && f.getPropertyValue('--gentle-s').trim() === '1' }))
   await page.emulateMedia({ reducedMotion: 'no-preference' })
 
   check('no page errors', errors.length === 0, JSON.stringify(errors))
