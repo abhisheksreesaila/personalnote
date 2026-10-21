@@ -212,7 +212,7 @@
     box-shadow: var(--sk-shadow); color: var(--ink-soft); cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease;
   }
   .app-shell .search-button svg { width: 20px; height: 20px; }
-  .app-shell .search-button:hover { background: var(--hover); }
+  .app-shell .search-button:hover { background: var(--lift); }
   .app-shell .search-button:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
 
   /* The island: one box whose width and height follow the face it wears (island.js measures a face once, when it changes). */
@@ -286,7 +286,7 @@
     width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; padding: 0; border-radius: 11px; color: var(--ink-soft); cursor: pointer;
     transform: none; will-change: auto; transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out), border-color 140ms ease;
   }
-  .app-shell .glass-button:hover { background: var(--hover); color: var(--sk-ink); }
+  .app-shell .glass-button:hover { background: var(--lift); color: var(--sk-ink); }
   .app-shell .glass-button:active { transform: scale(.94); }
   .app-shell .glass-button:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
   .app-shell .glass-button svg { width: 18px; height: 18px; }
@@ -524,6 +524,7 @@
   }
   @media (prefers-contrast: more) {
     :root[data-skin] { --glass-border: color-mix(in srgb, var(--sk-ink) 55%, var(--sk-panel)); }
+    .app-shell .properties-panel, .note-popover { outline: 1px solid var(--sk-ink); } /* the shadow ring is not an edge */
   }
   /* Speed meter (F-015): optional corner pill, off by default; screen-only. */
   .speed-meter {

@@ -124,3 +124,4 @@
   .sw .font-family-control button, .sw-seg button { min-height: 46px; }
   .sw-seg button { flex-direction: column; gap: 3px; padding: 6px 2px; font-size: 12.5px; line-height: 1.15; text-align: center; }
 }
+@media (prefers-contrast: more) { .sw-nav { border-right: 1px solid var(--i); } .sw-item[aria-current], .sw-skin, .sw-group { outline: 1px solid var(--i); } }

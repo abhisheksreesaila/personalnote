@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
 import { assertPortsFree, basePort } from '../../../scripts/lib/ports.mjs'
 const PORT = basePort(4987); await assertPortsFree([PORT])
-const OUT = path.resolve('docs/design/omxqua/img-built'); fs.mkdirSync(OUT, { recursive: true })
+const OUT = path.resolve(process.env.PN_SHOT_OUT || 'docs/design/omxqua/img-built'); fs.mkdirSync(OUT, { recursive: true })
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'pn-oq-'))
 const env = { ...process.env, PERSONAL_NOTE_DB: path.join(scratch, 'v.db'), PERSONAL_NOTE_PLUGINS_DIR: path.join(scratch, 'plugins') }
@@ -22,6 +22,7 @@ for (const skin of ['paper', 'night', 'crayon']) for (const [dev, vp] of Object.
   const phone = dev === 'phone'
   const ctx = await browser.newContext({ viewport: vp, hasTouch: phone, isMobile: phone, deviceScaleFactor: phone ? 2 : 1 })
   const page = await ctx.newPage()
+  if (process.env.PN_SHOT_CONTRAST) await page.emulateMedia({ contrast: process.env.PN_SHOT_CONTRAST })
   await page.addInitScript((id) => localStorage.setItem('personal-note:skin', id), skin)
   await page.goto(`${BASE}/notes`); await page.locator('#island-title').waitFor(); await page.waitForTimeout(1800)
   const name = (s) => path.join(OUT, `${look}-${s}-${skin}-${dev}.png`)

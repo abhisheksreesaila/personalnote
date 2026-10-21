@@ -87,6 +87,7 @@
     --shadow-panel: var(--sk-shadow);
     /* omxqua texture: solid panels, depth from tone and the shadow scale (the ring lives in the shadow), state layers of the skin's ink. */
     --glass: var(--sk-panel); --glass-border: transparent; --sk-shadow: var(--oq-shadow-2);
+    --lift: linear-gradient(var(--hover), var(--hover)), var(--sk-panel); /* hover on a solid standalone control: the layer over the panel, never see-through */
     --hover: rgb(var(--oq-state) / .08); --pressed: rgb(var(--oq-state) / .12);
     --skin-on-accent: var(--sk-accent-ink);
     background: var(--sk-desk);
