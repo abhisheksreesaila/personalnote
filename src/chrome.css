@@ -5,16 +5,11 @@
 @media screen {
   :root, :root[data-skin] {
     --sk-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    --glass: color-mix(in srgb, var(--sk-panel) 78%, transparent);
-    --glass-solid: var(--sk-panel);
-    --glass-border: var(--sk-edge);
     --ink-soft: var(--sk-ink-soft);
     /* Chrome text tokens: skin colors nudged toward the ink so small labels and white-on-accent text reach 4.5:1. */
     --ui-muted: color-mix(in srgb, var(--sk-muted) 70%, var(--sk-ink));
     --accent-fill: color-mix(in srgb, var(--sk-accent) 85%, var(--sk-ink));
     --accent-text: color-mix(in srgb, var(--sk-accent) 65%, var(--sk-ink));
-    --hover: color-mix(in srgb, var(--sk-ink) 7%, transparent);
-    --pressed: color-mix(in srgb, var(--sk-ink) 13%, transparent);
     --ring: 0 0 0 2px var(--sk-panel), 0 0 0 4px var(--sk-accent);
     --ease-spring: cubic-bezier(.2, .9, .25, 1.08);
     --ease-out: cubic-bezier(.22, .75, .25, 1);
@@ -37,15 +32,13 @@
   .app-shell .main-view { position: absolute; inset: 0; display: block; min-width: 0; }
   .app-shell .workspace, .app-shell.mindmap-active .workspace { position: absolute; inset: 0; background: transparent; }
 
-  /* Shared glass surface. */
+  /* Shared surface: solid, lifted by the shadow scale (skins.css), no drawn edge unless contrast is raised. */
   .app-shell .glass-button,
   .app-shell .tool-dock, .app-shell .history-island, .app-shell .zoom-control,
   .app-shell .note-create-menu, .app-shell .ink-options-popover, .app-shell .voice-caption {
     background: var(--glass);
     border: 1px solid var(--glass-border);
     box-shadow: var(--sk-shadow);
-    -webkit-backdrop-filter: blur(18px) saturate(1.4);
-    backdrop-filter: blur(18px) saturate(1.4);
     color: var(--ink-soft);
   }
 
@@ -53,7 +46,7 @@
   .app-shell .sidebar {
     position: fixed; inset: 72px auto 16px 16px; width: var(--sidebar-width);
     display: flex; flex-direction: column; gap: 2px; padding: 14px 10px;
-    background: var(--sk-panel); border: 1px solid var(--sk-edge); border-radius: var(--sk-radius);
+    background: var(--sk-panel); border: 1px solid var(--glass-border); border-radius: var(--sk-radius);
     box-shadow: var(--sk-shadow); transform: none; z-index: 45; /* above a locked note's cover (z 40) so the notes stay reachable */
   }
   /* Closed, the panel is gone (and inert); opened it fades in, nothing slides or zooms. */
@@ -62,7 +55,7 @@
     .app-shell .sidebar.open { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity 150ms ease; }
     .app-shell .glass-button.sidebar-toggle {
       position: fixed; top: 16px; left: 16px; z-index: 46; width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid;
-      background: var(--sk-panel); border-color: var(--sk-edge); box-shadow: var(--sk-shadow); -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: auto;
+      background: var(--sk-panel); pointer-events: auto;
     }
     .app-shell .glass-button.sidebar-toggle svg { width: 20px; height: 20px; }
     .app-shell .glass-button.sidebar-toggle[aria-expanded="true"] { background: color-mix(in srgb, var(--sk-panel) 87%, var(--sk-ink)); }
@@ -83,7 +76,7 @@
 
   .app-shell .quick-note {
     position: relative; flex: none; width: 100%; height: 38px; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 12px;
-    border: 0; border-radius: 12px; color: var(--sk-accent-ink); background: var(--accent-fill);
+    border: 0; border-radius: 999px; box-shadow: var(--oq-shadow-1); color: var(--sk-accent-ink); background: var(--accent-fill);
     font-size: 13px; font-weight: 500; cursor: pointer; text-align: left;
     transition: transform 160ms var(--ease-out), filter 160ms ease, box-shadow 160ms ease;
   }
@@ -157,8 +150,8 @@
   .app-shell .sec-top:hover .sec-add, .app-shell .sec-add:focus-visible { opacity: 1; }
   .app-shell .sec-add:hover { background: var(--pressed); }
   .app-shell .badge {
-    min-width: 18px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--sk-accent); color: var(--sk-accent-ink);
-    font: 600 11px/18px var(--ui-font); text-align: center; font-variant-numeric: tabular-nums; transition: transform 160ms var(--ease-spring), background-color 160ms ease;
+    height: 18px; padding: 0 5px; border-radius: 4px; background: rgb(var(--oq-state) / .10); color: var(--sk-ink);
+    font: 500 10.5px/18px var(--sk-mono); text-align: center; font-variant-numeric: tabular-nums; transition: transform 160ms var(--ease-spring), background-color 160ms ease;
   }
   .app-shell .badge.zero { background: var(--hover); color: var(--ui-muted); }
   .app-shell .badge.bump { transform: scale(1.25); }
@@ -215,17 +208,17 @@
   .app-shell .topbar > *, .app-shell .topbar-actions > * { pointer-events: auto; }
   .app-shell .topbar-actions { margin-left: auto; flex: none; display: flex; align-items: center; gap: 8px; pointer-events: none; }
   .app-shell .search-button {
-    width: var(--h); height: var(--h); display: grid; place-items: center; padding: 0; border-radius: 50%; background: var(--sk-panel); border: 1px solid var(--sk-edge);
+    width: var(--h); height: var(--h); display: grid; place-items: center; padding: 0; border-radius: 50%; background: var(--sk-panel); border: 1px solid var(--glass-border);
     box-shadow: var(--sk-shadow); color: var(--ink-soft); cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease;
   }
   .app-shell .search-button svg { width: 20px; height: 20px; }
-  .app-shell .search-button:hover { border-color: color-mix(in srgb, var(--sk-accent) 45%, var(--sk-edge)); }
+  .app-shell .search-button:hover { background: var(--hover); }
   .app-shell .search-button:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
 
   /* The island: one box whose width and height follow the face it wears (island.js measures a face once, when it changes). */
   .app-shell .island.booting { visibility: hidden; } /* F-098: until the first note's title is known (setNoteTitle) */
   .app-shell .island {
-    position: relative; flex: none; max-width: 100%; overflow: hidden; pointer-events: auto; color: var(--sk-ink); background: var(--sk-panel); border: 1px solid var(--sk-edge);
+    position: relative; flex: none; max-width: 100%; overflow: hidden; pointer-events: auto; color: var(--sk-ink); background: var(--sk-panel); border: 1px solid var(--glass-border);
     border-radius: calc(var(--h) / 2); box-shadow: var(--sk-shadow); transition: width 180ms ease-out, height 180ms ease-out, border-radius 180ms ease-out, background-color 180ms ease-out, border-color 180ms ease-out;
   }
   .app-shell .island[data-face="card"] { border-radius: 20px; }
@@ -293,7 +286,7 @@
     width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; padding: 0; border-radius: 11px; color: var(--ink-soft); cursor: pointer;
     transform: none; will-change: auto; transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out), border-color 140ms ease;
   }
-  .app-shell .glass-button:hover { background: var(--glass); color: var(--sk-ink); border-color: color-mix(in srgb, var(--sk-ink) 22%, var(--glass-border)); box-shadow: var(--sk-shadow); }
+  .app-shell .glass-button:hover { background: var(--hover); color: var(--sk-ink); }
   .app-shell .glass-button:active { transform: scale(.94); }
   .app-shell .glass-button:focus-visible { outline: none; box-shadow: var(--sk-shadow), var(--ring); }
   .app-shell .glass-button svg { width: 18px; height: 18px; }
@@ -316,20 +309,20 @@
   .app-shell .tool-dock .tool-button.active:hover { background: var(--sk-ink); }
   .app-shell .tool-dock .tool-button svg, .app-shell .history-island svg { width: 20px; height: 20px; stroke-width: 1.7; }
   .app-shell .dock-divider { flex: none; width: 28px; height: 1px; margin: 6px 0; background: var(--sk-line); }
-  .app-shell .ink-options-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--active-ink, #20201e); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .14), 0 0 0 2px var(--glass-solid), 0 0 0 3px var(--sk-edge); }
+  .app-shell .ink-options-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--active-ink, #20201e); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .14), 0 0 0 2px var(--glass), 0 0 0 3px var(--sk-edge); }
   .app-shell .ink-options-trigger[aria-expanded="true"], .app-shell .dock-more[aria-expanded="true"]:not(.active) { background: var(--pressed); }
   .app-shell .dock-more .more-tool, .app-shell .dock-more.has-tool .more-plus { display: none; }
   .app-shell .dock-more.has-tool .more-tool { display: grid; place-items: center; }
   .app-shell .dock-more-wrap { position: relative; }
   .app-shell .dock-flyout {
-    position: absolute; right: calc(100% + 18px); top: 0; width: max-content; display: flex; gap: 2px; padding: 6px; border-radius: var(--sk-radius); background: var(--glass-solid);
+    position: absolute; right: calc(100% + 18px); top: 0; width: max-content; display: flex; gap: 2px; padding: 6px; border-radius: var(--sk-radius); background: var(--glass);
     border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); animation: menu-in 120ms ease;
   }
 
   .app-shell .voice-button {
     position: relative; left: auto; bottom: auto; flex: 0 0 44px; width: 44px; height: 44px; display: grid; place-items: center; padding: 0;
     border: 0; border-radius: 50%; color: var(--sk-accent-ink); background: var(--sk-accent); box-shadow: 0 6px 16px -6px var(--sk-accent);
-    transform: none; touch-action: none; cursor: pointer; isolation: isolate; -webkit-backdrop-filter: none; backdrop-filter: none;
+    transform: none; touch-action: none; cursor: pointer; isolation: isolate;
     transition: filter 160ms ease, box-shadow 160ms ease;
   }
   .app-shell .voice-button:hover { filter: brightness(1.08); }
@@ -342,10 +335,10 @@
   .app-shell .is-clear-of-handles { opacity: .25 !important; pointer-events: none !important; }
 
   .app-shell .workspace.is-drop-target::after { content: ""; position: absolute; inset: 8px; z-index: 6; pointer-events: none; border: 2px dashed var(--sk-accent); border-radius: var(--sk-radius); background: color-mix(in srgb, var(--sk-accent) 6%, transparent); }
-  .app-shell .ink-options-popover { position: fixed; left: auto; bottom: auto; transform: none; border-radius: 16px; background: var(--glass-solid); animation: menu-in 120ms ease; }
-  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - 24px)); font-size: 11px; left: calc(var(--note-left, 0px) + (100vw - var(--note-left, 0px)) / 2); bottom: 28px; border-radius: 99px; background: var(--glass-solid); color: var(--ink-soft); }
+  .app-shell .ink-options-popover { position: fixed; left: auto; bottom: auto; transform: none; border-radius: 16px; background: var(--glass); animation: menu-in 120ms ease; }
+  .app-shell .voice-caption { position: fixed; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 8px; padding: 7px 12px; max-width: min(360px, calc(100vw - 24px)); font-size: 11px; left: calc(var(--note-left, 0px) + (100vw - var(--note-left, 0px)) / 2); bottom: 28px; border-radius: 99px; background: var(--glass); color: var(--ink-soft); }
   .app-shell .voice-pulse { background: var(--sk-accent); }
-  .app-shell .note-create-menu { position: fixed; z-index: 60; width: 168px; padding: 6px; border-radius: 14px; background: var(--glass-solid); animation: menu-in 160ms var(--ease-out); }
+  .app-shell .note-create-menu { position: fixed; z-index: 60; width: 168px; padding: 6px; border-radius: 14px; background: var(--glass); animation: menu-in 160ms var(--ease-out); }
   .app-shell .note-create-menu[hidden] { display: none; }
   .app-shell .note-create-menu button { width: 100%; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-soft); font-size: 13px; text-align: left; cursor: pointer; }
   .app-shell .note-create-menu button:hover, .app-shell .note-create-menu button:focus-visible { background: var(--hover); color: var(--sk-ink); }
@@ -392,26 +385,26 @@
   .app-shell .scroll-indicator-x > span { height: 100%; }
 
   /* ---------- Mind map inside the new chrome ---------- */
-  .app-shell .mindmap-host { inset: 66px 12px 12px 4px; border-radius: var(--sk-radius); overflow: hidden; border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); }
+  .app-shell .mindmap-host { inset: 66px 12px 12px 4px; border-radius: var(--sk-radius); overflow: hidden; box-shadow: var(--oq-shadow-1); }
 
   /* ---------- Settings is a window of its own over a dim (F-102); the note's properties are a popover from the island ---------- */
   .app-shell .properties-panel {
     inset: 50% auto auto 50%; width: min(900px, calc(100vw - 32px)); height: min(620px, calc(100dvh - 32px)); overflow: hidden;
-    border: 1px solid var(--sk-line); border-radius: 20px; background: var(--sk-panel); color: var(--sk-ink);
-    box-shadow: var(--sk-shadow);
+    border: 0; border-radius: 20px; background: var(--sk-panel); color: var(--sk-ink);
+    box-shadow: var(--oq-shadow-3);
     visibility: hidden; opacity: 0; transform: translate(-50%, -47%) scale(.985); transition: opacity 180ms ease, transform 260ms var(--ease-out), visibility 0s 260ms;
   }
   .app-shell .properties-panel.open { visibility: visible; opacity: 1; transform: translate(-50%, -50%); transition-delay: 0s; }
-  .settings-dim { position: fixed; inset: 0; z-index: 49; visibility: hidden; opacity: 0; -webkit-backdrop-filter: brightness(.6); backdrop-filter: brightness(.6); transition: opacity 180ms, visibility 0s 260ms; }
+  .settings-dim { position: fixed; inset: 0; z-index: 49; visibility: hidden; opacity: 0; background: var(--oq-scrim); transition: opacity 180ms, visibility 0s 260ms; }
   .settings-dim.open { visibility: visible; opacity: 1; transition-delay: 0s; }
   .app-shell .properties-panel:not(.sw-ready) .settings-section { display: none; }
-  .note-popover { position: fixed; z-index: 44; top: 72px; left: 50%; width: min(320px, calc(100vw - 24px)); max-height: calc(100dvh - 96px); overflow-y: auto; padding: 4px 14px 14px; transform: translateX(-50%); border: 1px solid var(--sk-line); border-radius: 16px; background: var(--sk-panel); box-shadow: var(--sk-shadow); }
+  .note-popover { position: fixed; z-index: 44; top: 72px; left: 50%; width: min(320px, calc(100vw - 24px)); max-height: calc(100dvh - 96px); overflow-y: auto; padding: 4px 14px 14px; transform: translateX(-50%); border-radius: 16px; background: var(--sk-panel); box-shadow: var(--sk-shadow); }
   .note-popover[hidden] { display: none; }
   .note-popover .property-section { padding: 12px 4px; }
   .note-popover :is(.property-label, .property-section-title > span) { font-size: 10px; }
   .note-popover :is(.property-note-info > div, .font-size-row) { font-size: 12px; }
   @media (max-width: 640px) {
-    .app-shell .properties-panel { inset: auto 0 0 0; width: auto; height: min(92dvh, 780px); padding-bottom: env(safe-area-inset-bottom); border-bottom: 0; border-radius: 20px 20px 0 0; transform: translateY(104%); }
+    .app-shell .properties-panel { inset: auto 0 0 0; width: auto; height: min(92dvh, 780px); padding-bottom: env(safe-area-inset-bottom); border-radius: 20px 20px 0 0; transform: translateY(104%); }
     .app-shell .properties-panel.open { transform: none; }
     .note-popover :is(.secure-note-action, .delete-note-action) { height: 44px; }
   }
@@ -429,10 +422,10 @@
   @media (max-width: 800px) {
     .app-shell .sidebar {
       inset: 8px auto 8px 8px; width: min(86vw, 330px); transform: translateX(calc(-100% - 24px)); z-index: 45;
-      transition: transform 280ms var(--ease-out); background: var(--glass-solid);
+      transition: transform 280ms var(--ease-out); background: var(--glass);
     }
     .app-shell .sidebar.open { transform: none; }
-    .app-shell .sidebar-close { display: grid; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 9px; color: var(--ui-muted); }
+    .app-shell .sidebar-close { display: grid; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; background: rgb(var(--oq-state) / .06); color: var(--ui-muted); }
     .app-shell .sidebar-scrim {
       display: block; position: fixed; inset: 0; z-index: 35; background: color-mix(in srgb, var(--sk-ink) 38%, transparent); opacity: 0; pointer-events: none; transition: opacity 240ms ease;
     }
@@ -471,7 +464,7 @@
     .app-shell .scroll-indicator-x { display: none; }
     .app-shell .mobile-capture-controls button { border-radius: 16px; border: 1px solid var(--glass-border); box-shadow: var(--sk-shadow); transition: transform 140ms var(--ease-out); }
     .app-shell .mobile-capture-controls button:active { transform: scale(.96); }
-    .app-shell .mobile-draw-button, .app-shell .mobile-connect-button, .app-shell .mobile-tool-button { background: var(--glass-solid); color: var(--sk-ink); }
+    .app-shell .mobile-draw-button, .app-shell .mobile-connect-button, .app-shell .mobile-tool-button { background: var(--glass); color: var(--sk-ink); }
     .app-shell .mobile-tool-button { min-width: 54px; min-height: 54px; padding: 0; }
     .app-shell .mobile-tool-button.active, .app-shell .mobile-draw-button.active { background: var(--sk-accent-soft); color: var(--sk-accent); border-color: var(--sk-accent); }
     .app-shell .mobile-connect-button { min-width: 54px; min-height: 54px; padding: 0; }
@@ -495,7 +488,7 @@
   .spotlight {
     width: min(760px, calc(100vw - 32px)); max-height: min(640px, calc(100dvh - 24px)); margin: min(11vh, 96px) auto 0;
     display: flex; flex-direction: column; overflow: hidden; border-radius: 20px; border: 1px solid var(--glass-border); background: var(--sk-panel); color: var(--sk-ink);
-    box-shadow: 0 2px 4px color-mix(in srgb, var(--sk-ink) 8%, transparent), 0 24px 60px -16px color-mix(in srgb, var(--sk-ink) 38%, transparent);
+    box-shadow: var(--oq-shadow-3);
     opacity: 0; transform: translateY(-8px) scale(.985); transition: opacity 140ms ease, transform 160ms ease;
   }
   .search-backdrop.open .spotlight { opacity: 1; transform: none; }
@@ -529,23 +522,18 @@
     .app-shell *, .app-shell *::before, .app-shell *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
     .app-shell .quick-note:active, .app-shell .tool-button:active, .app-shell .glass-button:active, .app-shell .voice-button:active { transform: none; }
   }
-  @media (prefers-reduced-transparency: reduce) {
-    .app-shell .glass-button, .app-shell .tool-dock, .app-shell .history-island,
-    .app-shell .zoom-control, .app-shell .sidebar { background: var(--glass-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
-  }
   @media (prefers-contrast: more) {
     :root[data-skin] { --glass-border: color-mix(in srgb, var(--sk-ink) 55%, var(--sk-panel)); }
   }
   /* Speed meter (F-015): optional corner pill, off by default; screen-only. */
   .speed-meter {
     position: fixed; right: 12px; bottom: 12px; z-index: 40; display: grid; gap: 1px; padding: 6px 10px;
-    border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass);
-    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass); box-shadow: var(--oq-shadow-1);
     color: var(--sk-ink); font: 500 11px/1.3 var(--sk-mono); pointer-events: none; text-align: right;
   }
   .speed-meter[hidden] { display: none; }
   /* The speed test panel (F-034): a corner box while it runs, the results in the middle when it is done; the skin's own glass. */
-  .speedtest-panel { position: fixed; inset: auto 16px 16px auto; z-index: 70; margin: 0; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 12px 14px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--glass-solid); color: var(--sk-ink); font-size: 12px; }
+  .speedtest-panel { position: fixed; inset: auto 16px 16px auto; z-index: 70; margin: 0; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 12px 14px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--glass); color: var(--sk-ink); font-size: 12px; }
   .speedtest-panel.is-done { inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
   .speedtest-panel h3 { margin: 12px 0 2px; font-size: 12px; }
   .speedtest-panel .speedtest-compare td, .speedtest-panel .speedtest-compare th { white-space: nowrap; font-size: 11px; }

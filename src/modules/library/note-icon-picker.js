@@ -15,8 +15,8 @@ const EMOJI_FONT = '"Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", s
 
 const CSS = `
 @media screen {
-.nip { position: fixed; z-index: 90; width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--sk-edge); border-radius: 16px;
-  background: var(--sk-panel); color: var(--sk-ink); box-shadow: 0 16px 44px rgba(0, 0, 0, .24); font: 12px var(--ui-font); }
+.nip { position: fixed; z-index: 90; width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--glass-border); border-radius: 16px;
+  background: var(--sk-panel); color: var(--sk-ink); box-shadow: var(--oq-shadow-2); font: 12px var(--ui-font); }
 .nip :focus-visible { outline: 2px solid var(--sk-accent); outline-offset: 1px; }
 .nip button { border: 0; background: none; color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }
 .nip-in { box-sizing: border-box; width: 100%; height: 34px; padding: 0 10px; border: 1px solid var(--sk-edge); border-radius: 9px; background: var(--sk-desk); color: inherit; font: 13px var(--ui-font); }

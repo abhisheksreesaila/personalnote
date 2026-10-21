@@ -10,7 +10,7 @@
     --sk-desk: #f2f2f7; --sk-desk-dot: rgba(0, 0, 40, .07);
     --sk-panel: #ffffff; --sk-edge: #e3e3ea;
     --sk-ink: #111114; --sk-ink-soft: #3a3a42; --sk-muted: #6e6e78; --sk-line: #e6e6ec;
-    --sk-accent: #2f6fe0; --sk-accent-ink: #ffffff; --sk-accent-soft: #e3ebfa;
+    --sk-accent: #2f6fe0; --sk-accent-ink: #ffffff;
     --sk-c1: #ffd60a; --sk-c2: #30d158; --sk-c3: #64b5ff; --sk-c4: #bf5af2; --sk-c5: #ff6b3d; --sk-mark-ink: #1b1b1b;
     --sk-danger: #d6391f;
     --sk-secure: #6a46c9; --sk-secure-soft: #efe9fb; --sk-secure-line: #d9cdf6;
@@ -18,14 +18,17 @@
     --sk-display: "Bricolage Grotesque", system-ui, sans-serif; --sk-display-weight: 700;
     --sk-display-style: normal; --sk-title-track: -.035em;
     --sk-radius: 18px; --sk-radius-control: 10px;
-    --sk-shadow: 0 1px 2px rgba(0, 0, 30, .05), 0 16px 40px -16px rgba(0, 0, 60, .22);
+    --oq-scrim: rgb(12 10 8 / .32); --oq-state: 17 17 20; --sk-accent-soft: rgb(var(--oq-state) / .16);
+    --oq-shadow-1: 0 1px 2px rgba(10, 14, 40, .06), 0 0 0 1px rgba(10, 14, 40, .05);
+    --oq-shadow-2: 0 6px 18px rgba(10, 14, 40, .10), 0 0 0 1px rgba(10, 14, 40, .055);
+    --oq-shadow-3: 0 18px 48px rgba(10, 14, 40, .18), 0 0 0 1px rgba(10, 14, 40, .06);
   }
   :root[data-skin="paper"], .pv-paper {
     color-scheme: light;
-    --sk-desk: #e9e4da; --sk-desk-dot: rgba(60, 45, 20, .10);
+    --sk-desk: #ece7dd; --sk-desk-dot: rgba(60, 45, 20, .10);
     --sk-panel: #fffdf8; --sk-edge: #e2dbcd;
     --sk-ink: #1f1b16; --sk-ink-soft: #4a443b; --sk-muted: #6b6357; --sk-line: #e2dbcd;
-    --sk-accent: #1f1b16; --sk-accent-ink: #fffdf8; --sk-accent-soft: #ece6da;
+    --sk-accent: #1f1b16; --sk-accent-ink: #fffdf8;
     --sk-c1: #ffd66b; --sk-c2: #9fe0c0; --sk-c3: #a9cfff; --sk-c4: #cdb8ff; --sk-c5: #ff9c85; --sk-mark-ink: #1b1b1b;
     --sk-danger: #b93a27;
     --sk-secure: #6a46c9; --sk-secure-soft: #efe9fb; --sk-secure-line: #d9cdf6;
@@ -33,14 +36,17 @@
     --sk-display: "Bricolage Grotesque", system-ui, sans-serif; --sk-display-weight: 700;
     --sk-display-style: normal; --sk-title-track: -.02em;
     --sk-radius: 14px; --sk-radius-control: 8px;
-    --sk-shadow: 0 1px 0 rgba(31, 27, 22, .04), 0 12px 32px -12px rgba(60, 40, 10, .22);
+    --oq-state: 31 27 22; --sk-accent-soft: rgb(var(--oq-state) / .16);
+    --oq-shadow-1: 0 1px 2px rgba(20, 16, 10, .06), 0 0 0 1px rgba(20, 16, 10, .05);
+    --oq-shadow-2: 0 6px 18px rgba(20, 16, 10, .10), 0 0 0 1px rgba(20, 16, 10, .055);
+    --oq-shadow-3: 0 18px 48px rgba(20, 16, 10, .18), 0 0 0 1px rgba(20, 16, 10, .06);
   }
   :root[data-skin="night"], .pv-night {
     color-scheme: dark;
     --sk-desk: #0d1015; --sk-desk-dot: rgba(160, 190, 255, .07);
-    --sk-panel: #161b23; --sk-edge: #232a35;
+    --sk-panel: #171c24; --sk-edge: #232a35;
     --sk-ink: #eceff4; --sk-ink-soft: #b9c1cd; --sk-muted: #7d8796; --sk-line: #262e3a;
-    --sk-accent: #7ee7c8; --sk-accent-ink: #07261d; --sk-accent-soft: rgba(126, 231, 200, .14);
+    --sk-accent: #7ee7c8; --sk-accent-ink: #07261d;
     --sk-c1: #ffc877; --sk-c2: #7ee7c8; --sk-c3: #9db4ff; --sk-c4: #d3a6ff; --sk-c5: #ff8fb1; --sk-mark-ink: #1b1b1b;
     --sk-danger: #ff8fb1;
     --sk-secure: #c3a8ff; --sk-secure-soft: rgba(195, 168, 255, .13); --sk-secure-line: rgba(195, 168, 255, .32);
@@ -48,7 +54,10 @@
     --sk-display: "Instrument Serif", Georgia, serif; --sk-display-weight: 400;
     --sk-display-style: italic; --sk-title-track: -.01em;
     --sk-radius: 14px; --sk-radius-control: 8px;
-    --sk-shadow: 0 0 0 1px rgba(236, 239, 244, .04), 0 20px 50px -20px rgba(0, 0, 0, .7);
+    --oq-scrim: rgb(0 0 0 / .55); --oq-state: 236 239 244; --sk-accent-soft: rgb(var(--oq-state) / .16);
+    --oq-shadow-1: 0 1px 0 rgba(255, 255, 255, .035) inset, 0 1px 2px rgba(0, 0, 0, .5);
+    --oq-shadow-2: 0 1px 0 rgba(255, 255, 255, .045) inset, 0 6px 18px rgba(0, 0, 0, .45), 0 0 0 1px rgba(236, 239, 244, .05);
+    --oq-shadow-3: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 18px 48px rgba(0, 0, 0, .6), 0 0 0 1px rgba(236, 239, 244, .06);
   }
 
   /* Map the tokens onto the chrome variables used across style.css and workspace-theme.css. */
@@ -76,6 +85,9 @@
     --radius-panel: var(--sk-radius);
     --radius-pill: var(--sk-radius-control);
     --shadow-panel: var(--sk-shadow);
+    /* omxqua texture: solid panels, depth from tone and the shadow scale (the ring lives in the shadow), state layers of the skin's ink. */
+    --glass: var(--sk-panel); --glass-border: transparent; --sk-shadow: var(--oq-shadow-2);
+    --hover: rgb(var(--oq-state) / .08); --pressed: rgb(var(--oq-state) / .12);
     --skin-on-accent: var(--sk-accent-ink);
     background: var(--sk-desk);
   }

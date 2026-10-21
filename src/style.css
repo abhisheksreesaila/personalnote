@@ -183,10 +183,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mindmap-branch-chooser button.active { color: #c84f38; background: rgba(239,104,75,.12); }
 .mindmap-branch-chooser button:hover { transform: translateY(-1px); }
 @keyframes mindmap-choice-pop { from { opacity: 0; transform: translate(-50%, calc(-100% - 10px)) scale(.96); } to { opacity: 1; transform: translate(-50%, calc(-100% - 18px)) scale(1); } }
-.mindmap-hint { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 7px 10px; border: 1px solid #dcd6c9; border-radius: 5px; color: #746f65; background: rgba(255,255,252,.84); font-size: 11px; backdrop-filter: blur(12px); white-space: nowrap; }
-.mindmap-zoom { position: absolute; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid #dcd6c9; border-radius: 7px; background: rgba(255,255,252,.94); box-shadow: 0 7px 22px rgba(57,48,37,.08); }
+.mindmap-hint { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 7px 10px; border-radius: 5px; color: #746f65; background: #fffffc; box-shadow: var(--oq-shadow-1); font-size: 11px; white-space: nowrap; }
+.mindmap-zoom { position: absolute; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 7px; background: #fffffc; box-shadow: var(--oq-shadow-1); }
 .mindmap-zoom .mindmap-zoom-label { width: 52px; color: #746f65; font-size: 11px; }
-.mindmap-minimap { position: absolute; right: 16px; bottom: 72px; width: 170px; height: 102px; padding: 6px; border: 1px solid #dcd6c9; border-radius: 6px; background: rgba(255,255,252,.94); box-shadow: 0 7px 22px rgba(57,48,37,.08); }
+.mindmap-minimap { position: absolute; right: 16px; bottom: 72px; width: 170px; height: 102px; padding: 6px; border-radius: 6px; background: #fffffc; box-shadow: var(--oq-shadow-1); }
 .mindmap-minimap-view { fill: rgba(36,124,115,.05); stroke: #247c73; stroke-width: 1.5; }
 .mindmap-properties { min-height: 0; overflow-y: auto; }
 .mindmap-properties[hidden] { display: none; }
@@ -230,12 +230,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   bottom: 84px;
   width: 266px;
   padding: 12px;
-  border: 1px solid rgba(99,86,67,.20);
   border-radius: 8px;
   color: var(--ink);
-  background: rgba(250,249,246,.98);
-  box-shadow: 0 14px 38px rgba(31,41,39,.20);
-  backdrop-filter: blur(18px);
+  background: #faf9f6;
+  box-shadow: var(--oq-shadow-2);
   transform: translateX(-50%);
   z-index: 25;
 }
@@ -332,9 +330,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   align-items: center;
   gap: 20px;
   padding: 0 20px;
-  border-bottom: 1px solid rgba(80,73,63,.18);
-  background: rgba(247,245,239,.94);
-  backdrop-filter: blur(20px);
+  background: #f7f5ef;
+  box-shadow: var(--oq-shadow-1);
   z-index: 2;
 }
 .print-back, .print-button {
@@ -394,7 +391,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   background: #f9f7f1;
   box-shadow: 0 24px 70px rgba(37,34,28,.28);
 }
-.notebook-dialog::backdrop { background: rgba(41,38,33,.36); backdrop-filter: blur(4px); }
+.notebook-dialog::backdrop { background: rgba(41,38,33,.36); }
 .notebook-dialog form { padding: 22px; }
 .dialog-heading-row { display: flex; align-items: flex-start; margin-bottom: 22px; }
 .dialog-heading-row > div { flex: 1; }
@@ -457,16 +454,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   button:not(:disabled):active { scale: 1; transition: none; }
   .paper { animation: none; }
   .voice-button.active { animation: none; }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .sidebar, .properties-panel { background: var(--surface); backdrop-filter: none; }
-  .tool-dock, .ink-options-popover, .voice-button,
-  .voice-caption, .note-title:hover, .note-title:focus {
-    background: #faf9f6;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
 }
 
 @media (prefers-contrast: more) {

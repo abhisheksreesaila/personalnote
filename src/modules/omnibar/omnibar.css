@@ -1,13 +1,13 @@
 /* The omnibar's pills, rows and preview (F-101). Fetched with omnibar-view.js when the omnibar first opens; the panel itself is in chrome.css. */
-.omni-chip { padding: 4px 11px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--sk-panel); color: var(--ink-soft); font: 500 12.5px var(--ui-font); cursor: pointer; }
+.omni-chip { padding: 4px 11px; border: 0; border-radius: 999px; background: rgb(var(--oq-state) / .06); color: var(--ink-soft); font: 500 12.5px var(--ui-font); cursor: pointer; }
 .omni-chip b { font-weight: 500; opacity: .6; }
-.omni-chip[aria-pressed="true"] { background: var(--sk-ink); color: var(--sk-panel); border-color: var(--sk-ink); }
+.omni-chip[aria-pressed="true"] { background: var(--sk-ink); color: var(--sk-panel); }
 .omni-chip { position: relative; }
 .omni-chip::after { content: ""; position: absolute; inset: -9px 0; } /* a phone thumb needs 44 px; the pill stays small */
 .omni-chip:focus-visible { outline: none; box-shadow: var(--ring); }
 .omni-group h4 { margin: 10px 8px 4px; color: var(--ui-muted); font: 600 11px var(--ui-font); letter-spacing: .07em; text-transform: uppercase; }
 .omni-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 12px; background: none; color: var(--sk-ink); text-align: left; cursor: pointer; }
-.omni-row.sel { background: color-mix(in srgb, var(--sk-ink) 8%, var(--sk-panel)); }
+.omni-row.sel { background: var(--hover); }
 .omni-row .nt { width: 40px; height: 40px; border-radius: 11px; font-size: 22px; --notebook-color: var(--t); }
 .omni-row .nt svg { width: 18px; height: 18px; }
 .omni-act { background: color-mix(in srgb, var(--sk-ink) 7%, var(--sk-panel)); color: var(--ink-soft); }
@@ -18,7 +18,7 @@
 .omni-title { font: 600 14.5px/1.3 var(--ui-font); }
 .omni-sub { color: var(--ui-muted); font-size: 12.5px; }
 .omni-side { flex: none; display: grid; justify-items: end; gap: 3px; max-width: 150px; }
-.omni-nb { max-width: 100%; display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--sk-ink) 7%, var(--sk-panel)); font: 500 11.5px/1.5 var(--ui-font); }
+.omni-nb { max-width: 100%; display: inline-flex; align-items: center; gap: 5px; padding: 1px 6px; border-radius: 4px; background: rgb(var(--oq-state) / .07); font: 500 10.5px/1.5 var(--sk-mono); }
 .omni-nb i { width: 7px; height: 7px; flex: none; border-radius: 50%; }
 .omni-tag { padding: 1px 7px; border-radius: 6px; background: color-mix(in srgb, var(--sk-c4) 32%, var(--sk-panel)); font: 700 10px/1.6 var(--ui-font); letter-spacing: .06em; text-transform: uppercase; }
 .omni-when { color: var(--ui-muted); font-size: 11.5px; white-space: nowrap; }
