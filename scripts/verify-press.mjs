@@ -74,6 +74,33 @@ try {
   await page.mouse.up()
   await context.close()
 
+  // F-104: after idle the omnibar's chunk is already there, so the first Ctrl+K opens with its preview pane and rows
+  const fresh = await open('no-preference')
+  await fresh.page.waitForTimeout(2500)
+  const prefetched = await fresh.page.evaluate(() => performance.getEntriesByType('resource').some((e) => e.name.includes('omnibar-view')))
+  await fresh.page.keyboard.press('Control+k')
+  await fresh.page.waitForTimeout(50)
+  const drawn = await fresh.page.evaluate(() => ({ pv: document.querySelector('#omni-preview')?.getBoundingClientRect().width, rows: document.querySelectorAll('.omni-row').length }))
+  check('the first Ctrl+K opens with the omnibar view already fetched on idle and drawn', prefetched && drawn.pv > 0 && drawn.rows > 0, JSON.stringify({ prefetched, ...drawn }))
+  await fresh.context.close()
+
+  // F-104: a touch scroll over a list of buttons (phone Settings) leaves none of them squashed
+  const phone = await browser.newContext({ viewport: { width: 390, height: 600 }, hasTouch: true, isMobile: true })
+  const pp = await phone.newPage()
+  await phone.route('**/api/**', (route) => route.fulfill({ contentType: 'application/json', body: '[]' }))
+  await pp.goto(`http://127.0.0.1:${PORT}/notes`)
+  await pp.waitForSelector('#share-button', { state: 'attached', timeout: 60000 })
+  await pp.evaluate(() => { document.querySelector('#share-button').click(); document.querySelector('#top-properties').click() })
+  await pp.locator('#properties-panel.open .sw-item').first().waitFor()
+  await pp.waitForTimeout(500)
+  const cdp = await phone.newCDPSession(pp)
+  const item = await pp.locator('.sw-item').nth(2).boundingBox()
+  await cdp.send('Input.synthesizeScrollGesture', { x: item.x + item.width / 2, y: item.y + item.height / 2, yDistance: -150, gestureSourceType: 'touch', speed: 400 })
+  await pp.waitForTimeout(600)
+  const squashed = await pp.evaluate(() => [...document.querySelectorAll('button')].filter((b) => { const v = getComputedStyle(b).scale; return v !== 'none' && v !== '1' }).map((b) => b.className))
+  check('after a touch scroll over the Settings list no button is left squashed', squashed.length === 0, squashed.join(','))
+  await phone.close()
+
   const reduced = await open('reduce')
   const r = await press(reduced.page, '.quick-note')
   check('reduced motion: a pressed button does not scale', isOne(r.down), r.down)

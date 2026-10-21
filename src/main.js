@@ -4186,7 +4186,7 @@ async function initialize() {
     else await selectNote(state.notes[0].id, { reload: drawn }) // (reload: the note is already the current one here; nothing of an earlier note is open to leave)
     requestAnimationFrame(() => requestAnimationFrame(() => { // the first screen is on the glass: now the optional code
       performance.mark('pn-first-screen')
-      whenIdle(() => void loadOptional())
+      whenIdle(() => { void loadOptional(); void import('./modules/omnibar/omnibar-view.js') }) // (the omnibar's rows are there before the first ⌘K)
     }))
     agentSync = mountAgentSync({
       api,

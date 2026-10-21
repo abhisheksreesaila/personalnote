@@ -11,7 +11,7 @@
   .secure-cover-title span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .secure-cover-card { display: grid; justify-items: center; gap: 10px; text-align: center; max-width: 340px; }
   .secure-cover-card h3 { font-size: 19px; }
-  .secure-fp { width: 92px; height: 92px; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer; background: var(--sk-panel); color: var(--sk-secure); box-shadow: var(--sk-shadow); transition: transform 160ms; }
+  .secure-fp { width: 92px; height: 92px; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer; background: var(--sk-panel); color: var(--sk-secure); box-shadow: var(--sk-shadow); transition: transform 160ms, var(--press-t); }
   .secure-fp:hover { transform: scale(1.05); }
   .secure-fp svg { width: 42px; height: 42px; stroke-width: 1.5; }
   .secure-cover.is-busy .secure-fp { animation: secure-pulse 900ms ease-in-out infinite; }

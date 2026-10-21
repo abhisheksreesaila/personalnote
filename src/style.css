@@ -180,7 +180,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mindmap-node-editor { position: absolute; z-index: 20; min-width: 0; padding: 0 10px; border: 2px solid #247c73; border-radius: 6px; outline: 0; background: #fffefa; box-shadow: 0 5px 16px rgba(57,48,37,.15); text-align: center; }
 .mindmap-branch-chooser { position: absolute; z-index: 24; display: grid; grid-template-columns: 1fr 1fr; width: 190px; padding: 5px; border: 1px solid #cfc8ba; border-radius: 7px; background: rgba(255,254,250,.98); box-shadow: 0 12px 30px rgba(57,48,37,.2); transform: translate(-50%, calc(-100% - 18px)); animation: mindmap-choice-pop 150ms cubic-bezier(.2,.8,.2,1); }
 .mindmap-branch-chooser[hidden] { display: none; }
-.mindmap-branch-chooser button { display: grid; place-items: center; align-content: center; gap: 5px; height: 64px; padding: 5px 10px; border: 0; border-radius: 4px; color: #5f5b53; background: transparent; font: 700 11px "IBM Plex Sans", sans-serif; cursor: pointer; transition: color 120ms ease, background 120ms ease, transform 120ms ease; }
+.mindmap-branch-chooser button { display: grid; place-items: center; align-content: center; gap: 5px; height: 64px; padding: 5px 10px; border: 0; border-radius: 4px; color: #5f5b53; background: transparent; font: 700 11px "IBM Plex Sans", sans-serif; cursor: pointer; transition: color 120ms ease, background 120ms ease, transform 120ms ease, var(--press-t); }
 .mindmap-branch-chooser button + button { border-left: 1px solid #ded8cc; border-radius: 0 4px 4px 0; }
 .mindmap-branch-chooser button svg { width: 23px; height: 23px; stroke-width: 2; }
 .mindmap-branch-chooser button:hover,
