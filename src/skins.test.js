@@ -171,7 +171,7 @@ test('Crayon accent is the softened blue and keeps 4.5:1 for white on it and for
 test('Paper takes the two-layer prototype look: ink-dark accent on ivory, readable both ways', () => {
   const paper = skinTokens('paper')
   assert.equal(paper.accent, '#1f1b16')
-  assert.equal(paper.desk, '#e9e4da')
+  assert.equal(paper.desk, '#ece7dd')
   assert.equal(SKINS.find((s) => s.id === 'paper').swatch, paper.accent)
   assert.ok(contrast(paper['accent-ink'], paper.accent) >= 4.5)
 })

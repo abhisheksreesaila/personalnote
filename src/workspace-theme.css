@@ -20,14 +20,6 @@
     box-shadow: none;
   }
 
-  .sidebar, .topbar, .tool-dock, .properties-panel,
-  .voice-button,
-  .ink-options-popover, .voice-caption, .print-preview-bar, .mindmap-hint,
-  .note-title:hover, .note-title:focus {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-
   .sidebar, .sidebar-footer,
   .property-section,
   .mindmap-inspector section,
@@ -98,10 +90,9 @@
     color: var(--rail); background: var(--accent); border-color: var(--accent);
   }
   .notebook-color input:checked + span { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--notebook-color); }
-  .notebook-dialog::backdrop { background: rgba(0, 0, 0, .65); backdrop-filter: none; }
+  .notebook-dialog::backdrop { background: rgba(0, 0, 0, .65); }
   .print-preview { color: var(--ink); background: var(--canvas); }
   .print-sheet-card { color-scheme: light; box-shadow: none; }
-  .mindmap-hint { backdrop-filter: none; }
   .mindmap-branch-chooser button + button { border-color: var(--line); }
   .mindmap-inspector header strong { font-size: 17px; }
   .mindmap-host, .mindmap-stage { color-scheme: light; }

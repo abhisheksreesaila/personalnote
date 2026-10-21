@@ -8,7 +8,7 @@ let open = null // { close } while a picker is showing
 // Its look lives here, not in a stylesheet: the picker is fetched when first opened, and so is this (the first load's CSS has no room for it).
 const CSS = `@media screen {
   .nbi-pop :focus-visible { outline: 2px solid var(--sk-accent); outline-offset: 1px }
-  .nbi-pop { position: fixed; z-index: 80; width: 296px; max-width: calc(100vw - 16px); display: grid; gap: 8px; padding: 10px; border: 1px solid var(--sk-edge); border-radius: 14px; background: var(--sk-panel); color: var(--sk-ink); box-shadow: 0 12px 36px rgba(0, 0, 0, .22) }
+  .nbi-pop { position: fixed; z-index: 80; width: 296px; max-width: calc(100vw - 16px); display: grid; gap: 8px; padding: 10px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--sk-panel); color: var(--sk-ink); box-shadow: var(--oq-shadow-2) }
   .nbi-pop button, .nbi-in { height: 32px; border: 0; border-radius: 8px; background: none; color: inherit; font: 12px var(--ui-font); cursor: pointer }
   .nbi-pop button:hover { background: var(--hover) }
   .nbi-pop button[aria-pressed="true"] { background: var(--sk-accent-soft) }

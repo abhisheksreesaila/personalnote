@@ -44,9 +44,8 @@ const CSS = `
 .page-drawing-mode .page-desk { box-shadow: inset 0 0 0 3px var(--page-accent); }
 .page-toolbar {
   position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; width: max-content;
-  max-width: 100%; margin: -16px auto 14px; padding: 6px 8px; border: 1px solid var(--page-line); border-radius: 12px;
-  background: color-mix(in srgb, var(--page-paper) 92%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  box-shadow: 0 6px 18px -10px rgba(60, 40, 10, .35); font: 500 13px var(--page-ui);
+  max-width: 100%; margin: -16px auto 14px; padding: 6px 8px; border-radius: 12px;
+  background: var(--page-paper); box-shadow: var(--oq-shadow-2); font: 500 13px var(--page-ui);
 }
 .page-tool-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .page-tool-group:empty { display: none; }
