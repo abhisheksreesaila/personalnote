@@ -278,6 +278,7 @@ try {
   const open = await rect('.spotlight')
   const view = await pn(() => ({ w: innerWidth, h: innerHeight }))
   check('it opens as the centred search panel, 760px wide, near the top, over a dim', Math.abs(open.w - 760) <= 2 && Math.abs((open.x + open.w / 2) - view.w / 2) <= 2 && Math.abs(open.y - Math.min(view.h * 0.11, 96)) <= 3 && await pn(() => getComputedStyle(document.querySelector('#search-backdrop')).display !== 'none'), JSON.stringify({ open, view }))
+  await page.waitForFunction(() => document.querySelectorAll('.omni-row').length > 0) // F-104: search opens instantly; its rows' chunk arrives a moment later
   check('the field is focused and results are below it', await pn(() => document.activeElement.id === 'search-input' && document.querySelectorAll('.omni-row').length > 0))
   await shot('search-open')
   const closedBy = async (how, run) => {
@@ -336,7 +337,7 @@ try {
   const phoneRest = await rect('#island')
   check('on a phone the island is 40px high between the two circles', phoneRest.h === 40 && phoneRest.x >= 56 && phoneRest.r <= 390 - 56, JSON.stringify(phoneRest))
   const springy = await pn(() => { const c = getComputedStyle(document.querySelector('#island')); return { curve: c.transitionTimingFunction, time: c.transitionDuration } })
-  check('on a phone it moves with a spring (overshooting curve, 420ms)', /cubic-bezier\(0\.28, 1\.32, 0\.5, 1\)/.test(springy.curve) && springy.time.includes('0.42s'), JSON.stringify(springy))
+  check('on a phone it morphs over 420ms on a decelerating curve with no overshoot (F-104)', /cubic-bezier\(0\.2, 0, 0, 1\)/.test(springy.curve) && springy.time.includes('0.42s'), JSON.stringify(springy))
   await shot('phone-rest')
   await pn(() => window.__personalNote.island.saveFailed('Couldn’t save', 'Disk is full', true))
   await waitFace('error')

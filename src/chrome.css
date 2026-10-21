@@ -513,6 +513,7 @@
   }
 
   /* ---------- Motion tiers (F-104) ---------- */
+  :root:not([data-leafer-settled]) .app-shell .sidebar { transition: none; } /* a panel restored open at load is there, it does not arrive */
   /* Settle (panels, sheets): fade + 12px, no bounce. Gentle (menus, popovers, pickers): fade + 4px + 3% scale, no overshoot. Search and keyboard moves are instant. */
   @keyframes settle-in { from { opacity: 0; translate: 0 var(--settle-y); } }
   @keyframes menu-in { from { opacity: 0; translate: 0 calc(var(--gentle-y) * -1); scale: var(--gentle-s); } }

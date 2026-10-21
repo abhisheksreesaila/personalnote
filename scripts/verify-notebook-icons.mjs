@@ -44,7 +44,7 @@ try {
   const shot = async (name) => { if (process.env.PN_SHOT) await page.screenshot({ path: process.env.PN_SHOT.replace('.png', `-${name}.png`) }) }
   const open = async () => {
     await page.goto(`http://127.0.0.1:${UI_PORT}/notes`)
-    await page.waitForSelector('[data-icon-notebook]', { timeout: 60000 })
+    await page.waitForSelector('[data-icon-notebook]', { state: 'attached', timeout: 60000 })
     await page.waitForTimeout(300)
   }
   const button = (name) => page.locator('.nav-row', { hasText: name }).locator('.nbi')
