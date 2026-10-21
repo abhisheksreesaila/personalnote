@@ -9,6 +9,7 @@
 /* sections */
 .sw-nav { min-height: 0; overflow-y: auto; padding-bottom: 20px; background: color-mix(in srgb, var(--i) 3.5%, var(--sk-panel)); }
 .sw .properties-heading { padding: 24px 16px 14px 24px; }
+.sw #close-properties { width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgb(var(--oq-state) / .06); }
 .sw .properties-heading h2, .sw-title { margin: 0; font: var(--sk-display-style) var(--sk-display-weight) 26px/1.15 var(--sk-display); letter-spacing: var(--sk-title-track); color: var(--i); }
 .sw-search { display: flex; align-items: center; gap: 8px; height: 38px; margin: 0 14px 16px; padding: 0 12px; border-radius: 11px; background: var(--sk-panel); box-shadow: inset 0 0 0 1px var(--l); color: var(--m); }
 .sw-search:focus-within { box-shadow: inset 0 0 0 2px var(--i); }
