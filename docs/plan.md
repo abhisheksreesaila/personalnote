@@ -649,13 +649,14 @@ Design: docs/design/polish.md (3) · Needs: none
 - [x] Paper, Crayon and Night all look right; budgets green; verify-first-screen still passes
 Reviewed: reviewer PASS (round 3) — real backdrop (a press on the dim never reaches the canvas), modal dialog with focus trap, skin cards drawn from skin tokens, speed-test offer hidden where it can't run. Cut to fit the 260 KiB JS budget: keyword search in Settings ("dark" no longer finds Appearance), arrow keys in the section list, hover feedback on rows, the switch colour animation, some help text.
 
-## F-103 omxqua texture and shape: solid panels, one shadow scale, pills and mono badges [todo]
+## F-103 omxqua texture and shape: solid panels, one shadow scale, pills and mono badges [done]
 Design: docs/design/omxqua.md (Texture, Shape) · Needs: none
-- [ ] no `backdrop-filter` or translucent glass left on chrome in any skin; islands, panel, popovers, search and Settings are solid with the omxqua shadow scale (1 / 2 / 3), no drawn 1px borders on them
-- [ ] hover / press / selected are 8 / 12 / 16% state layers of the skin ink
-- [ ] Quick note, Settings rows and their icon tiles, and filter chips are pills; Inbox and notebook counts and the search notebook tag are radius-4 mono badges; close buttons are 32px circles
-- [ ] Paper, Crayon and Night match the approved after-shots (docs/design/omxqua/img), desktop and phone; text still 4.5:1
-- [ ] saved canvas, page and print appearance unchanged; every verify script that touches these surfaces passes; budgets green (CSS ≤ 17.6 KiB: edit rules in place, don't layer overrides)
+- [x] no `backdrop-filter` or translucent glass left on chrome in any skin; islands, panel, popovers, search and Settings are solid with the omxqua shadow scale (1 / 2 / 3), no drawn 1px borders on them
+- [x] hover / press / selected are 8 / 12 / 16% state layers of the skin ink
+- [x] Quick note, Settings rows and their icon tiles, and filter chips are pills; Inbox and notebook counts and the search notebook tag are radius-4 mono badges; close buttons are 32px circles
+- [x] Paper, Crayon and Night match the approved after-shots (docs/design/omxqua/img), desktop and phone; text still 4.5:1
+- [x] saved canvas, page and print appearance unchanged; every verify script that touches these surfaces passes; budgets green (CSS ≤ 17.6 KiB: edit rules in place, don't layer overrides)
+Reviewed: reviewer PASS (round 2) — hover draws a state layer over the solid panel (--lift), prefers-contrast: more gets real outlines where borders went. CSS 17.00/17.6, JS 259.90/260. verify-speedtest runs past its timeout on main too (a long benchmark, not this change).
 
 ## F-104 omxqua motion: one press for everything, calm panels, no "Dynamic Island" [todo]
 Design: docs/design/omxqua.md (Motion) · Needs: F-103
