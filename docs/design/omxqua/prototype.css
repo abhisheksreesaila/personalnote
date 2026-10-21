@@ -1,0 +1,63 @@
+/* Prototype only (not shipped): Personal Note in omxqua. Notes family = the skins' own colours, omxqua's texture. */
+@media screen {
+  :root, :root[data-skin] {
+    --oq-state: 17 17 20;
+    --oq-shadow-1: 0 1px 2px rgba(20,16,10,.06), 0 0 0 1px rgba(20,16,10,.05);
+    --oq-shadow-2: 0 6px 18px rgba(20,16,10,.10), 0 0 0 1px rgba(20,16,10,.055);
+    --oq-shadow-3: 0 18px 48px rgba(20,16,10,.18), 0 0 0 1px rgba(20,16,10,.06);
+    --oq-spring-fast: linear(0, 0.071, 0.226, 0.407, 0.577, 0.72, 0.831, 0.911, 0.964, 0.997, 1.014, 1.021, 1.023, 1.02, 1.014, 1.009, 1.004, 1.002, 1);
+    --oq-ease-in: cubic-bezier(.2, 0, 0, 1);
+  }
+  :root[data-skin="paper"] { --oq-state: 31 27 22; --sk-desk: #ece7dd; --sk-panel: #fffdf8; }
+  :root[data-skin="night"] {
+    --oq-state: 236 239 244;
+    --sk-panel: #171c24;
+    --oq-shadow-1: 0 1px 0 rgba(255,255,255,.035) inset, 0 1px 2px rgba(0,0,0,.5);
+    --oq-shadow-2: 0 1px 0 rgba(255,255,255,.045) inset, 0 6px 18px rgba(0,0,0,.45), 0 0 0 1px rgba(236,239,244,.05);
+    --oq-shadow-3: 0 1px 0 rgba(255,255,255,.05) inset, 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(236,239,244,.06);
+  }
+  :root, :root[data-skin] {
+    /* texture: solid tonal surfaces, the ring lives in the shadow, no glass */
+    --glass: var(--sk-panel);
+    --glass-solid: var(--sk-panel);
+    --glass-border: transparent;
+    --sk-shadow: var(--oq-shadow-2);
+    --shadow-panel: var(--oq-shadow-2);
+    --hover: rgb(var(--oq-state) / .08);
+    --pressed: rgb(var(--oq-state) / .12);
+    --sk-accent-soft: rgb(var(--oq-state) / .16);
+    --ease-spring: var(--oq-spring-fast);
+    --ease-out: var(--oq-ease-in);
+  }
+  .app-shell *, .app-shell *::before, .app-shell *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+  .app-shell .sidebar, .properties-panel, #properties-panel, .note-popover, #note-popover { border-color: transparent !important; box-shadow: var(--oq-shadow-2) !important; }
+  #properties-panel.open, .omnibar, .spotlight, [class*="omnibar-panel"] { box-shadow: var(--oq-shadow-3) !important; border-color: transparent !important; }
+  .settings-dim { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: rgb(12 10 8 / .32) !important; }
+  :root[data-skin="night"] .settings-dim { background: rgb(0 0 0 / .55) !important; }
+  .app-shell .island, .app-shell .glass-button, .app-shell .tool-dock, .app-shell .history-island, .app-shell .zoom-control { border-color: transparent !important; }
+  /* state layers, not new colours */
+  .app-shell .note-list-item.active, .app-shell .note-list-item[aria-current="true"], .sw-item[aria-current="page"], .sw-item.active { background: rgb(var(--oq-state) / .12) !important; }
+  /* close = one 32px circle */
+  .sw-close, #close-properties { width: 32px !important; height: 32px !important; border-radius: 50% !important; border: 0 !important; background: rgb(var(--oq-state) / .06) !important; }
+}
+@media screen {
+  /* pill = tappable */
+  .app-shell .quick-note { border-radius: 999px !important; box-shadow: var(--oq-shadow-1) !important; }
+  .sw-item { border-radius: 999px !important; }
+  /* status = a small mono badge, not a dot */
+  .app-shell .badge { border-radius: 4px !important; min-width: 0 !important; padding: 0 5px !important; font: 500 10.5px/16px var(--sk-mono) !important; background: rgb(var(--oq-state) / .10) !important; color: var(--sk-ink) !important; }
+  /* islands, hint, zoom, page map: ring in the shadow, no drawn borders */
+  .app-shell .zoom-control, .app-shell .mindmap-hint, .mindmap-hint, .app-shell [class*="minimap"], .app-shell [class*="page-map"] { border-color: transparent !important; box-shadow: var(--oq-shadow-1) !important; }
+  .app-shell .sec-head, .app-shell .nav-section, .app-shell .sidebar section { box-shadow: none; }
+  /* settings: tonal icon tiles, no outlines; the search is a field with a ring */
+  .sw-item > span:first-child { box-shadow: none !important; background: rgb(var(--oq-state) / .07) !important; border-radius: 999px !important; }
+  .sw-nav { background: rgb(var(--oq-state) / .035) !important; border-right-color: transparent !important; }
+  .sw-search { border-radius: 10px !important; height: 40px !important; }
+  .sw-skin { border-color: transparent !important; box-shadow: var(--oq-shadow-1) !important; }
+  .sw-skin[aria-checked="true"], .sw-skin[aria-pressed="true"], .sw-skin.on { box-shadow: 0 0 0 2px var(--sk-ink), var(--oq-shadow-2) !important; border-color: transparent !important; }
+  /* search: chips are pills with a state layer; rows select with a state layer */
+  .omni-chip:not([aria-pressed="true"]) { border-color: transparent !important; background: rgb(var(--oq-state) / .06) !important; }
+  .sw-item[aria-current] > span:first-child, .sw-item.active > span:first-child { background: var(--sk-ink) !important; color: var(--sk-panel) !important; }
+  .omni-row[aria-selected="true"], .omni-row.active { background: rgb(var(--oq-state) / .10) !important; }
+  .omni-nb { border-radius: 4px !important; font-family: var(--sk-mono) !important; font-size: 10.5px !important; }
+}

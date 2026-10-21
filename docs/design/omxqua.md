@@ -1,10 +1,10 @@
 # Personal Note in omxqua (a reskin, not a redesign)
 
-Language: omxqua (`~/Projects/omxqua`, LANGUAGE.md), Notes family: the skins keep their own colours, fonts and accent (Paper ink, Crayon blue, Night mint; Bricolage / Instrument Serif headings); omxqua brings texture, shape and motion. Shell: Canvas (floating islands over the work), already in place. Approved by the captain 2026-10-20 from the before/after page; screenshots in `omxqua/img/` (`before-*`, `after-*`), the prototype stylesheet that drew them in `.work/omxqua/reskin.css` (a reference, not code to ship).
+Language: omxqua (`~/Projects/omxqua`, LANGUAGE.md), Notes family: the skins keep their own colours, fonts and accent (Paper ink, Crayon blue, Night mint; Bricolage / Instrument Serif headings); omxqua brings texture, shape and motion. Shell: Canvas (floating islands over the work), already in place. Approved by the captain 2026-10-20 from the before/after page; screenshots in `omxqua/img/` (`before-*`, `after-*`), drawn by `omxqua/shoot.mjs` (real build, scratch DB) with `omxqua/prototype.css` laid over it (a reference, not code to ship: it uses !important overrides; build the rules in place).
 
 ## Texture (F-103)
 - No glass, blur or translucency on chrome: `--glass` is the solid panel; every `backdrop-filter` on chrome goes (the page note's own sticky strip in `page-style.js` is chrome too). The Settings dim is a scrim colour, not `brightness()`.
-- Depth = tone + one shadow scale: `--oq-shadow-1` (resting controls, cards, skin cards, zoom, page map, hints), `-2` (islands, the notes panel, popovers, menus), `-3` (search panel, Settings window). The hairline ring lives inside the shadow; drawn 1px borders on these surfaces go. Light and Night values: prototype file (Night adds the inset top highlight).
+- Depth = tone + one shadow scale: `--oq-shadow-1` (resting controls, cards, skin cards, zoom, page map, hints), `-2` (islands, the notes panel, popovers, menus), `-3` (search panel, Settings window). The hairline ring lives inside the shadow; drawn 1px borders on these surfaces go. Light and Night values: prototype.css (Night adds the inset top highlight).
 - Hover / press / selected = state layers of the skin's ink: 8% / 12% / 16% (`--hover`, `--pressed`, selected), never a new colour.
 - Paper desk a touch deeper (#ece7dd), Night panel one step up (#171c24), so surfaces separate by tone.
 
