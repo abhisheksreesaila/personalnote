@@ -2,7 +2,7 @@
 
 Personal Note is a local, desktop-first spatial notebook. The required product path is canvas editing, SQLite persistence, local FTS5 search, and user-controlled export. Voice transcripts and mind maps are optional built-in modules.
 
-Design language: web=Personal Note skins (Crayon, Paper, Night in `src/skins.css`), phone=Liquid.
+Design: omxqua (`docs/design/omxqua.md`), Notes family: the skins (Crayon, Paper, Night in `src/skins.css`) keep their colours and fonts; omxqua gives texture (solid surfaces, one shadow scale, no glass), shape and motion. Phone and web alike.
 
 ## Read first
 

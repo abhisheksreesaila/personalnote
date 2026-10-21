@@ -639,7 +639,7 @@ Design: docs/design/polish.md (2) · Needs: F-100 (emoji per note)
 - [x] desktop shows a preview of the selected result on the right; arrow keys move it
 - [x] filter pills show counts; empty and no-result states as in the design
 - [x] typing, keys and early-typing behaviour (verify-first-screen) unchanged; budgets green
-Reviewed: reviewer PASS (round 2) — secure notes show no snippet or preview, matches escaped before marking, omnibar CSS rides in its lazy chunk. Fixed on the way: a title typed in an empty notebook before its first note opened was lost (the title now starts read-only; verify-first-screen covers it). spatial-docs.html is out of the build (file kept).
+Reviewed: reviewer PASS (round 2) — secure notes show no snippet or preview, matches escaped before marking, omnibar CSS rides in its lazy chunk. Fixed on the way: a title typed in an empty notebook before its first note opened was lost (the title now starts read-only; verify-first-screen covers it). spatial-docs.html is out of the build (deleted afterwards, captain's yes).
 
 ## F-102 Settings as its own monochrome window [done]
 Design: docs/design/polish.md (3) · Needs: none
@@ -648,3 +648,19 @@ Design: docs/design/polish.md (3) · Needs: none
 - [x] the open note's properties move to a popover from the title island
 - [x] Paper, Crayon and Night all look right; budgets green; verify-first-screen still passes
 Reviewed: reviewer PASS (round 3) — real backdrop (a press on the dim never reaches the canvas), modal dialog with focus trap, skin cards drawn from skin tokens, speed-test offer hidden where it can't run. Cut to fit the 260 KiB JS budget: keyword search in Settings ("dark" no longer finds Appearance), arrow keys in the section list, hover feedback on rows, the switch colour animation, some help text.
+
+## F-103 omxqua texture and shape: solid panels, one shadow scale, pills and mono badges [todo]
+Design: docs/design/omxqua.md (Texture, Shape) · Needs: none
+- [ ] no `backdrop-filter` or translucent glass left on chrome in any skin; islands, panel, popovers, search and Settings are solid with the omxqua shadow scale (1 / 2 / 3), no drawn 1px borders on them
+- [ ] hover / press / selected are 8 / 12 / 16% state layers of the skin ink
+- [ ] Quick note, Settings rows and their icon tiles, and filter chips are pills; Inbox and notebook counts and the search notebook tag are radius-4 mono badges; close buttons are 32px circles
+- [ ] Paper, Crayon and Night match the approved after-shots (docs/design/omxqua/img), desktop and phone; text still 4.5:1
+- [ ] saved canvas, page and print appearance unchanged; every verify script that touches these surfaces passes; budgets green (CSS ≤ 17.6 KiB: edit rules in place, don't layer overrides)
+
+## F-104 omxqua motion: one press for everything, calm panels, no "Dynamic Island" [todo]
+Design: docs/design/omxqua.md (Motion) · Needs: F-103
+- [ ] every tappable control squashes on press and springs back, sized by the control; one delegated handler; the old per-component `:active` scale rules are gone; canvas objects never press
+- [ ] panels and sheets settle (no bounce), menus and popovers ease in gently, ⌘K search and keyboard moves are instant
+- [ ] reduced motion turns springs into short fades
+- [ ] "Dynamic Island" is gone from code, scripts and current docs (the title island)
+- [ ] verify scripts pass; budgets green (JS ≤ 260 KiB: the press handler must fit, or say so before raising anything)
