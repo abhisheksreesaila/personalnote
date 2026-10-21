@@ -113,7 +113,8 @@
   .sw-head > div { grid-column: 1 / -1; grid-row: 2; padding: 4px 6px 6px; }
   .sw-back { display: flex; align-items: center; gap: 2px; justify-self: start; min-height: 44px; padding: 0 8px 0 2px; border: 0; background: none; color: var(--i); font-size: 16px; font-weight: 500; }
   .sw-back svg { width: 22px; height: 22px; }
-  .sw-close { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; color: var(--i); background: rgb(var(--oq-state) / .06); }
+  .sw-close::after { content: ""; position: absolute; inset: -6px; } /* a 32px circle with a 44px tap target */
+  .sw-close { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; color: var(--i); background: rgb(var(--oq-state) / .06); }
   .sw-body { padding: 8px 16px 32px; }
   .sw-skins { gap: 10px; }
   .sw-art { height: 84px; }

@@ -238,7 +238,9 @@ try {
         check(`phone ${id}: drills in and Back returns`, (await page.locator(`.sw-page[data-sw-page="${id}"]`).isVisible()) && (await page.locator('.sw-back').isVisible()))
       }
       const close = await page.locator('.sw-close').boundingBox()
-      check('[phone] the close button in a section is at least 44 px', close.width >= 44 && close.height >= 44, JSON.stringify(close))
+      // F-103: the close is a 32px circle (omxqua); its tap target stays 44px through a padded hit area.
+      const hit = await page.evaluate(({ x, y, width, height }) => [[x - 6, y - 6], [x + width + 5, y + height + 5], [x + width / 2, y + height / 2]].map(([px, py]) => document.elementFromPoint(px, py)?.closest('.sw-close') !== null), close)
+      check('[phone] the close button in a section is a 32 px circle with a 44 px tap target', close.width === 32 && close.height === 32 && hit.every(Boolean), JSON.stringify({ close, hit }))
       // a swipe down on the handle closes the sheet
       await page.tap('.sw-back')
       const handle = await page.locator('.sw-grab').boundingBox()
