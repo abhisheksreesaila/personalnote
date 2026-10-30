@@ -1,6 +1,7 @@
 import { branchGeometry as computeBranch, cubicAt, PORT_VECTORS, ribbonPath } from './geometry.js'
 import { ghostNodes } from './jam.js'
 import { ICON_PATHS } from './icons.js'
+import { pencilPath, seedOf, strikePoints } from './pencil.js'
 import { layoutNode } from './layout.js'
 import { BRANCH_COLORS, descendantsOf, getDepth, nodeById, visibleNodes } from './model.js'
 
@@ -35,9 +36,9 @@ function setLines(label, lines, step, x, { middle = 0, bottom } = {}) {
 }
 
 // The icons before the words, in `color`, level with the first line; the block of icons and words is centred on `cx`.
-function renderIcons(group, frame, cx, firstY, color) {
+function renderIcons(group, frame, cx, firstY, color, node) {
   frame.icons.forEach((name, index) => {
-    const icon = createSvg('g', { class: 'map-node-icon', 'data-icon': name, transform: `translate(${cx - (frame.lead + frame.textWidth) / 2 + index * (frame.iconSize + 4)} ${firstY - frame.iconSize / 2}) scale(${frame.iconSize / 24})`, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+    const icon = createSvg('g', { class: 'map-node-icon', 'data-icon': name, ...(node.done && name === 'done' ? { 'data-done-toggle': node.id, role: 'button', 'aria-label': 'Done: tap to undo' } : {}), transform: `translate(${cx - (frame.lead + frame.textWidth) / 2 + index * (frame.iconSize + 4)} ${firstY - frame.iconSize / 2}) scale(${frame.iconSize / 24})`, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
     icon.append(createSvg('path', { d: ICON_PATHS[name] }))
     group.append(icon)
   })
@@ -233,12 +234,13 @@ export class MindMapRenderer {
   }
 
   renderRoot(group, node) {
-    const frame = nodeFrame(node)
+    const { frame, firstY, rows } = this.labelPlace(node)
     const { width, height, lines, lineStep } = frame
-    const label = createSvg('text', { class: 'map-root-label', 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
+    const label = createSvg('text', { class: `map-root-label${node.done ? ' done' : ''}`, 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
     setLines(label, lines, lineStep, frame.lead / 2, { middle: 1 })
     const icons = createSvg('g')
-    renderIcons(icons, frame, 0, 1 - (lines.length - 1) * lineStep / 2, '#fff')
+    renderIcons(icons, frame, 0, firstY, '#fff', node)
+    this.renderLabelMarks(icons, node, rows)
     group.append(
       createSvg('rect', { class: 'map-root-card', x: -width / 2, y: -height / 2, width, height, rx: 20, fill: node.color }),
       createSvg('path', { d: `M ${-width / 2 + 18} ${height / 2 - 14} Q 0 ${height / 2 - 4} ${width / 2 - 18} ${height / 2 - 18}`, fill: 'none', stroke: 'rgba(255,255,255,.23)', 'stroke-width': 5, 'stroke-linecap': 'round' }),
@@ -249,16 +251,33 @@ export class MindMapRenderer {
     if (node.vote) this.renderVote(group, node, width / 2 - 4, -height / 2)
   }
 
-  renderLabel(group, node) {
+  // Where a node's words sit, relative to the node: the centre of the block of icons and words, the baseline of a branch label (or null in a box),
+  // and each line's span and middle (what the pencil strike crosses).
+  labelPlace(node) {
     const frame = nodeFrame(node)
-    const parent = nodeById(this.document, node.parentId)
-    const midpoint = nodePresentation(node) === 'branch'
-      ? cubicAt(branchGeometry(parent, node, getDepth(this.document, node.id)), 0.5)
+    const midpoint = node.parentId !== null && nodePresentation(node) === 'branch'
+      ? cubicAt(branchGeometry(nodeById(this.document, node.parentId), node, getDepth(this.document, node.id)), 0.5)
       : null
-    const labelX = midpoint ? midpoint.x - node.x : 0
+    const cx = midpoint ? midpoint.x - node.x : 0
     const labelY = midpoint ? midpoint.y - node.y - 5 : 1
+    const size = node.fontSize || (node.parentId === null ? 28 : 20)
+    const firstY = midpoint ? labelY - (frame.lines.length - 1) * frame.lineStep - size * 0.32 : 1 - (frame.lines.length - 1) * frame.lineStep / 2
+    const rows = frame.lines.map((_, index) => ({ x0: cx + frame.lead / 2 - frame.lineWidths[index] / 2, x1: cx + frame.lead / 2 + frame.lineWidths[index] / 2, y: firstY + index * frame.lineStep }))
+    return { frame, midpoint, cx, labelY, firstY, rows }
+  }
+
+  // The label's touch target (a swipe on it strikes it out) and, for a done node, the pencil lines through its words.
+  renderLabelMarks(group, node, rows) {
+    const { x0, x1 } = rows.reduce((box, row) => ({ x0: Math.min(box.x0, row.x0), x1: Math.max(box.x1, row.x1) }), { x0: Infinity, x1: -Infinity })
+    const step = rows.length > 1 ? rows[1].y - rows[0].y : (node.fontSize || 20) * 1.2
+    group.append(createSvg('rect', { class: 'map-label-hit', 'data-label-hit': node.id, x: x0 - 6, y: rows[0].y - step / 2, width: x1 - x0 + 12, height: step * rows.length, fill: 'transparent' }))
+    if (node.done) rows.forEach((row, index) => group.append(createSvg('path', { class: 'map-strike', d: pencilPath(strikePoints(row.x0 - 4, row.x1 + 4, row.y), seedOf(`${node.id}${index}`)), fill: '#4a4d52' })))
+  }
+
+  renderLabel(group, node) {
+    const { frame, midpoint, cx: labelX, labelY, firstY, rows } = this.labelPlace(node)
     const label = createSvg('text', {
-      class: `map-node-label${node.font === 'clean' ? ' clean' : ''}`,
+      class: `map-node-label${node.font === 'clean' ? ' clean' : ''}${node.done ? ' done' : ''}`,
       'text-anchor': 'middle',
       'font-size': node.fontSize || 20,
       'font-weight': node.bold ? '700' : '500',
@@ -275,7 +294,8 @@ export class MindMapRenderer {
     } else {
       group.append(createSvg('rect', { class: 'map-node-selection', x: labelX - frame.width / 2, y: labelY - frame.height + 5, width: frame.width, height: frame.height, rx: 5 }), label)
     }
-    renderIcons(group, frame, labelX, midpoint ? labelY - (frame.lines.length - 1) * frame.lineStep - (node.fontSize || 20) * 0.32 : 1 - (frame.lines.length - 1) * frame.lineStep / 2, node.color)
+    renderIcons(group, frame, labelX, firstY, node.color, node)
+    this.renderLabelMarks(group, node, rows)
     if (node.vote) this.renderVote(group, node, labelX + frame.width / 2, midpoint ? labelY - frame.height / 2 : -frame.height / 2)
   }
 

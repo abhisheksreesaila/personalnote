@@ -14,7 +14,12 @@ const text = (value, limit) => (typeof value === 'string' ? value.trim().slice(0
 
 const cleanIcons = (value) => (Array.isArray(value) ? [...new Set(value.filter((name) => ICON_NAMES.includes(name)))].slice(0, MAX_ICONS) : [])
 
-export const displayIcons = (node) => node.icons || []
+// A done node shows the check where its to-do box was (or in front, when it has no to-do box).
+export function displayIcons(node) {
+  if (!node.done) return node.icons || []
+  const icons = [...new Set((node.icons || []).map((name) => (name === 'todo' ? 'done' : name)))]
+  return icons.includes('done') ? icons : ['done', ...icons]
+}
 
 export const displayText = (node) => (node.emoji ? `${node.emoji} ${node.text}` : node.text)
 
@@ -53,6 +58,7 @@ export function normalizeDocument(value) {
     branchPorts: normalizeBranchPorts(node.branchPorts),
     collapsed: Boolean(node.collapsed),
     image: node.image || null,
+    ...(node.done === true ? { done: true } : {}),
     ...(cleanIcons(node.icons).length ? { icons: cleanIcons(node.icons) } : {}),
     ...(typeof node.emoji === 'string' && EMOJI.test(node.emoji) ? { emoji: node.emoji } : {}),
     ...(node.vote === 'up' || node.vote === 'down' ? { vote: node.vote, reason: text(node.reason, 120) } : {}),

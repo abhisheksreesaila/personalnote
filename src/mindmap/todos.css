@@ -3,3 +3,8 @@
 .mindmap-icons button { min-width: 0; }
 .mindmap-icons button.active { color: var(--accent, #247c73); background: rgba(36,124,115,.14); }
 .map-node-icon { pointer-events: none; }
+.map-node-icon[data-done-toggle] { pointer-events: all; cursor: pointer; }
+.map-node-label.done, .map-root-label.done { opacity: .55; }
+.map-strike, .map-strike-live { pointer-events: none; }
+.map-strike { opacity: .8; animation: map-strike-in 160ms ease-out; }
+@keyframes map-strike-in { from { opacity: 0; } to { opacity: .8; } }

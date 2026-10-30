@@ -4,6 +4,8 @@
 //   F-105  a long label wraps onto lines and the box grows; the drawn text fits inside its box; a bigger font makes a wider box
 //   F-106  the Properties panel has 12 icons; tapping toggles them on the selected node (3 at most); they draw before the words and the box grows; saved and back after a reload
 //   F-105 fix  editing the long label shows the same lines as the drawn box; Enter commits (no newline in the text); a pasted line break becomes a space
+//   F-107  a sideways swipe on a SELECTED node's label (real mouse on desktop, real touch on the phone) draws a pencil line; past 60% it finishes and the node is done
+//          (check instead of the to-do box, dimmed, struck, saved); short of it the line fades; a vertical drag or an unselected node still drags; swipe again or tap the check clears
 //   F-110 jump  a reminder jump selects its node and brings it to the middle of the view
 //
 //   PN_VERIFY_PORT=4940 node scripts/verify-mindmap-todos.mjs        (PN_SHOT=/path/shot.png also saves pictures)
@@ -51,7 +53,10 @@ try {
   browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] })
   const errors = []
   for (const [label, viewport] of [['phone', { width: 390, height: 780 }], ['desktop', { width: 1360, height: 900 }]]) {
-    const page = await (await browser.newContext({ viewport, hasTouch: label === 'phone' })).newPage()
+    await call('PUT', `/notes/${mapId}`, { title: 'Week plan', content: MAP, revision: (await call('GET', `/notes/${mapId}`)).body.revision })
+    const context = await browser.newContext({ viewport, hasTouch: label === 'phone' })
+    const page = await context.newPage()
+    await page.addInitScript(() => { window.__vib = []; navigator.vibrate = (pattern) => { window.__vib.push(pattern); return true }; window.__audio = 0; const Audio = window.AudioContext; if (Audio) window.AudioContext = class extends Audio { constructor(...args) { super(...args); window.__audio += 1 } } })
     page.on('pageerror', (error) => errors.push(error.message))
     const shot = async (name) => { if (process.env.PN_SHOT) await page.screenshot({ path: process.env.PN_SHOT.replace('.png', `-${label}-${name}.png`) }) }
     await page.goto(`http://127.0.0.1:${UI_PORT}/notes`)
@@ -86,7 +91,8 @@ try {
     // ---- F-106 icons
     const nodeCentre = async (id) => { const r = await page.locator(`g.map-node[data-node-id="${id}"] .map-idea-card, g.map-node[data-node-id="${id}"] .map-root-card`).boundingBox(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } }
     const closeProps = async () => { if (await page.locator('#note-popover').evaluate((e) => !e.hidden)) { await page.keyboard.press('Escape'); await page.waitForTimeout(300); if (await page.locator('#note-popover').evaluate((e) => !e.hidden)) { await page.mouse.click(viewport.width / 2, viewport.height - 20); await page.waitForTimeout(300) } } }
-    const select = async (id) => { await closeProps(); await page.waitForTimeout(600); const c = await nodeCentre(id); await page.mouse.click(c.x, c.y); await page.waitForTimeout(120) }
+    const unfocus = async () => { if (label === 'phone') { await page.click('[data-map-action="zoom-reset"]'); await page.waitForTimeout(500) } } // (on the phone a tapped node zooms into its branch)
+    const select = async (id) => { await closeProps(); await unfocus(); await page.waitForTimeout(600); const c = await nodeCentre(id); await page.mouse.click(c.x, c.y); await page.waitForTimeout(600) }
     const openProps = async () => {
       if (!(await page.locator('#note-popover').evaluate((e) => !e.hidden))) { if (!(await page.locator('#share-props').isVisible())) await page.click('#share-button').catch(() => {}); await page.click('#share-props'); await page.waitForTimeout(300) }
     }
@@ -129,6 +135,91 @@ try {
     await page.waitForTimeout(500)
     check(`[${label}] Enter commits and a line break in the text is a space`, (await waitSaved((n) => n.text === 'Pay rent and the bills', 'long')) && (await page.locator('.mindmap-node-editor').count()) === 0, JSON.stringify((await savedNode('long')).text))
 
+    // ---- F-107 the pencil strike
+    const cdp = await context.newCDPSession(page)
+    if (process.env.PN_DEBUG_TOUCH) { page.on('console', (m) => console.log('page:', m.text())); await page.evaluate(() => { for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) document.addEventListener(t, (e) => console.log(t, e.pointerType, e.target.tagName, e.target.getAttribute?.('class'), Math.round(e.clientX), Math.round(e.clientY)), true) }) }
+    const labelBox = (id) => page.locator(`g.map-node[data-node-id="${id}"] .map-node-label`).evaluate((e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2, width: r.width } })
+    const swipe = async (from, to, kind) => {
+      const steps = 14
+      const at = (i) => ({ id: 1, radiusX: 4, radiusY: 4, force: 1, x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps + (kind === 'touch' ? 0 : Math.sin(i) * 1.2) })
+      if (kind === 'touch') {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at(0)] })
+        for (let i = 1; i <= steps; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [at(i)] }); await page.waitForTimeout(16) }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      } else {
+        await page.mouse.move(from.x, from.y)
+        await page.mouse.down()
+        for (let i = 1; i <= steps; i++) { await page.mouse.move(at(i).x, at(i).y); await page.waitForTimeout(16) }
+        await page.mouse.up()
+      }
+      await page.waitForTimeout(700) // (the line finishes itself with a spring, then fades)
+    }
+    const kind = label === 'phone' ? 'touch' : 'mouse'
+    const sideways = async (id, from = 0.08, to = 1.02) => { const b = await labelBox(id); await swipe({ x: b.left + b.width * from, y: b.mid }, { x: b.left + b.width * to, y: b.mid }, kind) }
+    const isDone = async (id) => (await savedNode(id)).done === true
+    const domDone = (id) => page.locator(`g.map-node[data-node-id="${id}"] .map-node-label.done`).count()
+    // an unselected node: the same swipe drags it, it does not strike
+    await closeProps()
+    await unfocus()
+    const empty = await page.evaluate(() => { const stage = document.querySelector('[data-map-stage]').getBoundingClientRect(); for (let y = stage.top + 20; y < stage.bottom - 20; y += 20) for (let x = stage.left + 20; x < stage.right - 20; x += 20) { const hit = document.elementFromPoint(x, y); if (hit?.closest('.mindmap-canvas') && !hit.closest('[data-node-id], .map-branch-hit, .mindmap-hint')) return { x, y } } })
+    await page.mouse.click(empty.x, empty.y) // (nothing selected)
+    await page.waitForTimeout(400)
+    await sideways('big', 0.3, 0.9)
+    await waitSaved((n) => n.x !== 330, 'big')
+    check(`[${label}] a swipe on a node that is not selected drags it and strikes nothing`, (await savedNode('big')).x > 330 + 10 && !(await isDone('big')) && (await domDone('big')) === 0, JSON.stringify(await savedNode('big')))
+    await page.waitForTimeout(400)
+    // selected, vertical: still a drag
+    await select('big')
+    const bigBefore = (await savedNode('big')).y
+    const bigBox = await labelBox('big')
+    await swipe({ x: bigBox.left + bigBox.width / 2, y: bigBox.mid }, { x: bigBox.left + bigBox.width / 2, y: bigBox.mid + 60 }, kind)
+    await waitSaved((n) => n.y !== bigBefore, 'big')
+    check(`[${label}] a vertical drag on a selected label still moves the node`, (await savedNode('big')).y > bigBefore + 20 && (await domDone('big')) === 0, String(bigBefore))
+    await page.waitForTimeout(400)
+    // selected, sideways but short: the line fades and nothing changes
+    await select('short')
+    await sideways('short', 0.1, 0.4)
+    check(`[${label}] a short swipe fades and changes nothing`, (await domDone('short')) === 0 && !(await isDone('short')) && (await page.locator('.map-strike-live').count()) === 0)
+    // selected, sideways, past 60%: done
+    await sideways('short')
+    await shot('struck')
+    await waitSaved((n) => n.done === true)
+    check(`[${label}] a full swipe strikes the label and marks the node done`, (await isDone('short')) && (await domDone('short')) === 1 && (await page.locator('g.map-node[data-node-id="short"] .map-strike').count()) === 1, JSON.stringify(await savedNode('short')))
+    const iconsNow = await page.locator('g.map-node[data-node-id="short"] .map-node-icon').evaluateAll((els) => els.map((e) => e.dataset.icon))
+    check(`[${label}] the to-do box became the done check, the other icons stayed`, iconsNow.join() === 'flag,fire,done', iconsNow.join())
+    check(`[${label}] the label is dimmed`, Number(await page.locator('g.map-node[data-node-id="short"] .map-node-label').evaluate((e) => getComputedStyle(e).opacity)) < 0.8)
+    check(`[${label}] the scratch sound played${label === 'phone' ? ' and the phone buzzed' : ''}`, (await page.evaluate(() => window.__audio)) >= 1 && (label !== 'phone' || (await page.evaluate(() => window.__vib.length)) >= 1), JSON.stringify(await page.evaluate(() => [window.__audio, window.__vib])))
+    // swipe again: cleared
+    await sideways('short')
+    await waitSaved((n) => n.done !== true)
+    check(`[${label}] swiping across a struck label again clears it`, !(await isDone('short')) && (await domDone('short')) === 0 && (await page.locator('g.map-node[data-node-id="short"] .map-strike').count()) === 0)
+    // strike again, then tap the check
+    await sideways('short')
+    await waitSaved((n) => n.done === true)
+    const check1 = await page.locator('g.map-node[data-node-id="short"] [data-done-toggle]').boundingBox()
+    if (kind === 'touch') { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: check1.x + check1.width / 2, y: check1.y + check1.height / 2 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }) } else await page.mouse.click(check1.x + check1.width / 2, check1.y + check1.height / 2)
+    await waitSaved((n) => n.done !== true)
+    check(`[${label}] tapping the done check clears it`, !(await isDone('short')) && (await domDone('short')) === 0)
+    // undo brings the strike back
+    await sideways('short')
+    await waitSaved((n) => n.done === true)
+    await page.keyboard.press('Control+z')
+    await waitSaved((n) => n.done !== true)
+    check(`[${label}] undo takes the strike back`, !(await isDone('short')))
+    await page.keyboard.press('Control+Shift+z')
+    await waitSaved((n) => n.done === true)
+    // reload
+    await page.reload()
+    await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+    await page.evaluate((n) => window.__personalNote.selectNote(n), mapId)
+    await page.waitForSelector('g.map-node[data-node-id="short"]', { timeout: 15000 })
+    check(`[${label}] after a reload the node is still done and struck`, (await domDone('short')) === 1 && (await page.locator('g.map-node[data-node-id="short"] .map-strike').count()) === 1)
+    // a node without the to-do box shows the check when struck
+    await select('big')
+    await sideways('big')
+    await waitSaved((n) => n.done === true, 'big')
+    check(`[${label}] striking a node with no to-do box shows the done check in front`, (await page.locator('g.map-node[data-node-id="big"] .map-node-icon').evaluateAll((els) => els.map((e) => e.dataset.icon))).join() === 'done')
+
     // ---- a reminder jump lands on its node (F-110)
     const other = (await call('POST', '/notes', { title: 'Elsewhere' })).body
     await page.evaluate((n) => window.__personalNote.selectNote(n), other.id)
@@ -136,10 +227,10 @@ try {
     await page.evaluate((target) => window.__personalNote.jumpToReminder(target), { noteId: mapId, nodeId: 'big' })
     await page.waitForSelector('g.map-node[data-node-id="big"].selected', { timeout: 10000 })
     await page.waitForTimeout(400)
+    await shot('jump')
     const where = await nodeCentre('big')
     const stage = await page.locator('[data-map-stage]').boundingBox()
     check(`[${label}] a reminder jump opens the map, selects the node and centres it`, Math.abs(where.x - (stage.x + stage.width / 2)) < 20 && Math.abs(where.y - (stage.y + stage.height / 2)) < 20, JSON.stringify({ where, stage }))
-    await call('PUT', `/notes/${mapId}`, { title: 'Week plan', content: MAP, revision: (await call('GET', `/notes/${mapId}`)).body.revision })
     await page.context().close()
   }
   check('no page errors', errors.length === 0, errors.join(' | '))

@@ -98,3 +98,21 @@ test('icons are drawn before the words in the node colour, and the card is wider
   const width = (r) => Number(r.found((e) => e.attributes.class === 'map-idea-card')[0].attributes.width)
   assert.equal(width(iconed), width(plain) + 44)
 })
+
+test('a done node shows the check, dims its label and has a pencil line through each row', () => {
+  const long = 'Renew the passport and then book the flights for the family trip'
+  const done = renderJam({ child: { text: long, icons: ['todo'], done: true } })
+  assert.deepEqual(done.found((e) => e.attributes.class === 'map-node-icon').map((e) => e.attributes['data-icon']), ['done'])
+  assert.equal(done.found((e) => e.attributes['data-done-toggle'] === 'child').length, 1)
+  assert.equal(done.found((e) => e.attributes.class === 'map-strike').length, 3)
+  assert.ok(done.found((e) => /map-node-label.* done/.test(e.attributes.class || '')).length === 1)
+  const plain = renderJam({ child: { text: long, icons: ['todo'] } })
+  assert.equal(plain.found((e) => e.attributes.class === 'map-strike').length, 0)
+  assert.deepEqual(plain.found((e) => e.attributes.class === 'map-node-icon').map((e) => e.attributes['data-icon']), ['todo'])
+})
+
+test('a label has a touch target the size of its words', () => {
+  const [hit] = renderJam({ child: { text: 'Call the bank' } }).found((e) => e.attributes['data-label-hit'] === 'child')
+  assert.ok(Number(hit.attributes.width) > 60)
+  assert.equal(Number(hit.attributes.height), 24)
+})
