@@ -91,6 +91,17 @@ CREATE TABLE IF NOT EXISTS note_embeddings (
     text_hash TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Derived (F-110): the mind-map nodes that have a due time, kept on every map save so the scheduler never opens a map. Never in backup
+-- or export; rebuilt from the maps at startup. `fired` is 0 until the notice went out (or was counted as missed); `done` is a struck node.
+CREATE TABLE IF NOT EXISTS mindmap_reminders (
+    note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    due TEXT NOT NULL,
+    fired INTEGER NOT NULL DEFAULT 0,
+    done INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (note_id, node_id)
+);
 -- X bookmarks (F-088): every post ever imported (so a moved, archived or deleted note is never imported again; seq orders them
 -- oldest to newest) and the one notebook they land in, tracked by id so renaming or recolouring it changes nothing.
 -- Not in backup or export: the notes are, as normal notes.

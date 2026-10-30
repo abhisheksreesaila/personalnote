@@ -40,6 +40,7 @@ from vault import PortabilityVaultError, export_vault_archive, import_vault_arch
 from meaning_index import MeaningIndexer
 from search_runtime import SearchError, SearchRuntime, default_search_runtime, reap_dead_cli_engines
 from x_bookmarks import XError
+from reminders import Reminders
 from x_sync import XSync
 from voice_runtime import VoiceError, VoiceRuntime, app_version
 
@@ -89,6 +90,7 @@ def close_search(app) -> None:
     """The app is closing: stop the engine first, so a batch waiting on it fails at once, then the thread that was waiting."""
     app.state.search.shutdown()
     app.state.indexer.stop()
+    app.state.reminders.stop()
     app.state.x_sync.stop()
 
 
@@ -199,6 +201,7 @@ def create_app(
     app.state.ai = ai or AISettings()
     app.state.plugins = plugins or PluginSettings()
     app.state.indexer = MeaningIndexer(service, search, enabled=lambda: app.state.plugins.enabled("meaning"))
+    app.state.reminders = Reminders(service)  # started by main.py / desktop.py, not here: a test's app never pops a notification
     app.state.x_sync = x_sync or XSync(service)  # started by main.py / desktop.py, not here: a test's app never reaches X
     if not speedtest_instance:
         if app.state.plugins.enabled("meaning"):
@@ -603,6 +606,11 @@ def create_app(
             return JSONResponse(service.redo_agent_edit(edit_id))
         except Exception as error:
             return json_error(error)
+
+    @app.get("/api/reminders/jump")
+    def reminder_jump():
+        """The map and node a reminder notice pointed at, once: the window asks when it gains focus."""
+        return JSONResponse({"jump": app.state.reminders.take_jump()})
 
     @app.get("/api/notes/{note_id}")
     def get_note(request, note_id: int):

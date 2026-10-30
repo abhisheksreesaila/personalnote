@@ -670,6 +670,7 @@ def main(argv: list[str] | None = None) -> int:
         if app.state.plugins.enabled("voice"):
             app.state.voice.autostart()  # when voice is installed, its engine starts with the window (in the background)
         app.state.x_sync.start()  # hourly, only when X is connected
+        app.state.reminders.start()  # due mind-map nodes (F-110)
     try:
         if engine == "serve":
             wait_for_stop(base_url)
