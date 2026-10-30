@@ -74,3 +74,14 @@ test('a ghost is drawn faint and dashed with its words as text and a Yes and a N
   assert.deepEqual(found((e) => e.attributes['data-ghost-action']).map((e) => e.attributes['data-ghost-action']).sort(), ['no', 'yes'])
   assert.equal(found((e) => e.name === 'title' && e.textContent === 'Because <b>x</b>').length, 1)
 })
+
+// ---- F-105: the box fits its text ----
+test('a long label is drawn on several lines inside a taller card', () => {
+  const long = 'Renew the passport and then book the flights for the family trip'
+  const card = (text) => renderJam({ child: { text } }).found((e) => e.attributes.class === 'map-idea-card')[0]
+  const rows = renderJam({ child: { text: long } }).found((e) => e.name === 'tspan' && long.includes(e.textContent))
+  assert.deepEqual(rows.map((row) => row.textContent), ['Renew the passport and then', 'book the flights for the', 'family trip'])
+  assert.deepEqual(rows.map((row) => row.attributes.y), ['-23', '1', '25'])
+  assert.equal(Number(card(long).attributes.height), 88)
+  assert.equal(Number(card('Short').attributes.height), 40)
+})

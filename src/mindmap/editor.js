@@ -1,5 +1,6 @@
 import { acceptGhost, applyJamEdits, dismissGhost, ghostNodes } from './jam.js'
 import { BRANCH_COLORS, childrenOf, cleanLayout, descendantsOf, makeNode, nodeById, normalizeDocument } from './model.js'
+import { clearMeasureCache, layoutNode } from './layout.js'
 import { MindMapRenderer } from './renderer.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -269,8 +270,9 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     const editTarget = nodeElement?.querySelector('.map-idea-card, .map-root-card, .map-node-label, .map-root-label')
     if (!editTarget) return
     const targetRect = editTarget.getBoundingClientRect()
+    const layout = layoutNode(node)
     const stageRect = stage.getBoundingClientRect()
-    const input = document.createElement('input')
+    const input = document.createElement('textarea') // (a wrapped label is edited as the same lines)
     input.className = 'mindmap-node-editor'
     input.value = node.text
     Object.assign(input.style, {
@@ -278,6 +280,10 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       top: `${targetRect.top - stageRect.top}px`,
       width: `${Math.max(100, targetRect.width)}px`,
       height: `${Math.max(38, targetRect.height)}px`,
+      padding: `${Math.max(0, (Math.max(38, targetRect.height) - layout.lines.length * layout.lineStep * renderer.transform.scale) / 2)}px 8px 0`,
+      lineHeight: `${layout.lineStep * renderer.transform.scale}px`,
+      resize: 'none',
+      overflow: 'hidden',
       borderColor: node.color,
       fontFamily: node.font === 'clean' ? '"IBM Plex Sans", sans-serif' : '"Source Serif 4", serif',
       fontSize: `${node.fontSize * renderer.transform.scale}px`,
@@ -697,6 +703,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
   resizeObserver.observe(stage)
   createIcons()
   renderer.render(mindmap, selectedId)
+  document.fonts?.ready.then(() => { clearMeasureCache(); if (root.isConnected) render() }) // (boxes measured before the fonts arrived)
   requestAnimationFrame(fitMap)
 
   return {
