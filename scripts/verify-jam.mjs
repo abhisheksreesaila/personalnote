@@ -135,7 +135,7 @@ try {
     }
     const island = () => page.evaluate(() => { const i = document.querySelector('#island'); const face = i.dataset.face; return { face, line: i.querySelector('.isl-line')?.textContent ?? null, text: i.querySelector('.isl-face:not([hidden])')?.textContent ?? '' } })
     const islandIs = (test, ms) => until(async () => test(await island()), ms)
-    const nodes = () => page.$$eval('g.map-node', (els) => els.map((e) => ({ id: e.dataset.nodeId, text: e.getAttribute('aria-label'), at: e.getAttribute('transform'), label: e.querySelector('text')?.textContent })))
+    const nodes = () => page.$$eval('g.map-node', (els) => els.map((e) => ({ id: e.dataset.nodeId, text: e.getAttribute('aria-label'), at: e.getAttribute('transform'), label: [...e.querySelectorAll('.map-node-label tspan, .map-root-label tspan')].map((row) => row.textContent).join(' ') })))
     const ghosts = () => page.$$eval('.map-ghost', (els) => els.map((e) => ({ id: e.dataset.ghostId, text: e.querySelector('text').textContent, why: e.querySelector('title').textContent })))
     const hasNode = async (text) => (await nodes()).some((n) => n.text === text)
     const saved = async (id) => (await call('GET', `/notes/${id}`)).body
@@ -161,7 +161,7 @@ try {
 
     // The map can be wider than a phone: pan it with a real drag on the empty canvas until the pill is on screen, then tap it as a finger would.
     const reveal = async (action, text) => {
-      const target = page.locator(`.map-ghost:has(text:text-is("${text}")) [data-ghost-action="${action}"]`)
+      const target = page.locator(`.map-ghost:has(tspan:text-is("${text}")) [data-ghost-action="${action}"]`)
       for (let i = 0; i < 4; i += 1) {
         const box = await target.boundingBox()
         if (box.x >= 0 && box.y >= 70 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height - 90) break
