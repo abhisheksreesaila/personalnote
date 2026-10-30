@@ -18,6 +18,9 @@ const budgets = {
   // editor is fetched once a canvas has opened and the window is idle (F-049). They have their own budget instead of eating the app's:
   // the two editors and the CodeMirror chunk they share.
   pageEditorGzip: 150 * KIB,
+  // The mind-map editor (src/mindmap/) comes only when a mind map opens. The captain gave it its own budget on 2026-10-30 for the mind-map to-dos
+  // (F-105..F-109: wrap, icons, pencil strike, counts, due dates) rather than raise the app's 260: about 12.5 KiB before them.
+  mindmapEditorGzip: 30 * KIB,
   cssGzip: 17.6 * KIB, // 17.1 until F-072/F-073 (omnibar and focus mode; the old search panel CSS is removed); before that 16 until F-058 (secure notes: about 1 KiB gzip) then 16.75; the PARA sidebar (shelves, drag, naming) adds about 0.3 KiB, trimmed first
   largestJavascriptRaw: 850 * KIB,
 }
@@ -47,7 +50,9 @@ const assets = await Promise.all(files.map(async (path) => {
 }))
 
 const isPageEditor = (asset) => /(^|\/)(page-editor|markdown-editor|codemirror)-[^/]*\.js$/.test(asset.path)
-const javascript = assets.filter((asset) => asset.extension === '.js' && !isPageEditor(asset))
+const isMindmapEditor = (asset) => /(^|\/)mindmap-editor-[^/]*\.js$/.test(asset.path)
+const mindmapEditorGzip = assets.filter(isMindmapEditor).reduce((total, asset) => total + asset.gzip, 0)
+const javascript = assets.filter((asset) => asset.extension === '.js' && !isPageEditor(asset) && !isMindmapEditor(asset))
 const pageEditorGzip = assets.filter(isPageEditor).reduce((total, asset) => total + asset.gzip, 0)
 const css = assets.filter((asset) => asset.extension === '.css')
 const javascriptGzip = javascript.reduce((total, asset) => total + asset.gzip, 0)
@@ -79,6 +84,7 @@ const checks = [
   ['JavaScript gzip (app, without the editors loaded on demand)', javascriptGzip, budgets.javascriptGzip],
   ['JavaScript gzip (first load: what the first screen waits for)', firstLoadGzip, budgets.firstLoadGzip],
   ['Editors gzip (CodeMirror, fetched after the first paint: on idle once a canvas opens, or with a page note)', pageEditorGzip, budgets.pageEditorGzip],
+  ['Mind-map editor gzip (fetched when a mind map opens)', mindmapEditorGzip, budgets.mindmapEditorGzip],
   ['CSS gzip', cssGzip, budgets.cssGzip],
   ['Largest JavaScript chunk', largestJavascript.raw, budgets.largestJavascriptRaw],
 ]
