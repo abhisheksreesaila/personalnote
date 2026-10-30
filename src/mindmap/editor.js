@@ -1,9 +1,13 @@
 import { acceptGhost, applyJamEdits, dismissGhost, ghostNodes } from './jam.js'
 import { BRANCH_COLORS, childrenOf, cleanLayout, descendantsOf, makeNode, nodeById, normalizeDocument } from './model.js'
 import { clearMeasureCache, layoutNode } from './layout.js'
+import { ICON_NAMES, ICON_PATHS, MAX_ICONS } from './icons.js'
 import { MindMapRenderer } from './renderer.js'
+import todosCss from './todos.css?inline'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
+const ICON_LABELS = { todo: 'To-do', done: 'Done', flag: 'Flag', star: 'Star', alert: 'Alert', question: 'Question', clock: 'Clock', idea: 'Idea', heart: 'Heart', pin: 'Pin', fire: 'Fire', x: 'Cross' }
+const iconButtons = () => ICON_NAMES.map((name) => `<button data-map-icon="${name}" aria-label="${ICON_LABELS[name]}" aria-pressed="false" title="${ICON_LABELS[name]}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${ICON_PATHS[name]}"/></svg></button>`).join('')
 const OPPOSITE_PORT = { top: 'bottom', right: 'left', bottom: 'top', left: 'right' }
 
 function template() {
@@ -44,6 +48,7 @@ function inspectorTemplate() {
       <header><span>Selected branch</span><strong data-map-node-title>Central idea</strong></header>
       <section><label>Branch colour</label><div class="mindmap-swatches" data-map-swatches></div></section>
       <section><label>Presentation</label><div class="mindmap-segments"><button data-map-presentation="box">Box</button><button data-map-presentation="branch">On branch</button></div></section>
+      <section><label>Icons <output data-map-icon-count>0/3</output></label><div class="mindmap-icons" role="group" aria-label="Node icons">${iconButtons()}</div></section>
       <section><label>Typography</label><div class="mindmap-segments"><button data-map-font="hand">Handwritten</button><button data-map-font="clean">Clean</button></div><div class="mindmap-format"><button data-map-format="bold"><strong>B</strong></button><button data-map-format="italic"><em>I</em></button><input data-map-font-size type="range" min="14" max="36" value="22" aria-label="Font size"></div></section>
       <section><label>Branch shape <output data-map-curve-output>Organic</output></label><input data-map-curve type="range" min="0" max="100" value="78" aria-label="Branch curvature"></section>
       <section><label class="mindmap-toggle">Collapse descendants <input data-map-collapse type="checkbox"></label></section>
@@ -52,6 +57,7 @@ function inspectorTemplate() {
 }
 
 export function mountMindMap(root, { documentValue, onChange, createIcons, inspectorRoot = root, controlsRoot = root }) {
+  if (!document.querySelector('style[data-mindmap-todos]')) { const style = document.createElement('style'); style.dataset.mindmapTodos = ''; style.textContent = todosCss; document.head.append(style) }
   root.innerHTML = template()
   inspectorRoot.innerHTML = inspectorTemplate()
   const controller = new AbortController()
@@ -139,6 +145,8 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       button.classList.toggle('active', button.dataset.mapPresentation === presentation)
       button.disabled = node.parentId === null
     })
+    queryAll('[data-map-icon]').forEach((button) => { const on = Boolean(node.icons?.includes(button.dataset.mapIcon)); button.classList.toggle('active', on); button.setAttribute('aria-pressed', String(on)) })
+    query('[data-map-icon-count]').textContent = `${node.icons?.length || 0}/${MAX_ICONS}`
     queryAll('[data-map-font]').forEach((button) => button.classList.toggle('active', button.dataset.mapFont === node.font))
     queryAll('[data-map-format]').forEach((button) => button.classList.toggle('active', Boolean(node[button.dataset.mapFormat])))
     query('[data-map-font-size]').value = node.fontSize
@@ -274,7 +282,8 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     const stageRect = stage.getBoundingClientRect()
     const input = document.createElement('textarea') // (a wrapped label is edited as the same lines)
     input.className = 'mindmap-node-editor'
-    input.value = node.text
+    input.value = layout.lines.join(' ') === node.text ? layout.lines.join('\n') : node.text // (the same lines the box shows)
+    input.wrap = 'off'
     Object.assign(input.style, {
       left: `${targetRect.left - stageRect.left}px`,
       top: `${targetRect.top - stageRect.top}px`,
@@ -298,14 +307,14 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     const finish = (commit) => {
       if (done) return
       done = true
-      const text = input.value.trim()
+      const text = input.value.replace(/\s*\n\s*/g, ' ').trim() // (the lines shown are the box's wrap, and a pasted line break is a space)
       input.remove()
       if (commit && text && text !== node.text) mutate(() => { node.text = text })
       else render()
     }
     input.addEventListener('keydown', (event) => {
       event.stopPropagation()
-      if (event.key === 'Enter') finish(true)
+      if (event.key === 'Enter') { event.preventDefault(); finish(true) }
       if (event.key === 'Escape') finish(false)
     }, { signal })
     input.addEventListener('blur', () => finish(true), { once: true, signal })
@@ -383,6 +392,17 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     query('[data-map-swatches]').append(button)
   })
 
+  function toggleIcon(name) {
+    const node = selectedNode()
+    const has = node.icons?.includes(name)
+    if (!has && (node.icons?.length || 0) >= MAX_ICONS) return toast(`Up to ${MAX_ICONS} icons on a node`)
+    mutate(() => {
+      const icons = has ? node.icons.filter((item) => item !== name) : [...(node.icons || []), name]
+      if (icons.length) node.icons = icons
+      else delete node.icons
+    })
+  }
+
   function runAction(action) {
     if (action === 'undo') undo()
     else if (action === 'redo') redo()
@@ -402,10 +422,12 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     const branchChoice = event.target.closest('[data-map-branch-choice]')
     const presentation = event.target.closest('[data-map-presentation]')
     const font = event.target.closest('[data-map-font]')
+    const icon = event.target.closest('[data-map-icon]')
     const format = event.target.closest('[data-map-format]')
     const action = event.target.closest('[data-map-action]')?.dataset.mapAction
     if (branchChoice && pendingBranchId) chooseBranchPresentation(pendingBranchId, branchChoice.dataset.mapBranchChoice)
     else if (presentation && selectedNode()?.parentId) mutate(() => { selectedNode().presentation = presentation.dataset.mapPresentation })
+    else if (icon && selectedNode()) toggleIcon(icon.dataset.mapIcon)
     else if (font && selectedNode()) mutate(() => { selectedNode().font = font.dataset.mapFont })
     else if (format && selectedNode()) mutate(() => { selectedNode()[format.dataset.mapFormat] = !selectedNode()[format.dataset.mapFormat] })
     else if (action) runAction(action)
@@ -719,6 +741,22 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     ghosts: () => ghostNodes(mindmap).map(({ id, text, why }) => ({ id, text, why })),
     applyJam(edits) { focusId = null; mutate(() => applyJamEdits(mindmap, edits)); fitMap(true) }, // one brain turn is one undo step, and the whole map is shown again (a phone may have zoomed into one branch)
     answerGhost,
+    // A reminder opened this map on one node (F-110): select it and bring it to the middle of the view.
+    revealNode(id) {
+      const node = nodeById(mindmap, id)
+      if (!node) return false
+      focusId = null
+      selectedId = id
+      const centre = () => {
+        const rect = svg.getBoundingClientRect()
+        const scale = Math.max(renderer.transform.scale, 0.8)
+        renderer.setTransform({ scale, x: rect.width / 2 - node.x * scale, y: rect.height / 2 - node.y * scale })
+        render()
+      }
+      centre()
+      setTimeout(centre, 150) // (the first fit-to-view of a map that has only just opened lands after this)
+      return true
+    },
     setTitle: (title) => { mindmap.title = title || 'Untitled mind map' },
     runAction,
     undo,

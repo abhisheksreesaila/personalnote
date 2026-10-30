@@ -1,4 +1,4 @@
-import { displayText } from './model.js'
+import { displayIcons, displayText } from './model.js'
 
 // A node's box comes from its measured label: wrapped at word breaks past WRAP characters, as wide as its widest line.
 const WRAP = 28
@@ -45,7 +45,10 @@ export function layoutNode(node, measure = browserMeasure) {
   const lines = wrapText(branch ? displayText(node).toUpperCase() : displayText(node))
   const lineStep = Math.round(size * 1.2)
   const textWidth = Math.max(...lines.map((line) => measure(line, font)))
-  const width = isRoot ? Math.max(180, textWidth + 50) : Math.max(58, textWidth) + 26
+  const icons = displayIcons(node)
+  const iconSize = Math.round(size * 0.9)
+  const lead = icons.length * (iconSize + 4) // the icons, then the words
+  const width = isRoot ? Math.max(180, lead + textWidth + 50) : Math.max(58, lead + textWidth) + 26
   const height = (isRoot ? 76 : size + 20) + (lines.length - 1) * lineStep
-  return { lines, lineStep, width, height, left: -width / 2 }
+  return { lines, lineStep, icons, iconSize, lead, textWidth, width, height, left: -width / 2 }
 }

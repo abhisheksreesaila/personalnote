@@ -85,3 +85,16 @@ test('a long label is drawn on several lines inside a taller card', () => {
   assert.equal(Number(card(long).attributes.height), 88)
   assert.equal(Number(card('Short').attributes.height), 40)
 })
+
+test('icons are drawn before the words in the node colour, and the card is wider for them', () => {
+  const plain = renderJam({ child: { color: '#123456', text: 'Child task here' } })
+  const iconed = renderJam({ child: { color: '#123456', text: 'Child task here', icons: ['flag', 'fire'] } })
+  const icons = iconed.found((e) => e.attributes.class === 'map-node-icon')
+  assert.deepEqual(icons.map((e) => e.attributes['data-icon']), ['flag', 'fire'])
+  assert.deepEqual(icons.map((e) => e.attributes.stroke), ['#123456', '#123456'])
+  const [first, second] = icons.map((e) => Number(/translate\((-?[\d.]+)/.exec(e.attributes.transform)[1]))
+  const row = iconed.found((e) => e.name === 'tspan' && e.textContent === 'Child task here')[0]
+  assert.ok(first < second && second < Number(row.attributes.x))
+  const width = (r) => Number(r.found((e) => e.attributes.class === 'map-idea-card')[0].attributes.width)
+  assert.equal(width(iconed), width(plain) + 44)
+})

@@ -1,5 +1,6 @@
 import { branchGeometry as computeBranch, cubicAt, PORT_VECTORS, ribbonPath } from './geometry.js'
 import { ghostNodes } from './jam.js'
+import { ICON_PATHS } from './icons.js'
 import { layoutNode } from './layout.js'
 import { BRANCH_COLORS, descendantsOf, getDepth, nodeById, visibleNodes } from './model.js'
 
@@ -30,6 +31,15 @@ function setLines(label, lines, step, x, { middle = 0, bottom } = {}) {
     const row = createSvg('tspan', { x, y })
     row.textContent = line
     label.append(row)
+  })
+}
+
+// The icons before the words, in `color`, level with the first line; the block of icons and words is centred on `cx`.
+function renderIcons(group, frame, cx, firstY, color) {
+  frame.icons.forEach((name, index) => {
+    const icon = createSvg('g', { class: 'map-node-icon', 'data-icon': name, transform: `translate(${cx - (frame.lead + frame.textWidth) / 2 + index * (frame.iconSize + 4)} ${firstY - frame.iconSize / 2}) scale(${frame.iconSize / 24})`, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+    icon.append(createSvg('path', { d: ICON_PATHS[name] }))
+    group.append(icon)
   })
 }
 
@@ -223,14 +233,18 @@ export class MindMapRenderer {
   }
 
   renderRoot(group, node) {
-    const { width, height, lines, lineStep } = nodeFrame(node)
+    const frame = nodeFrame(node)
+    const { width, height, lines, lineStep } = frame
     const label = createSvg('text', { class: 'map-root-label', 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
-    setLines(label, lines, lineStep, 0, { middle: 1 })
+    setLines(label, lines, lineStep, frame.lead / 2, { middle: 1 })
+    const icons = createSvg('g')
+    renderIcons(icons, frame, 0, 1 - (lines.length - 1) * lineStep / 2, '#fff')
     group.append(
       createSvg('rect', { class: 'map-root-card', x: -width / 2, y: -height / 2, width, height, rx: 20, fill: node.color }),
       createSvg('path', { d: `M ${-width / 2 + 18} ${height / 2 - 14} Q 0 ${height / 2 - 4} ${width / 2 - 18} ${height / 2 - 18}`, fill: 'none', stroke: 'rgba(255,255,255,.23)', 'stroke-width': 5, 'stroke-linecap': 'round' }),
       createSvg('rect', { class: 'map-node-selection', x: -width / 2 - 7, y: -height / 2 - 7, width: width + 14, height: height + 14, rx: 24 }),
       label,
+      icons,
     )
     if (node.vote) this.renderVote(group, node, width / 2 - 4, -height / 2)
   }
@@ -250,7 +264,7 @@ export class MindMapRenderer {
       'font-weight': node.bold ? '700' : '500',
       'font-style': node.italic ? 'italic' : 'normal',
     })
-    setLines(label, frame.lines, frame.lineStep, labelX, midpoint ? { bottom: labelY } : { middle: 1 })
+    setLines(label, frame.lines, frame.lineStep, labelX + frame.lead / 2, midpoint ? { bottom: labelY } : { middle: 1 })
     if (!midpoint) {
       label.setAttribute('dominant-baseline', 'middle')
       group.append(
@@ -261,6 +275,7 @@ export class MindMapRenderer {
     } else {
       group.append(createSvg('rect', { class: 'map-node-selection', x: labelX - frame.width / 2, y: labelY - frame.height + 5, width: frame.width, height: frame.height, rx: 5 }), label)
     }
+    renderIcons(group, frame, labelX, midpoint ? labelY - (frame.lines.length - 1) * frame.lineStep - (node.fontSize || 20) * 0.32 : 1 - (frame.lines.length - 1) * frame.lineStep / 2, node.color)
     if (node.vote) this.renderVote(group, node, labelX + frame.width / 2, midpoint ? labelY - frame.height / 2 : -frame.height / 2)
   }
 

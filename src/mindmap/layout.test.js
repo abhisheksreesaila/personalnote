@@ -44,3 +44,12 @@ test('a branch label is measured in capitals, as it is drawn', () => {
   const wide = (text) => text.length + (text === text.toUpperCase() ? 100 : 0)
   assert.equal(layoutNode(node({ presentation: 'branch' }), wide).width, 13 + 100 + 26)
 })
+
+test('icons sit before the words and the box grows to fit them', () => {
+  const plain = layoutNode(node(), measure)
+  const box = layoutNode(node({ icons: ['flag', 'star'] }), measure)
+  assert.equal(box.iconSize, 18)
+  assert.equal(box.lead, 2 * 22)
+  assert.equal(box.width, plain.width + 44)
+  assert.equal(layoutNode(node({ parentId: null, fontSize: 28, text: 'Plan', icons: ['flag'] }), measure).width, 180)
+})

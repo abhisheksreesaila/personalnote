@@ -2,6 +2,9 @@
 // The Vite dev server on PN_VERIFY_PORT (never 3137) in front of the real API on the next port, a scratch database (PERSONAL_NOTE_DB),
 // headless Chromium. Phone width first, then desktop.
 //   F-105  a long label wraps onto lines and the box grows; the drawn text fits inside its box; a bigger font makes a wider box
+//   F-106  the Properties panel has 12 icons; tapping toggles them on the selected node (3 at most); they draw before the words and the box grows; saved and back after a reload
+//   F-105 fix  editing the long label shows the same lines as the drawn box; Enter commits (no newline in the text); a pasted line break becomes a space
+//   F-110 jump  a reminder jump selects its node and brings it to the middle of the view
 //
 //   PN_VERIFY_PORT=4940 node scripts/verify-mindmap-todos.mjs        (PN_SHOT=/path/shot.png also saves pictures)
 import fs from 'node:fs'
@@ -79,6 +82,64 @@ try {
     check(`[${label}] a bigger font makes a wider box`, big.card.width > short.card.width + 30, `${big.card.width} vs ${short.card.width}`)
     check(`[${label}] a branch label wraps too, in capitals`, branch.lines.length === 3 && branch.lines[0] === 'RENEW THE PASSPORT AND THEN', branch.lines.join('|'))
     await shot('wrapped')
+
+    // ---- F-106 icons
+    const nodeCentre = async (id) => { const r = await page.locator(`g.map-node[data-node-id="${id}"] .map-idea-card, g.map-node[data-node-id="${id}"] .map-root-card`).boundingBox(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } }
+    const closeProps = async () => { if (await page.locator('#note-popover').evaluate((e) => !e.hidden)) { await page.keyboard.press('Escape'); await page.waitForTimeout(300); if (await page.locator('#note-popover').evaluate((e) => !e.hidden)) { await page.mouse.click(viewport.width / 2, viewport.height - 20); await page.waitForTimeout(300) } } }
+    const select = async (id) => { await closeProps(); await page.waitForTimeout(600); const c = await nodeCentre(id); await page.mouse.click(c.x, c.y); await page.waitForTimeout(120) }
+    const openProps = async () => {
+      if (!(await page.locator('#note-popover').evaluate((e) => !e.hidden))) { if (!(await page.locator('#share-props').isVisible())) await page.click('#share-button').catch(() => {}); await page.click('#share-props'); await page.waitForTimeout(300) }
+    }
+    const savedNode = async (id) => (await call('GET', `/notes/${mapId}`)).body.content.nodes.find((n) => n.id === id)
+    const waitSaved = async (test, id = 'short', alt) => { for (let i = 0; i < 60; i++) { if ((alt || test)(await savedNode(id))) return true; await page.waitForTimeout(100) } return false }
+    await select('short')
+    await openProps()
+    const widthBefore = (await measure('short')).card.width
+    for (const name of ['flag', 'todo', 'fire']) await page.click(`[data-map-icon="${name}"]`)
+    await page.waitForTimeout(100)
+    await page.click('[data-map-icon="star"]')
+    const shown = await page.locator('g.map-node[data-node-id="short"] .map-node-icon').evaluateAll((els) => els.map((e) => e.dataset.icon))
+    check(`[${label}] tapping icons toggles them on the selected node, three at most`, shown.join() === 'flag,todo,fire' && (await page.locator('[data-map-icon-count]').textContent()) === '3/3', shown.join())
+    const withIcons = await measure('short')
+    check(`[${label}] icons draw before the words and the box grew to fit`, withIcons.card.width > widthBefore + 60 && fits(withIcons) && withIcons.card.left < withIcons.text.left - 60, JSON.stringify({ widthBefore, withIcons }))
+    await page.click('[data-map-icon="todo"]')
+    check(`[${label}] tapping a lit icon turns it off`, (await page.locator('g.map-node[data-node-id="short"] .map-node-icon').count()) === 2)
+    await page.click('[data-map-icon="todo"]')
+    await waitSaved((n) => n.icons?.join() === 'flag,fire,todo')
+    check(`[${label}] icons are saved with the map`, (await savedNode('short')).icons?.join() === 'flag,fire,todo', JSON.stringify((await savedNode('short')).icons))
+    await select('r')
+    await openProps()
+    await page.click('[data-map-icon="idea"]')
+    await waitSaved(null, 'r', (n) => n.icons?.join() === 'idea')
+    await shot('icons')
+    await page.reload()
+    await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+    await page.evaluate((n) => window.__personalNote.selectNote(n), mapId)
+    await page.waitForSelector('g.map-node[data-node-id="short"]', { timeout: 15000 })
+    check(`[${label}] after a reload the icons are back`, (await page.locator('g.map-node[data-node-id="short"] .map-node-icon').count()) === 3 && (await page.locator('g.map-node[data-node-id="r"] .map-node-icon').count()) === 1, JSON.stringify([await page.locator('.map-node-icon').evaluateAll((els) => els.map((e) => e.closest('[data-node-id]').dataset.nodeId + ':' + e.dataset.icon)), (await savedNode('r')).icons]))
+    // ---- editing the wrapped label (F-105 fix)
+    await select('long')
+    const drawn = (await measure('long')).lines
+    await page.keyboard.press('F2')
+    await page.locator('.mindmap-node-editor').waitFor()
+    const editing = await page.locator('.mindmap-node-editor').inputValue()
+    check(`[${label}] the editor shows the same lines as the drawn box`, editing.split('\n').join('|') === drawn.join('|'), editing)
+    await page.locator('.mindmap-node-editor').fill('Pay rent\nand the bills')
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(500)
+    check(`[${label}] Enter commits and a line break in the text is a space`, (await waitSaved((n) => n.text === 'Pay rent and the bills', 'long')) && (await page.locator('.mindmap-node-editor').count()) === 0, JSON.stringify((await savedNode('long')).text))
+
+    // ---- a reminder jump lands on its node (F-110)
+    const other = (await call('POST', '/notes', { title: 'Elsewhere' })).body
+    await page.evaluate((n) => window.__personalNote.selectNote(n), other.id)
+    await page.waitForFunction((n) => window.__personalNote.state.activeNoteId === n, other.id)
+    await page.evaluate((target) => window.__personalNote.jumpToReminder(target), { noteId: mapId, nodeId: 'big' })
+    await page.waitForSelector('g.map-node[data-node-id="big"].selected', { timeout: 10000 })
+    await page.waitForTimeout(400)
+    const where = await nodeCentre('big')
+    const stage = await page.locator('[data-map-stage]').boundingBox()
+    check(`[${label}] a reminder jump opens the map, selects the node and centres it`, Math.abs(where.x - (stage.x + stage.width / 2)) < 20 && Math.abs(where.y - (stage.y + stage.height / 2)) < 20, JSON.stringify({ where, stage }))
+    await call('PUT', `/notes/${mapId}`, { title: 'Week plan', content: MAP, revision: (await call('GET', `/notes/${mapId}`)).body.revision })
     await page.context().close()
   }
   check('no page errors', errors.length === 0, errors.join(' | '))
