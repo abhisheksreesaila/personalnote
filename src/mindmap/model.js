@@ -78,6 +78,12 @@ export function normalizeDocument(value) {
   }
 }
 
+// The tasks anywhere under a node (a to-do box, or struck through), and how many are done.
+export function taskCounts(documentValue, id) {
+  const tasks = descendantsOf(documentValue, id).filter((node) => node.done || node.icons?.includes('todo'))
+  return { done: tasks.filter((node) => node.done).length, total: tasks.length }
+}
+
 export function nodeById(documentValue, id) {
   return documentValue.nodes.find((node) => node.id === id)
 }

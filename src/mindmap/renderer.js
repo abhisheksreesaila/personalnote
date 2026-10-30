@@ -3,7 +3,7 @@ import { ghostNodes } from './jam.js'
 import { ICON_PATHS } from './icons.js'
 import { pencilPath, seedOf, strikePoints } from './pencil.js'
 import { layoutNode } from './layout.js'
-import { BRANCH_COLORS, descendantsOf, getDepth, nodeById, visibleNodes } from './model.js'
+import { BRANCH_COLORS, descendantsOf, getDepth, nodeById, taskCounts, visibleNodes } from './model.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const createSvg = (name, attributes = {}) => {
@@ -227,10 +227,30 @@ export class MindMapRenderer {
     if (isRoot) this.renderRoot(group, node)
     else this.renderLabel(group, node)
     if (node.image) this.renderImage(group, node, isRoot)
+    this.renderTaskBadge(group, node)
     const hiddenCount = node.collapsed ? descendantsOf(this.document, node.id).length : 0
     if (hiddenCount) this.renderCollapseBadge(group, node, hiddenCount)
     if (node.id === this.selectedId) this.renderAddHandles(group, node, isRoot)
     this.nodeLayer.append(group)
+  }
+
+  // `3/7` on the corner of a node with tasks under it; a check once they are all done.
+  renderTaskBadge(group, node) {
+    const { done, total } = taskCounts(this.document, node.id)
+    if (!total) return
+    const { frame, midpoint, cx, labelY } = this.labelPlace(node)
+    const all = done === total
+    const words = `${done}/${total}`
+    const width = all ? 22 : words.length * 6.6 + 12
+    const badge = createSvg('g', { class: 'map-task-badge', 'data-task-badge': node.id, ...(all ? { 'data-all-done': 'true' } : {}), transform: `translate(${midpoint ? cx - frame.width / 2 : frame.left} ${midpoint ? labelY - frame.height + 5 : -frame.height / 2})`, role: 'img', 'aria-label': all ? `All ${total} tasks done` : `${done} of ${total} tasks done` })
+    badge.append(createSvg('rect', { x: -width / 2, y: -9, width, height: 18, rx: 9, fill: all ? '#2f8f5b' : '#fffefa', stroke: all ? '#2f8f5b' : node.color, 'stroke-width': 1.5 }))
+    if (all) badge.append(createSvg('path', { d: 'M-4.5 0.5 L-1.5 3.5 L4.5 -3', fill: 'none', stroke: '#fff', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }))
+    else {
+      const text = createSvg('text', { class: 'map-task-count', x: 0, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'central' })
+      text.textContent = words
+      badge.append(text)
+    }
+    group.append(badge)
   }
 
   renderRoot(group, node) {
@@ -239,8 +259,8 @@ export class MindMapRenderer {
     const label = createSvg('text', { class: `map-root-label${node.done ? ' done' : ''}`, 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
     setLines(label, lines, lineStep, frame.lead / 2, { middle: 1 })
     const icons = createSvg('g')
+    this.renderStrikes(icons, node, rows)
     renderIcons(icons, frame, 0, firstY, '#fff', node)
-    this.renderLabelMarks(icons, node, rows)
     group.append(
       createSvg('rect', { class: 'map-root-card', x: -width / 2, y: -height / 2, width, height, rx: 20, fill: node.color }),
       createSvg('path', { d: `M ${-width / 2 + 18} ${height / 2 - 14} Q 0 ${height / 2 - 4} ${width / 2 - 18} ${height / 2 - 18}`, fill: 'none', stroke: 'rgba(255,255,255,.23)', 'stroke-width': 5, 'stroke-linecap': 'round' }),
@@ -266,11 +286,8 @@ export class MindMapRenderer {
     return { frame, midpoint, cx, labelY, firstY, rows }
   }
 
-  // The label's touch target (a swipe on it strikes it out) and, for a done node, the pencil lines through its words.
-  renderLabelMarks(group, node, rows) {
-    const { x0, x1 } = rows.reduce((box, row) => ({ x0: Math.min(box.x0, row.x0), x1: Math.max(box.x1, row.x1) }), { x0: Infinity, x1: -Infinity })
-    const step = rows.length > 1 ? rows[1].y - rows[0].y : (node.fontSize || 20) * 1.2
-    group.append(createSvg('rect', { class: 'map-label-hit', 'data-label-hit': node.id, x: x0 - 6, y: rows[0].y - step / 2, width: x1 - x0 + 12, height: step * rows.length, fill: 'transparent' }))
+  // For a done node, the pencil lines through its words.
+  renderStrikes(group, node, rows) {
     if (node.done) rows.forEach((row, index) => group.append(createSvg('path', { class: 'map-strike', d: pencilPath(strikePoints(row.x0 - 4, row.x1 + 4, row.y), seedOf(`${node.id}${index}`)), fill: '#4a4d52' })))
   }
 
@@ -294,8 +311,8 @@ export class MindMapRenderer {
     } else {
       group.append(createSvg('rect', { class: 'map-node-selection', x: labelX - frame.width / 2, y: labelY - frame.height + 5, width: frame.width, height: frame.height, rx: 5 }), label)
     }
+    this.renderStrikes(group, node, rows)
     renderIcons(group, frame, labelX, firstY, node.color, node)
-    this.renderLabelMarks(group, node, rows)
     if (node.vote) this.renderVote(group, node, labelX + frame.width / 2, midpoint ? labelY - frame.height / 2 : -frame.height / 2)
   }
 

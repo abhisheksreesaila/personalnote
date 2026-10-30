@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { displayIcons, normalizeDocument } from './model.js'
+import { displayIcons, normalizeDocument, taskCounts } from './model.js'
 
 const mapWithPorts = (branchPorts) => ({
   title: 'Ports',
@@ -49,4 +49,20 @@ test('a done node shows the check where its to-do box was, or in front when it h
   assert.deepEqual(displayIcons({ icons: ['flag'], done: true }), ['done', 'flag'])
   assert.deepEqual(displayIcons({ done: true }), ['done'])
   assert.deepEqual(displayIcons({ icons: ['todo'] }), ['todo'])
+})
+
+test('a node counts the tasks anywhere under it: a to-do box or a strike, not itself', () => {
+  const map = normalizeDocument({ nodes: [
+    { id: 'root', parentId: null, text: 'Root', icons: ['todo'] },
+    { id: 'a', parentId: 'root', text: 'A', icons: ['todo'], done: true },
+    { id: 'a1', parentId: 'a', text: 'A1', icons: ['todo'] },
+    { id: 'a2', parentId: 'a', text: 'A2', done: true },
+    { id: 'a3', parentId: 'a2', text: 'A3', icons: ['flag'] },
+    { id: 'b', parentId: 'root', text: 'B', collapsed: true },
+    { id: 'b1', parentId: 'b', text: 'B1', icons: ['todo'] },
+  ] })
+  assert.deepEqual(taskCounts(map, 'root'), { done: 2, total: 4 })
+  assert.deepEqual(taskCounts(map, 'a'), { done: 1, total: 2 })
+  assert.deepEqual(taskCounts(map, 'b'), { done: 0, total: 1 })
+  assert.deepEqual(taskCounts(map, 'a3'), { done: 0, total: 0 })
 })

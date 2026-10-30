@@ -342,6 +342,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       const removing = new Set([node.id, ...descendantsOf(mindmap, node.id).map((item) => item.id)])
       mindmap.nodes = mindmap.nodes.filter((item) => !removing.has(item.id))
       selectedId = next
+      if (removing.has(focusId)) focusId = next // (a phone zoomed into the branch just deleted would show nothing)
     })
   }
 
@@ -458,6 +459,14 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       else commit()
     }
     requestAnimationFrame(step)
+  }
+
+  // The line of a node's words a world point is on (a little slack around it), in world coordinates, or undefined.
+  function labelRowAt(node, point) {
+    const rows = renderer.labelPlace(node).rows
+    const step = rows.length > 1 ? rows[1].y - rows[0].y : (node.fontSize || 20) * 1.2
+    const row = rows.find((item) => Math.abs(point.y - node.y - item.y) <= step / 2 + 4 && point.x >= node.x + item.x0 - 14 && point.x <= node.x + item.x1 + 14)
+    return row && { x0: node.x + row.x0, x1: node.x + row.x1, y: node.y + row.y }
   }
 
   function toggleIcon(name) {
@@ -614,7 +623,9 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     }
     const doneCheck = event.target.closest('[data-done-toggle]')
     doneTap = doneCheck ? { id: doneCheck.dataset.doneToggle, x: event.clientX, y: event.clientY } : null // (tapping the check on a done node clears it)
-    const addHandle = event.target.closest('[data-add-child-id]')
+    const heldNode = nodeById(mindmap, selectedId)
+    const onLabel = heldNode && labelRowAt(heldNode, renderer.screenToWorld(event.clientX, event.clientY)) // (a finger on the words of the selected node is not on a handle beside it)
+    const addHandle = onLabel ? null : event.target.closest('[data-add-child-id]')
     const curveHandle = event.target.closest('[data-branch-anchor-id]')
     if (addHandle && !spacePressed) {
       const sourceId = addHandle.dataset.addChildId
@@ -653,9 +664,9 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
         const point = renderer.screenToWorld(event.clientX, event.clientY)
         checkpoint()
         gesture = { type: 'node', id, startX: event.clientX, startY: event.clientY, dx: node.x - point.x, dy: node.y - point.y, moved: false, chooserShown: false, holdTimer: null }
-        if (wasSelected && event.target.closest('[data-label-hit]')) { // a sideways swipe from here strikes the label; anything else is a drag
-          const row = renderer.labelPlace(node).rows.reduce((best, item) => (Math.abs(item.y - (point.y - node.y)) < Math.abs(best.y - (point.y - node.y)) ? item : best))
-          gesture.strike = { x0: node.x + row.x0, x1: node.x + row.x1, y: node.y + row.y }
+        const row = wasSelected && labelRowAt(node, point)
+        if (row) { // a sideways swipe from the words strikes the label; anything else is a drag
+          gesture.strike = row
           gesture.first = { x: Math.min(gesture.strike.x1, Math.max(gesture.strike.x0, point.x)), y: gesture.strike.y }
         }
         if (node.parentId) {

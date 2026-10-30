@@ -8,3 +8,5 @@
 .map-strike, .map-strike-live { pointer-events: none; }
 .map-strike { opacity: .8; animation: map-strike-in 160ms ease-out; }
 @keyframes map-strike-in { from { opacity: 0; } to { opacity: .8; } }
+.map-task-badge { pointer-events: none; }
+.map-task-count { fill: #4d504a; font: 700 10.5px "IBM Plex Mono", ui-monospace, monospace; }

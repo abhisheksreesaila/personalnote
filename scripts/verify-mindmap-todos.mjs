@@ -6,6 +6,7 @@
 //   F-105 fix  editing the long label shows the same lines as the drawn box; Enter commits (no newline in the text); a pasted line break becomes a space
 //   F-107  a sideways swipe on a SELECTED node's label (real mouse on desktop, real touch on the phone) draws a pencil line; past 60% it finishes and the node is done
 //          (check instead of the to-do box, dimmed, struck, saved); short of it the line fades; a vertical drag or an unselected node still drags; swipe again or tap the check clears
+//   F-108  a parent shows 1/4 for the tasks under it, counting up as they are struck (a check when all are done), down when one is unstruck or deleted
 //   F-110 jump  a reminder jump selects its node and brings it to the middle of the view
 //
 //   PN_VERIFY_PORT=4940 node scripts/verify-mindmap-todos.mjs        (PN_SHOT=/path/shot.png also saves pictures)
@@ -219,6 +220,38 @@ try {
     await sideways('big')
     await waitSaved((n) => n.done === true, 'big')
     check(`[${label}] striking a node with no to-do box shows the done check in front`, (await page.locator('g.map-node[data-node-id="big"] .map-node-icon').evaluateAll((els) => els.map((e) => e.dataset.icon))).join() === 'done')
+
+    // ---- F-108 x of y done
+    const TASKS = { version: 1, title: 'Errands', rootId: 'r', defaultPresentation: 'box', nodes: [
+      node('r', null, 'Errands', 0, 0, { color: '#ef684b', fontSize: 28 }),
+      node('e', 'r', 'This week', 300, 0),
+      node('c1', 'e', 'Post office', 600, -150, { icons: ['todo'], done: true }),
+      node('c2', 'e', 'Pharmacy', 600, -50, { icons: ['todo'] }),
+      node('c3', 'e', 'Bank', 600, 50, { icons: ['todo'] }),
+      node('c4', 'e', 'Library', 600, 150, { icons: ['todo'] }),
+    ] }
+    const tasksNote = (await call('POST', '/notes', { title: 'Errands', noteType: 'mindmap' })).body
+    await call('PUT', `/notes/${tasksNote.id}`, { title: 'Errands', content: TASKS, revision: tasksNote.revision })
+    await page.evaluate((n) => window.__personalNote.selectNote(n), tasksNote.id)
+    await page.waitForSelector('g.map-node[data-node-id="c4"]', { timeout: 15000 })
+    await page.waitForTimeout(600)
+    const badgeOf = async (id) => { const b = page.locator(`[data-task-badge="${id}"]`); return (await b.count()) ? (await b.getAttribute('data-all-done')) === 'true' ? 'check' : (await b.textContent()).trim() : null }
+    const badgeIs = async (id, want) => { for (let i = 0; i < 30; i++) { if ((await badgeOf(id)) === want) return true; await page.waitForTimeout(100) } return false }
+    check(`[${label}] a parent with tasks under it shows 1/4, on the branch and on the centre idea`, (await badgeIs('e', '1/4')) && (await badgeIs('r', '1/4')) && (await badgeOf('c1')) === null, `${await badgeOf('e')} ${await badgeOf('r')}`)
+    await shot('badge')
+
+    await select('c2'); await sideways('c2')
+    check(`[${label}] striking a task counts it: 2/4`, await badgeIs('e', '2/4'), await badgeOf('e'))
+    await select('c3'); await sideways('c3')
+    await shot('before-c4'); await select('c4'); await sideways('c4')
+    check(`[${label}] when every task is done the badge turns into a check`, await badgeIs('e', 'check') && await badgeIs('r', 'check'), await badgeOf('e'))
+    await shot('badge-done')
+    await sideways('c4')
+    check(`[${label}] clearing a strike counts it back: 3/4`, await badgeIs('e', '3/4'), await badgeOf('e'))
+    await select('c1'); await page.keyboard.press('Delete')
+    check(`[${label}] deleting a done task takes it out of the count: 2/3`, await badgeIs('e', '2/3'), await badgeOf('e'))
+    await page.evaluate((n) => window.__personalNote.selectNote(n), mapId)
+    await page.waitForSelector('g.map-node[data-node-id="short"]', { timeout: 15000 })
 
     // ---- a reminder jump lands on its node (F-110)
     const other = (await call('POST', '/notes', { title: 'Elsewhere' })).body

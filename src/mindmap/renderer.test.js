@@ -111,8 +111,21 @@ test('a done node shows the check, dims its label and has a pencil line through 
   assert.deepEqual(plain.found((e) => e.attributes.class === 'map-node-icon').map((e) => e.attributes['data-icon']), ['todo'])
 })
 
-test('a label has a touch target the size of its words', () => {
-  const [hit] = renderJam({ child: { text: 'Call the bank' } }).found((e) => e.attributes['data-label-hit'] === 'child')
-  assert.ok(Number(hit.attributes.width) > 60)
-  assert.equal(Number(hit.attributes.height), 24)
+
+// ---- F-108: x of y done ----
+test('a parent shows how many of its tasks are done, and a check when all are', () => {
+  const run = (child) => renderJam({ map: { nodes: [
+    { id: 'root', parentId: null, text: 'Root', x: 0, y: 0 },
+    { id: 'child', parentId: 'root', text: 'Child', x: 260, y: -140 },
+    { id: 'k1', parentId: 'child', text: 'K1', x: 500, y: -140, icons: ['todo'], ...child },
+    { id: 'k2', parentId: 'child', text: 'K2', x: 500, y: -60, done: true },
+  ] } })
+  const badge = (r, id) => r.found((e) => e.attributes['data-task-badge'] === id)[0]
+  const some = run({})
+  assert.equal(badge(some, 'child').children.find((c) => c.name === 'text').textContent, '1/2')
+  assert.equal(badge(some, 'root').children.find((c) => c.name === 'text').textContent, '1/2')
+  assert.equal(badge(some, 'k1'), undefined)
+  const all = run({ done: true })
+  assert.equal(badge(all, 'child').attributes['data-all-done'], 'true')
+  assert.equal(badge(all, 'child').children.some((c) => c.name === 'text'), false)
 })
