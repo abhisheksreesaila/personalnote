@@ -4,17 +4,25 @@ A fake clock and a fake notifier stand in for the time and the system notificati
 """
 
 import json
+import io
 import sqlite3
+import subprocess
 import tempfile
+import threading
+import time
 import unittest
+import zipfile
+from unittest import mock
 from datetime import datetime
 from pathlib import Path
 
 from starlette.testclient import TestClient
 
+from portability import import_workspace_backup, markdown_archive, workspace_backup
 from reminders import Reminders, system_notify
 from routes import create_app
 from services import NoteService
+from tests.test_secure_notes import FakeMac
 
 
 class Clock:
@@ -120,11 +128,39 @@ class ReminderTests(unittest.TestCase):
         self.reminders.tick()
         self.assertEqual(self.notices.sent, [])
 
-    def test_a_secure_map_keeps_no_reminders(self):
-        note = self.save_map([node("a", "Call", due="2026-11-03T09:10")])
-        self.assertEqual(self.pending_rows(), [(note["id"], "a")])
-        self.service.forget_reminders(note["id"])
-        self.assertEqual(self.pending_rows(), [])
+    def secure_service(self, name="secure.db"):
+        return NoteService(Path(self.folder.name) / name, secure_platform=FakeMac(), scrypt_cost=2**4)
+
+    def secure_map(self, service):
+        note = service.create_note({"title": "Week plan", "noteType": "mindmap"})
+        document = {"version": 1, "rootId": "root", "nodes": [{"id": "root", "parentId": None, "text": "Plan", "x": 0, "y": 0}, node("a", "Call", due="2026-11-03T09:10")]}
+        service.update_note(note["id"], {"title": "Week plan", "content": document, "revision": note["revision"]})
+        return note
+
+    @staticmethod
+    def rows(service):
+        with service.connection() as connection:
+            return [tuple(row) for row in connection.execute("SELECT note_id, node_id FROM mindmap_reminders")]
+
+    def test_making_a_map_secure_drops_its_reminders_and_removing_secure_brings_them_back(self):
+        service = self.secure_service()
+        note = self.secure_map(service)
+        self.assertEqual(self.rows(service), [(note["id"], "a")])
+        service.mark_secure(note["id"])
+        self.assertEqual(self.rows(service), [])
+        service.unmark_secure(note["id"])
+        self.assertEqual(self.rows(service), [(note["id"], "a")])
+
+    def test_importing_a_secure_map_arms_nothing(self):
+        service = self.secure_service()
+        note = self.secure_map(service)
+        service.mark_secure(note["id"])
+        backup = json.loads(json.dumps(workspace_backup(service)))
+        other = self.secure_service("other.db")
+        self.assertEqual(import_workspace_backup(other, backup)["notesImported"], 1)
+        self.assertEqual(self.rows(other), [])
+        Reminders(other, notify=self.notices, clock=Clock("2026-11-03T09:10")).tick()
+        self.assertEqual(self.notices.sent, [])
 
     def test_reminders_that_came_due_while_closed_make_one_missed_notice(self):
         self.save_map([node("a", "One", due="2026-11-02T08:00"), node("b", "Two", due="2026-11-02T18:00"), node("c", "Later", due="2026-11-03T12:00")])
@@ -151,9 +187,44 @@ class ReminderTests(unittest.TestCase):
         self.reminders.tick()
         self.assertEqual(self.notices.sent, [("Personal Note", "Call — in Week plan")])
 
-    def test_a_backup_never_carries_reminders(self):
+    def test_a_backup_and_the_markdown_export_carry_no_reminder_data(self):
+        """The same map with and without a due time: the backup has the same keys everywhere, and no reminder text is in either file."""
+        def shape(value):
+            if isinstance(value, dict):
+                return {key: shape(item) for key, item in value.items() if key not in ("content", "exportedAt", "workspaceId")}
+            return [shape(item) for item in value] if isinstance(value, list) else type(value).__name__
+
+        self.save_map([node("a", "Call the bank", due="2026-11-03T09:10")])
+        with tempfile.TemporaryDirectory() as other_folder:
+            plain = NoteService(Path(other_folder) / "plain.db")
+            note = plain.create_note({"title": "Week plan", "noteType": "mindmap"})
+            document = {"version": 1, "rootId": "root", "nodes": [{"id": "root", "parentId": None, "text": "Plan", "x": 0, "y": 0}, node("a", "Call the bank")]}
+            plain.update_note(note["id"], {"title": "Week plan", "content": document, "revision": note["revision"]})
+            self.assertEqual(shape(self.service.workspace_snapshot()), shape(plain.workspace_snapshot()))
+            self.assertEqual(shape(workspace_backup(self.service)), shape(workspace_backup(plain)))
+        archive = zipfile.ZipFile(io.BytesIO(markdown_archive(self.service)))
+        texts = [json.dumps(workspace_backup(self.service)), *(archive.read(name).decode("utf-8") for name in archive.namelist())]
+        for text in texts:
+            for word in ("mindmap_reminders", "reminder", "fired"):
+                self.assertNotIn(word, text.lower())
+
+    def test_a_notice_that_was_not_shown_stays_armed_and_is_sent_on_the_next_poll(self):
         self.save_map([node("a", "Call", due="2026-11-03T09:10")])
-        self.assertNotIn("mindmap_reminders", json.dumps(self.service.workspace_snapshot()))
+        self.clock.set("2026-11-03T09:10")
+        shown = []
+        results = iter([False, True])
+        self.reminders.notify = lambda title, body: shown.append(body) or next(results)
+        with self.assertLogs("personal-note.reminders", level="WARNING") as logs:
+            self.reminders.tick()
+        self.assertIn("outcome=not_shown", logs.output[0])
+        self.reminders.tick()
+        self.reminders.tick()
+        self.assertEqual(shown, ["Call — in Week plan", "Call — in Week plan"])
+
+    def test_the_missed_notice_jumps_to_the_earliest_missed_reminder(self):
+        note = self.save_map([node("a", "One", due="2026-11-02T08:00"), node("b", "Two", due="2026-11-02T18:00")])
+        self.reminders.catch_up()
+        self.assertEqual(self.reminders.take_jump(), {"noteId": note["id"], "nodeId": "a"})
 
     def test_importing_a_backup_arms_its_maps(self):
         self.save_map([node("a", "Call", due="2026-11-03T09:10")])
@@ -197,6 +268,52 @@ class SystemNotifyTests(unittest.TestCase):
         self.assertEqual(calls[-1][:2], ["/usr/bin/osascript", "-e"])
         self.assertEqual(calls[-1][2], 'display notification "Say \\"hi\\" \\\\ now" with title "Personal Note"')
         self.assertFalse(system_notify("a", "b", platform="linux", which=lambda n: None, run=run))
+
+    def test_notify_send_shows_markup_in_a_label_as_text(self):
+        calls = []
+        system_notify("Personal Note", "<b>Call</b> & <i>pay — in Plan <u>", platform="linux", which=lambda n: "/bin/" + n, run=lambda c, **kw: calls.append(c))
+        self.assertEqual(calls[-1][-1], "&lt;b&gt;Call&lt;/b&gt; &amp; &lt;i&gt;pay — in Plan &lt;u&gt;")
+
+    def test_windows_passes_the_text_by_environment_to_powershell(self):
+        seen = []
+        run = lambda command, **kw: seen.append((command, kw["env"]["PN_TITLE"], kw["env"]["PN_BODY"]))
+        self.assertTrue(system_notify("Personal Note", "Call'; rm x", platform="win32", which=lambda n: "C:/ps.exe", run=run))
+        self.assertEqual(seen[0][0][:4], ["C:/ps.exe", "-NoProfile", "-NonInteractive", "-Command"])
+        self.assertEqual(seen[0][1:], ("Personal Note", "Call'; rm x"))
+
+    def test_a_click_wait_that_times_out_still_counts_as_shown(self):
+        def run(command, **kw):
+            raise subprocess.TimeoutExpired(command, 1)
+        self.assertTrue(system_notify("t", "b", on_click=lambda: None, platform="linux", which=lambda n: "/bin/n", run=run))
+
+
+class WaiterLimitTests(unittest.TestCase):
+    def test_only_a_few_notices_wait_for_a_click_the_rest_are_shown_plainly(self):
+        import reminders
+        with tempfile.TemporaryDirectory() as folder:
+            service = NoteService(Path(folder) / "notes.db")
+            note = service.create_note({"title": "Plan", "noteType": "mindmap"})
+            nodes = [{"id": "root", "parentId": None, "text": "Plan", "x": 0, "y": 0}] + [node(f"n{i}", f"Task {i}", due="2026-11-03T09:00") for i in range(7)]
+            service.update_note(note["id"], {"title": "Plan", "content": {"version": 1, "rootId": "root", "nodes": nodes}, "revision": note["revision"]})
+            release, waiting, plain, lock = threading.Event(), [], [], threading.Lock()
+
+            def fake(title, body, on_click=None, **kw):
+                with lock:
+                    (waiting if on_click else plain).append(body)
+                if on_click:
+                    release.wait(5)
+                return True
+
+            watcher = Reminders(service, clock=Clock("2026-11-03T09:00"))
+            watcher.click_aware = True
+            with mock.patch.object(reminders, "system_notify", fake):
+                self.assertEqual(watcher.tick(), 7)
+                time.sleep(0.3)
+                self.assertEqual((len(waiting), len(plain)), (reminders.MAX_WAITERS, 3))
+                self.assertEqual(watcher.tick(), 0)  # the waiting ones are in flight, the rest were fired
+                release.set()
+                time.sleep(0.3)
+            self.assertEqual(service.reminders_due("2026-11-03T09:00"), [])
 
 
 if __name__ == "__main__":
