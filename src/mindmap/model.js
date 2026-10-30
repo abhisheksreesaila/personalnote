@@ -1,3 +1,6 @@
+import { validDue } from './due.js'
+import { ICON_NAMES, MAX_ICONS } from './icons.js'
+
 export const BRANCH_COLORS = ['#ef684b', '#efad28', '#65ae4f', '#2d9c91', '#3d8fe8', '#8c67cf', '#d85da8', '#5e6570']
 const BRANCH_PORTS = new Set(['top', 'right', 'bottom', 'left'])
 
@@ -9,6 +12,15 @@ function normalizeBranchPorts(value) {
 // Jam sessions (F-092): an emoji on a branch, a thumb with its reason, and ghosts (suggestions that wait beside the map). All of it is plain text.
 const EMOJI = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\u200d|\ufe0f){1,8}$/u
 const text = (value, limit) => (typeof value === 'string' ? value.trim().slice(0, limit) : '')
+
+const cleanIcons = (value) => (Array.isArray(value) ? [...new Set(value.filter((name) => ICON_NAMES.includes(name)))].slice(0, MAX_ICONS) : [])
+
+// A done node shows the check where its to-do box was (or in front, when it has no to-do box).
+export function displayIcons(node) {
+  if (!node.done) return node.icons || []
+  const icons = [...new Set((node.icons || []).map((name) => (name === 'todo' ? 'done' : name)))]
+  return icons.includes('done') ? icons : ['done', ...icons]
+}
 
 export const displayText = (node) => (node.emoji ? `${node.emoji} ${node.text}` : node.text)
 
@@ -47,6 +59,9 @@ export function normalizeDocument(value) {
     branchPorts: normalizeBranchPorts(node.branchPorts),
     collapsed: Boolean(node.collapsed),
     image: node.image || null,
+    ...(node.done === true ? { done: true } : {}),
+    ...(validDue(node.due) ? { due: node.due } : {}),
+    ...(cleanIcons(node.icons).length ? { icons: cleanIcons(node.icons) } : {}),
     ...(typeof node.emoji === 'string' && EMOJI.test(node.emoji) ? { emoji: node.emoji } : {}),
     ...(node.vote === 'up' || node.vote === 'down' ? { vote: node.vote, reason: text(node.reason, 120) } : {}),
   }))
@@ -63,6 +78,12 @@ export function normalizeDocument(value) {
     ...(ghosts.length ? { ghosts } : {}),
     updatedAt: value.updatedAt || new Date().toISOString(),
   }
+}
+
+// The tasks anywhere under a node (a to-do box, or struck through), and how many are done.
+export function taskCounts(documentValue, id) {
+  const tasks = descendantsOf(documentValue, id).filter((node) => node.done || node.icons?.includes('todo'))
+  return { done: tasks.filter((node) => node.done).length, total: tasks.length }
 }
 
 export function nodeById(documentValue, id) {

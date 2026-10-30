@@ -3920,7 +3920,11 @@ document.addEventListener('selectionchange', () => {
 })
 window.addEventListener('focus', () => resumeFocusWriting())
 // A reminder notice was opened (F-110): the window coming forward lands on its map. Best effort; the server hands each target out once.
-window.addEventListener('focus', () => { void api('/api/reminders/jump').then((r) => { if (r?.jump) return selectNote(r.jump.noteId) }).catch(() => {}) })
+async function jumpToReminder(jump) {
+  await selectNote(jump.noteId)
+  if (jump.nodeId) mindmapEditor?.revealNode(jump.nodeId)
+}
+window.addEventListener('focus', () => { void api('/api/reminders/jump').then((r) => { if (r?.jump) return jumpToReminder(r.jump) }).catch(() => {}) })
 
 const doubleTap = createDoubleTap({ key: tapKeyFor(navigator.platform) })
 let toolPillTimer = 0
@@ -4292,5 +4296,5 @@ document.addEventListener('focusin', (event) => { if (event.target?.classList?.c
 if (typeof ResizeObserver === 'function') new ResizeObserver(handleWorkspaceResize).observe(elements.workspace)
 setupToolOptionGestures()
 // Dev-only handle used by the scripts/ checks; stripped from production builds.
-if (import.meta.env.DEV) window.__personalNote = { island: island.model, voiceBoxPoint: () => plugins.get('voice')?.voiceBoxPoint(), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, setViewTo, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
+if (import.meta.env.DEV) window.__personalNote = { jumpToReminder, island: island.model, voiceBoxPoint: () => plugins.get('voice')?.voiceBoxPoint(), selectNote, leaferBase: () => leaferBase, inputSurface, viewSize, state, leaferEdits, leaferSource: () => leaferSource, encodeDocument, createNote, setLeaferSourceNoteId: (id) => { leaferSource.noteId = id }, leaferCanvas: () => leaferCanvas, setTool, getCanvasScale, setCanvasViewportOffset, setViewTo, pageExtents: () => pageExtentsNow, pageExtentsTarget, refreshWorkspaceLists }
 initialize().then(async () => { await speedTestStatus; if (speedTestInstance && new URLSearchParams(location.search).get('speedtest') === '1') setTimeout(() => void startSpeedTest(), 800) }) // `npm run speedtest` opens the page this way

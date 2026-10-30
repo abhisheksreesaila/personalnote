@@ -1,9 +1,15 @@
 import { acceptGhost, applyJamEdits, dismissGhost, ghostNodes } from './jam.js'
 import { BRANCH_COLORS, childrenOf, cleanLayout, descendantsOf, makeNode, nodeById, normalizeDocument } from './model.js'
 import { clearMeasureCache, layoutNode } from './layout.js'
+import { ICON_NAMES, ICON_PATHS, MAX_ICONS } from './icons.js'
+import { pencilPath, seedOf, settle, strikePoints, strikeProgress } from './pencil.js'
 import { MindMapRenderer } from './renderer.js'
+import { scratchSound } from './scratch.js'
+import todosCss from './todos.css?inline'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
+const ICON_LABELS = { todo: 'To-do', done: 'Done', flag: 'Flag', star: 'Star', alert: 'Alert', question: 'Question', clock: 'Clock', idea: 'Idea', heart: 'Heart', pin: 'Pin', fire: 'Fire', x: 'Cross' }
+const iconButtons = () => ICON_NAMES.map((name) => `<button data-map-icon="${name}" aria-label="${ICON_LABELS[name]}" aria-pressed="false" title="${ICON_LABELS[name]}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${ICON_PATHS[name]}"/></svg></button>`).join('')
 const OPPOSITE_PORT = { top: 'bottom', right: 'left', bottom: 'top', left: 'right' }
 
 function template() {
@@ -17,7 +23,7 @@ function template() {
           </defs>
           <g data-map-viewport>
             <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#mindmap-dot-pattern)"></rect>
-            <g data-map-branches></g><g data-map-nodes></g>
+            <g data-map-branches></g><g data-map-nodes></g><g data-map-strike></g>
           </g>
         </svg>
         <div class="mindmap-branch-chooser" data-map-branch-chooser role="group" aria-label="New branch style" hidden>
@@ -44,6 +50,8 @@ function inspectorTemplate() {
       <header><span>Selected branch</span><strong data-map-node-title>Central idea</strong></header>
       <section><label>Branch colour</label><div class="mindmap-swatches" data-map-swatches></div></section>
       <section><label>Presentation</label><div class="mindmap-segments"><button data-map-presentation="box">Box</button><button data-map-presentation="branch">On branch</button></div></section>
+      <section><label>Icons <output data-map-icon-count>0/3</output></label><div class="mindmap-icons" role="group" aria-label="Node icons">${iconButtons()}</div></section>
+      <section><label>Due <button data-map-due-clear aria-label="Clear due date">Clear</button></label><div class="mindmap-due"><input type="date" data-map-due-date aria-label="Due date"><input type="time" data-map-due-time aria-label="Due time (optional)"></div></section>
       <section><label>Typography</label><div class="mindmap-segments"><button data-map-font="hand">Handwritten</button><button data-map-font="clean">Clean</button></div><div class="mindmap-format"><button data-map-format="bold"><strong>B</strong></button><button data-map-format="italic"><em>I</em></button><input data-map-font-size type="range" min="14" max="36" value="22" aria-label="Font size"></div></section>
       <section><label>Branch shape <output data-map-curve-output>Organic</output></label><input data-map-curve type="range" min="0" max="100" value="78" aria-label="Branch curvature"></section>
       <section><label class="mindmap-toggle">Collapse descendants <input data-map-collapse type="checkbox"></label></section>
@@ -52,6 +60,7 @@ function inspectorTemplate() {
 }
 
 export function mountMindMap(root, { documentValue, onChange, createIcons, inspectorRoot = root, controlsRoot = root }) {
+  if (!document.querySelector('style[data-mindmap-todos]')) { const style = document.createElement('style'); style.dataset.mindmapTodos = ''; style.textContent = todosCss; document.head.append(style) }
   root.innerHTML = template()
   inspectorRoot.innerHTML = inspectorTemplate()
   const controller = new AbortController()
@@ -139,6 +148,10 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       button.classList.toggle('active', button.dataset.mapPresentation === presentation)
       button.disabled = node.parentId === null
     })
+    queryAll('[data-map-icon]').forEach((button) => { const on = Boolean(node.icons?.includes(button.dataset.mapIcon)); button.classList.toggle('active', on); button.setAttribute('aria-pressed', String(on)) })
+    query('[data-map-due-date]').value = node.due?.slice(0, 10) || ''
+    query('[data-map-due-time]').value = node.due?.slice(11) || ''
+    query('[data-map-icon-count]').textContent = `${node.icons?.length || 0}/${MAX_ICONS}`
     queryAll('[data-map-font]').forEach((button) => button.classList.toggle('active', button.dataset.mapFont === node.font))
     queryAll('[data-map-format]').forEach((button) => button.classList.toggle('active', Boolean(node[button.dataset.mapFormat])))
     query('[data-map-font-size]').value = node.fontSize
@@ -274,7 +287,8 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     const stageRect = stage.getBoundingClientRect()
     const input = document.createElement('textarea') // (a wrapped label is edited as the same lines)
     input.className = 'mindmap-node-editor'
-    input.value = node.text
+    input.value = layout.lines.join(' ') === node.text ? layout.lines.join('\n') : node.text // (the same lines the box shows)
+    input.wrap = 'off'
     Object.assign(input.style, {
       left: `${targetRect.left - stageRect.left}px`,
       top: `${targetRect.top - stageRect.top}px`,
@@ -298,14 +312,14 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     const finish = (commit) => {
       if (done) return
       done = true
-      const text = input.value.trim()
+      const text = input.value.replace(/\s*\n\s*/g, ' ').trim() // (the lines shown are the box's wrap, and a pasted line break is a space)
       input.remove()
       if (commit && text && text !== node.text) mutate(() => { node.text = text })
       else render()
     }
     input.addEventListener('keydown', (event) => {
       event.stopPropagation()
-      if (event.key === 'Enter') finish(true)
+      if (event.key === 'Enter') { event.preventDefault(); finish(true) }
       if (event.key === 'Escape') finish(false)
     }, { signal })
     input.addEventListener('blur', () => finish(true), { once: true, signal })
@@ -331,6 +345,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       const removing = new Set([node.id, ...descendantsOf(mindmap, node.id).map((item) => item.id)])
       mindmap.nodes = mindmap.nodes.filter((item) => !removing.has(item.id))
       selectedId = next
+      if (removing.has(focusId)) focusId = next // (a phone zoomed into the branch just deleted would show nothing)
     })
   }
 
@@ -383,6 +398,91 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     query('[data-map-swatches]').append(button)
   })
 
+  const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const toggleDone = (node) => { if (node.done) delete node.done; else node.done = true }
+  const strikeLayer = () => svg.querySelector('[data-map-strike]')
+
+  function fadeOut(element) {
+    if (!element.animate || reducedMotion()) return element.remove()
+    element.animate({ opacity: [1, 0] }, { duration: 260 }).onfinish = () => element.remove()
+  }
+
+  // The pencil strike (F-107). It starts on a selected node's label when the finger goes mostly sideways; past 60% of the line it finishes itself.
+  function beginStrike(held) {
+    clearTimeout(held.holdTimer)
+    held.type = 'strike'
+    held.points = [held.first]
+    held.seed = seedOf(held.id + Date.now())
+    held.live = document.createElementNS(SVG_NS, 'path')
+    held.live.setAttribute('class', 'map-strike-live')
+    held.live.setAttribute('fill', '#4a4d52')
+    strikeLayer().append(held.live)
+    held.sound = scratchSound()
+    held.last = { x: held.startX, y: held.startY, at: performance.now() }
+  }
+
+  function moveStrike(held, event) {
+    const point = renderer.screenToWorld(event.clientX, event.clientY)
+    const { row } = held
+    held.points.push({ x: Math.min(row.x1 + 8, Math.max(row.x0 - 8, point.x)), y: row.y + Math.max(-5, Math.min(5, (point.y - row.y) * 0.25)) })
+    held.live.setAttribute('d', pencilPath(held.points, held.seed))
+    const now = performance.now()
+    held.sound.speed(Math.hypot(event.clientX - held.last.x, event.clientY - held.last.y) / Math.max(8, now - held.last.at))
+    held.last = { x: event.clientX, y: event.clientY, at: now }
+  }
+
+  function endStrike(held, event, cancelled) {
+    held.sound.stop()
+    const node = nodeById(mindmap, held.id)
+    if (cancelled || !node || strikeProgress(held.points, held.row) < 0.6) { // stopped short: the line fades and nothing changed
+      history.pop()
+      updateHistoryButtons()
+      fadeOut(held.live)
+      render()
+      return
+    }
+    if (event.pointerType === 'touch') try { navigator.vibrate?.(12) } catch {}
+    const { row } = held
+    const from = held.points.at(-1).x
+    const start = held.points[0].x
+    const to = from >= start ? row.x1 + 4 : row.x0 - 4
+    const commit = () => {
+      toggleDone(node) // (the press already took the undo checkpoint)
+      render()
+      scheduleChange()
+      fadeOut(held.live)
+    }
+    if (reducedMotion()) return commit()
+    const began = performance.now()
+    const step = (now) => {
+      const t = Math.min(1, (now - began) / 380)
+      const x = from + (to - from) * settle(t)
+      held.live.setAttribute('d', pencilPath(strikePoints(Math.min(start, x), Math.max(start, x), row.y), held.seed))
+      if (t < 1 && held.live.isConnected) requestAnimationFrame(step)
+      else commit()
+    }
+    requestAnimationFrame(step)
+  }
+
+  // The line of a node's words a world point is on (a little slack around it), in world coordinates, or undefined.
+  function labelRowAt(node, point) {
+    const rows = renderer.labelPlace(node).rows
+    const step = rows.length > 1 ? rows[1].y - rows[0].y : (node.fontSize || 20) * 1.2
+    const row = rows.find((item) => Math.abs(point.y - node.y - item.y) <= step / 2 + 4 && point.x >= node.x + item.x0 - 14 && point.x <= node.x + item.x1 + 14)
+    return row && { x0: node.x + row.x0, x1: node.x + row.x1, y: node.y + row.y }
+  }
+
+  function toggleIcon(name) {
+    const node = selectedNode()
+    const has = node.icons?.includes(name)
+    if (!has && (node.icons?.length || 0) >= MAX_ICONS) return toast(`Up to ${MAX_ICONS} icons on a node`)
+    mutate(() => {
+      const icons = has ? node.icons.filter((item) => item !== name) : [...(node.icons || []), name]
+      if (icons.length) node.icons = icons
+      else delete node.icons
+    })
+  }
+
   function runAction(action) {
     if (action === 'undo') undo()
     else if (action === 'redo') redo()
@@ -402,15 +502,28 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     const branchChoice = event.target.closest('[data-map-branch-choice]')
     const presentation = event.target.closest('[data-map-presentation]')
     const font = event.target.closest('[data-map-font]')
+    const icon = event.target.closest('[data-map-icon]')
+    const dueClear = event.target.closest('[data-map-due-clear]')
     const format = event.target.closest('[data-map-format]')
     const action = event.target.closest('[data-map-action]')?.dataset.mapAction
     if (branchChoice && pendingBranchId) chooseBranchPresentation(pendingBranchId, branchChoice.dataset.mapBranchChoice)
     else if (presentation && selectedNode()?.parentId) mutate(() => { selectedNode().presentation = presentation.dataset.mapPresentation })
+    else if (icon && selectedNode()) toggleIcon(icon.dataset.mapIcon)
+    else if (dueClear && selectedNode()?.due) mutate(() => { delete selectedNode().due })
     else if (font && selectedNode()) mutate(() => { selectedNode().font = font.dataset.mapFont })
     else if (format && selectedNode()) mutate(() => { selectedNode()[format.dataset.mapFormat] = !selectedNode()[format.dataset.mapFormat] })
     else if (action) runAction(action)
   }, { signal }))
 
+  // Due date and optional time (local time). A time on its own means today.
+  const setDue = () => {
+    const today = new Date()
+    const date = query('[data-map-due-date]').value || (query('[data-map-due-time]').value ? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}` : '')
+    const time = query('[data-map-due-time]').value
+    mutate(() => { if (date) selectedNode().due = time ? `${date}T${time}` : date; else delete selectedNode().due })
+  }
+  query('[data-map-due-date]').addEventListener('change', setDue, { signal })
+  query('[data-map-due-time]').addEventListener('change', setDue, { signal })
   query('[data-map-font-size]').addEventListener('change', (event) => mutate(() => { selectedNode().fontSize = Number(event.target.value) }), { signal })
   query('[data-map-curve]').addEventListener('change', (event) => mutate(() => {
     selectedNode().curve = Number(event.target.value)
@@ -454,6 +567,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       mindmap.nodes = mindmap.nodes.filter((node) => node.id !== abandonedGesture.id)
       selectedId = abandonedGesture.sourceId
     }
+    if (abandonedGesture?.type === 'strike') { abandonedGesture.sound.stop(); abandonedGesture.live.remove() }
     if (abandonedGesture && abandonedGesture.type !== 'pan') history.pop()
     hideBranchChooser()
     gesture = null
@@ -507,6 +621,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
   }, { signal })
 
   svg.addEventListener('pointerdown', (event) => {
+    pinned = false
     const pill = event.target.closest('[data-ghost-action]')
     pillPress = pill ? { id: pill.dataset.ghostId, yes: pill.dataset.ghostAction === 'yes', x: event.clientX, y: event.clientY } : null // (answered on release, if the finger did not travel: a pan may start on a pill)
     const thumb = event.target.closest('[data-reason]')
@@ -520,7 +635,11 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
         return
       }
     }
-    const addHandle = event.target.closest('[data-add-child-id]')
+    const doneCheck = event.target.closest('[data-done-toggle]')
+    doneTap = doneCheck ? { id: doneCheck.dataset.doneToggle, x: event.clientX, y: event.clientY } : null // (tapping the check on a done node clears it)
+    const heldNode = nodeById(mindmap, selectedId)
+    const onLabel = heldNode && labelRowAt(heldNode, renderer.screenToWorld(event.clientX, event.clientY)) // (a finger on the words of the selected node is not on a handle beside it)
+    const addHandle = onLabel ? null : event.target.closest('[data-add-child-id]')
     const curveHandle = event.target.closest('[data-branch-anchor-id]')
     if (addHandle && !spacePressed) {
       const sourceId = addHandle.dataset.addChildId
@@ -545,6 +664,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       const nodeElement = event.target.closest('[data-node-id]')
       const id = nodeElement?.dataset.nodeId
       if (id && !spacePressed) {
+        const wasSelected = selectedId === id
         selectedId = id
         const now = performance.now()
         if (lastNodePress?.id === id && now - lastNodePress.at < 420) {
@@ -558,6 +678,11 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
         const point = renderer.screenToWorld(event.clientX, event.clientY)
         checkpoint()
         gesture = { type: 'node', id, startX: event.clientX, startY: event.clientY, dx: node.x - point.x, dy: node.y - point.y, moved: false, chooserShown: false, holdTimer: null }
+        const row = wasSelected && labelRowAt(node, point)
+        if (row) { // a sideways swipe from the words strikes the label; anything else is a drag
+          gesture.strike = row
+          gesture.first = { x: Math.min(gesture.strike.x1, Math.max(gesture.strike.x0, point.x)), y: gesture.strike.y }
+        }
         if (node.parentId) {
           const nodeRect = nodeElement.getBoundingClientRect()
           scheduleBranchChooser(gesture, nodeRect.left + nodeRect.width / 2, nodeRect.top)
@@ -580,6 +705,11 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       }
     }
     if (!gesture) return
+    if (gesture.type === 'node' && gesture.strike && !gesture.chooserShown && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 7) {
+      if (Math.abs(event.clientX - gesture.startX) >= 1.6 * Math.abs(event.clientY - gesture.startY)) { gesture.row = gesture.strike; beginStrike(gesture) }
+      else gesture.strike = null
+    }
+    if (gesture.type === 'strike') { moveStrike(gesture, event); return }
     if (gesture.type === 'pan') {
       const dx = event.clientX - gesture.startX
       const dy = event.clientY - gesture.startY
@@ -625,10 +755,15 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
   }, { signal })
 
   let pillPress = null
+  let pinned = false
+  let doneTap = null
   const finishGesture = (event, cancelled = false) => {
     const press = pillPress
     pillPress = null
     if (press && !cancelled && Math.hypot(event.clientX - press.x, event.clientY - press.y) < 8) setTimeout(() => answerGhost(press.id, press.yes), 0)
+    const tap = doneTap
+    doneTap = null
+    if (tap && !cancelled && Math.hypot(event.clientX - tap.x, event.clientY - tap.y) < 8) setTimeout(() => { const node = nodeById(mindmap, tap.id); if (node) mutate(() => toggleDone(node)) }, 0)
     const wasPinching = Boolean(pinchGesture)
     if (event.pointerType === 'touch') touchPointers.delete(event.pointerId)
     if (wasPinching) {
@@ -643,6 +778,7 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     gesture = null
     clearTimeout(finished.holdTimer)
     svg.classList.remove('dragging')
+    if (finished.type === 'strike') return endStrike(finished, event, cancelled)
     if (cancelled && finished.type === 'branch') {
       history.pop()
       mindmap.nodes = mindmap.nodes.filter((node) => node.id !== finished.id)
@@ -698,13 +834,13 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
   document.addEventListener('keyup', (event) => { if (event.code === 'Space') spacePressed = false }, { signal })
 
   const resizeObserver = new ResizeObserver(() => {
-    if (renderer.document) fitMap()
+    if (renderer.document && !pinned) fitMap()
   })
   resizeObserver.observe(stage)
   createIcons()
   renderer.render(mindmap, selectedId)
   document.fonts?.ready.then(() => { clearMeasureCache(); if (root.isConnected) render() }) // (boxes measured before the fonts arrived)
-  requestAnimationFrame(fitMap)
+  requestAnimationFrame(() => { if (!pinned) fitMap() })
 
   return {
     getDocument: persisted,
@@ -719,6 +855,22 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     ghosts: () => ghostNodes(mindmap).map(({ id, text, why }) => ({ id, text, why })),
     applyJam(edits) { focusId = null; mutate(() => applyJamEdits(mindmap, edits)); fitMap(true) }, // one brain turn is one undo step, and the whole map is shown again (a phone may have zoomed into one branch)
     answerGhost,
+    // A reminder opened this map on one node (F-110): select it and bring it to the middle of the view.
+    revealNode(id) {
+      const node = nodeById(mindmap, id)
+      if (!node) return false
+      focusId = null
+      selectedId = id
+      const centre = () => {
+        const rect = svg.getBoundingClientRect()
+        const scale = Math.max(renderer.transform.scale, 0.8)
+        renderer.setTransform({ scale, x: rect.width / 2 - node.x * scale, y: rect.height / 2 - node.y * scale })
+        render()
+      }
+      centre()
+      pinned = true // (the fit-to-view of a map that has only just opened must not undo this; any touch of the map ends it)
+      return true
+    },
     setTitle: (title) => { mindmap.title = title || 'Untitled mind map' },
     runAction,
     undo,

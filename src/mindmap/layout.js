@@ -1,4 +1,5 @@
-import { displayText } from './model.js'
+import { dueChip } from './due.js'
+import { displayIcons, displayText } from './model.js'
 
 // A node's box comes from its measured label: wrapped at word breaks past WRAP characters, as wide as its widest line.
 const WRAP = 28
@@ -37,15 +38,22 @@ export function wrapText(text, limit = WRAP) {
   return lines.length ? lines : ['']
 }
 
-export function layoutNode(node, measure = browserMeasure) {
+export function layoutNode(node, measure = browserMeasure, now = new Date()) {
   const isRoot = node.parentId === null
   const branch = !isRoot && node.presentation === 'branch'
   const size = node.fontSize || (isRoot ? 28 : 20)
   const font = `${node.italic ? 'italic ' : ''}${isRoot ? 700 : node.font === 'clean' ? 500 : 600} ${size}px ${node.font === 'clean' ? CLEAN : SERIF}`
   const lines = wrapText(branch ? displayText(node).toUpperCase() : displayText(node))
   const lineStep = Math.round(size * 1.2)
-  const textWidth = Math.max(...lines.map((line) => measure(line, font)))
-  const width = isRoot ? Math.max(180, textWidth + 50) : Math.max(58, textWidth) + 26
+  const lineWidths = lines.map((line) => measure(line, font))
+  const textWidth = Math.max(...lineWidths)
+  const icons = displayIcons(node)
+  const iconSize = Math.round(size * 0.9)
+  const lead = icons.length * (iconSize + 4) // the icons, then the words
+  const due = node.done ? null : dueChip(node.due, now) // (a due date goes once the node is done)
+  const chip = due && { ...due, width: Math.round(measure(due.text, '600 11px "IBM Plex Sans", sans-serif') + 14) } // the pill after the words
+  const trail = chip ? chip.width + 6 : 0
+  const width = isRoot ? Math.max(180, lead + textWidth + trail + 50) : Math.max(58, lead + textWidth + trail) + 26
   const height = (isRoot ? 76 : size + 20) + (lines.length - 1) * lineStep
-  return { lines, lineStep, width, height, left: -width / 2 }
+  return { lines, lineStep, icons, iconSize, lead, trail, chip, textWidth, lineWidths, width, height, left: -width / 2 }
 }

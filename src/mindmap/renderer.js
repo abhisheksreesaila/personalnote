@@ -1,7 +1,9 @@
 import { branchGeometry as computeBranch, cubicAt, PORT_VECTORS, ribbonPath } from './geometry.js'
 import { ghostNodes } from './jam.js'
+import { ICON_PATHS } from './icons.js'
+import { pencilPath, seedOf, strikePoints } from './pencil.js'
 import { layoutNode } from './layout.js'
-import { BRANCH_COLORS, descendantsOf, getDepth, nodeById, visibleNodes } from './model.js'
+import { BRANCH_COLORS, descendantsOf, getDepth, nodeById, taskCounts, visibleNodes } from './model.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const createSvg = (name, attributes = {}) => {
@@ -31,6 +33,29 @@ function setLines(label, lines, step, x, { middle = 0, bottom } = {}) {
     row.textContent = line
     label.append(row)
   })
+}
+
+// The icons before the words, in `color`, level with the first line; the block of icons and words is centred on `cx`.
+function renderIcons(group, frame, cx, firstY, color, node) {
+  const left = cx - (frame.lead + frame.textWidth + frame.trail) / 2
+  frame.icons.forEach((name, index) => {
+    const icon = createSvg('g', { class: 'map-node-icon', 'data-icon': name, ...(node.done && name === 'done' ? { 'data-done-toggle': node.id, role: 'button', 'aria-label': 'Done: tap to undo' } : {}), transform: `translate(${left + index * (frame.iconSize + 4)} ${firstY - frame.iconSize / 2}) scale(${frame.iconSize / 24})`, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+    icon.append(createSvg('path', { d: ICON_PATHS[name] }))
+    group.append(icon)
+  })
+}
+
+// The due date's pill at the end of the words, amber on the day and red when late.
+const CHIP_COLORS = { later: ['#fffefa', '#746f65', '#cfc8ba'], today: ['#fde7b0', '#7a4f00', '#e0a526'], overdue: ['#fbd3cd', '#9c2418', '#e0675a'] }
+function renderDueChip(group, frame, cx, firstY) {
+  if (!frame.chip) return
+  const [fill, ink, edge] = CHIP_COLORS[frame.chip.state]
+  const x = cx + (frame.lead + frame.textWidth + frame.trail) / 2 - frame.chip.width
+  const chip = createSvg('g', { class: 'map-due-chip', 'data-due-state': frame.chip.state, transform: `translate(${x} ${firstY})`, 'pointer-events': 'none' })
+  const text = createSvg('text', { x: frame.chip.width / 2, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: ink, style: 'font:600 11px "IBM Plex Sans",sans-serif' })
+  text.textContent = frame.chip.text
+  chip.append(createSvg('rect', { x: 0, y: -10, width: frame.chip.width, height: 20, rx: 10, fill, stroke: edge, 'stroke-width': 1 }), text)
+  group.append(chip)
 }
 
 const frameOf = (node) => ({ x: node.x, y: node.y, hw: nodeFrame(node).width / 2, hh: nodeFrame(node).height / 2, pin: nodePresentation(node) === 'branch' })
@@ -216,41 +241,81 @@ export class MindMapRenderer {
     if (isRoot) this.renderRoot(group, node)
     else this.renderLabel(group, node)
     if (node.image) this.renderImage(group, node, isRoot)
+    this.renderTaskBadge(group, node)
     const hiddenCount = node.collapsed ? descendantsOf(this.document, node.id).length : 0
     if (hiddenCount) this.renderCollapseBadge(group, node, hiddenCount)
     if (node.id === this.selectedId) this.renderAddHandles(group, node, isRoot)
     this.nodeLayer.append(group)
   }
 
+  // `3/7` on the corner of a node with tasks under it; a check once they are all done.
+  renderTaskBadge(group, node) {
+    const { done, total } = taskCounts(this.document, node.id)
+    if (!total) return
+    const { frame, midpoint, cx, labelY } = this.labelPlace(node)
+    const all = done === total
+    const words = `${done}/${total}`
+    const width = all ? 22 : words.length * 6.6 + 12
+    const badge = createSvg('g', { class: 'map-task-badge', 'data-task-badge': node.id, ...(all ? { 'data-all-done': 'true' } : {}), transform: `translate(${midpoint ? cx - frame.width / 2 : frame.left} ${midpoint ? labelY - frame.height + 5 : -frame.height / 2})`, role: 'img', 'aria-label': all ? `All ${total} tasks done` : `${done} of ${total} tasks done` })
+    badge.append(createSvg('rect', { x: -width / 2, y: -9, width, height: 18, rx: 9, fill: all ? '#2f8f5b' : '#fffefa', stroke: all ? '#2f8f5b' : node.color, 'stroke-width': 1.5 }))
+    if (all) badge.append(createSvg('path', { d: 'M-4.5 0.5 L-1.5 3.5 L4.5 -3', fill: 'none', stroke: '#fff', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }))
+    else {
+      const text = createSvg('text', { class: 'map-task-count', x: 0, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'central' })
+      text.textContent = words
+      badge.append(text)
+    }
+    group.append(badge)
+  }
+
   renderRoot(group, node) {
-    const { width, height, lines, lineStep } = nodeFrame(node)
-    const label = createSvg('text', { class: 'map-root-label', 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
-    setLines(label, lines, lineStep, 0, { middle: 1 })
+    const { frame, firstY, rows } = this.labelPlace(node)
+    const { width, height, lines, lineStep } = frame
+    const label = createSvg('text', { class: `map-root-label${node.done ? ' done' : ''}`, 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
+    setLines(label, lines, lineStep, (frame.lead - frame.trail) / 2, { middle: 1 })
+    const icons = createSvg('g')
+    this.renderStrikes(icons, node, rows)
+    renderIcons(icons, frame, 0, firstY, '#fff', node)
+    renderDueChip(icons, frame, 0, firstY)
     group.append(
       createSvg('rect', { class: 'map-root-card', x: -width / 2, y: -height / 2, width, height, rx: 20, fill: node.color }),
       createSvg('path', { d: `M ${-width / 2 + 18} ${height / 2 - 14} Q 0 ${height / 2 - 4} ${width / 2 - 18} ${height / 2 - 18}`, fill: 'none', stroke: 'rgba(255,255,255,.23)', 'stroke-width': 5, 'stroke-linecap': 'round' }),
       createSvg('rect', { class: 'map-node-selection', x: -width / 2 - 7, y: -height / 2 - 7, width: width + 14, height: height + 14, rx: 24 }),
       label,
+      icons,
     )
     if (node.vote) this.renderVote(group, node, width / 2 - 4, -height / 2)
   }
 
-  renderLabel(group, node) {
+  // Where a node's words sit, relative to the node: the centre of the block of icons and words, the baseline of a branch label (or null in a box),
+  // and each line's span and middle (what the pencil strike crosses).
+  labelPlace(node) {
     const frame = nodeFrame(node)
-    const parent = nodeById(this.document, node.parentId)
-    const midpoint = nodePresentation(node) === 'branch'
-      ? cubicAt(branchGeometry(parent, node, getDepth(this.document, node.id)), 0.5)
+    const midpoint = node.parentId !== null && nodePresentation(node) === 'branch'
+      ? cubicAt(branchGeometry(nodeById(this.document, node.parentId), node, getDepth(this.document, node.id)), 0.5)
       : null
-    const labelX = midpoint ? midpoint.x - node.x : 0
+    const cx = midpoint ? midpoint.x - node.x : 0
     const labelY = midpoint ? midpoint.y - node.y - 5 : 1
+    const size = node.fontSize || (node.parentId === null ? 28 : 20)
+    const firstY = midpoint ? labelY - (frame.lines.length - 1) * frame.lineStep - size * 0.32 : 1 - (frame.lines.length - 1) * frame.lineStep / 2
+    const rows = frame.lines.map((_, index) => ({ x0: cx + (frame.lead - frame.trail) / 2 - frame.lineWidths[index] / 2, x1: cx + (frame.lead - frame.trail) / 2 + frame.lineWidths[index] / 2, y: firstY + index * frame.lineStep }))
+    return { frame, midpoint, cx, labelY, firstY, rows }
+  }
+
+  // For a done node, the pencil lines through its words.
+  renderStrikes(group, node, rows) {
+    if (node.done) rows.forEach((row, index) => group.append(createSvg('path', { class: 'map-strike', d: pencilPath(strikePoints(row.x0 - 4, row.x1 + 4, row.y), seedOf(`${node.id}${index}`)), fill: '#4a4d52' })))
+  }
+
+  renderLabel(group, node) {
+    const { frame, midpoint, cx: labelX, labelY, firstY, rows } = this.labelPlace(node)
     const label = createSvg('text', {
-      class: `map-node-label${node.font === 'clean' ? ' clean' : ''}`,
+      class: `map-node-label${node.font === 'clean' ? ' clean' : ''}${node.done ? ' done' : ''}`,
       'text-anchor': 'middle',
       'font-size': node.fontSize || 20,
       'font-weight': node.bold ? '700' : '500',
       'font-style': node.italic ? 'italic' : 'normal',
     })
-    setLines(label, frame.lines, frame.lineStep, labelX, midpoint ? { bottom: labelY } : { middle: 1 })
+    setLines(label, frame.lines, frame.lineStep, labelX + (frame.lead - frame.trail) / 2, midpoint ? { bottom: labelY } : { middle: 1 })
     if (!midpoint) {
       label.setAttribute('dominant-baseline', 'middle')
       group.append(
@@ -261,6 +326,9 @@ export class MindMapRenderer {
     } else {
       group.append(createSvg('rect', { class: 'map-node-selection', x: labelX - frame.width / 2, y: labelY - frame.height + 5, width: frame.width, height: frame.height, rx: 5 }), label)
     }
+    this.renderStrikes(group, node, rows)
+    renderIcons(group, frame, labelX, firstY, node.color, node)
+    renderDueChip(group, frame, labelX, firstY)
     if (node.vote) this.renderVote(group, node, labelX + frame.width / 2, midpoint ? labelY - frame.height / 2 : -frame.height / 2)
   }
 

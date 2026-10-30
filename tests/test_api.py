@@ -251,6 +251,27 @@ class ApiContractTests(unittest.TestCase):
             "mindmap",
         )
 
+    def test_mindmap_icons_done_and_due_survive_save_backup_and_import(self):
+        notebook = self.client.get("/api/notebooks").json()[0]
+        note = self.client.post("/api/notes", json={"title": "Week plan", "notebookId": notebook["id"], "noteType": "mindmap"}).json()
+        document = note["content"]
+        task = {"id": "bank", "parentId": "root", "text": "Call the bank", "x": 300, "y": 0, "icons": ["todo", "flag"], "done": True, "due": "2026-11-03T15:30"}
+        document["nodes"].append(task)
+        update = self.client.put(f"/api/notes/{note['id']}", json={"title": "Week plan", "notebookId": notebook["id"], "revision": note["revision"], "content": document})
+        self.assertEqual(update.status_code, 200)
+        saved = self.client.get(f"/api/notes/{note['id']}").json()["content"]["nodes"][-1]
+        self.assertEqual((saved["icons"], saved["done"], saved["due"]), (["todo", "flag"], True, "2026-11-03T15:30"))
+
+        backup = self.client.get("/api/export/workspace").json()
+        exported = next(item for item in backup["notes"] if item["title"] == "Week plan")["content"]["nodes"][-1]
+        self.assertEqual((exported["icons"], exported["done"], exported["due"]), (["todo", "flag"], True, "2026-11-03T15:30"))
+
+        imported = self.client.post("/api/import/workspace", json=backup)
+        self.assertEqual(imported.status_code, 201)
+        copy = next(self.client.get(f"/api/notes/{note_id}").json() for note_id in imported.json()["noteIds"] if self.client.get(f"/api/notes/{note_id}").json()["title"] == "Week plan")
+        restored = copy["content"]["nodes"][-1]
+        self.assertEqual((restored["icons"], restored["done"], restored["due"]), (["todo", "flag"], True, "2026-11-03T15:30"))
+
     def test_capabilities_describe_only_core_and_built_in_modules(self):
         response = self.client.get("/api/settings/capabilities")
         self.assertEqual(response.status_code, 200)

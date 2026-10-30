@@ -85,3 +85,59 @@ test('a long label is drawn on several lines inside a taller card', () => {
   assert.equal(Number(card(long).attributes.height), 88)
   assert.equal(Number(card('Short').attributes.height), 40)
 })
+
+test('icons are drawn before the words in the node colour, and the card is wider for them', () => {
+  const plain = renderJam({ child: { color: '#123456', text: 'Child task here' } })
+  const iconed = renderJam({ child: { color: '#123456', text: 'Child task here', icons: ['flag', 'fire'] } })
+  const icons = iconed.found((e) => e.attributes.class === 'map-node-icon')
+  assert.deepEqual(icons.map((e) => e.attributes['data-icon']), ['flag', 'fire'])
+  assert.deepEqual(icons.map((e) => e.attributes.stroke), ['#123456', '#123456'])
+  const [first, second] = icons.map((e) => Number(/translate\((-?[\d.]+)/.exec(e.attributes.transform)[1]))
+  const row = iconed.found((e) => e.name === 'tspan' && e.textContent === 'Child task here')[0]
+  assert.ok(first < second && second < Number(row.attributes.x))
+  const width = (r) => Number(r.found((e) => e.attributes.class === 'map-idea-card')[0].attributes.width)
+  assert.equal(width(iconed), width(plain) + 44)
+})
+
+test('a done node shows the check, dims its label and has a pencil line through each row', () => {
+  const long = 'Renew the passport and then book the flights for the family trip'
+  const done = renderJam({ child: { text: long, icons: ['todo'], done: true } })
+  assert.deepEqual(done.found((e) => e.attributes.class === 'map-node-icon').map((e) => e.attributes['data-icon']), ['done'])
+  assert.equal(done.found((e) => e.attributes['data-done-toggle'] === 'child').length, 1)
+  assert.equal(done.found((e) => e.attributes.class === 'map-strike').length, 3)
+  assert.ok(done.found((e) => /map-node-label.* done/.test(e.attributes.class || '')).length === 1)
+  const plain = renderJam({ child: { text: long, icons: ['todo'] } })
+  assert.equal(plain.found((e) => e.attributes.class === 'map-strike').length, 0)
+  assert.deepEqual(plain.found((e) => e.attributes.class === 'map-node-icon').map((e) => e.attributes['data-icon']), ['todo'])
+})
+
+
+// ---- F-108: x of y done ----
+test('a parent shows how many of its tasks are done, and a check when all are', () => {
+  const run = (child) => renderJam({ map: { nodes: [
+    { id: 'root', parentId: null, text: 'Root', x: 0, y: 0 },
+    { id: 'child', parentId: 'root', text: 'Child', x: 260, y: -140 },
+    { id: 'k1', parentId: 'child', text: 'K1', x: 500, y: -140, icons: ['todo'], ...child },
+    { id: 'k2', parentId: 'child', text: 'K2', x: 500, y: -60, done: true },
+  ] } })
+  const badge = (r, id) => r.found((e) => e.attributes['data-task-badge'] === id)[0]
+  const some = run({})
+  assert.equal(badge(some, 'child').children.find((c) => c.name === 'text').textContent, '1/2')
+  assert.equal(badge(some, 'root').children.find((c) => c.name === 'text').textContent, '1/2')
+  assert.equal(badge(some, 'k1'), undefined)
+  const all = run({ done: true })
+  assert.equal(badge(all, 'child').attributes['data-all-done'], 'true')
+  assert.equal(badge(all, 'child').children.some((c) => c.name === 'text'), false)
+})
+
+// ---- F-109: due dates ----
+test('a due chip shows by the label, coloured by how late it is, and goes when the node is done', () => {
+  const day = (offset) => { const d = new Date(); d.setDate(d.getDate() + offset); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+  const chip = (child) => renderJam({ child }).found((e) => e.attributes.class === 'map-due-chip')[0]
+  assert.equal(chip({ due: day(0) }).attributes['data-due-state'], 'today')
+  assert.equal(chip({ due: day(0) }).children.find((c) => c.name === 'text').textContent, 'Today')
+  assert.equal(chip({ due: day(-2) }).attributes['data-due-state'], 'overdue')
+  assert.equal(chip({ due: day(20) }).attributes['data-due-state'], 'later')
+  assert.equal(chip({ due: day(0), done: true }), undefined)
+  assert.equal(chip({}), undefined)
+})
