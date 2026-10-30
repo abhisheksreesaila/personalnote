@@ -26,6 +26,7 @@ import search_runtime
 from routes import create_app
 from search_runtime import Pin, SearchError, SearchRuntime, document_prompt, query_prompt
 from tests.test_voice import FakeSource
+from reminders import Reminders
 from x_sync import XSync
 
 KEY = "linux-x86_64"
@@ -739,7 +740,7 @@ class EngineTests(SearchTestCase):
                 time.sleep(0.05)
             time.sleep(0.5)  # the batch is now waiting on the engine
             started = time.monotonic()
-            close_search(type("App", (), {"state": type("State", (), {"search": runtime, "indexer": indexer, "x_sync": XSync(None)})()})())
+            close_search(type("App", (), {"state": type("State", (), {"search": runtime, "indexer": indexer, "x_sync": XSync(None), "reminders": Reminders(None)})()})())
             took = time.monotonic() - started
         self.assertLess(took, 3.0)
         self.assertFalse(indexer._thread.is_alive())

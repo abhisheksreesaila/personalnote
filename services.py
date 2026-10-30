@@ -10,6 +10,7 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 import secure_crypto as sc
@@ -164,6 +165,7 @@ class NoteService:
             self.convert_legacy_notes(connection)
             self.ensure_block_ids(connection)
             self.ensure_derived_indexes(connection)
+            self.backfill_reminders(connection)
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=10)
@@ -595,6 +597,68 @@ class NoteService:
         if note_ids != indexed_ids:
             cls.rebuild_derived_indexes(connection)
 
+    # ---- reminders (F-110): a derived list of mind-map nodes with a due time ----------------------------------------------
+
+    @staticmethod
+    def due_time(value) -> str | None:
+        """"YYYY-MM-DDTHH:MM" (local time) for a due value that has a time; None for a date alone or anything unreadable."""
+        if not isinstance(value, str) or "T" not in value:
+            return None
+        try:
+            return datetime.fromisoformat(value).strftime("%Y-%m-%dT%H:%M")
+        except ValueError:
+            return None
+
+    @classmethod
+    def sync_reminders(cls, connection: sqlite3.Connection, note_id: int, content) -> None:
+        """Make the list match a map as just saved. A node keeps its fired mark while its time is unchanged; a new time re-arms it."""
+        document = cls.parse_json(content, None) if isinstance(content, str) else content
+        nodes = document.get("nodes", []) if isinstance(document, dict) else []
+        found = {}
+        for node in nodes:
+            due = cls.due_time(node.get("due")) if isinstance(node, dict) else None
+            if due and isinstance(node.get("id"), str):
+                found[node["id"]] = (str(node.get("text") or "").strip()[:200], due, 1 if node.get("done") is True else 0)
+        before = {row["node_id"]: row for row in connection.execute("SELECT node_id, due, fired FROM mindmap_reminders WHERE note_id = ?", (note_id,))}
+        for node_id in before.keys() - found.keys():
+            connection.execute("DELETE FROM mindmap_reminders WHERE note_id = ? AND node_id = ?", (note_id, node_id))
+        for node_id, (label, due, done) in found.items():
+            fired = 1 if node_id in before and before[node_id]["due"] == due and before[node_id]["fired"] else 0
+            connection.execute(
+                "INSERT OR REPLACE INTO mindmap_reminders (note_id, node_id, label, due, fired, done) VALUES (?, ?, ?, ?, ?, ?)",
+                (note_id, node_id, label, due, fired, done),
+            )
+
+    def forget_reminders(self, note_id: int) -> None:
+        with self.connection() as connection:
+            connection.execute("DELETE FROM mindmap_reminders WHERE note_id = ?", (note_id,))
+            connection.commit()
+
+    @classmethod
+    def backfill_reminders(cls, connection: sqlite3.Connection) -> None:
+        """At startup: read every plain mind map once (a note saved before this table existed, or by another process)."""
+        for note in connection.execute("SELECT id, content FROM notes WHERE note_type = 'mindmap' AND secure = 0").fetchall():
+            cls.sync_reminders(connection, note["id"], note["content"])
+        connection.commit()
+
+    def reminders_due(self, now: str) -> list[dict]:
+        """Unfired, unstruck reminders whose time is `now` or earlier, oldest first."""
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT r.note_id, r.node_id, r.label, r.due, n.title FROM mindmap_reminders r JOIN notes n ON n.id = r.note_id
+                WHERE r.fired = 0 AND r.done = 0 AND r.due <= ? ORDER BY r.due, r.note_id
+                """,
+                (now,),
+            ).fetchall()
+        return [{"noteId": row["note_id"], "nodeId": row["node_id"], "label": row["label"], "due": row["due"], "title": row["title"]} for row in rows]
+
+    def mark_reminder_fired(self, note_id: int, node_id: str, due: str) -> None:
+        """Only if the node still has that time: a time edited while the notice went out stays armed."""
+        with self.connection() as connection:
+            connection.execute("UPDATE mindmap_reminders SET fired = 1 WHERE note_id = ? AND node_id = ? AND due = ?", (note_id, node_id, due))
+            connection.commit()
+
     def notebook_exists(self, connection: sqlite3.Connection, notebook_id: int) -> bool:
         return connection.execute(
             "SELECT 1 FROM notebooks WHERE id = ?", (notebook_id,)
@@ -851,6 +915,8 @@ class NoteService:
                     (notebook_id, note_id),
                 )
             self.index_note(connection, note_id, title, stored_content, note_type, content_format, body=body)
+            if note_type == "mindmap":
+                self.sync_reminders(connection, note_id, document if data_key is None else None)  # a secure map keeps none
             self.record_change(connection, "note", current["resource_id"], revision, "updated")
             if agent_edit_state:
                 connection.execute("UPDATE agent_edits SET state = ? WHERE id = ?", (agent_edit_state[1], agent_edit_state[0]))
@@ -1307,6 +1373,7 @@ class NoteService:
                 raise ConflictError("Resource revision does not match")
             self.index_note(connection, note_id, current["title"], "", current["note_type"], current["content_format"], body="")
             connection.execute("DELETE FROM note_embeddings WHERE note_id = ?", (note_id,))  # a meaning vector leaks content (F-079)
+            connection.execute("DELETE FROM mindmap_reminders WHERE note_id = ?", (note_id,))  # a due time and label leak content (F-110)
             connection.execute("DELETE FROM agent_edits WHERE note_id = ?", (note_id,))  # the plain before and after of an agent's write (F-096)
             self.record_change(connection, "note", current["resource_id"], new_revision, "updated")
             connection.commit()
@@ -1352,6 +1419,8 @@ class NoteService:
             if cursor.rowcount == 0:
                 raise ConflictError("Resource revision does not match")
             self.index_note(connection, note_id, current["title"], revealed["content"], current["note_type"], revealed["content_format"], revealed["page_state"])
+            if current["note_type"] == "mindmap":
+                self.sync_reminders(connection, note_id, revealed["content"])
             self.record_change(connection, "note", current["resource_id"], new_revision, "updated")
             connection.commit()
         return {"ok": True, "resourceId": current["resource_id"], "revision": new_revision}
@@ -1733,6 +1802,8 @@ class NoteService:
                 note_id = cursor.lastrowid
                 imported_note_ids.append(note_id)
                 self.index_note(connection, note_id, title, content, note_type, content_format, body=body)
+                if note_type == "mindmap" and not note.get("secure"):
+                    self.sync_reminders(connection, note_id, content)
                 self.record_change(connection, "note", resource_id, 1, "created")
             connection.commit()
         return {

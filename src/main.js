@@ -3919,6 +3919,8 @@ document.addEventListener('selectionchange', () => {
   if (!focusTextId && focusLastCaret) focusTextId = focusLastCaret.id // (focus made this text: it is the focus text from now on)
 })
 window.addEventListener('focus', () => resumeFocusWriting())
+// A reminder notice was opened (F-110): the window coming forward lands on its map. Best effort; the server hands each target out once.
+window.addEventListener('focus', () => { void api('/api/reminders/jump').then((r) => { if (r?.jump) return selectNote(r.jump.noteId) }).catch(() => {}) })
 
 const doubleTap = createDoubleTap({ key: tapKeyFor(navigator.platform) })
 let toolPillTimer = 0

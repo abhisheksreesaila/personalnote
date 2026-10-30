@@ -1,0 +1,203 @@
+"""Reminders for due mind-map nodes (F-110): the derived list, the scheduler's firing, the missed notice, the jump.
+
+A fake clock and a fake notifier stand in for the time and the system notification; everything else is the real service and app.
+"""
+
+import json
+import sqlite3
+import tempfile
+import unittest
+from datetime import datetime
+from pathlib import Path
+
+from starlette.testclient import TestClient
+
+from reminders import Reminders, system_notify
+from routes import create_app
+from services import NoteService
+
+
+class Clock:
+    def __init__(self, text):
+        self.now = datetime.fromisoformat(text)
+
+    def __call__(self):
+        return self.now
+
+    def set(self, text):
+        self.now = datetime.fromisoformat(text)
+
+
+class Notices:
+    def __init__(self):
+        self.sent = []
+
+    def __call__(self, title, body):
+        self.sent.append((title, body))
+        return True
+
+
+def node(node_id, text, **extra):
+    return {"id": node_id, "parentId": "root", "text": text, "x": 0, "y": 0, **extra}
+
+
+class ReminderTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.path = Path(self.folder.name) / "notes.db"
+        self.service = NoteService(self.path)
+        self.clock = Clock("2026-11-03T09:00")
+        self.notices = Notices()
+        self.reminders = Reminders(self.service, notify=self.notices, clock=self.clock)
+
+    def tearDown(self):
+        self.folder.cleanup()
+
+    def save_map(self, nodes, title="Week plan", note=None):
+        if note is None:
+            note = self.service.create_note({"title": title, "noteType": "mindmap"})
+        document = {"version": 1, "rootId": "root", "nodes": [{"id": "root", "parentId": None, "text": "Plan", "x": 0, "y": 0}, *nodes]}
+        self.service.update_note(note["id"], {"title": title, "content": document, "revision": note["revision"]})
+        return self.service.get_note(note["id"])
+
+    def pending_rows(self):
+        with self.service.connection() as connection:
+            return [tuple(row) for row in connection.execute("SELECT note_id, node_id FROM mindmap_reminders WHERE done = 0")]
+
+    def test_a_node_with_a_time_notifies_once_at_that_time(self):
+        self.save_map([node("a", "Call the bank", due="2026-11-03T09:30")])
+        self.reminders.tick()
+        self.assertEqual(self.notices.sent, [])
+        self.clock.set("2026-11-03T09:30")
+        self.reminders.tick()
+        self.reminders.tick()
+        self.assertEqual(self.notices.sent, [("Personal Note", "Call the bank — in Week plan")])
+
+    def test_a_date_without_a_time_gets_no_notification(self):
+        self.save_map([node("a", "Pay rent", due="2026-11-03")])
+        self.clock.set("2026-11-05T10:00")
+        self.reminders.tick()
+        self.assertEqual(self.notices.sent, [])
+        self.assertEqual(self.pending_rows(), [])
+
+    def test_striking_a_node_cancels_its_reminder(self):
+        note = self.save_map([node("a", "Call", due="2026-11-03T09:30"), node("b", "Email", due="2026-11-03T09:40")])
+        self.save_map([node("a", "Call", due="2026-11-03T09:30", done=True), node("b", "Email", due="2026-11-03T09:40")], note=note)
+        self.clock.set("2026-11-03T09:35")
+        self.reminders.tick()
+        self.assertEqual(self.notices.sent, [])  # a was struck
+        self.clock.set("2026-11-03T09:40")
+        self.reminders.tick()
+        self.assertEqual([body for _, body in self.notices.sent], ["Email — in Week plan"])
+
+    def test_unstriking_a_reminder_that_already_fired_does_not_fire_it_again(self):
+        note = self.save_map([node("a", "Call", due="2026-11-03T09:10")])
+        self.clock.set("2026-11-03T09:10")
+        self.reminders.tick()
+        note = self.save_map([node("a", "Call", due="2026-11-03T09:10", done=True)], note=note)
+        self.save_map([node("a", "Call", due="2026-11-03T09:10")], note=note)
+        self.reminders.tick()
+        self.assertEqual(len(self.notices.sent), 1)
+
+    def test_removing_the_time_cancels_and_editing_it_rearms(self):
+        note = self.save_map([node("a", "Call", due="2026-11-03T09:10")])
+        self.clock.set("2026-11-03T09:10")
+        self.reminders.tick()
+        self.assertEqual(len(self.notices.sent), 1)
+        note = self.save_map([node("a", "Call", due="2026-11-03T10:00")], note=note)
+        self.reminders.tick()
+        self.assertEqual(len(self.notices.sent), 1)  # not yet
+        self.clock.set("2026-11-03T10:00")
+        self.reminders.tick()
+        self.assertEqual(len(self.notices.sent), 2)  # the new time fired
+        self.save_map([node("a", "Call")], note=note)
+        self.assertEqual(self.pending_rows(), [])
+
+    def test_deleting_the_map_cancels_its_reminders(self):
+        note = self.save_map([node("a", "Call", due="2026-11-03T09:10")])
+        self.service.delete_note(note["id"])
+        self.clock.set("2026-11-03T09:10")
+        self.reminders.tick()
+        self.assertEqual(self.notices.sent, [])
+
+    def test_a_secure_map_keeps_no_reminders(self):
+        note = self.save_map([node("a", "Call", due="2026-11-03T09:10")])
+        self.assertEqual(self.pending_rows(), [(note["id"], "a")])
+        self.service.forget_reminders(note["id"])
+        self.assertEqual(self.pending_rows(), [])
+
+    def test_reminders_that_came_due_while_closed_make_one_missed_notice(self):
+        self.save_map([node("a", "One", due="2026-11-02T08:00"), node("b", "Two", due="2026-11-02T18:00"), node("c", "Later", due="2026-11-03T12:00")])
+        self.reminders.catch_up()
+        self.assertEqual(self.notices.sent, [("Personal Note", "You missed 2 reminders")])
+        self.reminders.catch_up()
+        self.reminders.tick()
+        self.assertEqual(len(self.notices.sent), 1)  # fired once; the later one is not yet due
+        self.clock.set("2026-11-03T12:00")
+        self.reminders.tick()
+        self.assertEqual(self.notices.sent[-1], ("Personal Note", "Later — in Week plan"))
+
+    def test_one_missed_reminder_is_singular(self):
+        self.save_map([node("a", "One", due="2026-11-02T08:00")])
+        self.reminders.catch_up()
+        self.assertEqual(self.notices.sent, [("Personal Note", "You missed 1 reminder")])
+
+    def test_startup_backfills_maps_saved_before_the_table_existed(self):
+        self.save_map([node("a", "Call", due="2026-11-03T09:10")])
+        with sqlite3.connect(self.path) as connection:
+            connection.execute("DELETE FROM mindmap_reminders")
+        NoteService(self.path)  # a fresh start
+        self.clock.set("2026-11-03T09:10")
+        self.reminders.tick()
+        self.assertEqual(self.notices.sent, [("Personal Note", "Call — in Week plan")])
+
+    def test_a_backup_never_carries_reminders(self):
+        self.save_map([node("a", "Call", due="2026-11-03T09:10")])
+        self.assertNotIn("mindmap_reminders", json.dumps(self.service.workspace_snapshot()))
+
+    def test_importing_a_backup_arms_its_maps(self):
+        self.save_map([node("a", "Call", due="2026-11-03T09:10")])
+        snapshot = self.service.workspace_snapshot()
+        with tempfile.TemporaryDirectory() as folder:
+            other = NoteService(Path(folder) / "other.db")
+            other.import_workspace_snapshot(snapshot)
+            notices = Notices()
+            clock = Clock("2026-11-03T09:10")
+            Reminders(other, notify=notices, clock=clock).tick()
+            self.assertEqual(notices.sent, [("Personal Note", "Call — in Week plan")])
+
+
+class ReminderApiTests(unittest.TestCase):
+    def test_the_jump_endpoint_hands_out_a_clicked_notice_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = create_app(Path(folder) / "notes.db")
+            client = TestClient(app)
+            clock = Clock("2026-11-03T09:00")
+            app.state.reminders = Reminders(app.state.note_service, notify=Notices(), clock=clock)
+            note = client.post("/api/notes", json={"title": "Week plan", "noteType": "mindmap"}).json()
+            document = note["content"]
+            document["nodes"].append(node("a", "Call", due="2026-11-03T09:10"))
+            client.put(f"/api/notes/{note['id']}", json={"title": "Week plan", "revision": note["revision"], "content": document})
+            self.assertEqual(client.get("/api/reminders/jump").json(), {"jump": None})
+            clock.set("2026-11-03T09:10")
+            app.state.reminders.tick()
+            app.state.reminders.clicked()
+            self.assertEqual(client.get("/api/reminders/jump").json(), {"jump": {"noteId": note["id"], "nodeId": "a"}})
+            self.assertEqual(client.get("/api/reminders/jump").json(), {"jump": None})
+
+
+class SystemNotifyTests(unittest.TestCase):
+    def test_linux_uses_notify_send_and_macos_uses_osascript(self):
+        calls = []
+        run = lambda command, **kw: calls.append(command)
+        self.assertTrue(system_notify("Personal Note", "Call — in Plan", platform="linux", which=lambda n: "/bin/" + n, run=run))
+        self.assertEqual(calls[-1][0], "/bin/notify-send")
+        self.assertEqual(calls[-1][-2:], ["Personal Note", "Call — in Plan"])
+        self.assertTrue(system_notify("Personal Note", 'Say "hi" \\ now', platform="darwin", which=lambda n: "/usr/bin/" + n, run=run))
+        self.assertEqual(calls[-1][:2], ["/usr/bin/osascript", "-e"])
+        self.assertEqual(calls[-1][2], 'display notification "Say \\"hi\\" \\\\ now" with title "Personal Note"')
+        self.assertFalse(system_notify("a", "b", platform="linux", which=lambda n: None, run=run))
+
+
+if __name__ == "__main__":
+    unittest.main()
