@@ -1,6 +1,7 @@
 import { branchGeometry as computeBranch, cubicAt, PORT_VECTORS, ribbonPath } from './geometry.js'
 import { ghostNodes } from './jam.js'
-import { BRANCH_COLORS, descendantsOf, displayText, getDepth, nodeById, visibleNodes } from './model.js'
+import { layoutNode } from './layout.js'
+import { BRANCH_COLORS, descendantsOf, getDepth, nodeById, visibleNodes } from './model.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const createSvg = (name, attributes = {}) => {
@@ -16,18 +17,20 @@ function branchWidths(depth) {
   }
 }
 
-function estimateTextWidth(node) {
-  return Math.max(58, displayText(node).length * (node.fontSize || 20) * (node.font === 'clean' ? 0.53 : 0.49))
-}
-
 function nodePresentation(node) {
   return node.parentId === null || node.presentation !== 'branch' ? 'box' : 'branch'
 }
 
-function nodeFrame(node) {
-  const width = node.parentId === null ? Math.max(180, estimateTextWidth(node) + 50) : estimateTextWidth(node) + 26
-  const height = node.parentId === null ? 76 : (node.fontSize || 20) + 20
-  return { width, height, left: -width / 2 }
+const nodeFrame = (node) => layoutNode(node)
+
+// The label's lines as tspans, the block centred on `middle` (a branch label rests its last line on the branch instead: `bottom`).
+function setLines(label, lines, step, x, { middle = 0, bottom } = {}) {
+  lines.forEach((line, index) => {
+    const y = bottom === undefined ? middle + (index - (lines.length - 1) / 2) * step : bottom - (lines.length - 1 - index) * step
+    const row = createSvg('tspan', { x, y })
+    row.textContent = line
+    label.append(row)
+  })
 }
 
 const frameOf = (node) => ({ x: node.x, y: node.y, hw: nodeFrame(node).width / 2, hh: nodeFrame(node).height / 2, pin: nodePresentation(node) === 'branch' })
@@ -123,8 +126,8 @@ export class MindMapRenderer {
     const group = createSvg('g', { class: 'map-ghost', transform: `translate(${ghost.x} ${ghost.y})`, 'data-ghost-id': ghost.id })
     const title = createSvg('title')
     title.textContent = ghost.why
-    const label = createSvg('text', { class: 'map-node-label', x: 0, y: 1, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': ghost.fontSize, 'font-weight': '500' })
-    label.textContent = ghost.text
+    const label = createSvg('text', { class: 'map-node-label', 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': ghost.fontSize, 'font-weight': '500' })
+    setLines(label, frame.lines, frame.lineStep, 0, { middle: 1 })
     group.append(
       title,
       createSvg('rect', { x: frame.left, y: -frame.height / 2, width: frame.width, height: frame.height, rx: 6, fill: '#fffefa', 'fill-opacity': 0.6, stroke: ghost.color, 'stroke-width': 2, 'stroke-dasharray': '6 5', opacity: 0.75 }),
@@ -220,13 +223,12 @@ export class MindMapRenderer {
   }
 
   renderRoot(group, node) {
-    const width = Math.max(180, estimateTextWidth(node) + 50)
-    const height = 76
-    const label = createSvg('text', { class: 'map-root-label', x: 0, y: 1, 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
-    label.textContent = node.text
+    const { width, height, lines, lineStep } = nodeFrame(node)
+    const label = createSvg('text', { class: 'map-root-label', 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
+    setLines(label, lines, lineStep, 0, { middle: 1 })
     group.append(
       createSvg('rect', { class: 'map-root-card', x: -width / 2, y: -height / 2, width, height, rx: 20, fill: node.color }),
-      createSvg('path', { d: `M ${-width / 2 + 18} 24 Q 0 34 ${width / 2 - 18} 20`, fill: 'none', stroke: 'rgba(255,255,255,.23)', 'stroke-width': 5, 'stroke-linecap': 'round' }),
+      createSvg('path', { d: `M ${-width / 2 + 18} ${height / 2 - 14} Q 0 ${height / 2 - 4} ${width / 2 - 18} ${height / 2 - 18}`, fill: 'none', stroke: 'rgba(255,255,255,.23)', 'stroke-width': 5, 'stroke-linecap': 'round' }),
       createSvg('rect', { class: 'map-node-selection', x: -width / 2 - 7, y: -height / 2 - 7, width: width + 14, height: height + 14, rx: 24 }),
       label,
     )
@@ -243,14 +245,12 @@ export class MindMapRenderer {
     const labelY = midpoint ? midpoint.y - node.y - 5 : 1
     const label = createSvg('text', {
       class: `map-node-label${node.font === 'clean' ? ' clean' : ''}`,
-      x: labelX,
-      y: labelY,
       'text-anchor': 'middle',
       'font-size': node.fontSize || 20,
       'font-weight': node.bold ? '700' : '500',
       'font-style': node.italic ? 'italic' : 'normal',
     })
-    label.textContent = midpoint ? displayText(node).toUpperCase() : displayText(node)
+    setLines(label, frame.lines, frame.lineStep, labelX, midpoint ? { bottom: labelY } : { middle: 1 })
     if (!midpoint) {
       label.setAttribute('dominant-baseline', 'middle')
       group.append(
@@ -306,12 +306,17 @@ export class MindMapRenderer {
     const ids = new Set(shown.map((node) => node.id))
     const nodes = [...shown, ...ghostNodes(this.document).filter((ghost) => ids.has(ghost.parentId))] // (the suggestions waiting count: the view must show them)
     if (!nodes.length) return { minX: -100, minY: -100, maxX: 100, maxY: 100 }
-    return nodes.reduce((box, node) => ({
-      minX: Math.min(box.minX, node.x - 120),
-      minY: Math.min(box.minY, node.y - 120),
-      maxX: Math.max(box.maxX, node.x + 120),
-      maxY: Math.max(box.maxY, node.y + 120),
-    }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity })
+    return nodes.reduce((box, node) => {
+      const frame = nodeFrame(node)
+      const reachX = Math.max(120, frame.width / 2 + 40)
+      const reachY = Math.max(120, frame.height / 2 + 40)
+      return {
+        minX: Math.min(box.minX, node.x - reachX),
+        minY: Math.min(box.minY, node.y - reachY),
+        maxX: Math.max(box.maxX, node.x + reachX),
+        maxY: Math.max(box.maxY, node.y + reachY),
+      }
+    }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity })
   }
 
   fit(padding = 80, animate = false) {
