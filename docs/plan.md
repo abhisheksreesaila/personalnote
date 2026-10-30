@@ -666,3 +666,43 @@ Design: docs/design/omxqua.md (Motion) · Needs: F-103
 - [x] "Dynamic Island" is gone from code, scripts and current docs (the title island)
 - [x] verify scripts pass; budgets green (JS ≤ 260 KiB: the press handler must fit, or say so before raising anything)
 Reviewed: reviewer PASS — press is one CSS rule (no JS cost; draggable rows, disabled and [data-nopress] excluded; scripts/verify-press.mjs proves it with a real mouse and touch scroll), panels settle, menus ease in, ⌘K instant with its view prefetched on idle, reduced motion fades only, verify-dynamic-island renamed verify-title-island. JS 259.93/260 (70 bytes left), CSS 17.27/17.6. Menus shown by `hidden` animate in only (a fade-out would need JS).
+
+## F-105 Mind-map boxes fit their text [todo]
+Brief: docs/briefs/mindmap-todos.md · Needs: none
+- [ ] a box's width comes from the measured label (font, size, bold), so a bigger font makes a bigger box; root, box and branch labels alike
+- [ ] labels past ~28 characters wrap onto more lines (at word breaks) and the box grows taller; editing shows the same wrap
+- [ ] branch attachment, selection ring, collision and fit-to-view use the new size
+- [ ] maps saved before still open and look the same for short labels
+
+## F-106 Icons on mind-map nodes [todo]
+Brief: docs/briefs/mindmap-todos.md · Needs: F-105
+- [ ] the node toolbar has 12 Lucide icons (to-do, done, flag, star, alert, question, clock, idea, heart, pin, fire, X); tapping one toggles it on the selected node, up to 3
+- [ ] icons draw before the label in the node colour on boxes, branch labels and the root; the box grows to fit
+- [ ] `icons: [...]` saves with the map, survives reload, backup and import; unknown names are dropped
+- [ ] Lucide paths are inlined in the mind-map chunk (no `import 'lucide'`); bundle budget green
+
+## F-107 Pencil strike marks a node done [todo]
+Brief: docs/briefs/mindmap-todos.md · Needs: F-106
+- [ ] on a selected node, a mostly sideways swipe across the label draws a graphite pencil line that follows the pointer (wobble, uneven width); a drag elsewhere still moves the node
+- [ ] past ~60% of the label the line finishes itself with a settle spring and the node becomes `done: true`; short of it the line fades
+- [ ] done: the to-do icon shows as the done check, the label dims; swiping again or tapping the check clears it
+- [ ] a short quiet scratch sound (Web Audio, no file) and a vibration on phones; reduced motion fades the line in
+- [ ] works with a real mouse and real touch in the running app; done survives reload
+
+## F-108 x of y done on parents [todo]
+Brief: docs/briefs/mindmap-todos.md · Needs: F-107
+- [ ] a node whose subtree holds tasks (to-do icon or done) shows a mono badge `3/7`; all done shows a check
+- [ ] the badge updates as you strike, unstrike or delete
+
+## F-109 Due dates on mind-map nodes [todo]
+Brief: docs/briefs/mindmap-todos.md · Needs: F-106
+- [ ] the node toolbar sets a due date and optional time (`due: "YYYY-MM-DD"` or `"YYYY-MM-DDTHH:MM"`, local time), and clears it
+- [ ] a chip by the label shows "Fri" / "Nov 3" / "3:00 PM"; amber on the day, red when overdue, hidden once done
+- [ ] `due` saves, reloads, survives backup and import; invalid values are dropped
+
+## F-110 Reminders for due mind-map nodes [todo]
+Brief: docs/briefs/mindmap-todos.md · Needs: F-109 (data shape only)
+- [ ] on every mind-map save the server keeps a derived list of nodes with a due time that are not done (never in backup or export)
+- [ ] while the app runs, at the due time a system notification says the node and map; opening it (or the app) jumps to that map and node where the platform allows
+- [ ] reminders missed while the app was closed show as one "you missed N reminders" notice at the next start
+- [ ] each reminder fires once; striking or removing the due time cancels it
