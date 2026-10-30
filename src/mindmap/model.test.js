@@ -66,3 +66,17 @@ test('a node counts the tasks anywhere under it: a to-do box or a strike, not it
   assert.deepEqual(taskCounts(map, 'b'), { done: 0, total: 1 })
   assert.deepEqual(taskCounts(map, 'a3'), { done: 0, total: 0 })
 })
+
+test('due is kept when it is a real date or date and time, dropped otherwise', () => {
+  const nodes = normalizeDocument({ nodes: [
+    { id: 'root', parentId: null, text: 'Root' },
+    { id: 'a', parentId: 'root', text: 'A', due: '2026-11-03' },
+    { id: 'b', parentId: 'root', text: 'B', due: '2026-11-03T15:30' },
+    { id: 'c', parentId: 'root', text: 'C', due: '2026-02-30' },
+    { id: 'd', parentId: 'root', text: 'D', due: 'soon' },
+  ] }).nodes
+  assert.equal(nodes[1].due, '2026-11-03')
+  assert.equal(nodes[2].due, '2026-11-03T15:30')
+  assert.equal('due' in nodes[3], false)
+  assert.equal('due' in nodes[4], false)
+})

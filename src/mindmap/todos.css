@@ -10,3 +10,6 @@
 @keyframes map-strike-in { from { opacity: 0; } to { opacity: .8; } }
 .map-task-badge { pointer-events: none; }
 .map-task-count { fill: #4d504a; font: 700 10.5px "IBM Plex Mono", ui-monospace, monospace; }
+.mindmap-due { display: flex; gap: 6px; }
+.mindmap-due input { flex: 1; min-width: 0; height: 34px; padding: 0 6px; border: 1px solid #ded8cc; border-radius: 6px; color: inherit; background: #fffefa; font: inherit; font-size: 12px; }
+.mindmap-inspector label button[data-map-due-clear] { min-width: 0; height: 22px; margin-left: 6px; padding: 0 8px; font-size: 11px; }

@@ -51,6 +51,7 @@ function inspectorTemplate() {
       <section><label>Branch colour</label><div class="mindmap-swatches" data-map-swatches></div></section>
       <section><label>Presentation</label><div class="mindmap-segments"><button data-map-presentation="box">Box</button><button data-map-presentation="branch">On branch</button></div></section>
       <section><label>Icons <output data-map-icon-count>0/3</output></label><div class="mindmap-icons" role="group" aria-label="Node icons">${iconButtons()}</div></section>
+      <section><label>Due <button data-map-due-clear aria-label="Clear due date">Clear</button></label><div class="mindmap-due"><input type="date" data-map-due-date aria-label="Due date"><input type="time" data-map-due-time aria-label="Due time (optional)"></div></section>
       <section><label>Typography</label><div class="mindmap-segments"><button data-map-font="hand">Handwritten</button><button data-map-font="clean">Clean</button></div><div class="mindmap-format"><button data-map-format="bold"><strong>B</strong></button><button data-map-format="italic"><em>I</em></button><input data-map-font-size type="range" min="14" max="36" value="22" aria-label="Font size"></div></section>
       <section><label>Branch shape <output data-map-curve-output>Organic</output></label><input data-map-curve type="range" min="0" max="100" value="78" aria-label="Branch curvature"></section>
       <section><label class="mindmap-toggle">Collapse descendants <input data-map-collapse type="checkbox"></label></section>
@@ -148,6 +149,8 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
       button.disabled = node.parentId === null
     })
     queryAll('[data-map-icon]').forEach((button) => { const on = Boolean(node.icons?.includes(button.dataset.mapIcon)); button.classList.toggle('active', on); button.setAttribute('aria-pressed', String(on)) })
+    query('[data-map-due-date]').value = node.due?.slice(0, 10) || ''
+    query('[data-map-due-time]').value = node.due?.slice(11) || ''
     query('[data-map-icon-count]').textContent = `${node.icons?.length || 0}/${MAX_ICONS}`
     queryAll('[data-map-font]').forEach((button) => button.classList.toggle('active', button.dataset.mapFont === node.font))
     queryAll('[data-map-format]').forEach((button) => button.classList.toggle('active', Boolean(node[button.dataset.mapFormat])))
@@ -500,16 +503,27 @@ export function mountMindMap(root, { documentValue, onChange, createIcons, inspe
     const presentation = event.target.closest('[data-map-presentation]')
     const font = event.target.closest('[data-map-font]')
     const icon = event.target.closest('[data-map-icon]')
+    const dueClear = event.target.closest('[data-map-due-clear]')
     const format = event.target.closest('[data-map-format]')
     const action = event.target.closest('[data-map-action]')?.dataset.mapAction
     if (branchChoice && pendingBranchId) chooseBranchPresentation(pendingBranchId, branchChoice.dataset.mapBranchChoice)
     else if (presentation && selectedNode()?.parentId) mutate(() => { selectedNode().presentation = presentation.dataset.mapPresentation })
     else if (icon && selectedNode()) toggleIcon(icon.dataset.mapIcon)
+    else if (dueClear && selectedNode()?.due) mutate(() => { delete selectedNode().due })
     else if (font && selectedNode()) mutate(() => { selectedNode().font = font.dataset.mapFont })
     else if (format && selectedNode()) mutate(() => { selectedNode()[format.dataset.mapFormat] = !selectedNode()[format.dataset.mapFormat] })
     else if (action) runAction(action)
   }, { signal }))
 
+  // Due date and optional time (local time). A time on its own means today.
+  const setDue = () => {
+    const today = new Date()
+    const date = query('[data-map-due-date]').value || (query('[data-map-due-time]').value ? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}` : '')
+    const time = query('[data-map-due-time]').value
+    mutate(() => { if (date) selectedNode().due = time ? `${date}T${time}` : date; else delete selectedNode().due })
+  }
+  query('[data-map-due-date]').addEventListener('change', setDue, { signal })
+  query('[data-map-due-time]').addEventListener('change', setDue, { signal })
   query('[data-map-font-size]').addEventListener('change', (event) => mutate(() => { selectedNode().fontSize = Number(event.target.value) }), { signal })
   query('[data-map-curve]').addEventListener('change', (event) => mutate(() => {
     selectedNode().curve = Number(event.target.value)

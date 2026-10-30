@@ -129,3 +129,15 @@ test('a parent shows how many of its tasks are done, and a check when all are', 
   assert.equal(badge(all, 'child').attributes['data-all-done'], 'true')
   assert.equal(badge(all, 'child').children.some((c) => c.name === 'text'), false)
 })
+
+// ---- F-109: due dates ----
+test('a due chip shows by the label, coloured by how late it is, and goes when the node is done', () => {
+  const day = (offset) => { const d = new Date(); d.setDate(d.getDate() + offset); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+  const chip = (child) => renderJam({ child }).found((e) => e.attributes.class === 'map-due-chip')[0]
+  assert.equal(chip({ due: day(0) }).attributes['data-due-state'], 'today')
+  assert.equal(chip({ due: day(0) }).children.find((c) => c.name === 'text').textContent, 'Today')
+  assert.equal(chip({ due: day(-2) }).attributes['data-due-state'], 'overdue')
+  assert.equal(chip({ due: day(20) }).attributes['data-due-state'], 'later')
+  assert.equal(chip({ due: day(0), done: true }), undefined)
+  assert.equal(chip({}), undefined)
+})

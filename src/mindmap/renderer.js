@@ -37,11 +37,25 @@ function setLines(label, lines, step, x, { middle = 0, bottom } = {}) {
 
 // The icons before the words, in `color`, level with the first line; the block of icons and words is centred on `cx`.
 function renderIcons(group, frame, cx, firstY, color, node) {
+  const left = cx - (frame.lead + frame.textWidth + frame.trail) / 2
   frame.icons.forEach((name, index) => {
-    const icon = createSvg('g', { class: 'map-node-icon', 'data-icon': name, ...(node.done && name === 'done' ? { 'data-done-toggle': node.id, role: 'button', 'aria-label': 'Done: tap to undo' } : {}), transform: `translate(${cx - (frame.lead + frame.textWidth) / 2 + index * (frame.iconSize + 4)} ${firstY - frame.iconSize / 2}) scale(${frame.iconSize / 24})`, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+    const icon = createSvg('g', { class: 'map-node-icon', 'data-icon': name, ...(node.done && name === 'done' ? { 'data-done-toggle': node.id, role: 'button', 'aria-label': 'Done: tap to undo' } : {}), transform: `translate(${left + index * (frame.iconSize + 4)} ${firstY - frame.iconSize / 2}) scale(${frame.iconSize / 24})`, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
     icon.append(createSvg('path', { d: ICON_PATHS[name] }))
     group.append(icon)
   })
+}
+
+// The due date's pill at the end of the words, amber on the day and red when late.
+const CHIP_COLORS = { later: ['#fffefa', '#746f65', '#cfc8ba'], today: ['#fde7b0', '#7a4f00', '#e0a526'], overdue: ['#fbd3cd', '#9c2418', '#e0675a'] }
+function renderDueChip(group, frame, cx, firstY) {
+  if (!frame.chip) return
+  const [fill, ink, edge] = CHIP_COLORS[frame.chip.state]
+  const x = cx + (frame.lead + frame.textWidth + frame.trail) / 2 - frame.chip.width
+  const chip = createSvg('g', { class: 'map-due-chip', 'data-due-state': frame.chip.state, transform: `translate(${x} ${firstY})`, 'pointer-events': 'none' })
+  const text = createSvg('text', { x: frame.chip.width / 2, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: ink, style: 'font:600 11px "IBM Plex Sans",sans-serif' })
+  text.textContent = frame.chip.text
+  chip.append(createSvg('rect', { x: 0, y: -10, width: frame.chip.width, height: 20, rx: 10, fill, stroke: edge, 'stroke-width': 1 }), text)
+  group.append(chip)
 }
 
 const frameOf = (node) => ({ x: node.x, y: node.y, hw: nodeFrame(node).width / 2, hh: nodeFrame(node).height / 2, pin: nodePresentation(node) === 'branch' })
@@ -257,10 +271,11 @@ export class MindMapRenderer {
     const { frame, firstY, rows } = this.labelPlace(node)
     const { width, height, lines, lineStep } = frame
     const label = createSvg('text', { class: `map-root-label${node.done ? ' done' : ''}`, 'font-size': node.fontSize || 28, 'font-style': node.italic ? 'italic' : 'normal' })
-    setLines(label, lines, lineStep, frame.lead / 2, { middle: 1 })
+    setLines(label, lines, lineStep, (frame.lead - frame.trail) / 2, { middle: 1 })
     const icons = createSvg('g')
     this.renderStrikes(icons, node, rows)
     renderIcons(icons, frame, 0, firstY, '#fff', node)
+    renderDueChip(icons, frame, 0, firstY)
     group.append(
       createSvg('rect', { class: 'map-root-card', x: -width / 2, y: -height / 2, width, height, rx: 20, fill: node.color }),
       createSvg('path', { d: `M ${-width / 2 + 18} ${height / 2 - 14} Q 0 ${height / 2 - 4} ${width / 2 - 18} ${height / 2 - 18}`, fill: 'none', stroke: 'rgba(255,255,255,.23)', 'stroke-width': 5, 'stroke-linecap': 'round' }),
@@ -282,7 +297,7 @@ export class MindMapRenderer {
     const labelY = midpoint ? midpoint.y - node.y - 5 : 1
     const size = node.fontSize || (node.parentId === null ? 28 : 20)
     const firstY = midpoint ? labelY - (frame.lines.length - 1) * frame.lineStep - size * 0.32 : 1 - (frame.lines.length - 1) * frame.lineStep / 2
-    const rows = frame.lines.map((_, index) => ({ x0: cx + frame.lead / 2 - frame.lineWidths[index] / 2, x1: cx + frame.lead / 2 + frame.lineWidths[index] / 2, y: firstY + index * frame.lineStep }))
+    const rows = frame.lines.map((_, index) => ({ x0: cx + (frame.lead - frame.trail) / 2 - frame.lineWidths[index] / 2, x1: cx + (frame.lead - frame.trail) / 2 + frame.lineWidths[index] / 2, y: firstY + index * frame.lineStep }))
     return { frame, midpoint, cx, labelY, firstY, rows }
   }
 
@@ -300,7 +315,7 @@ export class MindMapRenderer {
       'font-weight': node.bold ? '700' : '500',
       'font-style': node.italic ? 'italic' : 'normal',
     })
-    setLines(label, frame.lines, frame.lineStep, labelX + frame.lead / 2, midpoint ? { bottom: labelY } : { middle: 1 })
+    setLines(label, frame.lines, frame.lineStep, labelX + (frame.lead - frame.trail) / 2, midpoint ? { bottom: labelY } : { middle: 1 })
     if (!midpoint) {
       label.setAttribute('dominant-baseline', 'middle')
       group.append(
@@ -313,6 +328,7 @@ export class MindMapRenderer {
     }
     this.renderStrikes(group, node, rows)
     renderIcons(group, frame, labelX, firstY, node.color, node)
+    renderDueChip(group, frame, labelX, firstY)
     if (node.vote) this.renderVote(group, node, labelX + frame.width / 2, midpoint ? labelY - frame.height / 2 : -frame.height / 2)
   }
 

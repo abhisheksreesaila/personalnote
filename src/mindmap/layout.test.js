@@ -53,3 +53,14 @@ test('icons sit before the words and the box grows to fit them', () => {
   assert.equal(box.width, plain.width + 44)
   assert.equal(layoutNode(node({ parentId: null, fontSize: 28, text: 'Plan', icons: ['flag'] }), measure).width, 180)
 })
+
+test('a due chip sits after the words, widens the box, and goes once the node is done', () => {
+  const now = new Date(2026, 9, 30, 10, 0)
+  const plain = layoutNode(node(), measure, now)
+  const due = layoutNode(node({ due: '2026-10-31' }), measure, now) // "Sat"
+  assert.equal(due.chip.text, 'Sat')
+  assert.equal(due.trail, due.chip.width + 6)
+  assert.equal(due.width, plain.width + due.trail)
+  assert.equal(layoutNode(node({ due: '2026-10-31', done: true }), measure, now).chip, null)
+  assert.equal(layoutNode(node({ due: '2026-10-31', done: true }), measure, now).width, layoutNode(node({ done: true }), measure, now).width)
+})

@@ -1,3 +1,4 @@
+import { validDue } from './due.js'
 import { ICON_NAMES, MAX_ICONS } from './icons.js'
 
 export const BRANCH_COLORS = ['#ef684b', '#efad28', '#65ae4f', '#2d9c91', '#3d8fe8', '#8c67cf', '#d85da8', '#5e6570']
@@ -59,6 +60,7 @@ export function normalizeDocument(value) {
     collapsed: Boolean(node.collapsed),
     image: node.image || null,
     ...(node.done === true ? { done: true } : {}),
+    ...(validDue(node.due) ? { due: node.due } : {}),
     ...(cleanIcons(node.icons).length ? { icons: cleanIcons(node.icons) } : {}),
     ...(typeof node.emoji === 'string' && EMOJI.test(node.emoji) ? { emoji: node.emoji } : {}),
     ...(node.vote === 'up' || node.vote === 'down' ? { vote: node.vote, reason: text(node.reason, 120) } : {}),

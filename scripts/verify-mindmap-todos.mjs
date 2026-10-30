@@ -7,6 +7,8 @@
 //   F-107  a sideways swipe on a SELECTED node's label (real mouse on desktop, real touch on the phone) draws a pencil line; past 60% it finishes and the node is done
 //          (check instead of the to-do box, dimmed, struck, saved); short of it the line fades; a vertical drag or an unselected node still drags; swipe again or tap the check clears
 //   F-108  a parent shows 1/4 for the tasks under it, counting up as they are struck (a check when all are done), down when one is unstruck or deleted
+//   F-109  the Properties panel sets a due date and optional time; a chip by the label says Today / 11:59 PM / a weekday / Nov 3, amber on the day, red when overdue,
+//          gone once the node is done; saved, back after a reload; an invalid saved value is dropped; Clear removes it
 //   F-110 jump  a reminder jump selects its node and brings it to the middle of the view
 //
 //   PN_VERIFY_PORT=4940 node scripts/verify-mindmap-todos.mjs        (PN_SHOT=/path/shot.png also saves pictures)
@@ -250,6 +252,54 @@ try {
     check(`[${label}] clearing a strike counts it back: 3/4`, await badgeIs('e', '3/4'), await badgeOf('e'))
     await select('c1'); await page.keyboard.press('Delete')
     check(`[${label}] deleting a done task takes it out of the count: 2/3`, await badgeIs('e', '2/3'), await badgeOf('e'))
+    // ---- F-109 due dates
+    const ymd = (offset) => page.evaluate((days) => { const d = new Date(); d.setDate(d.getDate() + days); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }, offset)
+    const chipOf = async (id) => { const c = page.locator(`g.map-node[data-node-id="${id}"] .map-due-chip`); return (await c.count()) ? { text: (await c.locator('text').textContent()).trim(), state: await c.getAttribute('data-due-state'), fill: await c.locator('rect').getAttribute('fill') } : null }
+    const chipIs = async (id, want) => { for (let i = 0; i < 30; i++) { const got = await chipOf(id); if (want === null ? got === null : got && got.text === want) return want === null ? true : got; await page.waitForTimeout(100) } return false }
+    const savedTask = async (id) => (await call('GET', `/notes/${tasksNote.id}`)).body.content.nodes.find((n) => n.id === id)
+    const waitTask = async (id, test) => { for (let i = 0; i < 60; i++) { if (test(await savedTask(id))) return true; await page.waitForTimeout(100) } return false }
+    const today = await ymd(0)
+    await select('c4')
+    await openProps()
+    await page.fill('[data-map-due-date]', today)
+    check(`[${label}] a due date today shows Today in amber`, (await chipIs('c4', 'Today')) && (await chipOf('c4')).state === 'today' && (await chipOf('c4')).fill === '#fde7b0' && await waitTask('c4', (n) => n.due === today), JSON.stringify(await chipOf('c4')))
+    await closeProps(); await page.waitForTimeout(600); await shot('due-chip-today'); await openProps()
+    await page.fill('[data-map-due-time]', '23:59')
+    check(`[${label}] adding a time shows it and saves date and time`, (await chipIs('c4', '11:59 PM')) && await waitTask('c4', (n) => n.due === `${today}T23:59`), JSON.stringify(await chipOf('c4')))
+    await page.fill('[data-map-due-time]', '')
+    await page.fill('[data-map-due-date]', await ymd(-2))
+    const lateChip = await chipOf('c4')
+    check(`[${label}] a date in the past is red`, lateChip?.state === 'overdue' && lateChip.fill === '#fbd3cd' && /^[A-Z][a-z]{2} \d{1,2}$/.test(lateChip.text), JSON.stringify(lateChip))
+    await closeProps(); await page.waitForTimeout(600); await shot('due-chip-overdue'); await openProps()
+    const soon = await ymd(3)
+    await page.fill('[data-map-due-date]', soon)
+    const weekday = await page.evaluate((d) => new Date(`${d}T12:00`).toLocaleDateString('en-US', { weekday: 'short' }), soon)
+    check(`[${label}] a date this week shows the weekday`, !!(await chipIs('c4', weekday)) && (await chipOf('c4')).state === 'later', weekday)
+    await page.click('[data-map-due-clear]')
+    check(`[${label}] Clear removes the chip and the saved date`, (await chipIs('c4', null)) === true && await waitTask('c4', (n) => n.due === undefined))
+    await page.fill('[data-map-due-date]', today)
+    await waitTask('c4', (n) => n.due === today)
+    await select('c4'); await sideways('c4')
+    check(`[${label}] striking the node takes the chip away (the date is kept)`, (await chipIs('c4', null)) === true && await waitTask('c4', (n) => n.done === true && n.due === today))
+    await select('e')
+    await openProps()
+    const later = await ymd(20)
+    await page.fill('[data-map-due-date]', later)
+    await waitTask('e', (n) => n.due === later)
+    const laterText = await page.evaluate((d) => { const at = new Date(`${d}T12:00`); return `${at.toLocaleDateString('en-US', { month: 'short' })} ${at.getDate()}` }, later)
+    await shot('due-later')
+    await page.reload()
+    await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+    await page.evaluate((n) => window.__personalNote.selectNote(n), tasksNote.id)
+    await page.waitForSelector('g.map-node[data-node-id="e"]', { timeout: 15000 })
+    check(`[${label}] after a reload the date is still there`, !!(await chipIs('e', laterText)))
+    const stored = (await call('GET', `/notes/${tasksNote.id}`)).body
+    await call('PUT', `/notes/${tasksNote.id}`, { title: 'Errands', content: { ...stored.content, nodes: stored.content.nodes.map((n) => (n.id === 'e' ? { ...n, due: '2026-02-30' } : n)) }, revision: stored.revision })
+    await page.reload()
+    await page.waitForFunction(() => window.__personalNote?.state?.activeNoteId, null, { timeout: 60000 })
+    await page.evaluate((n) => window.__personalNote.selectNote(n), tasksNote.id)
+    await page.waitForSelector('g.map-node[data-node-id="e"]', { timeout: 15000 })
+    check(`[${label}] a saved value that is not a real date is dropped`, (await chipIs('e', null)) === true)
     await page.evaluate((n) => window.__personalNote.selectNote(n), mapId)
     await page.waitForSelector('g.map-node[data-node-id="short"]', { timeout: 15000 })
 
